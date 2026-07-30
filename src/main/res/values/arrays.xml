@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="xposed_scope">
+        <item>com.miui.home</item>
+    </string-array>
+    <string-array name="mode_names">
+        <item>No Light (simple white line)</item>
+        <item>Fixed Light (static glow)</item>
+        <item>Dynamic Light (gyroscope)</item>
+    </string-array>
+    <string-array name="mode_values">
+        <item>none</item>
+        <item>fixed</item>
+        <item>dynamic</item>
+    </string-array>
+</resources>

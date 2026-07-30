@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <PreferenceCategory android:title="Light Source">
+        <ListPreference android:key="light_mode" android:title="Light Mode"
+            android:summary="Select edge glow type"
+            android:defaultValue="fixed"
+            android:entries="@array/mode_names"
+            android:entryValues="@array/mode_values" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Control">
+        <Preference android:key="restart" android:title="Restart Launcher"
+            android:summary="Apply changes and restart desktop" />
+    </PreferenceCategory>
+
+</PreferenceScreen>
