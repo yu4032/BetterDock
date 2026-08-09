@@ -63,7 +63,77 @@ final class HomeGridHook {
                     param.setResult(true);
                 }
             });
-        XposedBridge.log("[DC] native 2x2 large folders enabled");
+
+        Class<?> convertController = XposedHelpers.findClass(
+            "com.miui.home.launcher.convertsize.FolderIconConvertSizeController",
+            classLoader);
+        hookTwoByTwoSpan(convertController, "getFolderSpanXFromType");
+        hookTwoByTwoSpan(convertController, "getFolderSpanYFromType");
+
+        Class<?> folderInfo = XposedHelpers.findClass(
+            "com.miui.home.launcher.FolderInfo", classLoader);
+        Class<?> folderSheet = XposedHelpers.findClass(
+            "com.miui.home.launcher.folder.FolderSheet", classLoader);
+        XposedHelpers.findAndHookMethod(folderSheet, "initListener", folderInfo,
+            new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    exposeMingouFolderChoice(param.thisObject);
+                }
+            });
+        XposedBridge.log("[DC] 2x2 folder choice enabled: 多宫格-棉狗, type=26");
+    }
+
+    private static void hookTwoByTwoSpan(Class<?> controller, String method) {
+        XposedHelpers.findAndHookMethod(controller, method, int.class,
+            new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if ((Integer) param.args[0] == 26) param.setResult(2);
+                }
+            });
+    }
+
+    private static void exposeMingouFolderChoice(Object folderSheet) {
+        String[] fields = {
+            "mBigFolderBorderLayout2x2_16",
+            "mBigFolderSelectBorder2x2_16",
+            "mFolderPickerSelectBigFolderImg2x2_16"
+        };
+        for (String field : fields) {
+            try {
+                Object value = XposedHelpers.getObjectField(folderSheet, field);
+                if (value instanceof android.view.View)
+                    ((android.view.View) value).setVisibility(android.view.View.VISIBLE);
+            } catch (Throwable ignored) {}
+        }
+        try {
+            Object value = XposedHelpers.getObjectField(folderSheet,
+                "mBigFolderCheckBox2x2_16");
+            if (value instanceof android.view.View) {
+                android.view.View choice = (android.view.View) value;
+                choice.setVisibility(android.view.View.VISIBLE);
+                choice.setContentDescription("多宫格-棉狗");
+                android.view.ViewParent parent = choice.getParent();
+                if (parent instanceof android.view.ViewGroup) {
+                    android.view.ViewGroup group = (android.view.ViewGroup) parent;
+                    android.view.ViewGroup.LayoutParams params = choice.getLayoutParams();
+                    group.removeView(choice);
+                    group.addView(choice, Math.min(1, group.getChildCount()), params);
+                }
+            }
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] 2x2 folder picker reorder failed: " + e);
+        }
+        try {
+            Object name = XposedHelpers.getObjectField(folderSheet,
+                "mBigFolderName2x2_16");
+            if (name instanceof android.widget.TextView) {
+                android.widget.TextView text = (android.widget.TextView) name;
+                text.setText("多宫格-棉狗");
+                text.setVisibility(android.view.View.VISIBLE);
+            }
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] 2x2 folder picker label failed: " + e);
+        }
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {

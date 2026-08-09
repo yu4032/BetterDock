@@ -12,8 +12,8 @@
 
         <SwitchPreference
             android:key="large_folder_2x2"
-            android:title="Native 2x2 Large Folders"
-            android:summary="Enable HyperOS native 2x2 large-folder types and previews (experimental)"
+            android:title="多宫格-棉狗"
+            android:summary="Add a 4x4-preview large folder that occupies 2x2 desktop cells"
             android:defaultValue="false"
             android:dependency="home_grid_8x4" />
 
