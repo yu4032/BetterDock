@@ -81,25 +81,20 @@ final class HomeGridHook {
                         Object indicator = XposedHelpers.callMethod(
                             param.thisObject, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
-                            applyIndicatorOffset((android.view.View) indicator);
+                            applyIndicatorOffset((android.view.View) indicator,
+                                (Integer) param.args[0]);
                     } catch (Throwable e) {
                         XposedBridge.log("[DC] indicator offset failed: " + e);
                     }
                 }
             });
-        XposedHelpers.findAndHookMethod(workspace, "getScreenIndicator",
-            new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.getResult() instanceof android.view.View)
-                        applyIndicatorOffset((android.view.View) param.getResult());
-                }
-            });
     }
 
-    private static void applyIndicatorOffset(android.view.View indicator) {
+    private static void applyIndicatorOffset(android.view.View indicator, int scrollX) {
         boolean portrait = indicator.getResources().getConfiguration().orientation
             == Configuration.ORIENTATION_PORTRAIT;
-        indicator.setTranslationX(portrait ? portraitIndicatorX : landscapeIndicatorX);
+        int offsetX = portrait ? portraitIndicatorX : landscapeIndicatorX;
+        indicator.setTranslationX(scrollX + offsetX);
         indicator.setTranslationY(portrait ? portraitIndicatorY : landscapeIndicatorY);
     }
 
