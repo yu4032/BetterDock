@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="light_mode_entries">
+        <item>No Light</item>
+        <item>Fixed Light</item>
+        <item>Dynamic Light</item>
+    </string-array>
+    <string-array name="light_mode_values">
+        <item>none</item>
+        <item>fixed</item>
+        <item>dynamic</item>
+    </string-array>
+    <string name="app_name">BetterDock</string>
+</resources>

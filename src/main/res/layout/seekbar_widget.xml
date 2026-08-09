@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:minHeight="56dp">
+
+    <SeekBar
+        android:id="@+id/seekbar"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:maxHeight="10dp"
+        android:paddingEnd="6dp"
+        android:paddingStart="6dp" />
+
+    <EditText
+        android:id="@+id/value_input"
+        android:layout_width="64dp"
+        android:layout_height="36dp"
+        android:inputType="number|numberSigned"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:background="@android:drawable/edit_text" />
+
+</LinearLayout>

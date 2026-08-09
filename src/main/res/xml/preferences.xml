@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="Dock Appearance">
+
+        <ListPreference
+            android:key="light_mode"
+            android:title="Light Mode"
+            android:summary="%s"
+            android:entries="@array/light_mode_entries"
+            android:entryValues="@array/light_mode_values"
+            android:defaultValue="fixed" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="blur_radius"
+            android:title="Blur Radius"
+            android:summary="%d"
+            android:defaultValue="100"
+            app:min="0"
+            app:max="400" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="height_offset"
+            android:title="Height Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-200"
+            app:max="200" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="width_offset"
+            android:title="Width Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-200"
+            app:max="200" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="corner_offset"
+            android:title="Stroke Corner Offset"
+            android:summary="%d px"
+            android:defaultValue="-1"
+            app:min="-50"
+            app:max="100" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="blur_corner_offset"
+            android:title="Blur Background Corner Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-50"
+            app:max="100" />
+
+        <SwitchPreference
+            android:key="dock_stroke"
+            android:title="Dock Stroke"
+            android:summary="Draw the complete Dock border and lighting"
+            android:defaultValue="true" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="stroke_base_r"
+            android:title="Stroke Base Red"
+            android:summary="%d"
+            android:defaultValue="255"
+            app:min="0"
+            app:max="255"
+            android:dependency="dock_stroke" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="stroke_base_g"
+            android:title="Stroke Base Green"
+            android:summary="%d"
+            android:defaultValue="255"
+            app:min="0"
+            app:max="255"
+            android:dependency="dock_stroke" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="stroke_base_b"
+            android:title="Stroke Base Blue"
+            android:summary="%d"
+            android:defaultValue="255"
+            app:min="0"
+            app:max="255"
+            android:dependency="dock_stroke" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="stroke_base_alpha"
+            android:title="Stroke Base Alpha"
+            android:summary="%d"
+            android:defaultValue="255"
+            app:min="0"
+            app:max="255"
+            android:dependency="dock_stroke" />
+
+        <SwitchPreference
+            android:key="squircle"
+            android:title="Squircle Corners"
+            android:summary="iOS-style continuous curve"
+            android:defaultValue="false" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="sq_stroke_w"
+            android:title="Squircle Stroke Width"
+            android:summary="%d px"
+            android:defaultValue="4"
+            app:min="1"
+            app:max="20"
+            android:dependency="squircle" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="sq_stroke_off"
+            android:title="Squircle Stroke Offset"
+            android:summary="%d px"
+            android:defaultValue="8"
+            app:min="0"
+            app:max="30"
+            android:dependency="squircle" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="sq_outer_cp"
+            android:title="Squircle Outer CP"
+            android:summary="%d"
+            android:defaultValue="58"
+            app:min="40"
+            app:max="80"
+            android:dependency="squircle" />
+
+        <SwitchPreference
+            android:key="fill_diff"
+            android:title="Fill-Diff Stroke"
+            android:summary="Crisp anti-alias via fill+punch"
+            android:defaultValue="false" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="stroke_w"
+            android:title="Fill-Diff Width"
+            android:summary="%d px"
+            android:defaultValue="2"
+            app:min="1"
+            app:max="10"
+            android:dependency="fill_diff" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="std_stroke_w"
+            android:title="Stroke Thickness"
+            android:summary="%d px"
+            android:defaultValue="4"
+            app:min="1"
+            app:max="20" />
+
+        <SwitchPreference
+            android:key="dock_shadow"
+            android:title="Dock Drop Shadow"
+            android:summary="External shadow below the whole Dock"
+            android:defaultValue="true" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_shadow_radius"
+            android:title="Drop Shadow Softness"
+            android:summary="%d px"
+            android:defaultValue="42"
+            app:min="1"
+            app:max="80"
+            android:dependency="dock_shadow" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_shadow_size"
+            android:title="Drop Shadow Size"
+            android:summary="Maximum %d px beyond Dock"
+            android:defaultValue="52"
+            app:min="1"
+            app:max="120"
+            android:dependency="dock_shadow" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_shadow_alpha"
+            android:title="Drop Shadow Alpha"
+            android:summary="%d"
+            android:defaultValue="140"
+            app:min="0"
+            app:max="200"
+            android:dependency="dock_shadow" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_shadow_y"
+            android:title="Drop Shadow Y Offset"
+            android:summary="%d px"
+            android:defaultValue="12"
+            app:min="-40"
+            app:max="40"
+            android:dependency="dock_shadow" />
+
+        <SwitchPreference
+            android:key="stroke_shadow"
+            android:title="Stroke Shadow"
+            android:summary="Soft inner shadow below the border"
+            android:defaultValue="true" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="shadow_radius"
+            android:title="Shadow Radius"
+            android:summary="%d px"
+            android:defaultValue="8"
+            app:min="1"
+            app:max="40"
+            android:dependency="stroke_shadow" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="shadow_alpha"
+            android:title="Shadow Alpha"
+            android:summary="%d"
+            android:defaultValue="70"
+            app:min="0"
+            app:max="200"
+            android:dependency="stroke_shadow" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_spacing"
+            android:title="Dock Icon Spacing"
+            android:summary="%d px each side"
+            android:defaultValue="0"
+            app:min="-10"
+            app:max="20" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="dock_bottom_offset"
+            android:title="Dock Bottom Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="80" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Backup &amp; Restore">
+
+        <Preference
+            android:key="export_config"
+            android:title="Export Current Parameters"
+            android:summary="Save all BetterDock settings as JSON"
+            android:icon="@android:drawable/ic_menu_save" />
+
+        <Preference
+            android:key="import_config"
+            android:title="Import Parameters"
+            android:summary="Validate and apply a BetterDock JSON file"
+            android:icon="@android:drawable/ic_menu_upload" />
+
+    </PreferenceCategory>
+
+    <Preference
+        android:key="preset_ipad"
+        android:title="Apply iPad Preset"
+        android:summary="Calculated from MIUI Home dimensions and this display"
+        android:icon="@android:drawable/ic_menu_manage" />
+
+    <Preference
+        android:key="restart_launcher"
+        android:title="Restart Launcher"
+        android:summary="Apply changes"
+        android:icon="@android:drawable/ic_menu_rotate" />
+
+</PreferenceScreen>
