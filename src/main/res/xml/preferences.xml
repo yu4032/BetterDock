@@ -10,6 +10,13 @@
             android:summary="Landscape 8 columns x 4 rows; portrait 4 columns x 8 rows"
             android:defaultValue="true" />
 
+        <SwitchPreference
+            android:key="large_folder_2x2"
+            android:title="Native 2x2 Large Folders"
+            android:summary="Enable HyperOS native 2x2 large-folder types and previews (experimental)"
+            android:defaultValue="false"
+            android:dependency="home_grid_8x4" />
+
         <com.hellovoid.betterdock.SeekBarPreference
             android:key="grid_margin_left"
             android:title="Grid Left Margin"
@@ -49,6 +56,12 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="Dock Appearance">
+
+        <SwitchPreference
+            android:key="dock_customization"
+            android:title="Customize Entire Dock"
+            android:summary="Master switch for all BetterDock Dock appearance, shadow, spacing and offset hooks"
+            android:defaultValue="true" />
 
         <ListPreference
             android:key="light_mode"

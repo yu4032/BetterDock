@@ -17,7 +17,8 @@ final class HomeGridHook {
 
     private HomeGridHook() {}
 
-    static void install(ClassLoader classLoader, int left, int right, int top, int bottom) {
+    static void install(ClassLoader classLoader, int left, int right, int top, int bottom,
+                        boolean nativeTwoByTwoFolders) {
         marginLeft = Math.max(0, left);
         marginRight = Math.max(0, right);
         marginTop = Math.max(0, top);
@@ -36,6 +37,7 @@ final class HomeGridHook {
             hookGridCountGetter(gridConfig, "getCountX");
             hookGridCountGetter(gridConfig, "getCountY");
             installRotationTransform(classLoader);
+            if (nativeTwoByTwoFolders) installNativeTwoByTwoFolders(classLoader);
 
             Class<?> builder = XposedHelpers.findClass(
                 "com.miui.home.launcher.grid.GridConfig$GridConfigBuilder", classLoader);
@@ -50,6 +52,18 @@ final class HomeGridHook {
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid hook unavailable: " + e);
         }
+    }
+
+    private static void installNativeTwoByTwoFolders(ClassLoader classLoader) {
+        Class<?> deviceConfig = XposedHelpers.findClass(
+            "com.miui.home.launcher.DeviceConfig", classLoader);
+        XposedHelpers.findAndHookMethod(deviceConfig, "isMingouTrueBigFolderEnabled",
+            new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    param.setResult(true);
+                }
+            });
+        XposedBridge.log("[DC] native 2x2 large folders enabled");
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {

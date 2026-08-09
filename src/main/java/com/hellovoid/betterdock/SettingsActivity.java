@@ -109,10 +109,12 @@ public class SettingsActivity extends AppCompatActivity {
     private static JSONObject collectParameters(SharedPreferences sp) throws Exception {
         JSONObject j = new JSONObject();
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
+        j.put("large_folder_2x2", sp.getBoolean("large_folder_2x2", false));
         j.put("grid_margin_left", sp.getInt("grid_margin_left", 160));
         j.put("grid_margin_right", sp.getInt("grid_margin_right", 160));
         j.put("grid_margin_top", sp.getInt("grid_margin_top", 80));
         j.put("grid_margin_bottom", sp.getInt("grid_margin_bottom", 80));
+        j.put("dock_customization", sp.getBoolean("dock_customization", true));
         j.put("light_mode", sp.getString("light_mode", "fixed"));
         j.put("blur_radius", sp.getInt("blur_radius", 100));
         j.put("height_offset", sp.getInt("height_offset", 0));
@@ -175,6 +177,8 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "dock_spacing", -10, 20);
         putInt(j, e, "dock_bottom_offset", 0, 80);
         if (j.has("home_grid_8x4")) e.putBoolean("home_grid_8x4", j.optBoolean("home_grid_8x4"));
+        if (j.has("large_folder_2x2")) e.putBoolean("large_folder_2x2", j.optBoolean("large_folder_2x2"));
+        if (j.has("dock_customization")) e.putBoolean("dock_customization", j.optBoolean("dock_customization"));
         if (j.has("dock_stroke")) e.putBoolean("dock_stroke", j.optBoolean("dock_stroke"));
         if (j.has("squircle")) e.putBoolean("squircle", j.optBoolean("squircle"));
         if (j.has("fill_diff")) e.putBoolean("fill_diff", j.optBoolean("fill_diff"));
@@ -279,10 +283,12 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("corner_offset", cornerOffset)
                 .putInt("blur_corner_offset", -2)
                 .putBoolean("home_grid_8x4", true)
+                .putBoolean("large_folder_2x2", true)
                 .putInt("grid_margin_left", 160)
                 .putInt("grid_margin_right", 160)
                 .putInt("grid_margin_top", 80)
                 .putInt("grid_margin_bottom", 80)
+                .putBoolean("dock_customization", true)
                 .putBoolean("dock_stroke", true)
                 .putInt("stroke_base_r", 255)
                 .putInt("stroke_base_g", 255)
