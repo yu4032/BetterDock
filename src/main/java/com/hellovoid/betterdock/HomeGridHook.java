@@ -19,10 +19,33 @@ final class HomeGridHook {
             hookAxis(compat, "getCellCountXDef", true);
             hookAxis(compat, "getCellCountYMin", false);
             hookAxis(compat, "getCellCountYDef", false);
-            XposedBridge.log("[DC] home grid demo enabled: landscape=8x4 portrait=4x8");
+
+            Class<?> gridConfig = XposedHelpers.findClass(
+                "com.miui.home.launcher.grid.GridConfig", classLoader);
+            hookGridCountSetter(gridConfig, "setCountX");
+            hookGridCountSetter(gridConfig, "setCountY");
+            hookGridCountGetter(gridConfig, "getCountX");
+            hookGridCountGetter(gridConfig, "getCountY");
+            XposedBridge.log("[DC] home grid demo enabled: GridConfig 6->8, landscape=8x4 portrait=4x8");
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid hook unavailable: " + e);
         }
+    }
+
+    private static void hookGridCountSetter(Class<?> gridConfig, String method) {
+        XposedHelpers.findAndHookMethod(gridConfig, method, int.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if ((Integer) param.args[0] == 6) param.args[0] = 8;
+            }
+        });
+    }
+
+    private static void hookGridCountGetter(Class<?> gridConfig, String method) {
+        XposedHelpers.findAndHookMethod(gridConfig, method, new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if ((Integer) param.getResult() == 6) param.setResult(8);
+            }
+        });
     }
 
     private static void hookAxis(Class<?> compat, String method, boolean xAxis) {
