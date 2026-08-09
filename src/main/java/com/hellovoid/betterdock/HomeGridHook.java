@@ -35,6 +35,8 @@ final class HomeGridHook {
             hookGridCountSetter(gridConfig, "setCountY");
             hookGridCountGetter(gridConfig, "getCountX");
             hookGridCountGetter(gridConfig, "getCountY");
+            installRotationTransform(classLoader);
+
             Class<?> builder = XposedHelpers.findClass(
                 "com.miui.home.launcher.grid.GridConfig$GridConfigBuilder", classLoader);
             XposedHelpers.findAndHookMethod(builder, "build", new XC_MethodHook() {
@@ -48,6 +50,38 @@ final class HomeGridHook {
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid hook unavailable: " + e);
         }
+    }
+
+    private static void installRotationTransform(ClassLoader classLoader) {
+        Class<?> rule = XposedHelpers.findClass(
+            "com.miui.home.launcher.compat.LayoutTransformRuleGridChanged", classLoader);
+        XposedBridge.hookAllConstructors(rule, new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                int h = (Integer) param.args[0];
+                int v = (Integer) param.args[1];
+                if (!((h == 8 && v == 4) || (h == 4 && v == 8))) return;
+                int[][] portrait = new int[][] {
+                    {0, 0}, {2, 0}, {0, 2}, {2, 2},
+                    {0, 4}, {2, 4}, {0, 6}, {2, 6}
+                };
+                int[][] landscape = new int[][] {
+                    {0, 0}, {2, 0}, {4, 0}, {6, 0},
+                    {0, 2}, {2, 2}, {4, 2}, {6, 2}
+                };
+                XposedHelpers.setObjectField(param.thisObject,
+                    "vScreenCoordinate", portrait);
+                XposedHelpers.setObjectField(param.thisObject,
+                    "hScreenCoordinate", landscape);
+                XposedHelpers.setIntField(param.thisObject, "totalBlocks", 8);
+            }
+        });
+        XposedHelpers.findAndHookMethod(rule, "checkCellCount", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                int h = (Integer) XposedHelpers.callMethod(param.thisObject, "getMHCells");
+                int v = (Integer) XposedHelpers.callMethod(param.thisObject, "getMVCells");
+                if ((h == 8 && v == 4) || (h == 4 && v == 8)) param.setResult(null);
+            }
+        });
     }
 
     private static void applyContainerMargins(Object config) {

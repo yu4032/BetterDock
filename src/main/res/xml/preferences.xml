@@ -14,7 +14,7 @@
             android:key="grid_margin_left"
             android:title="Grid Left Margin"
             android:summary="%d px"
-            android:defaultValue="0"
+            android:defaultValue="160"
             app:min="0"
             app:max="400"
             android:dependency="home_grid_8x4" />
@@ -23,7 +23,7 @@
             android:key="grid_margin_right"
             android:title="Grid Right Margin"
             android:summary="%d px"
-            android:defaultValue="0"
+            android:defaultValue="160"
             app:min="0"
             app:max="400"
             android:dependency="home_grid_8x4" />
@@ -32,7 +32,7 @@
             android:key="grid_margin_top"
             android:title="Grid Top Margin"
             android:summary="%d px"
-            android:defaultValue="0"
+            android:defaultValue="80"
             app:min="0"
             app:max="400"
             android:dependency="home_grid_8x4" />
@@ -41,7 +41,7 @@
             android:key="grid_margin_bottom"
             android:title="Grid Bottom Margin"
             android:summary="%d px"
-            android:defaultValue="0"
+            android:defaultValue="80"
             app:min="0"
             app:max="400"
             android:dependency="home_grid_8x4" />
