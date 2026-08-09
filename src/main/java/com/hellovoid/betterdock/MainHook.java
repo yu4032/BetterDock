@@ -50,8 +50,7 @@ public class MainHook implements IXposedHookLoadPackage {
         ConfigReader cfg = ConfigReader.load();
         if (cfg.b("home_grid_8x4", true)) HomeGridHook.install(lpparam.classLoader,
             cfg.i("grid_margin_left", 160), cfg.i("grid_margin_right", 160),
-            cfg.i("grid_margin_top", 80), cfg.i("grid_margin_bottom", 80),
-            cfg.b("large_folder_2x2", false));
+            cfg.i("grid_margin_top", 80), cfg.i("grid_margin_bottom", 80));
         if (!cfg.b("dock_customization", true)) {
             XposedBridge.log("[DC] Dock customization disabled");
             return;
