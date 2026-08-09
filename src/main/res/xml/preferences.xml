@@ -2,6 +2,16 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <PreferenceCategory android:title="Home Screen Grid (Demo)">
+
+        <SwitchPreference
+            android:key="home_grid_8x4"
+            android:title="8x4 / 4x8 Home Grid"
+            android:summary="Landscape 8 columns x 4 rows; portrait 4 columns x 8 rows"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="Dock Appearance">
 
         <ListPreference
