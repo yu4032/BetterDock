@@ -21,3 +21,6 @@ Requirements: Android SDK, JDK 17, and LSPosed API 82 (libs/api-82.jar).
     ANDROID_HOME=/path/to/Android ./gradlew assembleRelease --no-daemon
 
 The release APK is generated under build/outputs/apk/release/.
+
+- Compose Miuix 0.9.3 settings UI with HyperOS styling
+- Hierarchical settings pages and per-value reset controls

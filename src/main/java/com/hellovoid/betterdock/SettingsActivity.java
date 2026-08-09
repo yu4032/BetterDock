@@ -43,9 +43,13 @@ public class SettingsActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
         Window w = getWindow();
         w.setStatusBarColor(Color.parseColor("#37474F"));
-        getSupportFragmentManager().beginTransaction()
-            .replace(R.id.fragment_container, new SettingsFragment()).commit();
+        if (useLegacyPreferenceUi()) {
+            getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_container, new SettingsFragment()).commit();
+        }
     }
+
+    protected boolean useLegacyPreferenceUi() { return true; }
 
     private void migrateGridPreferences() {
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
