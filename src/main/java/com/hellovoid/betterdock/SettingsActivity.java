@@ -109,6 +109,10 @@ public class SettingsActivity extends AppCompatActivity {
     private static JSONObject collectParameters(SharedPreferences sp) throws Exception {
         JSONObject j = new JSONObject();
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
+        j.put("grid_margin_left", sp.getInt("grid_margin_left", 0));
+        j.put("grid_margin_right", sp.getInt("grid_margin_right", 0));
+        j.put("grid_margin_top", sp.getInt("grid_margin_top", 0));
+        j.put("grid_margin_bottom", sp.getInt("grid_margin_bottom", 0));
         j.put("light_mode", sp.getString("light_mode", "fixed"));
         j.put("blur_radius", sp.getInt("blur_radius", 100));
         j.put("height_offset", sp.getInt("height_offset", 0));
@@ -144,6 +148,10 @@ public class SettingsActivity extends AppCompatActivity {
         String lightMode = j.optString("light_mode", "");
         if ("fixed".equals(lightMode) || "dynamic".equals(lightMode) || "none".equals(lightMode))
             e.putString("light_mode", lightMode);
+        putInt(j, e, "grid_margin_left", 0, 400);
+        putInt(j, e, "grid_margin_right", 0, 400);
+        putInt(j, e, "grid_margin_top", 0, 400);
+        putInt(j, e, "grid_margin_bottom", 0, 400);
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "height_offset", -200, 200);
         putInt(j, e, "width_offset", -200, 200);
@@ -271,6 +279,10 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("corner_offset", cornerOffset)
                 .putInt("blur_corner_offset", -2)
                 .putBoolean("home_grid_8x4", true)
+                .putInt("grid_margin_left", 0)
+                .putInt("grid_margin_right", 0)
+                .putInt("grid_margin_top", 0)
+                .putInt("grid_margin_bottom", 0)
                 .putBoolean("dock_stroke", true)
                 .putInt("stroke_base_r", 255)
                 .putInt("stroke_base_g", 255)

@@ -48,7 +48,9 @@ public class MainHook implements IXposedHookLoadPackage {
         if (!lpparam.packageName.equals("com.miui.home")) return;
 
         ConfigReader cfg = ConfigReader.load();
-        if (cfg.b("home_grid_8x4", true)) HomeGridHook.install(lpparam.classLoader);
+        if (cfg.b("home_grid_8x4", true)) HomeGridHook.install(lpparam.classLoader,
+            cfg.i("grid_margin_left", 0), cfg.i("grid_margin_right", 0),
+            cfg.i("grid_margin_top", 0), cfg.i("grid_margin_bottom", 0));
         XposedBridge.log("[DC] init: bl=" + cfg.i("blur_radius", -1) + " lm=" + cfg.s("light_mode", "?") + " sq=" + cfg.b("squircle", false));
 
         String lm = cfg.s("light_mode", "fixed");

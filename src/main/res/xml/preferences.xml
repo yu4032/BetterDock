@@ -10,6 +10,42 @@
             android:summary="Landscape 8 columns x 4 rows; portrait 4 columns x 8 rows"
             android:defaultValue="true" />
 
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_margin_left"
+            android:title="Grid Left Margin"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_margin_right"
+            android:title="Grid Right Margin"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_margin_top"
+            android:title="Grid Top Margin"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_margin_bottom"
+            android:title="Grid Bottom Margin"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
     </PreferenceCategory>
 
     <PreferenceCategory android:title="Dock Appearance">
