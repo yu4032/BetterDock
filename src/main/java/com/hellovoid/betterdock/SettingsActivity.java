@@ -38,12 +38,32 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
+        migrateGridPreferences();
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         Window w = getWindow();
         w.setStatusBarColor(Color.parseColor("#37474F"));
         getSupportFragmentManager().beginTransaction()
             .replace(R.id.fragment_container, new SettingsFragment()).commit();
+    }
+
+    private void migrateGridPreferences() {
+        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+        if (sp.contains("grid_landscape_margin_left")) return;
+        int left = sp.getInt("grid_margin_left", 160);
+        int right = sp.getInt("grid_margin_right", 160);
+        int top = sp.getInt("grid_margin_top", 80);
+        int bottom = sp.getInt("grid_margin_bottom", 80);
+        sp.edit()
+            .putInt("grid_landscape_margin_left", left)
+            .putInt("grid_landscape_margin_right", right)
+            .putInt("grid_landscape_margin_top", top)
+            .putInt("grid_landscape_margin_bottom", bottom)
+            .putInt("grid_portrait_margin_left", top)
+            .putInt("grid_portrait_margin_right", bottom)
+            .putInt("grid_portrait_margin_top", right)
+            .putInt("grid_portrait_margin_bottom", left)
+            .apply();
     }
 
     void launchExport() {
@@ -61,7 +81,7 @@ public class SettingsActivity extends AppCompatActivity {
                 JSONObject json = collectParameters(
                     PreferenceManager.getDefaultSharedPreferences(this));
                 json.put("_format", "betterdock-settings");
-                json.put("_version", 1);
+                json.put("_version", 2);
                 out.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
                 runOnUiThread(() -> Toast.makeText(this,
                     "Parameters exported", Toast.LENGTH_SHORT).show());
@@ -109,10 +129,18 @@ public class SettingsActivity extends AppCompatActivity {
     private static JSONObject collectParameters(SharedPreferences sp) throws Exception {
         JSONObject j = new JSONObject();
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
-        j.put("grid_margin_left", sp.getInt("grid_margin_left", 160));
-        j.put("grid_margin_right", sp.getInt("grid_margin_right", 160));
-        j.put("grid_margin_top", sp.getInt("grid_margin_top", 80));
-        j.put("grid_margin_bottom", sp.getInt("grid_margin_bottom", 80));
+        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 160));
+        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 160));
+        j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 80));
+        j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 80));
+        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 80));
+        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 80));
+        j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 160));
+        j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 160));
+        j.put("indicator_landscape_x", sp.getInt("indicator_landscape_x", 0));
+        j.put("indicator_landscape_y", sp.getInt("indicator_landscape_y", 0));
+        j.put("indicator_portrait_x", sp.getInt("indicator_portrait_x", 0));
+        j.put("indicator_portrait_y", sp.getInt("indicator_portrait_y", 0));
         j.put("dock_customization", sp.getBoolean("dock_customization", true));
         j.put("light_mode", sp.getString("light_mode", "fixed"));
         j.put("blur_radius", sp.getInt("blur_radius", 100));
@@ -149,10 +177,31 @@ public class SettingsActivity extends AppCompatActivity {
         String lightMode = j.optString("light_mode", "");
         if ("fixed".equals(lightMode) || "dynamic".equals(lightMode) || "none".equals(lightMode))
             e.putString("light_mode", lightMode);
-        putInt(j, e, "grid_margin_left", 0, 400);
-        putInt(j, e, "grid_margin_right", 0, 400);
-        putInt(j, e, "grid_margin_top", 0, 400);
-        putInt(j, e, "grid_margin_bottom", 0, 400);
+        String[] gridMargins = {
+            "grid_landscape_margin_left", "grid_landscape_margin_right",
+            "grid_landscape_margin_top", "grid_landscape_margin_bottom",
+            "grid_portrait_margin_left", "grid_portrait_margin_right",
+            "grid_portrait_margin_top", "grid_portrait_margin_bottom"
+        };
+        for (String key : gridMargins) putInt(j, e, key, 0, 400);
+        putInt(j, e, "indicator_landscape_x", -400, 400);
+        putInt(j, e, "indicator_landscape_y", -400, 400);
+        putInt(j, e, "indicator_portrait_x", -400, 400);
+        putInt(j, e, "indicator_portrait_y", -400, 400);
+        if (!j.has("grid_landscape_margin_left") && j.has("grid_margin_left")) {
+            int left = Math.max(0, Math.min(400, j.optInt("grid_margin_left", 160)));
+            int right = Math.max(0, Math.min(400, j.optInt("grid_margin_right", 160)));
+            int top = Math.max(0, Math.min(400, j.optInt("grid_margin_top", 80)));
+            int bottom = Math.max(0, Math.min(400, j.optInt("grid_margin_bottom", 80)));
+            e.putInt("grid_landscape_margin_left", left)
+                .putInt("grid_landscape_margin_right", right)
+                .putInt("grid_landscape_margin_top", top)
+                .putInt("grid_landscape_margin_bottom", bottom)
+                .putInt("grid_portrait_margin_left", top)
+                .putInt("grid_portrait_margin_right", bottom)
+                .putInt("grid_portrait_margin_top", right)
+                .putInt("grid_portrait_margin_bottom", left);
+        }
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "height_offset", -200, 200);
         putInt(j, e, "width_offset", -200, 200);
@@ -281,10 +330,18 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("corner_offset", cornerOffset)
                 .putInt("blur_corner_offset", -2)
                 .putBoolean("home_grid_8x4", true)
-                .putInt("grid_margin_left", 160)
-                .putInt("grid_margin_right", 160)
-                .putInt("grid_margin_top", 80)
-                .putInt("grid_margin_bottom", 80)
+                .putInt("grid_landscape_margin_left", 160)
+                .putInt("grid_landscape_margin_right", 160)
+                .putInt("grid_landscape_margin_top", 80)
+                .putInt("grid_landscape_margin_bottom", 80)
+                .putInt("grid_portrait_margin_left", 80)
+                .putInt("grid_portrait_margin_right", 80)
+                .putInt("grid_portrait_margin_top", 160)
+                .putInt("grid_portrait_margin_bottom", 160)
+                .putInt("indicator_landscape_x", 0)
+                .putInt("indicator_landscape_y", 0)
+                .putInt("indicator_portrait_x", 0)
+                .putInt("indicator_portrait_y", 0)
                 .putBoolean("dock_customization", true)
                 .putBoolean("dock_stroke", true)
                 .putInt("stroke_base_r", 255)

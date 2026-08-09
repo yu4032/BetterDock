@@ -10,18 +10,30 @@ final class HomeGridHook {
     private static final String PAD_CELL_COUNT =
         "com.miui.home.launcher.compat.LauncherCellCountCompatPadDevice";
 
-    private static int marginLeft;
-    private static int marginRight;
-    private static int marginTop;
-    private static int marginBottom;
+    private static int landscapeLeft, landscapeRight, landscapeTop, landscapeBottom;
+    private static int portraitLeft, portraitRight, portraitTop, portraitBottom;
+    private static int landscapeIndicatorX, landscapeIndicatorY;
+    private static int portraitIndicatorX, portraitIndicatorY;
 
     private HomeGridHook() {}
 
-    static void install(ClassLoader classLoader, int left, int right, int top, int bottom) {
-        marginLeft = Math.max(0, left);
-        marginRight = Math.max(0, right);
-        marginTop = Math.max(0, top);
-        marginBottom = Math.max(0, bottom);
+    static void install(ClassLoader classLoader,
+                        int landLeft, int landRight, int landTop, int landBottom,
+                        int portLeft, int portRight, int portTop, int portBottom,
+                        int landIndicatorX, int landIndicatorY,
+                        int portIndicatorX, int portIndicatorY) {
+        landscapeLeft = Math.max(0, landLeft);
+        landscapeRight = Math.max(0, landRight);
+        landscapeTop = Math.max(0, landTop);
+        landscapeBottom = Math.max(0, landBottom);
+        portraitLeft = Math.max(0, portLeft);
+        portraitRight = Math.max(0, portRight);
+        portraitTop = Math.max(0, portTop);
+        portraitBottom = Math.max(0, portBottom);
+        landscapeIndicatorX = landIndicatorX;
+        landscapeIndicatorY = landIndicatorY;
+        portraitIndicatorX = portIndicatorX;
+        portraitIndicatorY = portIndicatorY;
         try {
             Class<?> compat = XposedHelpers.findClass(PAD_CELL_COUNT, classLoader);
             hookAxis(compat, "getCellCountXMin", true);
@@ -36,6 +48,7 @@ final class HomeGridHook {
             hookGridCountGetter(gridConfig, "getCountX");
             hookGridCountGetter(gridConfig, "getCountY");
             installRotationTransform(classLoader);
+            installIndicatorPosition(classLoader);
 
             Class<?> builder = XposedHelpers.findClass(
                 "com.miui.home.launcher.grid.GridConfig$GridConfigBuilder", classLoader);
@@ -44,12 +57,50 @@ final class HomeGridHook {
                     applyContainerMargins(param.getResult());
                 }
             });
-            XposedBridge.log("[DC] home grid demo enabled: GridConfig 6->8, margins="
-                + marginLeft + "," + marginRight + "," + marginTop + "," + marginBottom);
+            XposedBridge.log("[DC] home grid enabled: land="
+                + landscapeLeft + "," + landscapeRight + ","
+                + landscapeTop + "," + landscapeBottom + " port="
+                + portraitLeft + "," + portraitRight + ","
+                + portraitTop + "," + portraitBottom);
 
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid hook unavailable: " + e);
         }
+    }
+
+    private static void installIndicatorPosition(ClassLoader classLoader) {
+        Class<?> screenView = XposedHelpers.findClass(
+            "com.miui.home.launcher.ScreenView", classLoader);
+        Class<?> workspace = XposedHelpers.findClass(
+            "com.miui.home.launcher.Workspace", classLoader);
+        XposedHelpers.findAndHookMethod(screenView, "updateIndicatorPositions",
+            int.class, boolean.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (!workspace.isInstance(param.thisObject)) return;
+                    try {
+                        Object indicator = XposedHelpers.callMethod(
+                            param.thisObject, "getScreenIndicator");
+                        if (indicator instanceof android.view.View)
+                            applyIndicatorOffset((android.view.View) indicator);
+                    } catch (Throwable e) {
+                        XposedBridge.log("[DC] indicator offset failed: " + e);
+                    }
+                }
+            });
+        XposedHelpers.findAndHookMethod(workspace, "getScreenIndicator",
+            new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (param.getResult() instanceof android.view.View)
+                        applyIndicatorOffset((android.view.View) param.getResult());
+                }
+            });
+    }
+
+    private static void applyIndicatorOffset(android.view.View indicator) {
+        boolean portrait = indicator.getResources().getConfiguration().orientation
+            == Configuration.ORIENTATION_PORTRAIT;
+        indicator.setTranslationX(portrait ? portraitIndicatorX : landscapeIndicatorX);
+        indicator.setTranslationY(portrait ? portraitIndicatorY : landscapeIndicatorY);
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {
@@ -94,6 +145,11 @@ final class HomeGridHook {
             int oldTop = XposedHelpers.getIntField(config, "top");
             if (width <= 0 || countX <= 0 || countY <= 0 || oldCell <= 0) return;
 
+            boolean portrait = countY > countX;
+            int marginLeft = portrait ? portraitLeft : landscapeLeft;
+            int marginRight = portrait ? portraitRight : landscapeRight;
+            int marginTop = portrait ? portraitTop : landscapeTop;
+            int marginBottom = portrait ? portraitBottom : landscapeBottom;
             int availableWidth = Math.max(countX, width - marginLeft - marginRight);
             int oldGridHeight = oldCell * countY;
             int availableHeight = Math.max(countY,

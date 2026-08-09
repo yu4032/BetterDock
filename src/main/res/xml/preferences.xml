@@ -11,8 +11,8 @@
             android:defaultValue="true" />
 
         <com.hellovoid.betterdock.SeekBarPreference
-            android:key="grid_margin_left"
-            android:title="Grid Left Margin"
+            android:key="grid_landscape_margin_left"
+            android:title="Landscape Grid Left Margin"
             android:summary="%d px"
             android:defaultValue="160"
             app:min="0"
@@ -20,8 +20,8 @@
             android:dependency="home_grid_8x4" />
 
         <com.hellovoid.betterdock.SeekBarPreference
-            android:key="grid_margin_right"
-            android:title="Grid Right Margin"
+            android:key="grid_landscape_margin_right"
+            android:title="Landscape Grid Right Margin"
             android:summary="%d px"
             android:defaultValue="160"
             app:min="0"
@@ -29,8 +29,8 @@
             android:dependency="home_grid_8x4" />
 
         <com.hellovoid.betterdock.SeekBarPreference
-            android:key="grid_margin_top"
-            android:title="Grid Top Margin"
+            android:key="grid_landscape_margin_top"
+            android:title="Landscape Grid Top Margin"
             android:summary="%d px"
             android:defaultValue="80"
             app:min="0"
@@ -38,14 +38,85 @@
             android:dependency="home_grid_8x4" />
 
         <com.hellovoid.betterdock.SeekBarPreference
-            android:key="grid_margin_bottom"
-            android:title="Grid Bottom Margin"
+            android:key="grid_landscape_margin_bottom"
+            android:title="Landscape Grid Bottom Margin"
             android:summary="%d px"
             android:defaultValue="80"
             app:min="0"
             app:max="400"
             android:dependency="home_grid_8x4" />
 
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_portrait_margin_left"
+            android:title="Portrait Grid Left Margin"
+            android:summary="%d px"
+            android:defaultValue="80"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_portrait_margin_right"
+            android:title="Portrait Grid Right Margin"
+            android:summary="%d px"
+            android:defaultValue="80"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_portrait_margin_top"
+            android:title="Portrait Grid Top Margin"
+            android:summary="%d px"
+            android:defaultValue="160"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="grid_portrait_margin_bottom"
+            android:title="Portrait Grid Bottom Margin"
+            android:summary="%d px"
+            android:defaultValue="160"
+            app:min="0"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="indicator_landscape_x"
+            android:title="Landscape Indicator X Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-400"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="indicator_landscape_y"
+            android:title="Landscape Indicator Y Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-400"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="indicator_portrait_x"
+            android:title="Portrait Indicator X Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-400"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
+
+        <com.hellovoid.betterdock.SeekBarPreference
+            android:key="indicator_portrait_y"
+            android:title="Portrait Indicator Y Offset"
+            android:summary="%d px"
+            android:defaultValue="0"
+            app:min="-400"
+            app:max="400"
+            android:dependency="home_grid_8x4" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="Dock Appearance">

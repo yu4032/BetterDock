@@ -48,9 +48,25 @@ public class MainHook implements IXposedHookLoadPackage {
         if (!lpparam.packageName.equals("com.miui.home")) return;
 
         ConfigReader cfg = ConfigReader.load();
-        if (cfg.b("home_grid_8x4", true)) HomeGridHook.install(lpparam.classLoader,
-            cfg.i("grid_margin_left", 160), cfg.i("grid_margin_right", 160),
-            cfg.i("grid_margin_top", 80), cfg.i("grid_margin_bottom", 80));
+        if (cfg.b("home_grid_8x4", true)) {
+            int oldLeft = cfg.i("grid_margin_left", 160);
+            int oldRight = cfg.i("grid_margin_right", 160);
+            int oldTop = cfg.i("grid_margin_top", 80);
+            int oldBottom = cfg.i("grid_margin_bottom", 80);
+            HomeGridHook.install(lpparam.classLoader,
+                cfg.i("grid_landscape_margin_left", oldLeft),
+                cfg.i("grid_landscape_margin_right", oldRight),
+                cfg.i("grid_landscape_margin_top", oldTop),
+                cfg.i("grid_landscape_margin_bottom", oldBottom),
+                cfg.i("grid_portrait_margin_left", oldTop),
+                cfg.i("grid_portrait_margin_right", oldBottom),
+                cfg.i("grid_portrait_margin_top", oldRight),
+                cfg.i("grid_portrait_margin_bottom", oldLeft),
+                cfg.i("indicator_landscape_x", 0),
+                cfg.i("indicator_landscape_y", 0),
+                cfg.i("indicator_portrait_x", 0),
+                cfg.i("indicator_portrait_y", 0));
+        }
         if (!cfg.b("dock_customization", true)) {
             XposedBridge.log("[DC] Dock customization disabled");
             return;
