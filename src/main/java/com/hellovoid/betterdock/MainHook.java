@@ -141,9 +141,6 @@ public class MainHook implements IXposedHookLoadPackage {
                                     cfg.i("liquid_lens_refraction", 12),
                                     cfg.i("liquid_refraction_inset", 20));
                             bindRecentsView(liquidGlassView, param.thisObject);
-                            installDockTouchListener(liquidGlassView, parent.getRootView());
-                            liquidGlassView.post(() -> installDockTouchListener(
-                                    liquidGlassView, parent.getRootView()));
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -333,9 +330,6 @@ public class MainHook implements IXposedHookLoadPackage {
                                     c2.i("liquid_lens_refraction", 12),
                                     c2.i("liquid_refraction_inset", 20));
                             bindRecentsView(liquidGlassView, param.thisObject);
-                            installDockTouchListener(liquidGlassView, parent.getRootView());
-                            liquidGlassView.post(() -> installDockTouchListener(
-                                    liquidGlassView, parent.getRootView()));
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -714,37 +708,6 @@ public class MainHook implements IXposedHookLoadPackage {
             if (panel instanceof View) glass.setRecentsView((View) panel);
         } catch (Throwable e) {
             XposedBridge.log("[DC] recents bind failed: " + e);
-        }
-    }
-
-    /** Watch touches on the Dock window root: while a gesture is active (e.g. the up-swipe
-     *  into multitasking) the glass keeps capturing continuously until the touch ends. */
-    private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
-        try {
-            if (dockRoot == null) {
-                XposedBridge.log("[DC] dock touch listener: rootView null");
-                return;
-            }
-            if (dockRoot.getWidth() <= 0 || dockRoot.getHeight() <= 0) return; // not laid out yet
-            XposedBridge.log("[DC] dock touch listener on " + dockRoot.getClass().getSimpleName()
-                    + " " + dockRoot.getWidth() + "x" + dockRoot.getHeight());
-            dockRoot.setOnTouchListener((View v, android.view.MotionEvent ev) -> {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        glass.setTouchActive(true);
-                        break;
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
-                        glass.setTouchActive(false);
-                        break;
-                    default:
-                        break;
-                }
-                return false; // never consume; the Dock's own handlers stay untouched
-            });
-        } catch (Throwable e) {
-            XposedBridge.log("[DC] dock touch listener failed: " + e);
         }
     }
 
