@@ -737,6 +737,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         recentsView = view;
     }
 
+    /** A touch event on the Dock area (MainHook's touch listener on the Dock window root).
+     *  Any touch — tap, hover before an up-swipe, drag — means the user is interacting with
+     *  the Dock, so refresh the glass even if the Dock geometry has not moved yet.  Simple
+     *  additive trigger: it coexists with the observation-driven captures and the normal
+     *  capture-rate limiter still applies. */
+    void onDockTouchEvent() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onDockTouchEvent);
+            return;
+        }
+        requestStateCapture("dock-touch");
+    }
+
     /** Configurable by the GUI (liquid_capture_stop_delay, up to 10s). */
     void setStopGraceMillis(int millis) {
         stopGraceMillis = Math.max(0, Math.min(10000, millis));
