@@ -325,7 +325,7 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 165);
-        putInt(j, e, "liquid_capture_stop_delay", 0, 1000);
+        putInt(j, e, "liquid_capture_stop_delay", 0, 10000);
         putInt(j, e, "liquid_capture_bleed_top", 0, 256);
         putInt(j, e, "liquid_capture_bleed_bottom", 0, 256);
         putInt(j, e, "height_offset", -200, 200);

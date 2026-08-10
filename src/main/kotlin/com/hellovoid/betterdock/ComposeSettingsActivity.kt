@@ -104,7 +104,7 @@ private val liquidSpecs = listOf(
     IntSpec("liquid_chromatic", "色散强度", 8, 0, 40, "%"),
     IntSpec("liquid_tint_alpha", "玻璃底色透明度", 38, 0, 160, ""),
     IntSpec("liquid_capture_fps", "实时捕获帧率", 60, 5, 165, "FPS"),
-    IntSpec("liquid_capture_stop_delay", "捕获停止延迟", 150, 0, 1000, "ms"),
+    IntSpec("liquid_capture_stop_delay", "捕获停止延迟", 150, 0, 10000, "ms"),
     IntSpec("liquid_capture_bleed_top", "上额外捕获高度", 48, 0, 256, "px"),
     IntSpec("liquid_capture_bleed_bottom", "下额外捕获高度", 16, 0, 256, "px"),
 )

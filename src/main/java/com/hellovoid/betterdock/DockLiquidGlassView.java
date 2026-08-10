@@ -706,9 +706,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         recentsView = view;
     }
 
-    /** Configurable by the GUI (liquid_capture_stop_delay). */
+    /** Configurable by the GUI (liquid_capture_stop_delay, up to 10s). */
     void setStopGraceMillis(int millis) {
-        stopGraceMillis = Math.max(0, Math.min(2000, millis));
+        stopGraceMillis = Math.max(0, Math.min(10000, millis));
     }
 
     /** Configurable by the GUI (liquid_capture_bleed_top / _bottom): extra capture height
