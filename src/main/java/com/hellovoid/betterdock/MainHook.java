@@ -458,22 +458,35 @@ public class MainHook implements IXposedHookLoadPackage {
             return;
         }
 
+        XC_MethodHook focusHook = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                boolean hasFocus = Boolean.TRUE.equals(p.args[0]);
+                launcherLifecycleKnown = true;
+                launcherResumed = hasFocus; // window focus is the reliable home-screen signal
+                XposedBridge.log("[DC] liquid focus: " + hasFocus);
+                DockLiquidGlassView glass = liquidGlassView;
+                if (glass != null) glass.setLauncherState(true, hasFocus);
+            }
+        };
+        try {
+            XposedHelpers.findAndHookMethod(launcherClass, "onWindowFocusChanged",
+                    boolean.class, focusHook);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] onWindowFocusChanged hook failed: " + e);
+        }
+
         XC_MethodHook resumeHook = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
-                launcherLifecycleKnown = true;
-                launcherResumed = true;
-                XposedBridge.log("[DC] liquid lifecycle: onResume");
-                DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) glass.setLauncherState(true, true);
+                // onResume is NOT authoritative: pulling the Dock out over an app can
+                // trigger launcher onResume while the launcher window is NOT focused.
+                // Window focus (onWindowFocusChanged) decides launcherResumed.
+                XposedBridge.log("[DC] liquid lifecycle: onResume (focus decides)");
             }
         };
         XC_MethodHook pauseHook = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
-                launcherLifecycleKnown = true;
-                launcherResumed = false;
-                XposedBridge.log("[DC] liquid lifecycle: onPause");
-                DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) glass.setLauncherState(true, false);
+                // onPause is likewise overridden by the window-focus signal.
+                XposedBridge.log("[DC] liquid lifecycle: onPause (focus decides)");
             }
         };
 
