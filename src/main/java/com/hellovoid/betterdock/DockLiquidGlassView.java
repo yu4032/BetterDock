@@ -73,7 +73,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float hny=getHeightFromDist(sdRound(p-float2(0.0,s),halfSz,cr),tw);"
       + "return float2((hpx-hnx)*0.5,(hpy-hny)*0.5);}"
       + "half4 source(float2 p){return content.eval((p+screenOffset)*captureScale);}"
-      + "half4 blurred(float2 p){return source(p);}"
+      + "half4 blurred(float2 p){"
+      + "if(blurRadius<=0.5){return source(p);}"
+      + "float stepPx=max(blurRadius/3.0,1.0);"
+      + "half3 col=half3(0.0);float norm=0.0;"
+      + "for(float i=-3.0;i<=3.0;i+=1.0){"
+      + "for(float j=-3.0;j<=3.0;j+=1.0){"
+      + "float d2=i*i+j*j;float w=exp(-d2*0.5);"
+      + "col+=source(p+float2(i*stepPx,j*stepPx)).rgb*w;norm+=w;}}"
+      + "return half4(col/norm,1.0);}"
       + "float2 backdropUv(float2 uv,float2 offsetPx){return clamp(uv+offsetPx,0.0,1.0);}"
       + "half4 main(float2 coord){"
       + "float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float2 pPx=cc;"
@@ -149,10 +157,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float2 chromaPush=dispDir*chromaBase;"
       + "float2 uvR=backdropUv(coord/size,baseOffset+chromaPush);"
       + "float2 uvB=backdropUv(coord/size,baseOffset-chromaPush);"
-      + "float2 c1=(uv*size-screenOffset)*captureScale;"
-      + "float2 cR=(uvR*size-screenOffset)*captureScale;"
-      + "float2 cB=(uvB*size-screenOffset)*captureScale;"
-      + "half4 rr=content.eval(cR);half4 gg=content.eval(c1);half4 bb=content.eval(cB);"
+      + "float2 centerPx=uv*size-screenOffset;"
+      + "half4 gg=blurred(centerPx);"
+      + "half4 rr=(chromaBase<1e-4)?gg:blurred(uvR*size-screenOffset);"
+      + "half4 bb=(chromaBase<1e-4)?gg:blurred(uvB*size-screenOffset);"
       + "float3 color=float3(rr.r,gg.g,bb.b);"
       + "color*=brightness;"
       + "color=mix(color,color*float3(0.137,0.145,1.0),0.137);"
@@ -1213,10 +1221,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(0f);
             nativeBackgroundHiddenByGlass = true;
-            // The RuntimeShader draws the REFRACTED capture (blur-free); the actual blur is
-            // done by SurfaceFlinger on our own content via MIUI self-blur (RenderNode
-            // setSelfBlurRadius), matching the native makePassBlurBetterDownShader pipeline.
-            applySystemSelfBlur(blurRadius);
+            // Blur is now done in-shader (Prismal-style Gaussian in blurred()); the MIUI
+            // system self-blur pass is disabled because it double-blurs and its quality
+            // was reported poor.
         }
 
         Bitmap old = capture;
