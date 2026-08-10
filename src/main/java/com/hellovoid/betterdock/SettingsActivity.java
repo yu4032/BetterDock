@@ -232,7 +232,8 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
         j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 24));
         j.put("liquid_capture_stop_delay", sp.getInt("liquid_capture_stop_delay", 150));
-        j.put("liquid_capture_bleed_v", sp.getInt("liquid_capture_bleed_v", 48));
+        j.put("liquid_capture_bleed_top", sp.getInt("liquid_capture_bleed_top", 48));
+        j.put("liquid_capture_bleed_bottom", sp.getInt("liquid_capture_bleed_bottom", 16));
         j.put("height_offset", sp.getInt("height_offset", 0));
         j.put("width_offset", sp.getInt("width_offset", 0));
         j.put("corner_offset", sp.getInt("corner_offset", -1));
@@ -313,7 +314,8 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 60);
         putInt(j, e, "liquid_capture_stop_delay", 0, 1000);
-        putInt(j, e, "liquid_capture_bleed_v", 0, 256);
+        putInt(j, e, "liquid_capture_bleed_top", 0, 256);
+        putInt(j, e, "liquid_capture_bleed_bottom", 0, 256);
         putInt(j, e, "height_offset", -200, 200);
         putInt(j, e, "width_offset", -200, 200);
         putInt(j, e, "corner_offset", -50, 100);

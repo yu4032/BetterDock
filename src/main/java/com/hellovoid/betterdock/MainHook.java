@@ -248,7 +248,9 @@ public class MainHook implements IXposedHookLoadPackage {
                             seedLauncherLifecycleState(param.thisObject);
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                             liquidGlassView.setStopGraceMillis(c2.i("liquid_capture_stop_delay", 150));
-                            liquidGlassView.setBleedVerticalPx(c2.i("liquid_capture_bleed_v", -1));
+                            liquidGlassView.setBleedVerticalPx(
+                                    c2.i("liquid_capture_bleed_top", -1),
+                                    c2.i("liquid_capture_bleed_bottom", -1));
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));

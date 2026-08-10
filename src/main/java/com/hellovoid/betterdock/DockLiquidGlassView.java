@@ -70,10 +70,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final float chromaticAberration;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
-    // Extra capture height above/below the glass (GUI: liquid_capture_bleed_v).
-    // Default = half the horizontal bleed; smaller keeps the home-indicator and dock
-    // boundary lines out of the captured background.
-    private int bleedVerticalPx = -1;
+    // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
+    // liquid_capture_bleed_bottom).  The Dock's distance from the screen bottom is fixed,
+    // so top and bottom are independent knobs; the bottom one can stay small so the
+    // home-indicator / dock boundary lines never leak into the captured background.
+    // -1 = half the horizontal bleed (previous behavior).
+    private int bleedTopPx = -1;
+    private int bleedBottomPx = -1;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final int[] tmpDockLocation = new int[2];
@@ -570,10 +573,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         stopGraceMillis = Math.max(0, Math.min(2000, millis));
     }
 
-    /** Configurable by the GUI (liquid_capture_bleed_v): extra capture height above/below
-     *  the glass.  -1 (or unset) = half the horizontal bleed. */
-    void setBleedVerticalPx(int px) {
-        bleedVerticalPx = Math.max(0, Math.min(512, px));
+    /** Configurable by the GUI (liquid_capture_bleed_top / _bottom): extra capture height
+     *  above and below the glass.  -1 (or unset) = half the horizontal bleed. */
+    void setBleedVerticalPx(int topPx, int bottomPx) {
+        bleedTopPx = Math.max(0, Math.min(512, topPx));
+        bleedBottomPx = Math.max(0, Math.min(512, bottomPx));
     }
 
     private boolean isCaptureAllowed() {
@@ -765,12 +769,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!dockRect.intersect(displayRect) || dockRect.isEmpty()) return null;
 
         Rect tileRect = new Rect(dockRect);
-        // Horizontal bleed covers the refraction displacement; vertical bleed is kept
-        // smaller so the capture doesn't reach the home-indicator / dock boundary lines
-        // above and below the glass (those must not leak into the background).  GUI knob:
-        // liquid_capture_bleed_v, default half the horizontal bleed.
-        int bleedV = bleedVerticalPx >= 0 ? bleedVerticalPx : Math.max(8, captureBleedPx / 2);
-        tileRect.inset(-captureBleedPx, -bleedV);
+        // Horizontal bleed covers the refraction displacement.  Top/bottom are independent
+        // GUI knobs (liquid_capture_bleed_top / _bottom): the Dock sits at a fixed distance
+        // from the screen bottom, so the bottom bleed can stay small to keep the
+        // home-indicator / boundary lines out of the captured background.
+        int defaultBleedV = Math.max(8, captureBleedPx / 2);
+        int bleedTop = bleedTopPx >= 0 ? bleedTopPx : defaultBleedV;
+        int bleedBottom = bleedBottomPx >= 0 ? bleedBottomPx : defaultBleedV;
+        tileRect.inset(-captureBleedPx, -bleedTop);
+        tileRect.bottom += bleedBottom;
         if (!tileRect.intersect(displayRect) || tileRect.isEmpty()) return null;
 
         // Deliberately hard-limit compositor readback to the lower display region.
