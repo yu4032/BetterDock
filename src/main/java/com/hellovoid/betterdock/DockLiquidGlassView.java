@@ -53,6 +53,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float lensRefractionPx;"
       + "uniform float refractionInset;"
       + "uniform float highlightWidth;"
+      + "uniform float brightness;"
+      + "uniform float specularSharp;"
+      + "uniform float specularStrength;"
+      + "uniform float rimLight;"
+      + "uniform float causticStrength;"
+      + "uniform float edgeBand;"
       + "float radiusAt(float2 p,float4 r){if(p.x>=0){return p.y<=0?r.y:r.z;}return p.y<=0?r.x:r.w;}"
       + "float sdRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));return length(max(q,0.0))-r+min(max(q.x,q.y),0.0);}"
       + "float2 gradRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));float2 s=sign(p);"
@@ -148,29 +154,29 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float2 cB=(uvB*size-screenOffset)*captureScale;"
       + "half4 rr=content.eval(cR);half4 gg=content.eval(c1);half4 bb=content.eval(cB);"
       + "float3 color=float3(rr.r,gg.g,bb.b);"
-      + "color*=1.08;"
+      + "color*=brightness;"
       + "color=mix(color,color*float3(0.137,0.145,1.0),0.137);"
       + "float3 Lp=normalize(float3(-0.5,-0.8,1.45));"
       + "float3 Hp=normalize(Lp+V);"
-      + "float sh=88.0;float sp=1.52*1.05;"
+      + "float sh=max(specularSharp,1.0);float sp=1.52*max(specularStrength,0.0);"
       + "float specP=pow(max(dot(N,Hp),0.0),sh)*sp;"
       + "specP*=(0.32+0.68*height);"
       + "color+=specP*float3(0.99,0.993,1.0);"
       + "float dotNV=clamp(dot(N,V),0.0,1.0);"
       + "float FedgeRim=pow(1.0-cosVNeff,3.25);"
-      + "float bandFracR=0.032;"
+      + "float bandFracR=max(edgeBand,0.005);"
       + "float bandR=clamp(minDim*bandFracR,0.5,min(12.0,minDim*0.1));"
       + "float shellRim=smoothstep(bandR,bandR*0.06,edgeDist)*smoothstep(-2.2,0.0,sd);"
       + "float2 cn=cc/max(hs,float2(1.0));"
       + "float2 Lxy=normalize(float2(-0.5,-0.8)+float2(1e-5));"
       + "float2 gN=normalize(gradLens+float2(1e-4));"
       + "float edgeLight=dot(gN,Lxy);"
-      + "float rimLitSide=pow(max(edgeLight,0.0),3.6)*shellRim*1.22*0.95*(0.58+0.42*height);"
-      + "float rimOpposite=pow(max(-edgeLight,0.0),1.05)*shellRim*1.22*0.4*(0.4+0.6*height);"
+      + "float rimLitSide=pow(max(edgeLight,0.0),3.6)*shellRim*1.22*0.95*rimLight*(0.58+0.42*height);"
+      + "float rimOpposite=pow(max(-edgeLight,0.0),1.05)*shellRim*1.22*0.4*rimLight*(0.4+0.6*height);"
       + "color+=float3(0.98,0.992,1.008)*rimLitSide;"
       + "color+=float3(0.952,0.968,1.018)*rimOpposite;"
       + "float causticDot=dot(normalize(float3(gradH*normalStrength,0.45)),Lp);"
-      + "float caust=pow(max(causticDot,0.0),7.0)*0.28*height;"
+      + "float caust=pow(max(causticDot,0.0),7.0)*max(causticStrength,0.0)*height;"
       + "color+=caust*float3(1.0,0.96,0.90);"
       + "return half4(color,1.0);}";
 
@@ -200,6 +206,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassHighlightWidth = 1.0f;
     // Glass tint color (liquid_tint_r/g/b); alpha stays liquid_tint_alpha.
     private int glassTintR = 238, glassTintG = 244, glassTintB = 255;
+    // Shader appearance knobs (all GUI-configurable)
+    private float glassDepthEffect = 0.08f;    // liquid_depth_effect
+    private float glassBrightness = 1.08f;     // liquid_brightness
+    private float glassSpecularSharp = 88f;    // liquid_specular_sharp
+    private float glassSpecularStrength = 1.05f; // liquid_specular_strength
+    private float glassRimLight = 1.0f;        // liquid_rim_light
+    private float glassCaustics = 0.28f;       // liquid_caustics
+    private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
+    // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
+    private float glassHighlightAlpha = 1.0f;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
@@ -767,6 +783,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
+    /** Shader appearance knobs (GUI: liquid_depth_effect / liquid_brightness /
+     *  liquid_specular_sharp / liquid_specular_strength / liquid_rim_light /
+     *  liquid_caustics / liquid_edge_band). */
+    void setAppearance(float depthEffect, float brightness, float specularSharp,
+                       float specularStrength, float rimLight, float caustics, float edgeBand) {
+        glassDepthEffect = Math.max(0f, Math.min(1f, depthEffect));
+        glassBrightness = Math.max(0.5f, Math.min(2f, brightness));
+        glassSpecularSharp = Math.max(1f, Math.min(400f, specularSharp));
+        glassSpecularStrength = Math.max(0f, Math.min(5f, specularStrength));
+        glassRimLight = Math.max(0f, Math.min(3f, rimLight));
+        glassCaustics = Math.max(0f, Math.min(1f, caustics));
+        glassEdgeBand = Math.max(0.005f, Math.min(0.1f, edgeBand));
+        invalidate();
+    }
+
+    /** Canvas stroke highlight opacity multiplier (GUI: liquid_highlight_alpha). */
+    void setHighlightAlpha(float multiplier) {
+        glassHighlightAlpha = Math.max(0f, Math.min(2f, multiplier));
+        invalidate();
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -1153,7 +1190,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("cornerRadii", cornerRadius, cornerRadius, cornerRadius, cornerRadius);
         refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
         refraction.setFloatUniform("refractionAmount", refractionAmount);
-        refraction.setFloatUniform("depthEffect", .08f);
+        refraction.setFloatUniform("depthEffect", glassDepthEffect);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
@@ -1166,6 +1203,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("lensRefractionPx", Math.max(0f, glassLensRefraction * density));
         refraction.setFloatUniform("refractionInset", Math.max(0f, glassRefractionInset * density));
         refraction.setFloatUniform("highlightWidth", glassHighlightWidth);
+        refraction.setFloatUniform("brightness", glassBrightness);
+        refraction.setFloatUniform("specularSharp", glassSpecularSharp);
+        refraction.setFloatUniform("specularStrength", glassSpecularStrength);
+        refraction.setFloatUniform("rimLight", glassRimLight);
+        refraction.setFloatUniform("causticStrength", glassCaustics);
+        refraction.setFloatUniform("edgeBand", glassEdgeBand);
         refraction.setFloatUniform("screenOffset", captureSampleOffsetX, captureSampleOffsetY);
         refraction.setFloatUniform("captureScale",
                 capture.getWidth() / Math.max(1f, captureSourceWidth),
@@ -1182,7 +1225,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         highlightPaint.setStrokeWidth(Math.max(1f,
                 getResources().getDisplayMetrics().density * .65f * glassHighlightWidth));
         highlightPaint.setShader(new LinearGradient(0, 0, getWidth(), getHeight(),
-            new int[]{Color.argb(175, 255, 255, 255), Color.argb(25, 255, 255, 255), Color.argb(105, 255, 255, 255)},
+            new int[]{Color.argb((int)(175 * glassHighlightAlpha), 255, 255, 255),
+                      Color.argb((int)(25 * glassHighlightAlpha), 255, 255, 255),
+                      Color.argb((int)(105 * glassHighlightAlpha), 255, 255, 255)},
             null, Shader.TileMode.CLAMP));
         canvas.drawPath(shape, highlightPaint);
         canvas.restore();

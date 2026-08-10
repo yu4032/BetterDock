@@ -153,6 +153,15 @@ public class MainHook implements IXposedHookLoadPackage {
                                     cfg.i("liquid_tint_r", 238),
                                     cfg.i("liquid_tint_g", 244),
                                     cfg.i("liquid_tint_b", 255));
+                            liquidGlassView.setAppearance(
+                                    cfg.i("liquid_depth_effect", 8) / 100f,
+                                    cfg.i("liquid_brightness", 108) / 100f,
+                                    cfg.i("liquid_specular_sharp", 88),
+                                    cfg.i("liquid_specular_strength", 105) / 100f,
+                                    cfg.i("liquid_rim_light", 100) / 100f,
+                                    cfg.i("liquid_caustics", 28) / 100f,
+                                    cfg.i("liquid_edge_band", 32) / 1000f);
+                            liquidGlassView.setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
@@ -355,6 +364,15 @@ public class MainHook implements IXposedHookLoadPackage {
                                     c2.i("liquid_tint_r", 238),
                                     c2.i("liquid_tint_g", 244),
                                     c2.i("liquid_tint_b", 255));
+                            liquidGlassView.setAppearance(
+                                    c2.i("liquid_depth_effect", 8) / 100f,
+                                    c2.i("liquid_brightness", 108) / 100f,
+                                    c2.i("liquid_specular_sharp", 88),
+                                    c2.i("liquid_specular_strength", 105) / 100f,
+                                    c2.i("liquid_rim_light", 100) / 100f,
+                                    c2.i("liquid_caustics", 28) / 100f,
+                                    c2.i("liquid_edge_band", 32) / 1000f);
+                            liquidGlassView.setHighlightAlpha(c2.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
