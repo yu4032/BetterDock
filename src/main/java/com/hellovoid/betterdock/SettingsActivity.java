@@ -83,6 +83,20 @@ public class SettingsActivity extends AppCompatActivity {
             }
             e.putBoolean("grid_margins_dp", true).commit();
         }
+        if (!sp.getBoolean("grid_margins_offset", false)) {
+            sp.edit()
+                .putInt("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 57) - 57)
+                .putInt("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 57) - 57)
+                .putInt("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 28) - 28)
+                .putInt("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 28) - 28)
+                .putInt("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 28) - 28)
+                .putInt("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 28) - 28)
+                .putInt("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 57) - 57)
+                .putInt("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 57) - 57)
+                .putInt("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 1) - 1)
+                .putInt("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 1) - 1)
+                .putBoolean("grid_margins_offset", true).commit();
+        }
     }
 
     void launchExport() {
@@ -149,16 +163,17 @@ public class SettingsActivity extends AppCompatActivity {
         JSONObject j = new JSONObject();
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
         j.put("grid_margins_dp", sp.getBoolean("grid_margins_dp", true));
-        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 57));
-        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 57));
-        j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 28));
-        j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 28));
-        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 28));
-        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 28));
-        j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 57));
-        j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 57));
-        j.put("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 1));
-        j.put("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 1));
+        j.put("grid_margins_offset", sp.getBoolean("grid_margins_offset", true));
+        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 0));
+        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 0));
+        j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 0));
+        j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 0));
+        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 0));
+        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 0));
+        j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 0));
+        j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 0));
+        j.put("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 0));
+        j.put("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 0));
         j.put("indicator_landscape_x", sp.getInt("indicator_landscape_x", 0));
         j.put("indicator_landscape_y", sp.getInt("indicator_landscape_y", 0));
         j.put("indicator_portrait_x", sp.getInt("indicator_portrait_x", 0));
@@ -206,8 +221,10 @@ public class SettingsActivity extends AppCompatActivity {
             "grid_portrait_margin_top", "grid_portrait_margin_bottom"
         };
         boolean importedDp = j.optBoolean("grid_margins_dp", false);
+        boolean importedOffsets = j.optBoolean("grid_margins_offset", false);
         for (String key : gridMargins) putInt(j, e, key, importedDp ? -600 : -2000, importedDp ? 600 : 2000);
         e.putBoolean("grid_margins_dp", importedDp);
+        e.putBoolean("grid_margins_offset", importedOffsets);
         putInt(j, e, "grid_landscape_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
         putInt(j, e, "grid_portrait_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
         putInt(j, e, "indicator_landscape_x", -400, 400);
@@ -357,16 +374,17 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("blur_corner_offset", -2)
                 .putBoolean("home_grid_8x4", true)
                 .putBoolean("grid_margins_dp", true)
-                .putInt("grid_landscape_margin_left", 57)
-                .putInt("grid_landscape_margin_right", 57)
-                .putInt("grid_landscape_margin_top", 28)
-                .putInt("grid_landscape_margin_bottom", 28)
-                .putInt("grid_portrait_margin_left", 28)
-                .putInt("grid_portrait_margin_right", 28)
-                .putInt("grid_portrait_margin_top", 57)
-                .putInt("grid_portrait_margin_bottom", 57)
-                .putInt("grid_landscape_row_gap", 1)
-                .putInt("grid_portrait_row_gap", 1)
+                .putBoolean("grid_margins_offset", true)
+                .putInt("grid_landscape_margin_left", 0)
+                .putInt("grid_landscape_margin_right", 0)
+                .putInt("grid_landscape_margin_top", 0)
+                .putInt("grid_landscape_margin_bottom", 0)
+                .putInt("grid_portrait_margin_left", 0)
+                .putInt("grid_portrait_margin_right", 0)
+                .putInt("grid_portrait_margin_top", 0)
+                .putInt("grid_portrait_margin_bottom", 0)
+                .putInt("grid_landscape_row_gap", 0)
+                .putInt("grid_portrait_row_gap", 0)
                 .putInt("indicator_landscape_x", 0)
                 .putInt("indicator_landscape_y", 0)
                 .putInt("indicator_portrait_x", 0)

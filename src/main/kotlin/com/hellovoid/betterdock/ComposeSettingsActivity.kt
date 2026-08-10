@@ -37,7 +37,6 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
@@ -68,16 +67,16 @@ private data class IntSpec(
 )
 
 private val gridSpecs = listOf(
-    IntSpec("grid_landscape_margin_left", "横屏左边距", 57, -600, 600, "dp"),
-    IntSpec("grid_landscape_margin_right", "横屏右边距", 57, -600, 600, "dp"),
-    IntSpec("grid_landscape_margin_top", "横屏上边距", 28, -600, 600, "dp"),
-    IntSpec("grid_landscape_margin_bottom", "横屏下边距", 28, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_left", "竖屏左边距", 28, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_right", "竖屏右边距", 28, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_top", "竖屏上边距", 57, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 57, -600, 600, "dp"),
-    IntSpec("grid_landscape_row_gap", "横屏图标纵向间距", 1, -200, 400, "dp"),
-    IntSpec("grid_portrait_row_gap", "竖屏图标纵向间距", 1, -200, 400, "dp"),
+    IntSpec("grid_landscape_margin_left", "横屏左边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_right", "横屏右边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_top", "横屏上边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_bottom", "横屏下边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_left", "竖屏左边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_right", "竖屏右边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_top", "竖屏上边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_bottom", "竖屏下边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_landscape_row_gap", "横屏图标纵向间距偏移", 0, -200, 400, "dp"),
+    IntSpec("grid_portrait_row_gap", "竖屏图标纵向间距偏移", 0, -200, 400, "dp"),
     IntSpec("indicator_landscape_x", "横屏指示器 X", 0, -400, 400),
     IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -400, 400),
     IntSpec("indicator_portrait_x", "竖屏指示器 X", 0, -400, 400),
@@ -161,11 +160,10 @@ private fun HomePage(padding: PaddingValues, open: (Page) -> Unit) {
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences) {
-    var gridEnabled by remember { mutableStateOf(prefs.getBoolean("home_grid_8x4", true)) }
     SettingsList(padding, "网格") {
         BooleanSetting(prefs, "home_grid_8x4", "启用 8×4 / 4×8 网格", true,
-            "横屏 8 列 4 行，竖屏 4 列 8 行") { gridEnabled = it }
-        gridSpecs.forEach { IntSetting(prefs, it, gridEnabled) }
+            "仅切换行列数；边距、间距和指示器偏移始终生效")
+        gridSpecs.forEach { IntSetting(prefs, it, true) }
     }
 }
 
@@ -285,7 +283,7 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         endActions = {
             Button(
                 onClick = { value = spec.default; prefs.edit().putInt(spec.key, spec.default).apply() },
-                enabled = value != spec.default,
+                enabled = enabled && value != spec.default,
                 minWidth = 56.dp,
                 minHeight = 32.dp,
                 insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -302,14 +300,15 @@ private fun StringDropdown(
 ) {
     var value by remember(key) { mutableStateOf(prefs.getString(key, default) ?: default) }
     val index = options.indexOfFirst { it.second == value }.coerceAtLeast(0)
-    OverlayDropdownPreference(
-        items = options.map { it.first },
-        selectedIndex = index,
+    ArrowPreference(
         title = title,
+        summary = options[index].first,
         enabled = enabled,
-        onSelectedIndexChange = { selected ->
-            value = options[selected].second
-            prefs.edit().putString(key, value).apply()
+        onClick = {
+            if (!enabled) return@ArrowPreference
+            val next = options[(index + 1) % options.size].second
+            value = next
+            prefs.edit().putString(key, next).apply()
         },
     )
 }
@@ -342,12 +341,12 @@ private fun applyIpadPreset(activity: ComposeSettingsActivity) {
         .putInt("height_offset", heightOffset).putInt("width_offset", widthOffset)
         .putInt("corner_offset", cornerOffset).putInt("blur_corner_offset", -2)
         .putBoolean("home_grid_8x4", true)
-        .putBoolean("grid_margins_dp", true)
-        .putInt("grid_landscape_margin_left", 57).putInt("grid_landscape_margin_right", 57)
-        .putInt("grid_landscape_margin_top", 28).putInt("grid_landscape_margin_bottom", 28)
-        .putInt("grid_portrait_margin_left", 28).putInt("grid_portrait_margin_right", 28)
-        .putInt("grid_portrait_margin_top", 57).putInt("grid_portrait_margin_bottom", 57)
-        .putInt("grid_landscape_row_gap", 1).putInt("grid_portrait_row_gap", 1)
+        .putBoolean("grid_margins_dp", true).putBoolean("grid_margins_offset", true)
+        .putInt("grid_landscape_margin_left", 0).putInt("grid_landscape_margin_right", 0)
+        .putInt("grid_landscape_margin_top", 0).putInt("grid_landscape_margin_bottom", 0)
+        .putInt("grid_portrait_margin_left", 0).putInt("grid_portrait_margin_right", 0)
+        .putInt("grid_portrait_margin_top", 0).putInt("grid_portrait_margin_bottom", 0)
+        .putInt("grid_landscape_row_gap", 0).putInt("grid_portrait_row_gap", 0)
         .putInt("indicator_landscape_x", 0).putInt("indicator_landscape_y", 0)
         .putInt("indicator_portrait_x", 0).putInt("indicator_portrait_y", 0)
         .putBoolean("dock_customization", true).putBoolean("dock_stroke", true)
