@@ -10,3 +10,7 @@ captures/
 .cxx/
 .idea/
 *.iml
+
+# Hermes desktop attachments
+.hermes/
+
