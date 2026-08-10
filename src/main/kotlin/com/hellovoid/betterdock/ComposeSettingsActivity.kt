@@ -186,8 +186,8 @@ private fun DockPage(padding: PaddingValues, prefs: SharedPreferences) {
         BooleanSetting(prefs, "dock_customization", "自定义整个 Dock", true,
             "BetterDock Dock 功能总开关") { dockEnabled = it }
         BooleanSetting(prefs, "liquid_glass", "液态玻璃", false,
-            "捕获壁纸与当前桌面页，使用 AGSL 折射、色散和模糊", dockEnabled) { liquidGlass = it }
-        liquidSpecs.forEach { IntSetting(prefs, it, dockEnabled && liquidGlass) }
+            "捕获壁纸与当前桌面页，使用 AGSL 折射、色散和模糊，独立于 Dock 自定义运行") { liquidGlass = it }
+        liquidSpecs.forEach { IntSetting(prefs, it, liquidGlass) }
         StringDropdown(prefs, "light_mode", "灯光模式", "fixed",
             listOf("固定" to "fixed", "陀螺仪动态" to "dynamic", "关闭" to "none"), dockEnabled)
         dockSpecs.forEach { IntSetting(prefs, it, dockEnabled) }
