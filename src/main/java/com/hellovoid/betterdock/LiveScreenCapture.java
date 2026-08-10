@@ -187,7 +187,8 @@ final class LiveScreenCapture {
      * semantics are applied.
      */
     Bitmap captureScreen(Rect sourceCrop, float scale, int displayId,
-                         android.view.SurfaceControl[] excludeLayers) throws Exception {
+                         android.view.SurfaceControl[] excludeLayers, String excludeLayerName)
+            throws Exception {
         if (sourceCrop == null || sourceCrop.isEmpty()) {
             throw new IllegalArgumentException("sourceCrop must be non-empty");
         }
@@ -197,8 +198,10 @@ final class LiveScreenCapture {
         try {
             Log.i(TAG, "fullscreen capture call: display=" + displayId
                     + " crop=" + sourceCrop + " scale=" + scale
-                    + " excludeLayers=" + (excludeLayers == null ? 0 : excludeLayers.length));
-            Bitmap result = captureFullDisplayStrip(sourceCrop, scale, displayId, excludeLayers);
+                    + " excludeLayers=" + (excludeLayers == null ? 0 : excludeLayers.length)
+                    + " excludeName=" + excludeLayerName);
+            Bitmap result = captureFullDisplayStrip(sourceCrop, scale, displayId,
+                    excludeLayers, excludeLayerName);
             if (result != null) {
                 Log.i(TAG, "fullscreen capture frame="
                         + result.getWidth() + "x" + result.getHeight());
@@ -282,7 +285,8 @@ final class LiveScreenCapture {
      * matching the native blur-behind source (app + wallpaper underneath the Dock).
      */
     private Bitmap captureFullDisplayStrip(Rect sourceCrop, float scale, int displayId,
-                                           android.view.SurfaceControl[] excludeLayers)
+                                           android.view.SurfaceControl[] excludeLayers,
+                                           String excludeLayerName)
             throws Exception {
         Object builder = captureBuilderConstructor.newInstance();
         setSourceCrop.invoke(builder, new Rect(sourceCrop));
@@ -296,10 +300,17 @@ final class LiveScreenCapture {
         if (excludeLayers != null && excludeLayers.length > 0) {
             setExcludeLayers.invoke(builder, (Object) excludeLayers);
         }
-        // Non-zero captureMode so the layer-name filter is honored; the names below are
-        // excluded from the full-display capture.
+        // Non-zero captureMode so the layer-name filter is honored.  HyperOS layer names
+        // carry a dynamic "#handle" suffix ("Floating Dock#14717"), so the exact name is
+        // re-resolved from the dock window's SurfaceControl each capture.  Pass both the
+        // bare name (in case SF does prefix matching) and the exact current name.
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        names.add("Floating Dock");
+        if (excludeLayerName != null && !excludeLayerName.isEmpty()) {
+            names.add(excludeLayerName);
+        }
         setExcludeOrIncludeLayerNames.invoke(builder,
-                (Object) new String[]{"Floating Dock"});
+                (Object) names.toArray(new String[0]));
         setCaptureMode.invoke(builder, 1);
 
         Object args = build.invoke(builder);

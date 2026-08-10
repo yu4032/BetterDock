@@ -101,6 +101,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean windowVisible;
     private boolean windowFocused;
     private android.view.SurfaceControl dockWindowSurface;
+    private String dockWindowLayerName;
     private boolean capturing;
     private boolean sourceDirty;
     private boolean nullFrameLogged;
@@ -164,13 +165,24 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 logCaptureGate("kick-blocked");
                 return;
             }
-            if (capturing || !sourceDirty) return;
+            if (capturing) {
+                // A capture is in flight; wait for it and reschedule (autonomous loop).
+                kickScheduled = true;
+                mainHandler.postDelayed(this, Math.max(1L, captureIntervalNanos / 1_000_000L));
+                return;
+            }
+            if (!sourceDirty) {
+                // Autonomous cadence: keep sampling at the configured rate even when the
+                // observed geometry is static, so wallpaper/app content changes under the
+                // glass stay live (previously this was purely event-driven, freezing at 0fps
+                // whenever nothing moved).
+                sourceDirty = true;
+            }
 
             long now = System.nanoTime();
             long remaining = lastCaptureStartNanos == 0L
                     ? 0L : captureIntervalNanos - (now - lastCaptureStartNanos);
             if (remaining > 0L) {
-                // One trailing, coalesced frame only. This is not a repeating capture loop.
                 kickScheduled = true;
                 mainHandler.postDelayed(this, Math.max(1L, (remaining + 999_999L) / 1_000_000L));
                 return;
@@ -178,6 +190,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
             sourceDirty = false;
             startCapture();
+            // Self-reschedule to keep the cadence; captureIntervalNanos is the period.
+            kickScheduled = true;
+            mainHandler.postDelayed(this, Math.max(1L, captureIntervalNanos / 1_000_000L));
         }
     };
 
@@ -199,7 +214,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         this.blurRadius = Math.max(0, blurRadius);
         this.refractionAmount = refractionAmount;
         this.chromaticAberration = chromaticAberration;
-        int fps = Math.max(5, Math.min(60, captureFps));
+        int fps = Math.max(5, Math.min(165, captureFps));
         this.captureIntervalNanos = 1_000_000_000L / fps;
 
         float density = getResources().getDisplayMetrics().density;
@@ -552,9 +567,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         getSc.setAccessible(true);
                         Object sc = getSc.invoke(root);
                         if (sc instanceof android.view.SurfaceControl) {
+                            try {
+                                java.lang.reflect.Field nameField = sc.getClass().getDeclaredField("mName");
+                                nameField.setAccessible(true);
+                                Object nm = nameField.get(sc);
+                                if (nm instanceof String) dockWindowLayerName = (String) nm;
+                            } catch (Throwable ignored) {
+                            }
                             Log.i(TAG, "Liquid capture dock window surface resolved from root["
                                     + list.indexOf(root) + "] type=" + lp.type
-                                    + " title=" + lp.getTitle() + " sc=" + sc);
+                                    + " title=" + lp.getTitle() + " sc=" + sc
+                                    + " layerName=" + dockWindowLayerName);
                             return (android.view.SurfaceControl) sc;
                         }
                     }
@@ -683,9 +706,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         final long generation = captureGeneration;
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
+        // The Dock window's SF layer handle changes every time the window is recreated
+        // (dock show/hide, launcher restart).  Re-resolve the current handle before each
+        // capture so the exclusion never goes stale.
+        dockWindowSurface = resolveWindowSurfaceControl();
         Log.i(TAG, (useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
                 + " strip=" + request.stripRect + " tile=" + request.tileRect
-                + " scale=" + CAPTURE_SCALE);
+                + " scale=" + CAPTURE_SCALE + " exclude=" + (dockWindowSurface != null));
 
         worker.post(() -> {
             Bitmap strip = null;
@@ -704,7 +731,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         excludes = new android.view.SurfaceControl[]{dockWindowSurface};
                     }
                     strip = client.captureScreen(request.stripRect, CAPTURE_SCALE, request.displayId,
-                            excludes);
+                            excludes, dockWindowLayerName);
                 } else {
                     strip = client.captureWallpaper(request.stripRect, CAPTURE_SCALE, request.displayId);
                 }
@@ -742,8 +769,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     Log.w(TAG, "HyperOS captureMode(2) wallpaper path returned no buffer");
                 }
 
-                // Only another state change that happened while this capture was in flight
-                // can arm another frame. There is no autonomous/static capture loop.
+                // Autonomous cadence in captureKick drives the next frame; this catches any
+                // state change that arrived while the capture was in flight.
                 if (sourceDirty) requestStateCapture();
             });
         });
