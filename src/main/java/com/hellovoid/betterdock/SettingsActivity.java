@@ -120,6 +120,15 @@ public class SettingsActivity extends AppCompatActivity {
                 .putBoolean("grid_horizontal_split_restored", true)
                 .apply();
         }
+        if (!sp.getBoolean("corners_dp", false)) {
+            float density = getResources().getDisplayMetrics().density;
+            SharedPreferences.Editor corners = sp.edit();
+            corners.putInt("corner_offset", sp.contains("corner_offset")
+                ? Math.round(sp.getInt("corner_offset", -1) / density) : -1);
+            corners.putInt("blur_corner_offset", sp.contains("blur_corner_offset")
+                ? Math.round(sp.getInt("blur_corner_offset", 0) / density) : 0);
+            corners.putBoolean("corners_dp", true).apply();
+        }
     }
 
     void launchExport() {
@@ -206,6 +215,7 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("width_offset", sp.getInt("width_offset", 0));
         j.put("corner_offset", sp.getInt("corner_offset", -1));
         j.put("blur_corner_offset", sp.getInt("blur_corner_offset", 0));
+        j.put("corners_dp", sp.getBoolean("corners_dp", true));
         j.put("dock_stroke", sp.getBoolean("dock_stroke", true));
         j.put("stroke_base_r", sp.getInt("stroke_base_r", 255));
         j.put("stroke_base_g", sp.getInt("stroke_base_g", 255));
@@ -279,6 +289,7 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "width_offset", -200, 200);
         putInt(j, e, "corner_offset", -50, 100);
         putInt(j, e, "blur_corner_offset", -50, 100);
+        e.putBoolean("corners_dp", j.optBoolean("corners_dp", false));
         putInt(j, e, "stroke_base_r", 0, 255);
         putInt(j, e, "stroke_base_g", 0, 255);
         putInt(j, e, "stroke_base_b", 0, 255);
@@ -399,8 +410,9 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("blur_radius", 100)
                 .putInt("height_offset", heightOffset)
                 .putInt("width_offset", widthOffset)
-                .putInt("corner_offset", cornerOffset)
-                .putInt("blur_corner_offset", -2)
+                .putBoolean("corners_dp", true)
+                .putInt("corner_offset", Math.round(cornerOffset / density))
+                .putInt("blur_corner_offset", -1)
                 .putBoolean("home_grid_8x4", true)
                 .putBoolean("grid_margins_dp", true)
                 .putBoolean("grid_margins_offset", true)

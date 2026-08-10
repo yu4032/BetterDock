@@ -84,8 +84,8 @@ private val dockSpecs = listOf(
     IntSpec("blur_radius", "模糊强度", 100, 0, 400, ""),
     IntSpec("height_offset", "高度偏移", 0, -200, 200),
     IntSpec("width_offset", "宽度偏移", 0, -200, 200),
-    IntSpec("corner_offset", "描边圆角偏移", -1, -50, 100),
-    IntSpec("blur_corner_offset", "内部模糊圆角偏移", 0, -50, 100),
+    IntSpec("corner_offset", "描边圆角偏移", -1, -50, 100, "dp"),
+    IntSpec("blur_corner_offset", "内部模糊圆角偏移", 0, -50, 100, "dp"),
     IntSpec("dock_spacing", "Dock 图标间距", 0, -10, 20),
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, 0, 80),
 )
@@ -187,7 +187,12 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences) {
         BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光", dockEnabled) { dockStroke = it }
         BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", dockEnabled) { squircle = it }
         BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", dockEnabled) { fillDiff = it }
-        strokeSpecs.forEach {
+        SmallTitle("描边背景色")
+        strokeSpecs.take(4).forEach {
+            IntSetting(prefs, it, dockEnabled && dockStroke)
+        }
+        SmallTitle("方圆形与线宽")
+        strokeSpecs.drop(4).forEach {
             val enabled = when (it.dependency) {
                 "dock_stroke" -> dockStroke
                 "squircle" -> squircle
@@ -332,12 +337,13 @@ private fun applyIpadPreset(activity: ComposeSettingsActivity) {
     val spacing = ((icon + 14f * density * displayScale - cell) / 2f).roundToInt()
     val heightOffset = icon + (20f * density * displayScale).roundToInt() - dockHeight
     val widthOffset = 2 * ((14f * density * displayScale).roundToInt() - sidePadding)
-    val cornerOffset = (22f * density * displayScale).roundToInt() - dockRadius
+    val cornerOffset = (((22f * density * displayScale).roundToInt() - dockRadius) / density).roundToInt()
     val oneDp = max(1, (density * displayScale).roundToInt())
     PreferenceManager.getDefaultSharedPreferences(activity).edit()
         .putString("light_mode", "dynamic").putInt("blur_radius", 100)
         .putInt("height_offset", heightOffset).putInt("width_offset", widthOffset)
-        .putInt("corner_offset", cornerOffset).putInt("blur_corner_offset", -2)
+        .putBoolean("corners_dp", true)
+        .putInt("corner_offset", cornerOffset).putInt("blur_corner_offset", -1)
         .putBoolean("home_grid_8x4", true)
         .putBoolean("grid_margins_dp", true).putBoolean("grid_margins_offset", true)
         .putInt("grid_landscape_margin_left", 0).putInt("grid_landscape_margin_right", 0)

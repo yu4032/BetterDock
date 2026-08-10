@@ -95,8 +95,11 @@ public class MainHook implements IXposedHookLoadPackage {
 
         String lm = cfg.s("light_mode", "fixed");
         boolean sq = cfg.b("squircle", false), fd = cfg.b("fill_diff", false);
-        int wo = cfg.i("width_offset", 0), ho = cfg.i("height_offset", 0), co = cfg.i("corner_offset", -1), br = cfg.i("blur_radius", 100);
-        int blurCo = cfg.i("blur_corner_offset", 0);
+        int wo = cfg.i("width_offset", 0), ho = cfg.i("height_offset", 0), br = cfg.i("blur_radius", 100);
+        float cornerScale = cfg.b("corners_dp", false)
+            ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int co = Math.round(cfg.i("corner_offset", -1) * cornerScale);
+        int blurCo = Math.round(cfg.i("blur_corner_offset", 0) * cornerScale);
         int spacing = cfg.i("dock_spacing", 0);
         int bottomOffset = cfg.i("dock_bottom_offset", 0);
         ClassLoader cl = lpparam.classLoader;

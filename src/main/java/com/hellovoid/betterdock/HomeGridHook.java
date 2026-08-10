@@ -99,12 +99,6 @@ final class HomeGridHook {
                 == Configuration.ORIENTATION_PORTRAIT;
             int countX = XposedHelpers.getIntField(config, "countX");
             int countY = XposedHelpers.getIntField(config, "countY");
-            if (grid8x4Enabled) {
-                countX = portrait ? 4 : 8;
-                countY = portrait ? 8 : 4;
-                XposedHelpers.setIntField(config, "countX", countX);
-                XposedHelpers.setIntField(config, "countY", countY);
-            }
             if (countX <= 0 || countY <= 0) return;
             int[] xs = (int[]) XposedHelpers.getObjectField(cellLayout, "mXs");
             int[] ys = (int[]) XposedHelpers.getObjectField(cellLayout, "mYs");
