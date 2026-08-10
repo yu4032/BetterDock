@@ -248,6 +248,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             seedLauncherLifecycleState(param.thisObject);
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                             liquidGlassView.setStopGraceMillis(c2.i("liquid_capture_stop_delay", 150));
+                            liquidGlassView.setBleedVerticalPx(c2.i("liquid_capture_bleed_v", -1));
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -625,6 +626,8 @@ public class MainHook implements IXposedHookLoadPackage {
             if (liquidGlassView != null) {
                 ViewGroup.LayoutParams glassLp = liquidGlassView.getLayoutParams();
                 if (glassLp != null) {
+                    // Match the stroke overlay exactly (bgW/bgH already include the
+                    // updateBackgroundView spacing/offset adjustments).
                     glassLp.width = bgW; glassLp.height = bgH;
                     liquidGlassView.setLayoutParams(glassLp);
                 }

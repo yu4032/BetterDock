@@ -52,13 +52,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "half4 source(float2 p){return content.eval((p+screenOffset)*captureScale);}"
       + "half4 blurred(float2 p){return source(p);}"
       + "half4 main(float2 coord){float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float r=radiusAt(cc,cornerRadii);"
-      + "float sd=sdRound(cc,hs,r);float edge=clamp(-sd/max(refractionHeight,0.001),0.0,1.0);"
-      + "float edgeFade=1.0-edge*edge*(3.0-2.0*edge);"
-      + "float2 g=normalize(gradRound(cc,hs,r)+depthEffect*edgeFade*normalize(cc+0.0001));"
-      + "float d=circleMap(edge)*refractionAmount*0.8;float2 shift=g*d;"
-      + "float2 rc=coord+shift;float pf=abs(cc.x*cc.y)/max(hs.x*hs.y,1.0);float di=chromaticAberration*(0.4+0.6*pf);"
-      + "float2 dd=shift*di;half4 rr=blurred(rc+dd);half4 gg=blurred(rc);half4 bb=blurred(rc-dd);"
-      + "return half4(rr.r,gg.g,bb.b,(rr.a+gg.a+bb.a)/3.0);}";
+      + "float sd=sdRound(cc,hs,r);if(-sd>=refractionHeight)return blurred(coord);sd=min(sd,0.0);"
+      + "float t=-sd/max(refractionHeight,0.001);float fade=1.0-t;"
+      + "float d=circleMap(fade)*refractionAmount;float2 g=normalize(gradRound(cc,hs,r)+depthEffect*fade*normalize(cc+0.0001));"
+      + "float2 rc=coord+d*g;float pf=abs(cc.x*cc.y)/max(hs.x*hs.y,1.0);float di=chromaticAberration*(0.4+0.6*pf);"
+      + "float2 dd=d*g*di;half4 rr=blurred(rc+dd);half4 gg=blurred(rc);half4 bb=blurred(rc-dd);"
+      + "return half4(rr.r,gg.g,bb.b,1.0);}";
 
     private final View workspace;
     private final View geometrySource;
@@ -71,6 +70,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final float chromaticAberration;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
+    // Extra capture height above/below the glass (GUI: liquid_capture_bleed_v).
+    // Default = half the horizontal bleed; smaller keeps the home-indicator and dock
+    // boundary lines out of the captured background.
+    private int bleedVerticalPx = -1;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final int[] tmpDockLocation = new int[2];
@@ -541,6 +544,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         stopGraceMillis = Math.max(0, Math.min(2000, millis));
     }
 
+    /** Configurable by the GUI (liquid_capture_bleed_v): extra capture height above/below
+     *  the glass.  -1 (or unset) = half the horizontal bleed. */
+    void setBleedVerticalPx(int px) {
+        bleedVerticalPx = Math.max(0, Math.min(512, px));
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -730,7 +739,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!dockRect.intersect(displayRect) || dockRect.isEmpty()) return null;
 
         Rect tileRect = new Rect(dockRect);
-        tileRect.inset(-captureBleedPx, -captureBleedPx);
+        // Horizontal bleed covers the refraction displacement; vertical bleed is kept
+        // smaller so the capture doesn't reach the home-indicator / dock boundary lines
+        // above and below the glass (those must not leak into the background).  GUI knob:
+        // liquid_capture_bleed_v, default half the horizontal bleed.
+        int bleedV = bleedVerticalPx >= 0 ? bleedVerticalPx : Math.max(8, captureBleedPx / 2);
+        tileRect.inset(-captureBleedPx, -bleedV);
         if (!tileRect.intersect(displayRect) || tileRect.isEmpty()) return null;
 
         // Deliberately hard-limit compositor readback to the lower display region.
