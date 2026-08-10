@@ -254,6 +254,10 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_tint_b", sp.getInt("liquid_tint_b", 255));
         j.put("liquid_highlight_width", sp.getInt("liquid_highlight_width", 100));
         j.put("liquid_highlight_alpha", sp.getInt("liquid_highlight_alpha", 100));
+        j.put("liquid_divider_r", sp.getInt("liquid_divider_r", 255));
+        j.put("liquid_divider_g", sp.getInt("liquid_divider_g", 255));
+        j.put("liquid_divider_b", sp.getInt("liquid_divider_b", 255));
+        j.put("liquid_divider_alpha", sp.getInt("liquid_divider_alpha", 100));
         j.put("liquid_depth_effect", sp.getInt("liquid_depth_effect", 8));
         j.put("liquid_brightness", sp.getInt("liquid_brightness", 108));
         j.put("liquid_specular_sharp", sp.getInt("liquid_specular_sharp", 88));
@@ -355,6 +359,10 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "liquid_tint_b", 0, 255);
         putInt(j, e, "liquid_highlight_width", 20, 300);
         putInt(j, e, "liquid_highlight_alpha", 0, 200);
+        putInt(j, e, "liquid_divider_r", 0, 255);
+        putInt(j, e, "liquid_divider_g", 0, 255);
+        putInt(j, e, "liquid_divider_b", 0, 255);
+        putInt(j, e, "liquid_divider_alpha", 0, 200);
         putInt(j, e, "liquid_depth_effect", 0, 50);
         putInt(j, e, "liquid_brightness", 50, 200);
         putInt(j, e, "liquid_specular_sharp", 1, 200);

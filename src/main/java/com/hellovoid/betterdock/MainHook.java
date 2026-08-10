@@ -114,6 +114,22 @@ public class MainHook implements IXposedHookLoadPackage {
                             if (oldBg == null) return;
                             ViewGroup parent = (ViewGroup) oldBg.getParent();
                             if (parent == null) return;
+                            if (liquidGlass) {
+                                // Diagnostic: dump the Dock background's siblings — the
+                                // user-visible divider line is a separate element, not the
+                                // blur background we hide.
+                                try {
+                                    StringBuilder sb = new StringBuilder("[DC] dock tree: ");
+                                    sb.append(parent.getClass().getSimpleName()).append(" children=").append(parent.getChildCount());
+                                    for (int i = 0; i < parent.getChildCount(); i++) {
+                                        View c = parent.getChildAt(i);
+                                        sb.append(" [").append(i).append("]").append(c.getClass().getSimpleName())
+                                          .append(" vis=").append(c.getVisibility())
+                                          .append(" bg=").append(c.getBackground() != null ? c.getBackground().getClass().getSimpleName() : "-");
+                                    }
+                                    XposedBridge.log(sb.toString());
+                                } catch (Throwable ignored) {}
+                            }
                             int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
                             View workspace = null;
                             try {
@@ -164,6 +180,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             bindDockDragController(liquidGlassView, lpparam.classLoader);
+                            bindDividerOverride(liquidGlassView, lpparam.classLoader);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(
                                     liquidGlassView, oldBg.getRootView()));
@@ -320,6 +337,30 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
                         oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2"); if (oldBg == null) return;
                         ViewGroup parent = (ViewGroup) oldBg.getParent(); if (parent == null) return;
+                        if (liquidGlass) {
+                            // Diagnostic: dump the Dock window root tree — the divider
+                            // between pinned and runtime icons lives in the floating Dock
+                            // window (DockContainerView), not in HotSeats.
+                            try {
+                                View root = oldBg.getRootView();
+                                StringBuilder sb = new StringBuilder("[DC] dock window tree: ").append(root.getClass().getSimpleName());
+                                dumpView(root, sb, 0, 3);
+                                XposedBridge.log(sb.toString());
+                                // Diagnostics: item decorations on the icon RecyclerView
+                                // (the pinned/runtime divider may be a decoration).
+                                try {
+                                    Object hs2 = XposedHelpers.getObjectField(param.thisObject, "mHotSeats");
+                                    Object content = XposedHelpers.getObjectField(hs2, "mListContent");
+                                    if (content instanceof androidx.recyclerview.widget.RecyclerView) {
+                                        java.util.List<?> decos = (java.util.List<?>)
+                                                XposedHelpers.getObjectField(content, "mItemDecorations");
+                                        StringBuilder ds = new StringBuilder("[DC] dock decorations: ").append(decos.size());
+                                        for (Object d : decos) ds.append(" [").append(d.getClass().getName()).append("]");
+                                        XposedBridge.log(ds.toString());
+                                    }
+                                } catch (Throwable ignored) {}
+                            } catch (Throwable ignored) {}
+                        }
                         int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
                         String lm2 = c2.s("light_mode", "fixed"); boolean strokeEnabled = c2.b("dock_stroke", true), sq2 = c2.b("squircle", false), fd2 = c2.b("fill_diff", false);
                         strokeBaseR = c2.i("stroke_base_r", 255);
@@ -387,6 +428,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setHighlightAlpha(c2.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             bindDockDragController(liquidGlassView, cl);
+                            bindDividerOverride(liquidGlassView, cl);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(
                                     liquidGlassView, oldBg.getRootView()));
@@ -815,6 +857,25 @@ public class MainHook implements IXposedHookLoadPackage {
         shadow.invalidate();
     }
 
+    /** Recursive view-tree dump helper for diagnostics (max depth levels). */
+    private static void dumpView(View v, StringBuilder sb, int depth, int maxDepth) {
+        if (v == null || depth > maxDepth) return;
+        for (int i = 0; i < depth; i++) sb.append("  ");
+        sb.append("[").append(v.getClass().getSimpleName())
+          .append(" vis=").append(v.getVisibility())
+          .append(" bg=").append(v.getBackground() != null ? v.getBackground().getClass().getSimpleName() : "-");
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            sb.append(" kids=").append(g.getChildCount());
+            sb.append("; ");
+            for (int j = 0; j < g.getChildCount(); j++) {
+                dumpView(g.getChildAt(j), sb, depth + 1, maxDepth);
+            }
+        } else {
+            sb.append("; ");
+        }
+    }
+
     /** Bind the launcher's recents view to the glass so its motion (multitasking cards)
      *  keeps captures alive even when the Dock is static. */
     private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
@@ -825,6 +886,65 @@ public class MainHook implements IXposedHookLoadPackage {
             if (panel instanceof View) glass.setRecentsView((View) panel);
         } catch (Throwable e) {
             XposedBridge.log("[DC] recents bind failed: " + e);
+        }
+    }
+
+    private static int dividerLogCount = 0;
+    private static android.view.View dividerOverlayView = null;
+    private static long dividerColorCache = -1;
+
+    /** Override the native pinned/runtime divider line inside the icon list.  The native
+     *  divider is drawn inside HotSeatsListContent (a fixed launcher PNG), so we cover it
+     *  with a 1dp-high View placed in the RecyclerView's ViewOverlay — the overlay draws
+     *  above the list content on every frame (hardware-accelerated safe, unlike hooking
+     *  draw(Canvas) which is only invoked on software paths).  Position = bottom edge of
+     *  the first icon row; color = liquid_divider_* (hot-reloaded). */
+    private static void bindDividerOverride(DockLiquidGlassView glass, ClassLoader cl) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.view.View", cl,
+                    "draw", android.graphics.Canvas.class,
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) {
+                            try {
+                                String cls = p.thisObject.getClass().getName();
+                                if (!cls.equals(
+                                        "com.miui.home.launcher.hotseats.HotSeatsListContent")) {
+                                    return; // only the Dock's icon list
+                                }
+                                androidx.recyclerview.widget.RecyclerView rv =
+                                        (androidx.recyclerview.widget.RecyclerView) p.thisObject;
+                                if (rv.getChildCount() == 0) return;
+                                android.view.View first = rv.getChildAt(0);
+                                float lineY = first.getBottom() + rv.getPaddingTop();
+                                if (lineY <= 0) return;
+                                int argb = glass.getDividerArgb();
+                                if (dividerOverlayView == null) {
+                                    dividerOverlayView = new android.view.View(rv.getContext());
+                                    android.view.ViewGroup.LayoutParams lp =
+                                            new android.view.ViewGroup.LayoutParams(
+                                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                                    Math.max(1, (int) (rv.getResources()
+                                                            .getDisplayMetrics().density * 1f)));
+                                    dividerOverlayView.setLayoutParams(lp);
+                                    rv.getOverlay().add(dividerOverlayView);
+                                    dividerOverlayView.setY(lineY);
+                                    XposedBridge.log("[DC] divider overlay added at y=" + lineY);
+                                } else if (dividerOverlayView.getParent() == null) {
+                                    rv.getOverlay().add(dividerOverlayView);
+                                    dividerOverlayView.setY(lineY);
+                                }
+                                dividerOverlayView.setY(lineY);
+                                if (dividerColorCache != argb) {
+                                    dividerColorCache = argb;
+                                    dividerOverlayView.setBackgroundColor(argb);
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+            XposedBridge.log("[DC] divider override hooked");
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] divider override hook failed: " + e);
         }
     }
 
