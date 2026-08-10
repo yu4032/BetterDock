@@ -38,7 +38,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float4 cornerRadii;"
       + "uniform float refractionHeight;"
       + "uniform float refractionAmount;"
-      + "uniform float sCurveAmount;"
       + "uniform float depthEffect;"
       + "uniform float chromaticAberration;"
       + "uniform float blurRadius;"
@@ -50,20 +49,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "s.x=s.x==0.0?1.0:s.x;s.y=s.y==0.0?1.0:s.y;if(q.x>=0.0||q.y>=0.0)return s*normalize(max(q,0.0001));"
       + "float gx=step(q.y,q.x);return s*float2(gx,1.0-gx);}"
       + "float circleMap(float x){x=clamp(x,0.0,1.0);return 1.0-sqrt(max(0.0,1.0-x*x));}"
-      + "float surfaceHeight(float2 p){return 0.9*sin(p.x*0.004+p.y*0.001)"
-      + "+0.55*cos(p.x*0.001-p.y*0.004)+0.35*sin((p.x+p.y)*0.008);}"
-      + "float2 surfaceGrad(float2 p){return float2("
-      + "0.9*0.004*cos(p.x*0.004+p.y*0.001)-0.55*0.001*sin(p.x*0.001-p.y*0.004)"
-      + "+0.35*0.008*cos((p.x+p.y)*0.008),"
-      + "0.9*0.001*cos(p.x*0.004+p.y*0.001)+0.55*0.004*sin(p.x*0.001-p.y*0.004)"
-      + "+0.35*0.008*cos((p.x+p.y)*0.008))*12.0;}"
       + "half4 source(float2 p){return content.eval((p+screenOffset)*captureScale);}"
       + "half4 blurred(float2 p){return source(p);}"
       + "half4 main(float2 coord){float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float r=radiusAt(cc,cornerRadii);"
       + "float sd=sdRound(cc,hs,r);float edge=clamp(-sd/max(refractionHeight,0.001),0.0,1.0);"
       + "float edgeFade=1.0-edge*edge*(3.0-2.0*edge);"
-      + "float2 gs=surfaceGrad(cc);float2 g=normalize(gradRound(cc,hs,r)+depthEffect*edgeFade*normalize(cc+0.0001));"
-      + "float2 shift=gs*sCurveAmount+g*circleMap(edge)*refractionAmount*0.8;"
+      + "float2 g=normalize(gradRound(cc,hs,r)+depthEffect*edgeFade*normalize(cc+0.0001));"
+      + "float d=circleMap(edge)*refractionAmount*0.8;float2 shift=g*d;"
       + "float2 rc=coord+shift;float pf=abs(cc.x*cc.y)/max(hs.x*hs.y,1.0);float di=chromaticAberration*(0.4+0.6*pf);"
       + "float2 dd=shift*di;half4 rr=blurred(rc+dd);half4 gg=blurred(rc);half4 bb=blurred(rc-dd);"
       + "return half4(rr.r,gg.g,bb.b,(rr.a+gg.a+bb.a)/3.0);}";
@@ -76,7 +68,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
     private final float refractionAmount;
-    private final float sCurveAmount;
     private final float chromaticAberration;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
@@ -112,6 +103,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean kickScheduled;
     private long captureGeneration;
     private long lastCaptureStartNanos;
+
+    // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
+    // when window visibility flips, and killing capture instantly freezes the last frame
+    // mid-animation.  Keep capturing for stopGraceMillis after the first "not allowed"
+    // signal so the animation tail is still captured; the frame is discarded by
+    // generation check once a real stop lands.
+    private long stopGraceMillis = 150L;
+    private long lastAllowedNanos = Long.MAX_VALUE;
+    private final Runnable cancelGrace = new Runnable() {
+        @Override public void run() { cancelPendingCaptureWork(); }
+    };
 
     private boolean observationValid;
     private int observedRotation;
@@ -182,7 +184,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             };
 
     DockLiquidGlassView(View geometrySource, View workspace, int blurRadius,
-                        float refractionAmount, float sCurveAmount, float chromaticAberration,
+                        float refractionAmount, float chromaticAberration,
                         int tintAlpha, boolean squircle, float squircleCp,
                         int captureFps) {
         super(geometrySource.getContext());
@@ -190,7 +192,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         this.workspace = workspace;
         this.blurRadius = Math.max(0, blurRadius);
         this.refractionAmount = refractionAmount;
-        this.sCurveAmount = sCurveAmount;
         this.chromaticAberration = chromaticAberration;
         int fps = Math.max(5, Math.min(60, captureFps));
         this.captureIntervalNanos = 1_000_000_000L / fps;
@@ -356,10 +357,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         super.onWindowVisibilityChanged(visibility);
         windowVisible = visibility == View.VISIBLE;
         if (windowVisible) {
+            mainHandler.removeCallbacks(cancelGrace);
             observationValid = false;
             requestStateCapture("window-visible");
         } else {
-            cancelPendingCaptureWork();
+            // Defer the hard cancel by the stop-grace period so a collapse/hide animation
+            // tail is still captured instead of freezing mid-animation.
+            mainHandler.removeCallbacks(cancelGrace);
+            if (stopGraceMillis > 0) {
+                Log.i(TAG, "Liquid capture window hidden; grace " + stopGraceMillis + "ms before stop");
+                mainHandler.postDelayed(cancelGrace, stopGraceMillis);
+            } else {
+                cancelPendingCaptureWork();
+            }
         }
     }
 
@@ -526,6 +536,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return null;
     }
 
+    /** Configurable by the GUI (liquid_capture_stop_delay). */
+    void setStopGraceMillis(int millis) {
+        stopGraceMillis = Math.max(0, Math.min(2000, millis));
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -535,7 +550,20 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // HyperOS 3.0 Pad hosts the Dock in a dedicated NOT_FOCUSABLE overlay window
         // ("Floating Dock", window type 2997).  NOT_FOCUSABLE windows never receive window
         // focus, so hasWindowFocus() is permanently false there and MUST NOT gate capture.
-        return attached && windowVisible && isShown();
+        //
+        // Stop grace: during collapse/hide animations the window briefly reports
+        // !isShown()/!windowVisible while the Dock is still on screen.  Treat a short
+        // "not allowed" window as still allowed (lastAllowedNanos within stopGraceMillis)
+        // so the animation tail keeps being captured instead of freezing mid-frame.
+        boolean baseAllowed = attached && windowVisible && isShown();
+        if (baseAllowed) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
+        if (stopGraceMillis <= 0) return false;
+        long graceEndNanos = lastAllowedNanos + stopGraceMillis * 1_000_000L;
+        if (System.nanoTime() <= graceEndNanos) return true;
+        return false;
     }
 
     private void requestStateCapture() {
@@ -836,7 +864,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("cornerRadii", cornerRadius, cornerRadius, cornerRadius, cornerRadius);
         refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
         refraction.setFloatUniform("refractionAmount", refractionAmount);
-        refraction.setFloatUniform("sCurveAmount", sCurveAmount);
         refraction.setFloatUniform("depthEffect", .08f);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);

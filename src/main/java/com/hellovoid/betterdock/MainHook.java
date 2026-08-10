@@ -241,12 +241,13 @@ public class MainHook implements IXposedHookLoadPackage {
                             } catch (Throwable ignored) {}
                             liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
                                 c2.i("liquid_blur", 18), c2.i("liquid_refraction", 18),
-                                c2.i("liquid_s_curve", 18), c2.i("liquid_chromatic", 8) / 100f,
+                                c2.i("liquid_chromatic", 8) / 100f,
                                 c2.i("liquid_tint_alpha", 38), sq2, sqCp,
                                 c2.i("liquid_capture_fps", 24));
                             liquidGlassView.setId(View.generateViewId());
                             seedLauncherLifecycleState(param.thisObject);
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                            liquidGlassView.setStopGraceMillis(c2.i("liquid_capture_stop_delay", 150));
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
