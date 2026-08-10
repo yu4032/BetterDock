@@ -997,11 +997,25 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // thread, so this worker thread is free to service the next request
                     // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
-                    String[] excludeNames = dockWindowLayerName != null
-                            ? new String[]{dockWindowLayerName, dragLayerName}
-                            : (dragLayerName != null ? new String[]{dragLayerName} : null);
+                    // On the home screen the glass sits over the wallpaper: use MIUI's
+                    // wallpaper-only capture mode (captureMode=2, same as HyperOS Home's own
+                    // capture path) — fast AND inherently icon/dock-free.  Over an app the
+                    // glass refracts the app content, so fall back to full-display capture
+                    // with the Dock + drag-surface layers excluded (mode 1).
+                    boolean wallpaperMode = launcherResumed && launcherLifecycleKnown;
+                    String[] excludeNames = null;
+                    if (!wallpaperMode) {
+                        excludeNames = dockWindowLayerName != null
+                                ? new String[]{dockWindowLayerName, dragLayerName}
+                                : (dragLayerName != null ? new String[]{dragLayerName} : null);
+                    }
+                    Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
+                            + " names=" + java.util.Arrays.toString(
+                                    wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
+                            + " crop=" + req.stripRect + " scale=" + captureScale);
                     client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
-                            excludes, excludeNames,
+                            wallpaperMode ? null : excludes, excludeNames,
+                            wallpaperMode ? 2 : 1,
                             new LiveScreenCapture.CaptureCallback() {
                                 @Override public void onResult(Bitmap bmp) {
                                     handleCaptureResult(bmp, req, generation);

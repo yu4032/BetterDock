@@ -252,10 +252,14 @@ final class LiveScreenCapture {
      * result arrives via {@link CaptureCallback} on the SF callback thread.  The caller
      * thread never blocks on the Binder round-trip (the sync path waits inside getBuffer).
      * Falls back to the synchronous path when the async listener cannot be built.
+     *
+     * @param captureMode 1 = layer-name exclusion mode (excludeLayerNames honored),
+     *                    2 = MIUI vendor wallpaper-only mode (SF captures just the
+     *                    wallpaper layer; exclusion lists are irrelevant).
      */
     void captureScreenAsync(Rect sourceCrop, float scale, int displayId,
                             android.view.SurfaceControl[] excludeLayers, String[] excludeLayerNames,
-                            CaptureCallback callback) {
+                            int captureMode, CaptureCallback callback) {
         try {
             if (sourceCrop == null || sourceCrop.isEmpty()) throw new IllegalArgumentException(
                     "sourceCrop must be non-empty");
@@ -269,14 +273,23 @@ final class LiveScreenCapture {
                 setExcludeLayers.invoke(builder, (Object) excludeLayers);
             }
             java.util.ArrayList<String> names = new java.util.ArrayList<>();
-            names.add("Floating Dock");
-            if (excludeLayerNames != null) {
-                for (String n : excludeLayerNames) {
-                    if (n != null && !n.isEmpty() && !names.contains(n)) names.add(n);
+            if (captureMode == 2) {
+                // MIUI vendor wallpaper mode: setExcludeOrIncludeLayerNames is INCLUDE
+                // semantics — SF captures ONLY the listed layers.  HyperOS Home itself
+                // passes ["Wallpaper BBQ wrapper"] here (Launcher.Utilities.
+                // EXCLUDE_OR_INCLUDE_LAYER_NAMES); we must do the same or the capture
+                // includes the wrong layer (e.g. the Dock).
+                names.add("Wallpaper BBQ wrapper");
+            } else {
+                names.add("Floating Dock");
+                if (excludeLayerNames != null) {
+                    for (String n : excludeLayerNames) {
+                        if (n != null && !n.isEmpty() && !names.contains(n)) names.add(n);
+                    }
                 }
             }
             setExcludeOrIncludeLayerNames.invoke(builder, (Object) names.toArray(new String[0]));
-            setCaptureMode.invoke(builder, 1);
+            setCaptureMode.invoke(builder, captureMode);
             Object args = build.invoke(builder);
 
             if (asyncListenerConstructor == null) {
