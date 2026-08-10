@@ -171,6 +171,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "return half4(color,1.0);}";
 
     private final View workspace;
+    // Launcher's recents/multitasking view (Launcher.getRecentsView()).  While it is
+    // visible, its content moves even when the Dock itself is static (task cards flying in,
+    // scrolling the overview), so observation must also track it — but ONLY when visible,
+    // so normal home-screen page swipes (recents hidden) still do not trigger captures.
+    private View recentsView;
     private final View geometrySource;
     private final RuntimeShader refraction;
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -245,6 +250,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int observedDockTranslationY;
     private int observedDockScaleX;
     private int observedDockScaleY;
+    private boolean observedRecentsVisible;
+    private int observedRecentsScrollX;
+    private int observedRecentsScrollY;
+    private int observedRecentsTranslationX;
+    private int observedRecentsTranslationY;
 
     private boolean wallpaperOffsetValid;
     private int wallpaperOffsetXBits;
@@ -533,10 +543,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /**
      * Cheap state polling only; this never captures by itself when all tracked values are static.
-     * Tracks ONLY the Dock's own geometry (position/size/scale/translation) plus display
-     * rotation/size — NOT the launcher workspace scroll, so swiping pages does not trigger
-     * captures.  The glass only needs refreshing when the Dock itself moves (summon/hide/
-     * resize animation).
+     * Tracks the Dock's own geometry (position/size/scale/translation) plus display
+     * rotation/size, and — while the recents/multitasking panel is VISIBLE — the recents
+     * view's scroll/translation, so task-card animations keep the glass live even though the
+     * Dock itself has stopped moving.  Normal home-screen page swipes (recents hidden) do
+     * NOT trigger captures.
      */
     private boolean updateObservation() {
         Display display = geometrySource.getDisplay();
@@ -552,6 +563,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         int dockSx = Float.floatToIntBits(geometrySource.getScaleX());
         int dockSy = Float.floatToIntBits(geometrySource.getScaleY());
 
+        boolean recentsVisible = false;
+        int recentsScrollX = 0, recentsScrollY = 0, recentsTx = 0, recentsTy = 0;
+        View rec = recentsView;
+        if (rec != null && rec.getVisibility() == View.VISIBLE) {
+            recentsVisible = true;
+            recentsScrollX = rec.getScrollX();
+            recentsScrollY = rec.getScrollY();
+            recentsTx = Float.floatToIntBits(rec.getTranslationX());
+            recentsTy = Float.floatToIntBits(rec.getTranslationY());
+        }
+
         boolean changed = !observationValid
                 || rotation != observedRotation
                 || tmpDisplaySize.x != observedDisplayWidth
@@ -563,7 +585,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 || dockTx != observedDockTranslationX
                 || dockTy != observedDockTranslationY
                 || dockSx != observedDockScaleX
-                || dockSy != observedDockScaleY;
+                || dockSy != observedDockScaleY
+                || recentsVisible != observedRecentsVisible
+                || (recentsVisible && (
+                        recentsScrollX != observedRecentsScrollX
+                        || recentsScrollY != observedRecentsScrollY
+                        || recentsTx != observedRecentsTranslationX
+                        || recentsTy != observedRecentsTranslationY));
 
         observedRotation = rotation;
         observedDisplayWidth = tmpDisplaySize.x;
@@ -576,6 +604,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observedDockTranslationY = dockTy;
         observedDockScaleX = dockSx;
         observedDockScaleY = dockSy;
+        observedRecentsVisible = recentsVisible;
+        observedRecentsScrollX = recentsScrollX;
+        observedRecentsScrollY = recentsScrollY;
+        observedRecentsTranslationX = recentsTx;
+        observedRecentsTranslationY = recentsTy;
         observationValid = true;
         return changed;
     }
@@ -658,6 +691,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             Log.w(TAG, "dock window surface resolve failed: " + e);
         }
         return null;
+    }
+
+    /** Recents/multitasking view to watch for background motion (set via reflection by
+     *  MainHook from Launcher.getRecentsView()).  Null disables the extra observation. */
+    void setRecentsView(View view) {
+        recentsView = view;
     }
 
     /** Configurable by the GUI (liquid_capture_stop_delay). */

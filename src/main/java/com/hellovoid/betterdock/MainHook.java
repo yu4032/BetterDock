@@ -133,6 +133,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setBleedVerticalPx(
                                     cfg.i("liquid_capture_bleed_top", -1),
                                     cfg.i("liquid_capture_bleed_bottom", -1));
+                            bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -314,6 +315,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setBleedVerticalPx(
                                     c2.i("liquid_capture_bleed_top", -1),
                                     c2.i("liquid_capture_bleed_bottom", -1));
+                            bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -680,6 +682,19 @@ public class MainHook implements IXposedHookLoadPackage {
         shadow.setX(stroke.getX() - shadowPad);
         shadow.setY(stroke.getY() - shadowPad);
         shadow.invalidate();
+    }
+
+    /** Bind the launcher's recents view to the glass so its motion (multitasking cards)
+     *  keeps captures alive even when the Dock is static. */
+    private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
+        try {
+            // getRecentsView() pulls in a phone-only class (NewHomeView) on HyperOS Pad and
+            // throws NoClassDefFoundError; read the overview panel field directly instead.
+            Object panel = XposedHelpers.getObjectField(launcher, "mOverviewPanel");
+            if (panel instanceof View) glass.setRecentsView((View) panel);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] recents bind failed: " + e);
+        }
     }
 
     private static void syncAll(View bg) { if (bg == null) return;
