@@ -133,6 +133,13 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setBleedVerticalPx(
                                     cfg.i("liquid_capture_bleed_top", -1),
                                     cfg.i("liquid_capture_bleed_bottom", -1));
+                            liquidGlassView.setPrismalParams(
+                                    cfg.i("liquid_thickness", 18),
+                                    cfg.i("liquid_ior", 155) / 100f,
+                                    cfg.i("liquid_normal_strength", 115) / 100f,
+                                    cfg.i("liquid_dome", 100) / 100f,
+                                    cfg.i("liquid_lens_refraction", 12),
+                                    cfg.i("liquid_refraction_inset", 20));
                             bindRecentsView(liquidGlassView, param.thisObject);
                             installDockTouchListener(liquidGlassView, parent.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(
@@ -318,6 +325,13 @@ public class MainHook implements IXposedHookLoadPackage {
                             liquidGlassView.setBleedVerticalPx(
                                     c2.i("liquid_capture_bleed_top", -1),
                                     c2.i("liquid_capture_bleed_bottom", -1));
+                            liquidGlassView.setPrismalParams(
+                                    c2.i("liquid_thickness", 18),
+                                    c2.i("liquid_ior", 155) / 100f,
+                                    c2.i("liquid_normal_strength", 115) / 100f,
+                                    c2.i("liquid_dome", 100) / 100f,
+                                    c2.i("liquid_lens_refraction", 12),
+                                    c2.i("liquid_refraction_inset", 20));
                             bindRecentsView(liquidGlassView, param.thisObject);
                             installDockTouchListener(liquidGlassView, parent.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(

@@ -189,6 +189,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final int blurRadius;
     private final float refractionAmount;
     private final float chromaticAberration;
+    // Prismal liquid-glass parameters (GUI-configurable)
+    private float glassThickness = 18f;      // liquid_thickness (dp -> px at render)
+    private float glassIor = 1.55f;          // liquid_ior
+    private float glassNormalStrength = 1.15f; // liquid_normal_strength
+    private float glassLiquidDome = 1.0f;    // liquid_dome
+    private float glassLensRefraction = 12f; // liquid_lens_refraction (dp -> px)
+    private float glassRefractionInset = 20f; // liquid_refraction_inset (dp -> px)
     private final long captureIntervalNanos;
     private final int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
@@ -740,6 +747,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         bleedBottomPx = Math.max(0, Math.min(512, bottomPx));
     }
 
+    /** Prismal liquid-glass parameters (GUI-configurable; values are dp where noted,
+     *  converted to px at render time using the display density). */
+    void setPrismalParams(float thicknessDp, float ior, float normalStrength,
+                          float liquidDome, float lensRefractionDp, float refractionInsetDp) {
+        glassThickness = thicknessDp;
+        glassIor = ior;
+        glassNormalStrength = normalStrength;
+        glassLiquidDome = liquidDome;
+        glassLensRefraction = lensRefractionDp;
+        glassRefractionInset = refractionInsetDp;
+        invalidate();
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -1093,14 +1113,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("depthEffect", .08f);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);
-        // Prismal liquid-glass model parameters (ported from styropyr0/Prismal).
+        // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
+        // GUI-configurable via liquid_* settings.
         float density = getResources().getDisplayMetrics().density;
-        refraction.setFloatUniform("thickness", 18f * density);
-        refraction.setFloatUniform("ior", 1.55f);
-        refraction.setFloatUniform("normalStrength", 1.15f);
-        refraction.setFloatUniform("liquidDome", 1f);
-        refraction.setFloatUniform("lensRefractionPx", 12f * density);
-        refraction.setFloatUniform("refractionInset", 20f * density);
+        refraction.setFloatUniform("thickness", Math.max(1f, glassThickness * density));
+        refraction.setFloatUniform("ior", Math.max(1.001f, Math.min(2f, glassIor)));
+        refraction.setFloatUniform("normalStrength", Math.max(0f, Math.min(5f, glassNormalStrength)));
+        refraction.setFloatUniform("liquidDome", Math.max(0f, Math.min(2f, glassLiquidDome)));
+        refraction.setFloatUniform("lensRefractionPx", Math.max(0f, glassLensRefraction * density));
+        refraction.setFloatUniform("refractionInset", Math.max(0f, glassRefractionInset * density));
         refraction.setFloatUniform("screenOffset", captureSampleOffsetX, captureSampleOffsetY);
         refraction.setFloatUniform("captureScale",
                 capture.getWidth() / Math.max(1f, captureSourceWidth),

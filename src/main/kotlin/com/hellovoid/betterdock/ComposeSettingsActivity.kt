@@ -57,7 +57,7 @@ class ComposeSettingsActivity : SettingsActivity() {
 
 private enum class Page(val title: String) {
     Home("BetterDock"), Grid("主屏幕布局"), Dock("Dock 尺寸与模糊"),
-    Stroke("描边与流光"), Shadow("阴影"), Data("预设与数据")
+    Liquid("液态玻璃"), Stroke("描边与流光"), Shadow("阴影"), Data("预设与数据")
 }
 
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }
@@ -94,7 +94,13 @@ private val dockSpecs = listOf(
 )
 private val liquidSpecs = listOf(
     IntSpec("liquid_blur", "玻璃模糊", 18, 0, 60, "px"),
-    IntSpec("liquid_refraction", "边缘折射量", 18, 0, 200, "px"),
+    IntSpec("liquid_refraction", "折射强度", 18, 0, 200, "px"),
+    IntSpec("liquid_thickness", "玻璃厚度", 18, 1, 60, "dp"),
+    IntSpec("liquid_ior", "折射率 IOR", 155, 100, 200, "%"),
+    IntSpec("liquid_normal_strength", "法线强度", 115, 0, 300, "%"),
+    IntSpec("liquid_dome", "穹顶凸起", 100, 0, 200, "%"),
+    IntSpec("liquid_lens_refraction", "透镜折射", 12, 0, 60, "dp"),
+    IntSpec("liquid_refraction_inset", "折射内缩", 20, 0, 80, "dp"),
     IntSpec("liquid_chromatic", "色散强度", 8, 0, 40, "%"),
     IntSpec("liquid_tint_alpha", "玻璃底色透明度", 38, 0, 160, ""),
     IntSpec("liquid_capture_fps", "实时捕获帧率", 60, 5, 165, "FPS"),
@@ -145,6 +151,7 @@ private fun BetterDockSettings(activity: ComposeSettingsActivity) {
             Page.Home -> HomePage(padding) { page = it }
             Page.Grid -> GridPage(padding, prefs)
             Page.Dock -> DockPage(padding, prefs)
+            Page.Liquid -> LiquidPage(padding, prefs)
             Page.Stroke -> StrokePage(padding, prefs)
             Page.Shadow -> ShadowPage(padding, prefs)
             Page.Data -> DataPage(padding, activity)
@@ -160,6 +167,7 @@ private fun HomePage(padding: PaddingValues, open: (Page) -> Unit) {
             SettingsCard {
                 ArrowPreference("主屏幕布局", summary = "8×4 / 4×8、横竖屏边距与指示器", onClick = { open(Page.Grid) })
                 ArrowPreference("Dock 尺寸与模糊", summary = "整体开关、尺寸、圆角、间距与位置", onClick = { open(Page.Dock) })
+                ArrowPreference("液态玻璃", summary = "Prismal 折射模型、色散、模糊与捕获频率", onClick = { open(Page.Liquid) })
                 ArrowPreference("描边与流光", summary = "底色、方圆曲线、动态灯光与线宽", onClick = { open(Page.Stroke) })
                 ArrowPreference("阴影", summary = "整个 Dock 阴影与描边阴影", onClick = { open(Page.Shadow) })
             }
@@ -181,16 +189,22 @@ private fun GridPage(padding: PaddingValues, prefs: SharedPreferences) {
 @Composable
 private fun DockPage(padding: PaddingValues, prefs: SharedPreferences) {
     var dockEnabled by remember { mutableStateOf(prefs.getBoolean("dock_customization", true)) }
-    var liquidGlass by remember { mutableStateOf(prefs.getBoolean("liquid_glass", false)) }
     SettingsList(padding, "Dock") {
         BooleanSetting(prefs, "dock_customization", "自定义整个 Dock", true,
             "BetterDock Dock 功能总开关") { dockEnabled = it }
-        BooleanSetting(prefs, "liquid_glass", "液态玻璃", false,
-            "捕获壁纸与当前桌面页，使用 AGSL 折射、色散和模糊，独立于 Dock 自定义运行") { liquidGlass = it }
-        liquidSpecs.forEach { IntSetting(prefs, it, liquidGlass) }
         StringDropdown(prefs, "light_mode", "灯光模式", "fixed",
             listOf("固定" to "fixed", "陀螺仪动态" to "dynamic", "关闭" to "none"), dockEnabled)
         dockSpecs.forEach { IntSetting(prefs, it, dockEnabled) }
+    }
+}
+
+@Composable
+private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences) {
+    var liquidGlass by remember { mutableStateOf(prefs.getBoolean("liquid_glass", false)) }
+    SettingsList(padding, "液态玻璃") {
+        BooleanSetting(prefs, "liquid_glass", "启用液态玻璃", false,
+            "捕获壁纸与当前桌面页，使用 Prismal 折射模型 + 系统模糊，独立于 Dock 自定义运行") { liquidGlass = it }
+        liquidSpecs.forEach { IntSetting(prefs, it, liquidGlass) }
     }
 }
 

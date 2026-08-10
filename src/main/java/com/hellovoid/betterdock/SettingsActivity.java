@@ -228,6 +228,12 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
         j.put("liquid_blur", sp.getInt("liquid_blur", 18));
         j.put("liquid_refraction", sp.getInt("liquid_refraction", 18));
+        j.put("liquid_thickness", sp.getInt("liquid_thickness", 18));
+        j.put("liquid_ior", sp.getInt("liquid_ior", 155));
+        j.put("liquid_normal_strength", sp.getInt("liquid_normal_strength", 115));
+        j.put("liquid_dome", sp.getInt("liquid_dome", 100));
+        j.put("liquid_lens_refraction", sp.getInt("liquid_lens_refraction", 12));
+        j.put("liquid_refraction_inset", sp.getInt("liquid_refraction_inset", 20));
         j.put("liquid_chromatic", sp.getInt("liquid_chromatic", 8));
         j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
         j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 60));
@@ -310,6 +316,12 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "liquid_blur", 0, 60);
         putInt(j, e, "liquid_refraction", 0, 200);
+        putInt(j, e, "liquid_thickness", 1, 60);
+        putInt(j, e, "liquid_ior", 100, 200);
+        putInt(j, e, "liquid_normal_strength", 0, 300);
+        putInt(j, e, "liquid_dome", 0, 200);
+        putInt(j, e, "liquid_lens_refraction", 0, 60);
+        putInt(j, e, "liquid_refraction_inset", 0, 80);
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 165);
