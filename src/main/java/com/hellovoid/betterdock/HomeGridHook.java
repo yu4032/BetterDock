@@ -58,6 +58,7 @@ final class HomeGridHook {
             }
             installIndicatorPosition(classLoader);
             installCellLayoutMargins(classLoader);
+            installRotationRefresh(classLoader);
             XposedBridge.log("[DC] home grid hooks: 8x4=" + enableGrid8x4 + " land="
                 + landscapeLeft + "," + landscapeRight + ","
                 + landscapeTop + "," + landscapeBottom + " port="
@@ -93,8 +94,17 @@ final class HomeGridHook {
         try {
             Object config = XposedHelpers.getObjectField(cellLayout, "mGridConfig");
             if (config == null) return;
+            android.view.View layout = (android.view.View) cellLayout;
+            boolean portrait = layout.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT;
             int countX = XposedHelpers.getIntField(config, "countX");
             int countY = XposedHelpers.getIntField(config, "countY");
+            if (grid8x4Enabled) {
+                countX = portrait ? 4 : 8;
+                countY = portrait ? 8 : 4;
+                XposedHelpers.setIntField(config, "countX", countX);
+                XposedHelpers.setIntField(config, "countY", countY);
+            }
             if (countX <= 0 || countY <= 0) return;
             int[] xs = (int[]) XposedHelpers.getObjectField(cellLayout, "mXs");
             int[] ys = (int[]) XposedHelpers.getObjectField(cellLayout, "mYs");
@@ -113,8 +123,6 @@ final class HomeGridHook {
             int baseHeightGap = 1;
             if (baseCell <= 0) return;
 
-            android.view.View layout = (android.view.View) cellLayout;
-            boolean portrait = countY > countX;
             int width = layout.getWidth();
             int height = layout.getHeight();
             if (width <= 0 || height <= 0) return;
@@ -160,6 +168,40 @@ final class HomeGridHook {
         } catch (Throwable e) {
             XposedBridge.log("[DC] CellLayout offset apply failed: " + e);
         }
+    }
+
+    private static void installRotationRefresh(ClassLoader classLoader) {
+        Class<?> launcher = XposedHelpers.findClass(
+            "com.miui.home.launcher.Launcher", classLoader);
+        XposedHelpers.findAndHookMethod(launcher, "onConfigurationChanged",
+            Configuration.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        final android.view.View workspace = (android.view.View)
+                            XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
+                        if (workspace == null) return;
+                        workspace.post(new Runnable() {
+                            @Override public void run() {
+                                try {
+                                    int count = (Integer) XposedHelpers.callMethod(
+                                        workspace, "getScreenCount");
+                                    for (int i = 0; i < count; i++) {
+                                        Object cell = XposedHelpers.callMethod(
+                                            workspace, "getCellLayout", i);
+                                        if (!(cell instanceof android.view.View)) continue;
+                                        XposedHelpers.callMethod(cell, "calculateXsAndYs");
+                                        ((android.view.View) cell).requestLayout();
+                                    }
+                                } catch (Throwable e) {
+                                    XposedBridge.log("[DC] rotation grid refresh failed: " + e);
+                                }
+                            }
+                        });
+                    } catch (Throwable e) {
+                        XposedBridge.log("[DC] rotation refresh hook failed: " + e);
+                    }
+                }
+            });
     }
 
     private static void installIndicatorPosition(ClassLoader classLoader) {
