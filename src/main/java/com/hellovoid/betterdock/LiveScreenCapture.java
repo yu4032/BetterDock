@@ -30,6 +30,7 @@ final class LiveScreenCapture {
     private final Method setFrameScale;
     private final Method setCaptureMode;
     private final Method setExcludeOrIncludeLayerNames;
+    private final Method setExcludeLayers;
     private final Method build;
     private final Method createSyncCaptureListener;
     private final Method captureDisplay;
@@ -68,6 +69,9 @@ final class LiveScreenCapture {
         setExcludeOrIncludeLayerNames = captureBuilderClass.getDeclaredMethod(
                 "setExcludeOrIncludeLayerNames", String[].class);
         setExcludeOrIncludeLayerNames.setAccessible(true);
+        setExcludeLayers = captureBuilderClass.getDeclaredMethod(
+                "setExcludeLayers", android.view.SurfaceControl[].class);
+        setExcludeLayers.setAccessible(true);
         build = captureBuilderClass.getMethod("build");
 
         createSyncCaptureListener = screenCaptureClass.getMethod("createSyncCaptureListener");
@@ -182,7 +186,8 @@ final class LiveScreenCapture {
      * (null = capture all layers); captureMode stays at the default so no wallpaper-only
      * semantics are applied.
      */
-    Bitmap captureScreen(Rect sourceCrop, float scale, int displayId) throws Exception {
+    Bitmap captureScreen(Rect sourceCrop, float scale, int displayId,
+                         android.view.SurfaceControl[] excludeLayers) throws Exception {
         if (sourceCrop == null || sourceCrop.isEmpty()) {
             throw new IllegalArgumentException("sourceCrop must be non-empty");
         }
@@ -191,11 +196,13 @@ final class LiveScreenCapture {
         Throwable fullFailure = null;
         try {
             Log.i(TAG, "fullscreen capture call: display=" + displayId
-                    + " crop=" + sourceCrop + " scale=" + scale);
-            Bitmap result = captureFullDisplayStrip(sourceCrop, scale, displayId);
+                    + " crop=" + sourceCrop + " scale=" + scale
+                    + " excludeLayers=" + (excludeLayers == null ? 0 : excludeLayers.length));
+            Bitmap result = captureFullDisplayStrip(sourceCrop, scale, displayId, excludeLayers);
             if (result != null) {
                 Log.i(TAG, "fullscreen capture frame="
                         + result.getWidth() + "x" + result.getHeight());
+                dumpFrameForDebug(result, sourceCrop, scale);
                 return result;
             }
             Log.w(TAG, "fullscreen capture returned null");
@@ -211,6 +218,22 @@ final class LiveScreenCapture {
             throw new RuntimeException(fullFailure);
         }
         return null;
+    }
+
+    private int dumpCounter;
+    private void dumpFrameForDebug(Bitmap frame, Rect crop, float scale) {
+        try {
+            if (++dumpCounter > 3) return;
+            // App-private dir: com.miui.home can write here, root can read for analysis.
+            String path = "/data/data/com.miui.home/files/bd_frame_" + dumpCounter + ".png";
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(path);
+            frame.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
+            fos.close();
+            Log.i(TAG, "dump frame -> " + path + " " + frame.getWidth() + "x" + frame.getHeight()
+                    + " crop=" + crop + " scale=" + scale);
+        } catch (Throwable e) {
+            Log.w(TAG, "frame dump failed: " + e);
+        }
     }
 
     /** HyperOS Home's own wallpaper-selector semantics, with compositor-side crop/scale added. */
@@ -254,22 +277,30 @@ final class LiveScreenCapture {
      * The native floating Dock uses SurfaceFlinger blur-behind (BackdropBlurFrameLayout +
      * setBackgroundBlurRadius), which blurs the layers BELOW the Dock window, never the Dock
      * itself.  A plain full-display capture would include the Dock's own layer (its icons end
-     * up inside the glass background).  So we exclude the "Floating Dock" layer by name:
-     * with the default capture mode (no vendor captureMode(2)), setExcludeOrIncludeLayerNames
-     * acts as an EXCLUDE filter — the captured strip is the composited content underneath the
-     * Dock (app + wallpaper), matching the native blur-behind source.
+     * up inside the glass background).  We therefore exclude the Dock window's SurfaceControl
+     * explicitly: setExcludeLayers() removes exactly the Dock's own layer from the capture,
+     * matching the native blur-behind source (app + wallpaper underneath the Dock).
      */
-    private Bitmap captureFullDisplayStrip(Rect sourceCrop, float scale, int displayId)
+    private Bitmap captureFullDisplayStrip(Rect sourceCrop, float scale, int displayId,
+                                           android.view.SurfaceControl[] excludeLayers)
             throws Exception {
         Object builder = captureBuilderConstructor.newInstance();
         setSourceCrop.invoke(builder, new Rect(sourceCrop));
         setFrameScale.invoke(builder, scale, scale);
 
-        // Exclude the Dock overlay's own layer(s) so its icons never bleed into the glass.
-        // Layer names are matched as prefixes ("Floating Dock" matches "Floating Dock#7382").
-        // No setCaptureMode call: default mode treats these names as exclusions.
+        // Exclude the Dock overlay's own window layer(s) so its icons never bleed into the
+        // glass.  Key insight from framework decompile: mExcludeOrIncludeLayerNames is only
+        // read by SurfaceFlinger when captureMode != 0 (Parcel <init> checks mCaptureMode
+        // before reading the string array).  Mode 2 = include (wallpaper capture); try
+        // mode 1 here — treat layer names as EXCLUDE for full-display capture.
+        if (excludeLayers != null && excludeLayers.length > 0) {
+            setExcludeLayers.invoke(builder, (Object) excludeLayers);
+        }
+        // Non-zero captureMode so the layer-name filter is honored; the names below are
+        // excluded from the full-display capture.
         setExcludeOrIncludeLayerNames.invoke(builder,
                 (Object) new String[]{"Floating Dock"});
+        setCaptureMode.invoke(builder, 1);
 
         Object args = build.invoke(builder);
         Object listener = createSyncCaptureListener.invoke(null);

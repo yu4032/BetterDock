@@ -306,7 +306,7 @@ public class SettingsActivity extends AppCompatActivity {
         }
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "liquid_blur", 0, 60);
-        putInt(j, e, "liquid_refraction", 0, 60);
+        putInt(j, e, "liquid_refraction", 0, 200);
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 60);

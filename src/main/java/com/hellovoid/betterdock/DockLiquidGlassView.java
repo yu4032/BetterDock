@@ -50,9 +50,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float gx=step(q.y,q.x);return s*float2(gx,1.0-gx);}"
       + "float circleMap(float x){x=clamp(x,0.0,1.0);return 1.0-sqrt(max(0.0,1.0-x*x));}"
       + "half4 source(float2 p){return content.eval((p+screenOffset)*captureScale);}"
-      + "half4 blurred(float2 p){float r=blurRadius;half4 c=source(p)*0.24;"
-      + "c+=(source(p+float2(r,0))+source(p-float2(r,0))+source(p+float2(0,r))+source(p-float2(0,r)))*0.12;"
-      + "float d=r*0.7071;c+=(source(p+float2(d,d))+source(p+float2(-d,d))+source(p+float2(d,-d))+source(p-float2(d,d)))*0.07;return c;}"
+      + "half4 blurred(float2 p){return source(p);}"
       + "half4 main(float2 coord){float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float r=radiusAt(cc,cornerRadii);"
       + "float sd=sdRound(cc,hs,r);if(-sd>=refractionHeight)return blurred(coord);sd=min(sd,0.0);"
       + "float t=-sd/max(refractionHeight,0.001);float fade=1.0-t*t*(3.0-2.0*t);"
@@ -95,6 +93,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean launcherLifecycleKnown;
     private boolean windowVisible;
     private boolean windowFocused;
+    private android.view.SurfaceControl dockWindowSurface;
     private boolean capturing;
     private boolean sourceDirty;
     private boolean nullFrameLogged;
@@ -186,7 +185,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
         float density = getResources().getDisplayMetrics().density;
         float displacement = Math.abs(refractionAmount) * (1f + Math.abs(chromaticAberration));
-        captureBleedPx = Math.max(8, Math.min(256,
+        captureBleedPx = Math.max(8, Math.min(512,
                 (int) Math.ceil(this.blurRadius + displacement + 8f * density)));
 
         this.squircle = squircle;
@@ -287,6 +286,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureGeneration++;
         windowVisible = getWindowVisibility() == View.VISIBLE;
         windowFocused = hasWindowFocus();
+        dockWindowSurface = resolveWindowSurfaceControl();
+        logOwnWindowInfo();
         observationValid = false;
 
         captureThread = new HandlerThread("BetterDock-WallpaperCapture");
@@ -441,6 +442,78 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return changed;
     }
 
+    /** Log which window this glass view actually lives in — the Dock overlay (2997) or the
+     * Launcher main window — so we know which layer to exclude from captures. */
+    private void logOwnWindowInfo() {
+        try {
+            java.lang.reflect.Method getVri = View.class.getDeclaredMethod("getViewRootImpl");
+            getVri.setAccessible(true);
+            Object vri = getVri.invoke(this);
+            if (vri == null) { Log.i(TAG, "own window: no ViewRootImpl"); return; }
+            Class<?> vriClass = Class.forName("android.view.ViewRootImpl");
+            java.lang.reflect.Field attrsField = vriClass.getDeclaredField("mWindowAttributes");
+            attrsField.setAccessible(true);
+            Object attrs = attrsField.get(vri);
+            if (attrs instanceof android.view.WindowManager.LayoutParams) {
+                android.view.WindowManager.LayoutParams lp =
+                        (android.view.WindowManager.LayoutParams) attrs;
+                Log.i(TAG, "own window: type=" + lp.type + " title=" + lp.getTitle());
+            }
+        } catch (Throwable e) {
+            Log.w(TAG, "own window info failed: " + e);
+        }
+    }
+
+    /** The Dock's own window layer, resolved once at attach, so full-display captures can
+     * exclude it (matching the native blur-behind which blurs only layers below the Dock).
+     *
+     * The Dock is hosted in a dedicated overlay window ("Floating Dock", type 2997), NOT in
+     * the Launcher main window.  We scan WindowManagerGlobal's roots for that window type and
+     * return its SurfaceControl; excluding the wrong window (e.g. the Launcher window our view
+     * tree happens to live in) would leave the Dock icons in the captured frame. */
+    private android.view.SurfaceControl resolveWindowSurfaceControl() {
+        try {
+            Class<?> wmgClass = Class.forName("android.view.WindowManagerGlobal");
+            java.lang.reflect.Method getInstance = wmgClass.getDeclaredMethod("getInstance");
+            getInstance.setAccessible(true);
+            Object wmg = getInstance.invoke(null);
+            java.lang.reflect.Field rootsField = wmgClass.getDeclaredField("mRoots");
+            rootsField.setAccessible(true);
+            Object roots = rootsField.get(wmg);
+            if (!(roots instanceof java.util.ArrayList)) return null;
+            java.util.ArrayList<?> list = (java.util.ArrayList<?>) roots;
+            for (Object root : list) {
+                if (root == null) continue;
+                try {
+                    Class<?> vriClass = Class.forName("android.view.ViewRootImpl");
+                    java.lang.reflect.Field attrsField = vriClass.getDeclaredField("mWindowAttributes");
+                    attrsField.setAccessible(true);
+                    Object attrs = attrsField.get(root);
+                    if (!(attrs instanceof android.view.WindowManager.LayoutParams)) continue;
+                    android.view.WindowManager.LayoutParams lp =
+                            (android.view.WindowManager.LayoutParams) attrs;
+                    // Dock overlay window type 2997 (HyperOS Floating Dock).
+                    if (lp.type == 2997) {
+                        java.lang.reflect.Method getSc = vriClass.getDeclaredMethod("getSurfaceControl");
+                        getSc.setAccessible(true);
+                        Object sc = getSc.invoke(root);
+                        if (sc instanceof android.view.SurfaceControl) {
+                            Log.i(TAG, "Liquid capture dock window surface resolved from root["
+                                    + list.indexOf(root) + "] type=" + lp.type
+                                    + " title=" + lp.getTitle() + " sc=" + sc);
+                            return (android.view.SurfaceControl) sc;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            Log.w(TAG, "dock window surface: no root with type 2997 found (roots=" + list.size() + ")");
+        } catch (Throwable e) {
+            Log.w(TAG, "dock window surface resolve failed: " + e);
+        }
+        return null;
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -547,7 +620,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     liveCapture = client;
                 }
                 if (useFullscreen) {
-                    strip = client.captureScreen(request.stripRect, CAPTURE_SCALE, request.displayId);
+                    android.view.SurfaceControl[] excludes = null;
+                    if (dockWindowSurface != null) {
+                        excludes = new android.view.SurfaceControl[]{dockWindowSurface};
+                    }
+                    strip = client.captureScreen(request.stripRect, CAPTURE_SCALE, request.displayId,
+                            excludes);
                 } else {
                     strip = client.captureWallpaper(request.stripRect, CAPTURE_SCALE, request.displayId);
                 }
@@ -662,12 +740,60 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return Math.max(min, Math.min(max, value));
     }
 
+    /** Ask SurfaceFlinger to blur THIS view's own rendered content (MIUI self-blur).
+     *  The RuntimeShader now only refracts; the expensive, high-quality blur is the system's
+     *  native pass (RenderNode.setSelfBlurRadius → makePassBlurBetterDownShader), which is
+     *  far better than the software 5-tap sampling the shader used to do.
+     *
+     *  Decompiled evidence (HyperOS launcher, mingou_desktop_blur_overlay path): self-blur
+     *  only takes effect when the view ALSO gets setMiSelfBlurEnhanceFlag(0x200, 0x200) —
+     *  without the enhance flag SurfaceFlinger ignores the RenderNode's self-blur radius. */
+    private void applySystemSelfBlur(int radius) {
+        try {
+            if (radius <= 0) return;
+            // View.setMiSelfBlur(int radius, ArrayList<Display.ColorMode> colorModes) — hidden
+            // MIUI API (TEST-API in framework).  Called reflectively like the rest of the
+            // module's hidden-surface usage.
+            Class<?> viewClass = View.class;
+            java.lang.reflect.Method m;
+            try {
+                m = viewClass.getDeclaredMethod("setMiSelfBlur",
+                        int.class, java.util.ArrayList.class);
+            } catch (NoSuchMethodException e) {
+                m = viewClass.getDeclaredMethod("setMiSelfBlur", int.class);
+            }
+            m.setAccessible(true);
+            if (m.getParameterTypes().length == 2) {
+                m.invoke(this, radius, null);
+            } else {
+                m.invoke(this, radius);
+            }
+            // Enhance flag 0x200 = "blur this view's own drawn content".  Without it the
+            // self-blur radius is set on the RenderNode but SurfaceFlinger never honors it.
+            try {
+                java.lang.reflect.Method flagMethod =
+                        viewClass.getDeclaredMethod("setMiSelfBlurEnhanceFlag", int.class, int.class);
+                flagMethod.setAccessible(true);
+                flagMethod.invoke(this, 0x200, 0x200);
+            } catch (NoSuchMethodException e) {
+                Log.w(TAG, "setMiSelfBlurEnhanceFlag not available");
+            }
+            Log.i(TAG, "Liquid glass: system self-blur applied radius=" + radius);
+        } catch (Throwable e) {
+            Log.w(TAG, "system self-blur failed: " + e);
+        }
+    }
+
     private void installCapture(CroppedFrame frame) {
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
         if (!nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(0f);
             nativeBackgroundHiddenByGlass = true;
+            // The RuntimeShader draws the REFRACTED capture (blur-free); the actual blur is
+            // done by SurfaceFlinger on our own content via MIUI self-blur (RenderNode
+            // setSelfBlurRadius), matching the native makePassBlurBetterDownShader pipeline.
+            applySystemSelfBlur(blurRadius);
         }
 
         Bitmap old = capture;
@@ -690,7 +816,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("size", getWidth(), getHeight());
         refraction.setFloatUniform("offset", 0f, 0f);
         refraction.setFloatUniform("cornerRadii", cornerRadius, cornerRadius, cornerRadius, cornerRadius);
-        refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 42f)));
+        refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
         refraction.setFloatUniform("refractionAmount", refractionAmount);
         refraction.setFloatUniform("depthEffect", .08f);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);

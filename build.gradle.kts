@@ -17,6 +17,11 @@ android {
 
     buildFeatures { compose = true }
 
+    lint {
+        // LSPosed module: reflective access to hidden framework APIs is the whole point.
+        disable += "BlockedPrivateApi"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
