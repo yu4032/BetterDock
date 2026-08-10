@@ -204,7 +204,7 @@ public class SettingsActivity extends AppCompatActivity {
             "grid_portrait_margin_top", "grid_portrait_margin_bottom"
         };
         boolean importedDp = j.optBoolean("grid_margins_dp", false);
-        for (String key : gridMargins) putInt(j, e, key, 0, importedDp ? 600 : 2000);
+        for (String key : gridMargins) putInt(j, e, key, importedDp ? -600 : -2000, importedDp ? 600 : 2000);
         e.putBoolean("grid_margins_dp", importedDp);
         putInt(j, e, "indicator_landscape_x", -400, 400);
         putInt(j, e, "indicator_landscape_y", -400, 400);

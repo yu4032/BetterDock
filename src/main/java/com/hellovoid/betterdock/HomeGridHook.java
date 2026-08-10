@@ -24,14 +24,14 @@ final class HomeGridHook {
                         int portLeft, int portRight, int portTop, int portBottom,
                         int landIndicatorX, int landIndicatorY,
                         int portIndicatorX, int portIndicatorY) {
-        landscapeLeft = Math.max(0, landLeft);
-        landscapeRight = Math.max(0, landRight);
-        landscapeTop = Math.max(0, landTop);
-        landscapeBottom = Math.max(0, landBottom);
-        portraitLeft = Math.max(0, portLeft);
-        portraitRight = Math.max(0, portRight);
-        portraitTop = Math.max(0, portTop);
-        portraitBottom = Math.max(0, portBottom);
+        landscapeLeft = landLeft;
+        landscapeRight = landRight;
+        landscapeTop = landTop;
+        landscapeBottom = landBottom;
+        portraitLeft = portLeft;
+        portraitRight = portRight;
+        portraitTop = portTop;
+        portraitBottom = portBottom;
         landscapeIndicatorX = landIndicatorX;
         landscapeIndicatorY = landIndicatorY;
         portraitIndicatorX = portIndicatorX;
@@ -51,6 +51,7 @@ final class HomeGridHook {
             hookGridCountGetter(gridConfig, "getCountY");
             installRotationTransform(classLoader);
             installIndicatorPosition(classLoader);
+            installCellLayoutMargins(classLoader);
 
             Class<?> builder = XposedHelpers.findClass(
                 "com.miui.home.launcher.grid.GridConfig$GridConfigBuilder", classLoader);
@@ -67,6 +68,59 @@ final class HomeGridHook {
 
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid hook unavailable: " + e);
+        }
+    }
+
+    private static void installCellLayoutMargins(ClassLoader classLoader) {
+        Class<?> cellLayout = XposedHelpers.findClass(
+            "com.miui.home.launcher.CellLayout", classLoader);
+        XposedHelpers.findAndHookMethod(cellLayout, "calculateXsAndYs",
+            new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    applyCellLayoutMargins(param.thisObject);
+                }
+            });
+    }
+
+    private static void applyCellLayoutMargins(Object cellLayout) {
+        try {
+            Object config = XposedHelpers.getObjectField(cellLayout, "mGridConfig");
+            if (config == null) return;
+            int countX = XposedHelpers.getIntField(config, "countX");
+            int countY = XposedHelpers.getIntField(config, "countY");
+            int cell = XposedHelpers.getIntField(config, "cellSize");
+            if (countX <= 0 || cell <= 0) return;
+            android.content.Context context = ((android.view.View) cellLayout)
+                .getContext();
+            android.view.WindowManager windowManager = (android.view.WindowManager)
+                context.getSystemService(android.content.Context.WINDOW_SERVICE);
+            android.graphics.Rect displayBounds = windowManager
+                .getMaximumWindowMetrics().getBounds();
+            int width = displayBounds.width();
+            int height = displayBounds.height();
+            if (width <= 0 || height <= 0) return;
+            boolean portrait = countY > countX;
+            if ((portrait && width > height) || (!portrait && height > width)) {
+                int swap = width;
+                width = height;
+                height = swap;
+            }
+            int left = portrait ? portraitLeft : landscapeLeft;
+            int right = portrait ? portraitRight : landscapeRight;
+            int top = portrait ? portraitTop : landscapeTop;
+            int bottom = portrait ? portraitBottom : landscapeBottom;
+            int freeWidth = Math.max(0,
+                width - left - right - cell * countX);
+            int freeHeight = Math.max(0,
+                height - top - bottom - cell * countY);
+            int widthGap = countX > 1 ? freeWidth / (countX - 1) : 0;
+            int heightGap = countY > 1 ? freeHeight / (countY - 1) : 0;
+            XposedHelpers.setIntField(cellLayout, "mCellPaddingLeft", left);
+            XposedHelpers.setIntField(cellLayout, "mCellPaddingTop", top);
+            XposedHelpers.setIntField(cellLayout, "mWidthGap", widthGap);
+            XposedHelpers.setIntField(cellLayout, "mHeightGap", heightGap);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] CellLayout margin apply failed: " + e);
         }
     }
 
@@ -160,31 +214,35 @@ final class HomeGridHook {
         if (config == null) return;
         try {
             int width = XposedHelpers.getIntField(config, "width");
+            int height = XposedHelpers.getIntField(config, "height");
             int countX = XposedHelpers.getIntField(config, "countX");
             int countY = XposedHelpers.getIntField(config, "countY");
-            int oldCell = XposedHelpers.getIntField(config, "cellSize");
-            int oldTop = XposedHelpers.getIntField(config, "top");
-            if (width <= 0 || countX <= 0 || countY <= 0 || oldCell <= 0) return;
+            if (width <= 0 || height <= 0 || countX <= 0 || countY <= 0) return;
 
             boolean portrait = countY > countX;
+            // MIUI may reuse the smaller landscape/portrait base GridConfig after
+            // rotation, leaving width and height in the opposite orientation.
+            if ((portrait && width > height) || (!portrait && height > width)) {
+                int swap = width;
+                width = height;
+                height = swap;
+            }
             int marginLeft = portrait ? portraitLeft : landscapeLeft;
             int marginRight = portrait ? portraitRight : landscapeRight;
             int marginTop = portrait ? portraitTop : landscapeTop;
             int marginBottom = portrait ? portraitBottom : landscapeBottom;
-            int availableWidth = Math.max(countX, width - marginLeft - marginRight);
-            int oldGridHeight = oldCell * countY;
+            int availableWidth = Math.max(countX,
+                width - marginLeft - marginRight);
             int availableHeight = Math.max(countY,
-                oldGridHeight - marginTop - marginBottom);
+                height - marginTop - marginBottom);
             int newCell = Math.max(1, Math.min(availableWidth / countX,
                 availableHeight / countY));
-            int newLeft = marginLeft
-                + Math.max(0, availableWidth - newCell * countX) / 2;
-            int remainingHeight = Math.max(0,
-                availableHeight - newCell * countY);
-            int newTop = oldTop + marginTop + remainingHeight / 2;
+
+            // Margins are absolute screen insets. Do not add MIUI's defaults or
+            // center the unused remainder: zero must start at screen coordinate zero.
             XposedHelpers.setIntField(config, "cellSize", newCell);
-            XposedHelpers.setIntField(config, "left", newLeft);
-            XposedHelpers.setIntField(config, "top", newTop);
+            XposedHelpers.setIntField(config, "left", marginLeft);
+            XposedHelpers.setIntField(config, "top", marginTop);
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid margin apply failed: " + e);
         }

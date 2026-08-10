@@ -68,14 +68,14 @@ private data class IntSpec(
 )
 
 private val gridSpecs = listOf(
-    IntSpec("grid_landscape_margin_left", "横屏左边距", 57, 0, 600, "dp"),
-    IntSpec("grid_landscape_margin_right", "横屏右边距", 57, 0, 600, "dp"),
-    IntSpec("grid_landscape_margin_top", "横屏上边距", 28, 0, 600, "dp"),
-    IntSpec("grid_landscape_margin_bottom", "横屏下边距", 28, 0, 600, "dp"),
-    IntSpec("grid_portrait_margin_left", "竖屏左边距", 28, 0, 600, "dp"),
-    IntSpec("grid_portrait_margin_right", "竖屏右边距", 28, 0, 600, "dp"),
-    IntSpec("grid_portrait_margin_top", "竖屏上边距", 57, 0, 600, "dp"),
-    IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 57, 0, 600, "dp"),
+    IntSpec("grid_landscape_margin_left", "横屏左边距", 57, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_right", "横屏右边距", 57, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_top", "横屏上边距", 28, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_bottom", "横屏下边距", 28, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_left", "竖屏左边距", 28, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_right", "竖屏右边距", 28, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_top", "竖屏上边距", 57, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 57, -600, 600, "dp"),
     IntSpec("indicator_landscape_x", "横屏指示器 X", 0, -400, 400),
     IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -400, 400),
     IntSpec("indicator_portrait_x", "竖屏指示器 X", 0, -400, 400),
@@ -159,32 +159,36 @@ private fun HomePage(padding: PaddingValues, open: (Page) -> Unit) {
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences) {
+    var gridEnabled by remember { mutableStateOf(prefs.getBoolean("home_grid_8x4", true)) }
     SettingsList(padding, "网格") {
         BooleanSetting(prefs, "home_grid_8x4", "启用 8×4 / 4×8 网格", true,
-            "横屏 8 列 4 行，竖屏 4 列 8 行")
-        gridSpecs.forEach { IntSetting(prefs, it) }
+            "横屏 8 列 4 行，竖屏 4 列 8 行") { gridEnabled = it }
+        gridSpecs.forEach { IntSetting(prefs, it, gridEnabled) }
     }
 }
 
 @Composable
 private fun DockPage(padding: PaddingValues, prefs: SharedPreferences) {
+    var dockEnabled by remember { mutableStateOf(prefs.getBoolean("dock_customization", true)) }
     SettingsList(padding, "Dock") {
-        BooleanSetting(prefs, "dock_customization", "自定义整个 Dock", true, "BetterDock Dock 功能总开关")
+        BooleanSetting(prefs, "dock_customization", "自定义整个 Dock", true,
+            "BetterDock Dock 功能总开关") { dockEnabled = it }
         StringDropdown(prefs, "light_mode", "灯光模式", "fixed",
-            listOf("固定" to "fixed", "陀螺仪动态" to "dynamic", "关闭" to "none"))
-        dockSpecs.forEach { IntSetting(prefs, it) }
+            listOf("固定" to "fixed", "陀螺仪动态" to "dynamic", "关闭" to "none"), dockEnabled)
+        dockSpecs.forEach { IntSetting(prefs, it, dockEnabled) }
     }
 }
 
 @Composable
 private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences) {
+    val dockEnabled = prefs.getBoolean("dock_customization", true)
     var dockStroke by remember { mutableStateOf(prefs.getBoolean("dock_stroke", true)) }
     var squircle by remember { mutableStateOf(prefs.getBoolean("squircle", false)) }
     var fillDiff by remember { mutableStateOf(prefs.getBoolean("fill_diff", false)) }
     SettingsList(padding, "描边") {
-        BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光") { dockStroke = it }
-        BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角") { squircle = it }
-        BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿") { fillDiff = it }
+        BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光", dockEnabled) { dockStroke = it }
+        BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", dockEnabled) { squircle = it }
+        BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", dockEnabled) { fillDiff = it }
         strokeSpecs.forEach {
             val enabled = when (it.dependency) {
                 "dock_stroke" -> dockStroke
@@ -192,20 +196,21 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences) {
                 "fill_diff" -> fillDiff
                 else -> true
             }
-            IntSetting(prefs, it, enabled)
+            IntSetting(prefs, it, dockEnabled && enabled)
         }
     }
 }
 
 @Composable
 private fun ShadowPage(padding: PaddingValues, prefs: SharedPreferences) {
+    val dockEnabled = prefs.getBoolean("dock_customization", true)
     var dockShadow by remember { mutableStateOf(prefs.getBoolean("dock_shadow", true)) }
     var strokeShadow by remember { mutableStateOf(prefs.getBoolean("stroke_shadow", false)) }
     SettingsList(padding, "阴影") {
-        BooleanSetting(prefs, "dock_shadow", "整个 Dock 下方阴影", true, "跟随 Dock 长宽、高度和圆角") { dockShadow = it }
-        BooleanSetting(prefs, "stroke_shadow", "描边阴影", false, "描边下方的柔和阴影") { strokeShadow = it }
+        BooleanSetting(prefs, "dock_shadow", "整个 Dock 下方阴影", true, "跟随 Dock 长宽、高度和圆角", dockEnabled) { dockShadow = it }
+        BooleanSetting(prefs, "stroke_shadow", "描边阴影", false, "描边下方的柔和阴影", dockEnabled) { strokeShadow = it }
         shadowSpecs.forEach {
-            IntSetting(prefs, it, when (it.dependency) {
+            IntSetting(prefs, it, dockEnabled && when (it.dependency) {
                 "dock_shadow" -> dockShadow
                 "stroke_shadow" -> strokeShadow
                 else -> true
@@ -247,7 +252,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun BooleanSetting(
     prefs: SharedPreferences, key: String, title: String, default: Boolean, summary: String? = null,
-    onChanged: (Boolean) -> Unit = {},
+    enabled: Boolean = true, onChanged: (Boolean) -> Unit = {},
 ) {
     var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
     SwitchPreference(
@@ -255,6 +260,7 @@ private fun BooleanSetting(
         onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
         title = title,
         summary = summary,
+        enabled = enabled,
     )
 }
 
@@ -290,7 +296,7 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
 @Composable
 private fun StringDropdown(
     prefs: SharedPreferences, key: String, title: String, default: String,
-    options: List<Pair<String, String>>,
+    options: List<Pair<String, String>>, enabled: Boolean = true,
 ) {
     var value by remember(key) { mutableStateOf(prefs.getString(key, default) ?: default) }
     val index = options.indexOfFirst { it.second == value }.coerceAtLeast(0)
@@ -298,6 +304,7 @@ private fun StringDropdown(
         items = options.map { it.first },
         selectedIndex = index,
         title = title,
+        enabled = enabled,
         onSelectedIndexChange = { selected ->
             value = options[selected].second
             prefs.edit().putString(key, value).apply()
