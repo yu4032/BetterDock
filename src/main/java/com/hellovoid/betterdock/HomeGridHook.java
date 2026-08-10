@@ -138,6 +138,7 @@ final class HomeGridHook {
             int countY = XposedHelpers.getIntField(config, "countY");
             int oldCell = XposedHelpers.getIntField(config, "cellSize");
             int oldTop = XposedHelpers.getIntField(config, "top");
+            int oldBottom = XposedHelpers.getIntField(config, "bottom");
             if (width <= 0 || countX <= 0 || countY <= 0 || oldCell <= 0) return;
 
             boolean portrait = countY > countX;
@@ -153,12 +154,16 @@ final class HomeGridHook {
                 availableHeight / countY));
             int newLeft = marginLeft
                 + Math.max(0, availableWidth - newCell * countX) / 2;
-            int newTop = oldTop + marginTop
-                + Math.max(0, availableHeight - newCell * countY) / 2;
+            int remainingHeight = Math.max(0,
+                availableHeight - newCell * countY);
+            int newTop = oldTop + marginTop + remainingHeight / 2;
+            int newBottom = oldBottom + marginBottom
+                + remainingHeight - remainingHeight / 2;
 
             XposedHelpers.setIntField(config, "cellSize", newCell);
             XposedHelpers.setIntField(config, "left", newLeft);
             XposedHelpers.setIntField(config, "top", newTop);
+            XposedHelpers.setIntField(config, "bottom", newBottom);
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid margin apply failed: " + e);
         }
