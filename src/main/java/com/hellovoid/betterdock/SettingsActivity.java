@@ -3,11 +3,13 @@ package com.hellovoid.betterdock;
 import android.content.SharedPreferences;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.util.DisplayMetrics;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.net.Uri;
+import android.view.View;
 import android.view.Window;
 import android.widget.Toast;
 import androidx.preference.Preference;
@@ -42,7 +44,18 @@ public class SettingsActivity extends AppCompatActivity {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         Window w = getWindow();
-        w.setStatusBarColor(Color.parseColor("#37474F"));
+        // Status bar must follow the system night mode (and Miuix Monet theme): a hardcoded
+        // color breaks HyperOS 3 — light mode shows dark icons on a dark bar, dark mode
+        // shows white icons on a light bar.  Adapt bar color + icon appearance together.
+        int uiMode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        boolean night = uiMode == Configuration.UI_MODE_NIGHT_YES;
+        if (night) {
+            w.setStatusBarColor(Color.parseColor("#1A1A1E"));
+            w.getDecorView().setSystemUiVisibility(0); // white icons on dark bar
+        } else {
+            w.setStatusBarColor(Color.parseColor("#F2F2F7"));
+            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        }
         if (useLegacyPreferenceUi()) {
             getSupportFragmentManager().beginTransaction()
                 .replace(R.id.fragment_container, new SettingsFragment()).commit();
