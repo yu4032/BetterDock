@@ -1072,12 +1072,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     boolean appFront = !(launcherResumed && launcherLifecycleKnown);
                     boolean dockSettled = System.nanoTime() > dockMovingUntilNanos;
                     boolean wallpaperMode = !(appFront && dockSettled);
+                    // Mode 1 (screen) excludes the Dock via SurfaceControl only — layer-name
+                    // exclusion (setExcludeOrIncludeLayerNames) returns BLACK frames on
+                    // HyperOS in mode 1.  The Dock window's SurfaceControl exclusion is
+                    // precise.  (During icon drags the Dock is moving -> mode 2 wallpaper,
+                    // so the drag surface never needs name exclusion here.)
                     String[] excludeNames = null;
-                    if (!wallpaperMode) {
-                        excludeNames = dockWindowLayerName != null
-                                ? new String[]{dockWindowLayerName, dragLayerName}
-                                : (dragLayerName != null ? new String[]{dragLayerName} : null);
-                    }
                     Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)

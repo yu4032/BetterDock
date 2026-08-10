@@ -280,15 +280,13 @@ final class LiveScreenCapture {
                 // EXCLUDE_OR_INCLUDE_LAYER_NAMES); we must do the same or the capture
                 // includes the wrong layer (e.g. the Dock).
                 names.add("Wallpaper BBQ wrapper");
-            } else {
-                names.add("Floating Dock");
-                if (excludeLayerNames != null) {
-                    for (String n : excludeLayerNames) {
-                        if (n != null && !n.isEmpty() && !names.contains(n)) names.add(n);
-                    }
-                }
             }
-            setExcludeOrIncludeLayerNames.invoke(builder, (Object) names.toArray(new String[0]));
+            // Mode 1 (screen): no layer-name list at all — the Dock window is excluded
+            // via setExcludeLayers(SurfaceControl) above, which is precise.  Layer-name
+            // exclusion in mode 1 returns black frames on HyperOS.
+            if (!names.isEmpty()) {
+                setExcludeOrIncludeLayerNames.invoke(builder, (Object) names.toArray(new String[0]));
+            }
             setCaptureMode.invoke(builder, captureMode);
             Object args = build.invoke(builder);
 
