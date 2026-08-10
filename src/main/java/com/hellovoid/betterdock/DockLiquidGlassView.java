@@ -245,14 +245,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int observedDockTranslationY;
     private int observedDockScaleX;
     private int observedDockScaleY;
-    private int observedWorkspaceX;
-    private int observedWorkspaceY;
-    private int observedWorkspaceScrollX;
-    private int observedWorkspaceScrollY;
-    private int observedWorkspaceTranslationX;
-    private int observedWorkspaceTranslationY;
-    private int observedWorkspaceScaleX;
-    private int observedWorkspaceScaleY;
 
     private boolean wallpaperOffsetValid;
     private int wallpaperOffsetXBits;
@@ -276,24 +268,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 logCaptureGate("kick-blocked");
                 return;
             }
-            if (capturing) {
-                // A capture is in flight; wait for it and reschedule (autonomous loop).
-                kickScheduled = true;
-                mainHandler.postDelayed(this, Math.max(1L, captureIntervalNanos / 1_000_000L));
-                return;
-            }
-            if (!sourceDirty) {
-                // Autonomous cadence: keep sampling at the configured rate even when the
-                // observed geometry is static, so wallpaper/app content changes under the
-                // glass stay live (previously this was purely event-driven, freezing at 0fps
-                // whenever nothing moved).
-                sourceDirty = true;
-            }
+            if (capturing || !sourceDirty) return;
 
             long now = System.nanoTime();
             long remaining = lastCaptureStartNanos == 0L
                     ? 0L : captureIntervalNanos - (now - lastCaptureStartNanos);
             if (remaining > 0L) {
+                // One trailing, coalesced frame only.  Capture is event-driven: it only
+                // runs when the Dock itself moves (observation/state change), never on a
+                // free-running cadence, so a static Dock costs zero captures.
                 kickScheduled = true;
                 mainHandler.postDelayed(this, Math.max(1L, (remaining + 999_999L) / 1_000_000L));
                 return;
@@ -301,9 +284,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
             sourceDirty = false;
             startCapture();
-            // Self-reschedule to keep the cadence; captureIntervalNanos is the period.
-            kickScheduled = true;
-            mainHandler.postDelayed(this, Math.max(1L, captureIntervalNanos / 1_000_000L));
         }
     };
 
@@ -553,15 +533,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /**
      * Cheap state polling only; this never captures by itself when all tracked values are static.
-     * It catches workspace page motion, Dock motion/resize and display rotation/size changes.
+     * Tracks ONLY the Dock's own geometry (position/size/scale/translation) plus display
+     * rotation/size — NOT the launcher workspace scroll, so swiping pages does not trigger
+     * captures.  The glass only needs refreshing when the Dock itself moves (summon/hide/
+     * resize animation).
      */
     private boolean updateObservation() {
         Display display = geometrySource.getDisplay();
         if (display == null) return false;
         display.getRealSize(tmpDisplaySize);
         geometrySource.getLocationOnScreen(tmpDockLocation);
-        if (workspace != null) workspace.getLocationOnScreen(tmpWorkspaceLocation);
-        else { tmpWorkspaceLocation[0] = 0; tmpWorkspaceLocation[1] = 0; }
 
         int rotation = display.getRotation();
         int dockW = geometrySource.getWidth();
@@ -570,13 +551,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         int dockTy = Float.floatToIntBits(geometrySource.getTranslationY());
         int dockSx = Float.floatToIntBits(geometrySource.getScaleX());
         int dockSy = Float.floatToIntBits(geometrySource.getScaleY());
-
-        int wsScrollX = workspace != null ? workspace.getScrollX() : 0;
-        int wsScrollY = workspace != null ? workspace.getScrollY() : 0;
-        int wsTx = workspace != null ? Float.floatToIntBits(workspace.getTranslationX()) : 0;
-        int wsTy = workspace != null ? Float.floatToIntBits(workspace.getTranslationY()) : 0;
-        int wsSx = workspace != null ? Float.floatToIntBits(workspace.getScaleX()) : 0;
-        int wsSy = workspace != null ? Float.floatToIntBits(workspace.getScaleY()) : 0;
 
         boolean changed = !observationValid
                 || rotation != observedRotation
@@ -589,15 +563,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 || dockTx != observedDockTranslationX
                 || dockTy != observedDockTranslationY
                 || dockSx != observedDockScaleX
-                || dockSy != observedDockScaleY
-                || tmpWorkspaceLocation[0] != observedWorkspaceX
-                || tmpWorkspaceLocation[1] != observedWorkspaceY
-                || wsScrollX != observedWorkspaceScrollX
-                || wsScrollY != observedWorkspaceScrollY
-                || wsTx != observedWorkspaceTranslationX
-                || wsTy != observedWorkspaceTranslationY
-                || wsSx != observedWorkspaceScaleX
-                || wsSy != observedWorkspaceScaleY;
+                || dockSy != observedDockScaleY;
 
         observedRotation = rotation;
         observedDisplayWidth = tmpDisplaySize.x;
@@ -610,14 +576,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observedDockTranslationY = dockTy;
         observedDockScaleX = dockSx;
         observedDockScaleY = dockSy;
-        observedWorkspaceX = tmpWorkspaceLocation[0];
-        observedWorkspaceY = tmpWorkspaceLocation[1];
-        observedWorkspaceScrollX = wsScrollX;
-        observedWorkspaceScrollY = wsScrollY;
-        observedWorkspaceTranslationX = wsTx;
-        observedWorkspaceTranslationY = wsTy;
-        observedWorkspaceScaleX = wsSx;
-        observedWorkspaceScaleY = wsSy;
         observationValid = true;
         return changed;
     }
