@@ -545,6 +545,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     @Override public boolean onPreDraw() {
         if (!isCaptureAllowed()) return true;
+        // Guard the hidden native background: dock animations may reset the background's
+        // alpha back to 1, which would show the default background through/over the glass.
+        // Re-hide it every frame while the glass owns the background.
+        if (nativeBackgroundHiddenByGlass && geometrySource.getAlpha() != 0f) {
+            geometrySource.setAlpha(0f);
+        }
         if (updateObservation()) {
             requestStateCapture("observation");
         }

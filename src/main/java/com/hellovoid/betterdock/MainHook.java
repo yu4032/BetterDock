@@ -120,7 +120,14 @@ public class MainHook implements IXposedHookLoadPackage {
                                 Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
                                 if (candidate instanceof View) workspace = (View) candidate;
                             } catch (Throwable ignored) {}
-                            if (liquidGlassView != null) return;
+                            if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
+                            // The Dock window's view tree can be rebuilt (dock hide/show,
+                            // scene switches); if the previous glass view was destroyed with
+                            // its parent, recreate it so the glass does not silently revert
+                            // to the default background.
+                            if (liquidGlassView != null) {
+                                XposedBridge.log("[DC] re-creating glass view (previous detached)");
+                            }
                             liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
                                 cfg.i("liquid_blur", 18), cfg.i("liquid_refraction", 18),
                                 cfg.i("liquid_chromatic", 8) / 100f,
@@ -304,7 +311,14 @@ public class MainHook implements IXposedHookLoadPackage {
                         int dockShadowSize = c2.i("dock_shadow_size", 52);
                         int dockShadowAlpha = c2.i("dock_shadow_alpha", 140);
                         int dockShadowY = c2.i("dock_shadow_y", 12);
-                        if (overlay != null) return;
+                        if (overlay != null && overlay.getParent() != null) return;
+                        if (overlay != null) {
+                            XposedBridge.log("[DC] re-creating dock overlay (previous detached)");
+                        }
+                        if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
+                        if (liquidGlassView != null) {
+                            XposedBridge.log("[DC] re-creating glass view (previous detached)");
+                        }
                         if (liquidGlass) {
                             View workspace = null;
                             try {
