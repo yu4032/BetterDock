@@ -38,6 +38,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float4 cornerRadii;"
       + "uniform float refractionHeight;"
       + "uniform float refractionAmount;"
+      + "uniform float sCurveAmount;"
       + "uniform float depthEffect;"
       + "uniform float chromaticAberration;"
       + "uniform float blurRadius;"
@@ -49,14 +50,22 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "s.x=s.x==0.0?1.0:s.x;s.y=s.y==0.0?1.0:s.y;if(q.x>=0.0||q.y>=0.0)return s*normalize(max(q,0.0001));"
       + "float gx=step(q.y,q.x);return s*float2(gx,1.0-gx);}"
       + "float circleMap(float x){x=clamp(x,0.0,1.0);return 1.0-sqrt(max(0.0,1.0-x*x));}"
+      + "float surfaceHeight(float2 p){return 0.9*sin(p.x*0.004+p.y*0.001)"
+      + "+0.55*cos(p.x*0.001-p.y*0.004)+0.35*sin((p.x+p.y)*0.008);}"
+      + "float2 surfaceGrad(float2 p){return float2("
+      + "0.9*0.004*cos(p.x*0.004+p.y*0.001)-0.55*0.001*sin(p.x*0.001-p.y*0.004)"
+      + "+0.35*0.008*cos((p.x+p.y)*0.008),"
+      + "0.9*0.001*cos(p.x*0.004+p.y*0.001)+0.55*0.004*sin(p.x*0.001-p.y*0.004)"
+      + "+0.35*0.008*cos((p.x+p.y)*0.008))*12.0;}"
       + "half4 source(float2 p){return content.eval((p+screenOffset)*captureScale);}"
       + "half4 blurred(float2 p){return source(p);}"
       + "half4 main(float2 coord){float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float r=radiusAt(cc,cornerRadii);"
-      + "float sd=sdRound(cc,hs,r);if(-sd>=refractionHeight)return blurred(coord);sd=min(sd,0.0);"
-      + "float t=-sd/max(refractionHeight,0.001);float fade=1.0-t*t*(3.0-2.0*t);"
-      + "float d=circleMap(1.0-t)*refractionAmount*fade;float2 g=normalize(gradRound(cc,hs,r)+depthEffect*fade*normalize(cc+0.0001));"
-      + "float2 rc=coord+d*g;float pf=abs(cc.x*cc.y)/max(hs.x*hs.y,1.0);float di=chromaticAberration*(0.4+0.6*pf);"
-      + "float2 dd=d*g*di;half4 rr=blurred(rc+dd);half4 gg=blurred(rc);half4 bb=blurred(rc-dd);"
+      + "float sd=sdRound(cc,hs,r);float edge=clamp(-sd/max(refractionHeight,0.001),0.0,1.0);"
+      + "float edgeFade=1.0-edge*edge*(3.0-2.0*edge);"
+      + "float2 gs=surfaceGrad(cc);float2 g=normalize(gradRound(cc,hs,r)+depthEffect*edgeFade*normalize(cc+0.0001));"
+      + "float2 shift=gs*sCurveAmount+g*circleMap(edge)*refractionAmount*0.8;"
+      + "float2 rc=coord+shift;float pf=abs(cc.x*cc.y)/max(hs.x*hs.y,1.0);float di=chromaticAberration*(0.4+0.6*pf);"
+      + "float2 dd=shift*di;half4 rr=blurred(rc+dd);half4 gg=blurred(rc);half4 bb=blurred(rc-dd);"
       + "return half4(rr.r,gg.g,bb.b,(rr.a+gg.a+bb.a)/3.0);}";
 
     private final View workspace;
@@ -67,6 +76,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
     private final float refractionAmount;
+    private final float sCurveAmount;
     private final float chromaticAberration;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
@@ -97,6 +107,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean capturing;
     private boolean sourceDirty;
     private boolean nullFrameLogged;
+    private int drawFailLogged;
     private boolean nativeBackgroundHiddenByGlass;
     private boolean kickScheduled;
     private long captureGeneration;
@@ -171,7 +182,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             };
 
     DockLiquidGlassView(View geometrySource, View workspace, int blurRadius,
-                        float refractionAmount, float chromaticAberration,
+                        float refractionAmount, float sCurveAmount, float chromaticAberration,
                         int tintAlpha, boolean squircle, float squircleCp,
                         int captureFps) {
         super(geometrySource.getContext());
@@ -179,6 +190,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         this.workspace = workspace;
         this.blurRadius = Math.max(0, blurRadius);
         this.refractionAmount = refractionAmount;
+        this.sCurveAmount = sCurveAmount;
         this.chromaticAberration = chromaticAberration;
         int fps = Math.max(5, Math.min(60, captureFps));
         this.captureIntervalNanos = 1_000_000_000L / fps;
@@ -810,7 +822,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (captureShader == null || capture == null || capture.isRecycled()
-                || getWidth() <= 0 || getHeight() <= 0) return;
+                || getWidth() <= 0 || getHeight() <= 0) {
+            if (drawFailLogged < 2) { drawFailLogged++;
+                Log.w(TAG, "onDraw skip: shader=" + (captureShader != null)
+                        + " capture=" + (capture != null && !capture.isRecycled())
+                        + " w=" + getWidth() + " h=" + getHeight()); }
+            return;
+        }
         captureShader.setLocalMatrix(null);
         refraction.setInputShader("content", captureShader);
         refraction.setFloatUniform("size", getWidth(), getHeight());
@@ -818,6 +836,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("cornerRadii", cornerRadius, cornerRadius, cornerRadius, cornerRadius);
         refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
         refraction.setFloatUniform("refractionAmount", refractionAmount);
+        refraction.setFloatUniform("sCurveAmount", sCurveAmount);
         refraction.setFloatUniform("depthEffect", .08f);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);

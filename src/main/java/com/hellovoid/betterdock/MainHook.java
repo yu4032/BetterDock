@@ -241,7 +241,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             } catch (Throwable ignored) {}
                             liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
                                 c2.i("liquid_blur", 18), c2.i("liquid_refraction", 18),
-                                c2.i("liquid_chromatic", 8) / 100f,
+                                c2.i("liquid_s_curve", 18), c2.i("liquid_chromatic", 8) / 100f,
                                 c2.i("liquid_tint_alpha", 38), sq2, sqCp,
                                 c2.i("liquid_capture_fps", 24));
                             liquidGlassView.setId(View.generateViewId());

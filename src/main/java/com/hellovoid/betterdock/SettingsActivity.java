@@ -228,6 +228,7 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
         j.put("liquid_blur", sp.getInt("liquid_blur", 18));
         j.put("liquid_refraction", sp.getInt("liquid_refraction", 18));
+        j.put("liquid_s_curve", sp.getInt("liquid_s_curve", 18));
         j.put("liquid_chromatic", sp.getInt("liquid_chromatic", 8));
         j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
         j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 24));
@@ -307,6 +308,7 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "liquid_blur", 0, 60);
         putInt(j, e, "liquid_refraction", 0, 200);
+        putInt(j, e, "liquid_s_curve", 0, 200);
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 60);

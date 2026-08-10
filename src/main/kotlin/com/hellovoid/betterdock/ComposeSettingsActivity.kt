@@ -95,6 +95,7 @@ private val dockSpecs = listOf(
 private val liquidSpecs = listOf(
     IntSpec("liquid_blur", "玻璃模糊", 18, 0, 60, "px"),
     IntSpec("liquid_refraction", "边缘折射量", 18, 0, 200, "px"),
+    IntSpec("liquid_s_curve", "S形扭曲", 18, 0, 200, "px"),
     IntSpec("liquid_chromatic", "色散强度", 8, 0, 40, "%"),
     IntSpec("liquid_tint_alpha", "玻璃底色透明度", 38, 0, 160, ""),
     IntSpec("liquid_capture_fps", "实时捕获帧率", 24, 5, 60, "FPS"),
