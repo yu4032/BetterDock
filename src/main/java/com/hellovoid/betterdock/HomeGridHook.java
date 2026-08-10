@@ -10,8 +10,8 @@ final class HomeGridHook {
     private static final String PAD_CELL_COUNT =
         "com.miui.home.launcher.compat.LauncherCellCountCompatPadDevice";
 
-    private static int landscapeHorizontal, landscapeTop, landscapeBottom;
-    private static int portraitHorizontal, portraitTop, portraitBottom;
+    private static int landscapeLeft, landscapeRight, landscapeTop, landscapeBottom;
+    private static int portraitLeft, portraitRight, portraitTop, portraitBottom;
     private static int landscapeRowGap, portraitRowGap;
     private static int activeRowGap;
     private static boolean grid8x4Enabled;
@@ -23,14 +23,16 @@ final class HomeGridHook {
     private HomeGridHook() {}
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
-                        int landHorizontal, int landTop, int landBottom,
-                        int portHorizontal, int portTop, int portBottom,
+                        int landLeft, int landRight, int landTop, int landBottom,
+                        int portLeft, int portRight, int portTop, int portBottom,
                         int landRowGap, int portRowGap,
                         int landIndicatorY, int portIndicatorY) {
-        landscapeHorizontal = landHorizontal;
+        landscapeLeft = landLeft;
+        landscapeRight = landRight;
         landscapeTop = landTop;
         landscapeBottom = landBottom;
-        portraitHorizontal = portHorizontal;
+        portraitLeft = portLeft;
+        portraitRight = portRight;
         portraitTop = portTop;
         portraitBottom = portBottom;
         landscapeRowGap = landRowGap;
@@ -57,9 +59,9 @@ final class HomeGridHook {
             installIndicatorPosition(classLoader);
             installCellLayoutMargins(classLoader);
             XposedBridge.log("[DC] home grid hooks: 8x4=" + enableGrid8x4 + " land="
-                + landscapeHorizontal + ","
+                + landscapeLeft + "," + landscapeRight + ","
                 + landscapeTop + "," + landscapeBottom + " port="
-                + portraitHorizontal + ","
+                + portraitLeft + "," + portraitRight + ","
                 + portraitTop + "," + portraitBottom);
 
         } catch (Throwable e) {
@@ -133,9 +135,8 @@ final class HomeGridHook {
                 + baseWidthGap * Math.max(0, countX - 1));
             int baseBottom = height - (baseTop + baseCell * countY
                 + baseHeightGap * Math.max(0, countY - 1));
-            int horizontal = portrait ? portraitHorizontal : landscapeHorizontal;
-            int left = baseLeft + horizontal;
-            int right = baseRight + horizontal;
+            int left = baseLeft + (portrait ? portraitLeft : landscapeLeft);
+            int right = baseRight + (portrait ? portraitRight : landscapeRight);
             int top = baseTop + (portrait ? portraitTop : landscapeTop);
             int bottom = baseBottom + (portrait ? portraitBottom : landscapeBottom);
             int rowGap = baseHeightGap

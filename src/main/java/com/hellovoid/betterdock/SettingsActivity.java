@@ -107,6 +107,19 @@ public class SettingsActivity extends AppCompatActivity {
                         + sp.getInt("grid_portrait_margin_right", 0)) / 2)
                 .apply();
         }
+        if (!sp.getBoolean("grid_horizontal_split_restored", false)) {
+            sp.edit()
+                .putInt("grid_landscape_margin_left",
+                    sp.getInt("grid_landscape_margin_horizontal", 0))
+                .putInt("grid_landscape_margin_right",
+                    sp.getInt("grid_landscape_margin_horizontal", 0))
+                .putInt("grid_portrait_margin_left",
+                    sp.getInt("grid_portrait_margin_horizontal", 0))
+                .putInt("grid_portrait_margin_right",
+                    sp.getInt("grid_portrait_margin_horizontal", 0))
+                .putBoolean("grid_horizontal_split_restored", true)
+                .apply();
+        }
     }
 
     void launchExport() {
@@ -174,10 +187,12 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
         j.put("grid_margins_dp", sp.getBoolean("grid_margins_dp", true));
         j.put("grid_margins_offset", sp.getBoolean("grid_margins_offset", true));
-        j.put("grid_landscape_margin_horizontal", sp.getInt("grid_landscape_margin_horizontal", 0));
+        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 0));
+        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 0));
         j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 0));
         j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 0));
-        j.put("grid_portrait_margin_horizontal", sp.getInt("grid_portrait_margin_horizontal", 0));
+        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 0));
+        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 0));
         j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 0));
         j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 0));
         j.put("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 0));
@@ -232,18 +247,14 @@ public class SettingsActivity extends AppCompatActivity {
         e.putBoolean("grid_margins_dp", importedDp);
         e.putBoolean("grid_margins_offset", importedOffsets);
         if (j.has("grid_landscape_margin_horizontal")) {
-            putInt(j, e, "grid_landscape_margin_horizontal", -600, 600);
-        } else {
-            e.putInt("grid_landscape_margin_horizontal",
-                (j.optInt("grid_landscape_margin_left", 0)
-                    + j.optInt("grid_landscape_margin_right", 0)) / 2);
+            int horizontal = j.optInt("grid_landscape_margin_horizontal", 0);
+            e.putInt("grid_landscape_margin_left", horizontal)
+                .putInt("grid_landscape_margin_right", horizontal);
         }
         if (j.has("grid_portrait_margin_horizontal")) {
-            putInt(j, e, "grid_portrait_margin_horizontal", -600, 600);
-        } else {
-            e.putInt("grid_portrait_margin_horizontal",
-                (j.optInt("grid_portrait_margin_left", 0)
-                    + j.optInt("grid_portrait_margin_right", 0)) / 2);
+            int horizontal = j.optInt("grid_portrait_margin_horizontal", 0);
+            e.putInt("grid_portrait_margin_left", horizontal)
+                .putInt("grid_portrait_margin_right", horizontal);
         }
         putInt(j, e, "grid_landscape_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
         putInt(j, e, "grid_portrait_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
@@ -393,10 +404,12 @@ public class SettingsActivity extends AppCompatActivity {
                 .putBoolean("home_grid_8x4", true)
                 .putBoolean("grid_margins_dp", true)
                 .putBoolean("grid_margins_offset", true)
-                .putInt("grid_landscape_margin_horizontal", 0)
+                .putInt("grid_landscape_margin_left", 0)
+                .putInt("grid_landscape_margin_right", 0)
                 .putInt("grid_landscape_margin_top", 0)
                 .putInt("grid_landscape_margin_bottom", 0)
-                .putInt("grid_portrait_margin_horizontal", 0)
+                .putInt("grid_portrait_margin_left", 0)
+                .putInt("grid_portrait_margin_right", 0)
                 .putInt("grid_portrait_margin_top", 0)
                 .putInt("grid_portrait_margin_bottom", 0)
                 .putInt("grid_landscape_row_gap", 0)
