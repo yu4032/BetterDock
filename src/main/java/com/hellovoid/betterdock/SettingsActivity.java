@@ -53,21 +53,36 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void migrateGridPreferences() {
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
-        if (sp.contains("grid_landscape_margin_left")) return;
-        int left = sp.getInt("grid_margin_left", 160);
-        int right = sp.getInt("grid_margin_right", 160);
-        int top = sp.getInt("grid_margin_top", 80);
-        int bottom = sp.getInt("grid_margin_bottom", 80);
-        sp.edit()
-            .putInt("grid_landscape_margin_left", left)
-            .putInt("grid_landscape_margin_right", right)
-            .putInt("grid_landscape_margin_top", top)
-            .putInt("grid_landscape_margin_bottom", bottom)
-            .putInt("grid_portrait_margin_left", top)
-            .putInt("grid_portrait_margin_right", bottom)
-            .putInt("grid_portrait_margin_top", right)
-            .putInt("grid_portrait_margin_bottom", left)
-            .apply();
+        SharedPreferences.Editor e = sp.edit();
+        if (!sp.contains("grid_landscape_margin_left")) {
+            int left = sp.getInt("grid_margin_left", 160);
+            int right = sp.getInt("grid_margin_right", 160);
+            int top = sp.getInt("grid_margin_top", 80);
+            int bottom = sp.getInt("grid_margin_bottom", 80);
+            e.putInt("grid_landscape_margin_left", left)
+                .putInt("grid_landscape_margin_right", right)
+                .putInt("grid_landscape_margin_top", top)
+                .putInt("grid_landscape_margin_bottom", bottom)
+                .putInt("grid_portrait_margin_left", top)
+                .putInt("grid_portrait_margin_right", bottom)
+                .putInt("grid_portrait_margin_top", right)
+                .putInt("grid_portrait_margin_bottom", left).commit();
+        }
+        if (!sp.getBoolean("grid_margins_dp", false)) {
+            float density = getResources().getDisplayMetrics().density;
+            String[] keys = {
+                "grid_landscape_margin_left", "grid_landscape_margin_right",
+                "grid_landscape_margin_top", "grid_landscape_margin_bottom",
+                "grid_portrait_margin_left", "grid_portrait_margin_right",
+                "grid_portrait_margin_top", "grid_portrait_margin_bottom"
+            };
+            e = sp.edit();
+            for (String key : keys) {
+                int px = sp.getInt(key, key.contains("top") || key.contains("bottom") ? 80 : 160);
+                e.putInt(key, Math.max(0, Math.min(600, Math.round(px / density))));
+            }
+            e.putBoolean("grid_margins_dp", true).commit();
+        }
     }
 
     void launchExport() {
@@ -133,14 +148,15 @@ public class SettingsActivity extends AppCompatActivity {
     private static JSONObject collectParameters(SharedPreferences sp) throws Exception {
         JSONObject j = new JSONObject();
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
-        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 160));
-        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 160));
-        j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 80));
-        j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 80));
-        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 80));
-        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 80));
-        j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 160));
-        j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 160));
+        j.put("grid_margins_dp", sp.getBoolean("grid_margins_dp", true));
+        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 57));
+        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 57));
+        j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 28));
+        j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 28));
+        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 28));
+        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 28));
+        j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 57));
+        j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 57));
         j.put("indicator_landscape_x", sp.getInt("indicator_landscape_x", 0));
         j.put("indicator_landscape_y", sp.getInt("indicator_landscape_y", 0));
         j.put("indicator_portrait_x", sp.getInt("indicator_portrait_x", 0));
@@ -187,7 +203,9 @@ public class SettingsActivity extends AppCompatActivity {
             "grid_portrait_margin_left", "grid_portrait_margin_right",
             "grid_portrait_margin_top", "grid_portrait_margin_bottom"
         };
-        for (String key : gridMargins) putInt(j, e, key, 0, 400);
+        boolean importedDp = j.optBoolean("grid_margins_dp", false);
+        for (String key : gridMargins) putInt(j, e, key, 0, importedDp ? 600 : 2000);
+        e.putBoolean("grid_margins_dp", importedDp);
         putInt(j, e, "indicator_landscape_x", -400, 400);
         putInt(j, e, "indicator_landscape_y", -400, 400);
         putInt(j, e, "indicator_portrait_x", -400, 400);
@@ -334,14 +352,15 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("corner_offset", cornerOffset)
                 .putInt("blur_corner_offset", -2)
                 .putBoolean("home_grid_8x4", true)
-                .putInt("grid_landscape_margin_left", 160)
-                .putInt("grid_landscape_margin_right", 160)
-                .putInt("grid_landscape_margin_top", 80)
-                .putInt("grid_landscape_margin_bottom", 80)
-                .putInt("grid_portrait_margin_left", 80)
-                .putInt("grid_portrait_margin_right", 80)
-                .putInt("grid_portrait_margin_top", 160)
-                .putInt("grid_portrait_margin_bottom", 160)
+                .putBoolean("grid_margins_dp", true)
+                .putInt("grid_landscape_margin_left", 57)
+                .putInt("grid_landscape_margin_right", 57)
+                .putInt("grid_landscape_margin_top", 28)
+                .putInt("grid_landscape_margin_bottom", 28)
+                .putInt("grid_portrait_margin_left", 28)
+                .putInt("grid_portrait_margin_right", 28)
+                .putInt("grid_portrait_margin_top", 57)
+                .putInt("grid_portrait_margin_bottom", 57)
                 .putInt("indicator_landscape_x", 0)
                 .putInt("indicator_landscape_y", 0)
                 .putInt("indicator_portrait_x", 0)

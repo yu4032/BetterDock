@@ -68,14 +68,14 @@ private data class IntSpec(
 )
 
 private val gridSpecs = listOf(
-    IntSpec("grid_landscape_margin_left", "横屏左边距", 160, 0, 400),
-    IntSpec("grid_landscape_margin_right", "横屏右边距", 160, 0, 400),
-    IntSpec("grid_landscape_margin_top", "横屏上边距", 80, 0, 400),
-    IntSpec("grid_landscape_margin_bottom", "横屏下边距", 80, 0, 400),
-    IntSpec("grid_portrait_margin_left", "竖屏左边距", 80, 0, 400),
-    IntSpec("grid_portrait_margin_right", "竖屏右边距", 80, 0, 400),
-    IntSpec("grid_portrait_margin_top", "竖屏上边距", 160, 0, 400),
-    IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 160, 0, 400),
+    IntSpec("grid_landscape_margin_left", "横屏左边距", 57, 0, 600, "dp"),
+    IntSpec("grid_landscape_margin_right", "横屏右边距", 57, 0, 600, "dp"),
+    IntSpec("grid_landscape_margin_top", "横屏上边距", 28, 0, 600, "dp"),
+    IntSpec("grid_landscape_margin_bottom", "横屏下边距", 28, 0, 600, "dp"),
+    IntSpec("grid_portrait_margin_left", "竖屏左边距", 28, 0, 600, "dp"),
+    IntSpec("grid_portrait_margin_right", "竖屏右边距", 28, 0, 600, "dp"),
+    IntSpec("grid_portrait_margin_top", "竖屏上边距", 57, 0, 600, "dp"),
+    IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 57, 0, 600, "dp"),
     IntSpec("indicator_landscape_x", "横屏指示器 X", 0, -400, 400),
     IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -400, 400),
     IntSpec("indicator_portrait_x", "竖屏指示器 X", 0, -400, 400),
@@ -333,10 +333,11 @@ private fun applyIpadPreset(activity: ComposeSettingsActivity) {
         .putInt("height_offset", heightOffset).putInt("width_offset", widthOffset)
         .putInt("corner_offset", cornerOffset).putInt("blur_corner_offset", -2)
         .putBoolean("home_grid_8x4", true)
-        .putInt("grid_landscape_margin_left", 160).putInt("grid_landscape_margin_right", 160)
-        .putInt("grid_landscape_margin_top", 80).putInt("grid_landscape_margin_bottom", 80)
-        .putInt("grid_portrait_margin_left", 80).putInt("grid_portrait_margin_right", 80)
-        .putInt("grid_portrait_margin_top", 160).putInt("grid_portrait_margin_bottom", 160)
+        .putBoolean("grid_margins_dp", true)
+        .putInt("grid_landscape_margin_left", 57).putInt("grid_landscape_margin_right", 57)
+        .putInt("grid_landscape_margin_top", 28).putInt("grid_landscape_margin_bottom", 28)
+        .putInt("grid_portrait_margin_left", 28).putInt("grid_portrait_margin_right", 28)
+        .putInt("grid_portrait_margin_top", 57).putInt("grid_portrait_margin_bottom", 57)
         .putInt("indicator_landscape_x", 0).putInt("indicator_landscape_y", 0)
         .putInt("indicator_portrait_x", 0).putInt("indicator_portrait_y", 0)
         .putBoolean("dock_customization", true).putBoolean("dock_stroke", true)

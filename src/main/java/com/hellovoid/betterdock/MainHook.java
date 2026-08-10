@@ -53,15 +53,17 @@ public class MainHook implements IXposedHookLoadPackage {
             int oldRight = cfg.i("grid_margin_right", 160);
             int oldTop = cfg.i("grid_margin_top", 80);
             int oldBottom = cfg.i("grid_margin_bottom", 80);
+            float gridScale = cfg.b("grid_margins_dp", false)
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
             HomeGridHook.install(lpparam.classLoader,
-                cfg.i("grid_landscape_margin_left", oldLeft),
-                cfg.i("grid_landscape_margin_right", oldRight),
-                cfg.i("grid_landscape_margin_top", oldTop),
-                cfg.i("grid_landscape_margin_bottom", oldBottom),
-                cfg.i("grid_portrait_margin_left", oldTop),
-                cfg.i("grid_portrait_margin_right", oldBottom),
-                cfg.i("grid_portrait_margin_top", oldRight),
-                cfg.i("grid_portrait_margin_bottom", oldLeft),
+                Math.round(cfg.i("grid_landscape_margin_left", oldLeft) * gridScale),
+                Math.round(cfg.i("grid_landscape_margin_right", oldRight) * gridScale),
+                Math.round(cfg.i("grid_landscape_margin_top", oldTop) * gridScale),
+                Math.round(cfg.i("grid_landscape_margin_bottom", oldBottom) * gridScale),
+                Math.round(cfg.i("grid_portrait_margin_left", oldTop) * gridScale),
+                Math.round(cfg.i("grid_portrait_margin_right", oldBottom) * gridScale),
+                Math.round(cfg.i("grid_portrait_margin_top", oldRight) * gridScale),
+                Math.round(cfg.i("grid_portrait_margin_bottom", oldLeft) * gridScale),
                 cfg.i("indicator_landscape_x", 0),
                 cfg.i("indicator_landscape_y", 0),
                 cfg.i("indicator_portrait_x", 0),
