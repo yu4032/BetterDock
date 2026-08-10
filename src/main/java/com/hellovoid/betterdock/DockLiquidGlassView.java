@@ -224,14 +224,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
     // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
     private float glassHighlightAlpha = 1.0f;
-    // Top divider line (the bright edge line at the top of the glass): independently
-    // colored (liquid_divider_r/g/b) and dimmable (liquid_divider_alpha).
-    private int glassDividerR = 255, glassDividerG = 255, glassDividerB = 255;
-    private float glassDividerAlpha = 1.0f;
-    private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     // Live-reload counter: GUI config edits apply within ~1s without a launcher restart.
     private int configReloadCounter = 0;
-    private int reloadLogCount = 0;
     // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
     // endDrag).  During a drag the glass keeps capturing so the background follows the icon
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
@@ -504,7 +498,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dockWindowSurface = resolveWindowSurfaceControl();
         logOwnWindowInfo();
         observationValid = false;
-        // Independent config hot-reload ticker: GUI edits to tint/divider/highlight keys
+        // Independent config hot-reload ticker: GUI edits to tint/highlight keys
         // apply within ~1s even when the Dock is static (no captures -> no capture-loop
         // reload).  Runs for the lifetime of the glass view.
         mainHandler.removeCallbacks(configReloadTick);
@@ -874,22 +868,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
-    /** Top divider line color + alpha (GUI: liquid_divider_r/g/b + liquid_divider_alpha). */
-    void setDividerColor(int r, int g, int b, float alpha) {
-        glassDividerR = Math.max(0, Math.min(255, r));
-        glassDividerG = Math.max(0, Math.min(255, g));
-        glassDividerB = Math.max(0, Math.min(255, b));
-        glassDividerAlpha = Math.max(0f, Math.min(2f, alpha));
-        invalidate();
-    }
-
-    /** Divider line ARGB + stroke width px for MainHook's override drawing over the
-     *  native pinned/runtime divider.  alpha=0 disables the override. */
-    int getDividerArgb() {
-        int a = (int) Math.min(255, 255 * glassDividerAlpha);
-        return Color.argb(a, glassDividerR, glassDividerG, glassDividerB);
-    }
-
     /** Re-read GUI-adjustable appearance keys from the config file and apply them live.
      *  Called periodically from the capture loop so GUI edits take effect within ~1s
      *  without restarting the launcher (the glass view is only created once per Dock
@@ -897,18 +875,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private void reloadAppearanceFromConfig() {
         try {
             ConfigReader cfg = ConfigReader.load();
-            if (reloadLogCount++ < 5) {
-                Log.i(TAG, "reload: divider=" + cfg.i("liquid_divider_r", 255) + ","
-                        + cfg.i("liquid_divider_g", 255) + "," + cfg.i("liquid_divider_b", 255)
-                        + " alpha=" + cfg.i("liquid_divider_alpha", 100));
-            }
             setTintColor(cfg.i("liquid_tint_r", 238), cfg.i("liquid_tint_g", 244),
                     cfg.i("liquid_tint_b", 255));
             tintPaint.setAlpha(Math.max(0, Math.min(255, cfg.i("liquid_tint_alpha", 38))));
             setHighlightWidth(cfg.i("liquid_highlight_width", 100) / 100f);
             setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
-            setDividerColor(cfg.i("liquid_divider_r", 255), cfg.i("liquid_divider_g", 255),
-                    cfg.i("liquid_divider_b", 255), cfg.i("liquid_divider_alpha", 100) / 100f);
             setAppearance(
                     cfg.i("liquid_depth_effect", 8) / 100f,
                     cfg.i("liquid_brightness", 108) / 100f,
@@ -1183,7 +1154,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 capturing = false;
                 nullFrameLogged = false;
                 installCapture(frame);
-                // Live-reload GUI appearance keys ~1x/sec so tint/divider/highlight edits
+                // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
                 // apply without a launcher restart.
                 if (++configReloadCounter >= 30) {
                     configReloadCounter = 0;
@@ -1407,20 +1378,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                       Color.argb((int)(105 * glassHighlightAlpha), 255, 255, 255)},
             null, Shader.TileMode.CLAMP));
         canvas.drawPath(shape, highlightPaint);
-        // Top divider line: the bright edge line at the top of the glass, drawn as its
-        // own stroke so its color and brightness can be set independently of the rest of
-        // the highlight (liquid_divider_r/g/b + liquid_divider_alpha).
-        if (glassDividerAlpha > 0.01f) {
-            float half = .5f;
-            float inset = Math.max(cornerRadius, 0f);
-            dividerPaint.setStyle(Paint.Style.STROKE);
-            dividerPaint.setStrokeWidth(Math.max(1f,
-                    getResources().getDisplayMetrics().density * .65f * glassHighlightWidth));
-            dividerPaint.setColor(Color.argb(
-                    (int) Math.min(255, 175 * glassHighlightAlpha * glassDividerAlpha),
-                    glassDividerR, glassDividerG, glassDividerB));
-            canvas.drawLine(inset + half, half, getWidth() - inset - half, half, dividerPaint);
-        }
         canvas.restore();
     }
 
