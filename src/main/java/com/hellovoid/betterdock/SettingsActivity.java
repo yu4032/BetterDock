@@ -236,6 +236,10 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_refraction_inset", sp.getInt("liquid_refraction_inset", 20));
         j.put("liquid_chromatic", sp.getInt("liquid_chromatic", 8));
         j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
+        j.put("liquid_tint_r", sp.getInt("liquid_tint_r", 238));
+        j.put("liquid_tint_g", sp.getInt("liquid_tint_g", 244));
+        j.put("liquid_tint_b", sp.getInt("liquid_tint_b", 255));
+        j.put("liquid_highlight_width", sp.getInt("liquid_highlight_width", 100));
         j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 60));
         j.put("liquid_capture_scale", sp.getInt("liquid_capture_scale", 50));
         j.put("liquid_capture_stop_delay", sp.getInt("liquid_capture_stop_delay", 150));
@@ -325,6 +329,10 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "liquid_refraction_inset", 0, 80);
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
+        putInt(j, e, "liquid_tint_r", 0, 255);
+        putInt(j, e, "liquid_tint_g", 0, 255);
+        putInt(j, e, "liquid_tint_b", 0, 255);
+        putInt(j, e, "liquid_highlight_width", 20, 300);
         putInt(j, e, "liquid_capture_fps", 5, 165);
         putInt(j, e, "liquid_capture_scale", 10, 100);
         putInt(j, e, "liquid_capture_stop_delay", 0, 10000);

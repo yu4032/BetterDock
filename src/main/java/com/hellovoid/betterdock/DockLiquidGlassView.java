@@ -52,6 +52,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float liquidDome;"
       + "uniform float lensRefractionPx;"
       + "uniform float refractionInset;"
+      + "uniform float highlightWidth;"
       + "float radiusAt(float2 p,float4 r){if(p.x>=0){return p.y<=0?r.y:r.z;}return p.y<=0?r.x:r.w;}"
       + "float sdRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));return length(max(q,0.0))-r+min(max(q.x,q.y),0.0);}"
       + "float2 gradRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));float2 s=sign(p);"
@@ -103,7 +104,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float3 V=float3(0.0,0.0,1.0);"
       + "float cosVN=clamp(dot(N,V),0.0,1.0);"
       + "float r0=pow((1.0-ior)/(1.0+ior),2.0);"
-      + "float silW=clamp(minDim*0.12,2.5,34.0);"
+      + "float silW=clamp(minDim*0.12*max(0.1,highlightWidth),1.0,90.0);"
       + "float edgeSil=smoothstep(silW,0.0,edgeDist)*smoothstep(-4.5,0.0,sd);"
       + "float tiltW=clamp(length(N.xy)*2.4,0.0,1.0);"
       + "float grazingW=clamp(edgeSil*0.94+tiltW*0.55,0.0,1.0);"
@@ -194,6 +195,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassLiquidDome = 1.0f;    // liquid_dome
     private float glassLensRefraction = 12f; // liquid_lens_refraction (dp -> px)
     private float glassRefractionInset = 20f; // liquid_refraction_inset (dp -> px)
+    // Edge highlight thickness multiplier (liquid_highlight_width): scales the shader's
+    // edge-glow band (silW) AND the canvas stroke highlight width.
+    private float glassHighlightWidth = 1.0f;
+    // Glass tint color (liquid_tint_r/g/b); alpha stays liquid_tint_alpha.
+    private int glassTintR = 238, glassTintG = 244, glassTintB = 255;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
@@ -746,6 +752,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureScale = Math.max(0.1f, Math.min(1.0f, scale));
     }
 
+    /** Edge-highlight thickness multiplier (GUI: liquid_highlight_width, 20-300%).
+     *  Scales both the shader's edge-glow band and the canvas stroke highlight. */
+    void setHighlightWidth(float multiplier) {
+        glassHighlightWidth = Math.max(0.2f, Math.min(3.0f, multiplier));
+        invalidate();
+    }
+
+    /** Glass tint RGB (GUI: liquid_tint_r/g/b, 0-255).  Alpha is liquid_tint_alpha. */
+    void setTintColor(int r, int g, int b) {
+        glassTintR = Math.max(0, Math.min(255, r));
+        glassTintG = Math.max(0, Math.min(255, g));
+        glassTintB = Math.max(0, Math.min(255, b));
+        invalidate();
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -1144,6 +1165,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("liquidDome", Math.max(0f, Math.min(2f, glassLiquidDome)));
         refraction.setFloatUniform("lensRefractionPx", Math.max(0f, glassLensRefraction * density));
         refraction.setFloatUniform("refractionInset", Math.max(0f, glassRefractionInset * density));
+        refraction.setFloatUniform("highlightWidth", glassHighlightWidth);
         refraction.setFloatUniform("screenOffset", captureSampleOffsetX, captureSampleOffsetY);
         refraction.setFloatUniform("captureScale",
                 capture.getWidth() / Math.max(1f, captureSourceWidth),
@@ -1153,9 +1175,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         canvas.save();
         canvas.clipPath(shape);
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
+        tintPaint.setColor(Color.argb(tintPaint.getAlpha(),
+                glassTintR, glassTintG, glassTintB));
         canvas.drawPath(shape, tintPaint);
         highlightPaint.setStyle(Paint.Style.STROKE);
-        highlightPaint.setStrokeWidth(Math.max(1f, getResources().getDisplayMetrics().density * .65f));
+        highlightPaint.setStrokeWidth(Math.max(1f,
+                getResources().getDisplayMetrics().density * .65f * glassHighlightWidth));
         highlightPaint.setShader(new LinearGradient(0, 0, getWidth(), getHeight(),
             new int[]{Color.argb(175, 255, 255, 255), Color.argb(25, 255, 255, 255), Color.argb(105, 255, 255, 255)},
             null, Shader.TileMode.CLAMP));
