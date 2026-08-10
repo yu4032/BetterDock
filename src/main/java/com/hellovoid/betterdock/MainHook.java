@@ -93,8 +93,52 @@ public class MainHook implements IXposedHookLoadPackage {
             Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
             Math.round(landGap * gridScale), Math.round(portGap * gridScale),
             cfg.i("indicator_landscape_y", 0), cfg.i("indicator_portrait_y", 0));
-        if (!cfg.b("dock_customization", true)) {
-            XposedBridge.log("[DC] Dock customization disabled");
+        boolean dockCustomization = cfg.b("dock_customization", true);
+        boolean liquidGlass = cfg.b("liquid_glass", false);
+        if (!dockCustomization && !liquidGlass) {
+            XposedBridge.log("[DC] Dock customization and liquid glass both disabled");
+            return;
+        }
+        if (!dockCustomization) {
+            XposedBridge.log("[DC] Dock customization disabled (liquid glass only)");
+            // Liquid glass runs standalone: install its capture lifecycle hooks and the
+            // setupViews initializer, then skip all non-glass dock modification hooks below.
+            installLiquidGlassCaptureHooks(lpparam.classLoader);
+            try {
+                XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", lpparam.classLoader, "setupViews",
+                    new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats");
+                            if (hs == null) return;
+                            View oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2");
+                            if (oldBg == null) return;
+                            ViewGroup parent = (ViewGroup) oldBg.getParent();
+                            if (parent == null) return;
+                            int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
+                            View workspace = null;
+                            try {
+                                Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
+                                if (candidate instanceof View) workspace = (View) candidate;
+                            } catch (Throwable ignored) {}
+                            if (liquidGlassView != null) return;
+                            liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
+                                cfg.i("liquid_blur", 18), cfg.i("liquid_refraction", 18),
+                                cfg.i("liquid_chromatic", 8) / 100f,
+                                cfg.i("liquid_tint_alpha", 38), false, 0.58f,
+                                cfg.i("liquid_capture_fps", 24));
+                            liquidGlassView.setId(View.generateViewId());
+                            seedLauncherLifecycleState(param.thisObject);
+                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                            liquidGlassView.setStopGraceMillis(cfg.i("liquid_capture_stop_delay", 150));
+                            liquidGlassView.setBleedVerticalPx(
+                                    cfg.i("liquid_capture_bleed_top", -1),
+                                    cfg.i("liquid_capture_bleed_bottom", -1));
+                            int bgIndex = parent.indexOfChild(oldBg);
+                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
+                                new FrameLayout.LayoutParams(1, 1, gv));
+                        } catch (Throwable e) { XposedBridge.log("[DC] liquid-only init err: " + e); }
+                    }});
+            } catch (Throwable e) { XposedBridge.log("[DC] liquid-only hooks err: " + e); }
             return;
         }
         XposedBridge.log("[DC] init: bl=" + cfg.i("blur_radius", -1) + " lm=" + cfg.s("light_mode", "?") + " sq=" + cfg.b("squircle", false));
