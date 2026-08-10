@@ -658,8 +658,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || recentsScrollY != observedRecentsScrollY
                         || recentsTx != observedRecentsTranslationX
                         || recentsTy != observedRecentsTranslationY));
-
-        observedRotation = rotation;
+        if (changed) dockMovingUntilNanos = System.nanoTime() + DOCK_ANIM_GRACE_MS * 1_000_000L;
         observedDisplayWidth = tmpDisplaySize.x;
         observedDisplayHeight = tmpDisplaySize.y;
         observedDockX = tmpDockLocation[0];
@@ -676,9 +675,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observedRecentsTranslationX = recentsTx;
         observedRecentsTranslationY = recentsTy;
         observationValid = true;
-        // Dock geometry change = animation/transition in flight (incl. interruptions).
-        // Keep us in wallpaper mode until stability returns.
-        if (changed) dockMovingUntilNanos = System.nanoTime() + DOCK_ANIM_GRACE_MS * 1_000_000L;
         return changed;
     }
 
@@ -1085,7 +1081,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
-                            + " crop=" + req.stripRect + " scale=" + captureScale);
+                            + " crop=" + req.stripRect + " scale=" + captureScale
+                            + " appFront=" + appFront + " settled=" + dockSettled);
                     // Wallpaper mode still passes the Dock exclusion: during Dock expand/
                     // collapse the SF layer tree shifts and the wallpaper include can pick
                     // up the Dock's content; excluding the Dock layer is a belt-and-braces
@@ -1206,11 +1203,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (tmpDisplaySize.x <= 0 || tmpDisplaySize.y <= 0) return null;
 
         geometrySource.getLocationOnScreen(tmpDockLocation);
+        // Use THIS glass view's own on-screen geometry for the strip, not the (possibly
+        // smaller/offset) native background: the visible glass can extend above the
+        // background's top (rounded inset / native layout differences), and any part of
+        // the glass without captured backdrop samples renders black.
+        int glassLeft = tmpDockLocation[0];
+        int glassTop = tmpDockLocation[1];
+        getLocationOnScreen(tmpDockLocation);
+        int gx = Math.min(glassLeft, tmpDockLocation[0]);
+        int gy = Math.min(glassTop, tmpDockLocation[1]);
+        int gw = Math.max(geometrySource.getWidth(), getWidth());
+        int gh = Math.max(geometrySource.getHeight(), getHeight());
         Rect displayRect = new Rect(0, 0, tmpDisplaySize.x, tmpDisplaySize.y);
-        Rect dockRect = new Rect(
-                tmpDockLocation[0], tmpDockLocation[1],
-                tmpDockLocation[0] + Math.max(1, geometrySource.getWidth()),
-                tmpDockLocation[1] + Math.max(1, geometrySource.getHeight()));
+        Rect dockRect = new Rect(gx, gy, gx + Math.max(1, gw), gy + Math.max(1, gh));
         if (!dockRect.intersect(displayRect) || dockRect.isEmpty()) return null;
 
         Rect tileRect = new Rect(dockRect);
