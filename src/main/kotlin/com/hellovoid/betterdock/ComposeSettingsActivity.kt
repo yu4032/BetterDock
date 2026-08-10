@@ -8,6 +8,12 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -160,14 +166,33 @@ private fun BetterDockSettings(activity: ComposeSettingsActivity) {
             )
         },
     ) { padding ->
-        when (page) {
-            Page.Home -> HomePage(padding) { page = it }
-            Page.Grid -> GridPage(padding, prefs)
-            Page.Dock -> DockPage(padding, prefs)
-            Page.Liquid -> LiquidPage(padding, prefs)
-            Page.Stroke -> StrokePage(padding, prefs)
-            Page.Shadow -> ShadowPage(padding, prefs)
-            Page.Data -> DataPage(padding, activity)
+        // MIUI-style horizontal slide between pages: entering a submenu slides in from
+        // the right (old page slides out left); going back reverses.  Uses AnimatedContent
+        // so the page transition animates instead of snapping.
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                if (targetState.ordinal > initialState.ordinal) {
+                    // Forward (into a submenu): new page slides in from the right.
+                    (slideInHorizontally { it } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it / 3 } + fadeOut())
+                } else {
+                    // Back: current page slides out to the right, home peeks in from left.
+                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { it } + fadeOut())
+                }
+            },
+            label = "page",
+        ) { target ->
+            when (target) {
+                Page.Home -> HomePage(padding) { page = it }
+                Page.Grid -> GridPage(padding, prefs)
+                Page.Dock -> DockPage(padding, prefs)
+                Page.Liquid -> LiquidPage(padding, prefs)
+                Page.Stroke -> StrokePage(padding, prefs)
+                Page.Shadow -> ShadowPage(padding, prefs)
+                Page.Data -> DataPage(padding, activity)
+            }
         }
     }
 }
