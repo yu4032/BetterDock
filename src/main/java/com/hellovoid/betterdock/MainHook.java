@@ -136,8 +136,27 @@ public class MainHook implements IXposedHookLoadPackage {
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
+                            // Standalone mode has no overlay to drive syncAll; size the glass
+                            // view from the dock background immediately so it is not 1x1.
+                            syncAll(oldBg);
+                            liquidGlassView.post(() -> syncAll(oldBg));
                         } catch (Throwable e) { XposedBridge.log("[DC] liquid-only init err: " + e); }
                     }});
+                // The launcher calls setBackgroundWidth/Height/Radius when it lays out the
+                // dock background; hook them (sync-only, no offset modification) so the
+                // standalone glass view tracks the real default background size.
+                Class<?> hsc2 = XposedHelpers.findClass(
+                        "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                        lpparam.classLoader);
+                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundWidth", int.class,
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
+                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundHeight", int.class,
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
+                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundRadius", float.class,
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
             } catch (Throwable e) { XposedBridge.log("[DC] liquid-only hooks err: " + e); }
             return;
         }
@@ -663,12 +682,16 @@ public class MainHook implements IXposedHookLoadPackage {
         shadow.invalidate();
     }
 
-    private static void syncAll(View bg) { if (overlay == null || bg == null) return;
+    private static void syncAll(View bg) { if (bg == null) return;
+        if (overlay == null && liquidGlassView == null && shadowView == null) return;
         try { bgW = XposedHelpers.getIntField(bg, "mWidth"); bgH = XposedHelpers.getIntField(bg, "mHeight");
             Object r = XposedHelpers.getObjectField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
-            if (bgW <= 0) return; ViewGroup.LayoutParams lp = overlay.getLayoutParams();
-            if (lp != null) { lp.width = bgW; lp.height = bgH; overlay.setLayoutParams(lp); }
-            overlay.invalidate();
+            if (bgW <= 0) return;
+            if (overlay != null) {
+                ViewGroup.LayoutParams lp = overlay.getLayoutParams();
+                if (lp != null) { lp.width = bgW; lp.height = bgH; overlay.setLayoutParams(lp); }
+                overlay.invalidate();
+            }
             if (liquidGlassView != null) {
                 ViewGroup.LayoutParams glassLp = liquidGlassView.getLayoutParams();
                 if (glassLp != null) {
