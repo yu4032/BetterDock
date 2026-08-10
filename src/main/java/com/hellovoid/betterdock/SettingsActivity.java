@@ -225,6 +225,12 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("dock_customization", sp.getBoolean("dock_customization", true));
         j.put("light_mode", sp.getString("light_mode", "fixed"));
         j.put("blur_radius", sp.getInt("blur_radius", 100));
+        j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
+        j.put("liquid_blur", sp.getInt("liquid_blur", 18));
+        j.put("liquid_refraction", sp.getInt("liquid_refraction", 18));
+        j.put("liquid_chromatic", sp.getInt("liquid_chromatic", 8));
+        j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
+        j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 24));
         j.put("height_offset", sp.getInt("height_offset", 0));
         j.put("width_offset", sp.getInt("width_offset", 0));
         j.put("corner_offset", sp.getInt("corner_offset", -1));
@@ -299,6 +305,11 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("grid_portrait_margin_bottom", left);
         }
         putInt(j, e, "blur_radius", 0, 400);
+        putInt(j, e, "liquid_blur", 0, 60);
+        putInt(j, e, "liquid_refraction", 0, 60);
+        putInt(j, e, "liquid_chromatic", 0, 40);
+        putInt(j, e, "liquid_tint_alpha", 0, 160);
+        putInt(j, e, "liquid_capture_fps", 5, 60);
         putInt(j, e, "height_offset", -200, 200);
         putInt(j, e, "width_offset", -200, 200);
         putInt(j, e, "corner_offset", -50, 100);
@@ -323,6 +334,7 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "dock_bottom_offset", 0, 80);
         if (j.has("home_grid_8x4")) e.putBoolean("home_grid_8x4", j.optBoolean("home_grid_8x4"));
         if (j.has("dock_customization")) e.putBoolean("dock_customization", j.optBoolean("dock_customization"));
+        if (j.has("liquid_glass")) e.putBoolean("liquid_glass", j.optBoolean("liquid_glass"));
         if (j.has("dock_stroke")) e.putBoolean("dock_stroke", j.optBoolean("dock_stroke"));
         if (j.has("squircle")) e.putBoolean("squircle", j.optBoolean("squircle"));
         if (j.has("fill_diff")) e.putBoolean("fill_diff", j.optBoolean("fill_diff"));

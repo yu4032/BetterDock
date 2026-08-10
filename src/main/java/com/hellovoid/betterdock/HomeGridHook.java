@@ -21,6 +21,8 @@ final class HomeGridHook {
     private static final java.util.WeakHashMap<android.view.View,
         android.view.ViewTreeObserver.OnPreDrawListener> indicatorPositionGuards =
             new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<android.view.View, Boolean>
+        loggedWidgetViews = new java.util.WeakHashMap<>();
 
     private HomeGridHook() {}
 
@@ -81,6 +83,55 @@ final class HomeGridHook {
                     applyCellLayoutOffsets(param.thisObject);
                 }
             });
+        XposedHelpers.findAndHookMethod(cellLayout, "onLayout",
+            boolean.class, int.class, int.class, int.class, int.class,
+            new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    android.view.ViewGroup layout = (android.view.ViewGroup) param.thisObject;
+                    for (int i = 0; i < layout.getChildCount(); i++)
+                        adaptTwoByOneWidget(layout, layout.getChildAt(i));
+                }
+            });
+    }
+
+    private static void adaptTwoByOneWidget(android.view.ViewGroup parent,
+                                            android.view.View child) {
+        try {
+            Object info = child.getTag();
+            if (info == null) return;
+            int itemType = XposedHelpers.getIntField(info, "itemType");
+            int spanX = XposedHelpers.getIntField(info, "spanX");
+            int spanY = XposedHelpers.getIntField(info, "spanY");
+            if (spanX != 2 || spanY != 1) return;
+            synchronized (loggedWidgetViews) {
+                if (!loggedWidgetViews.containsKey(child)) {
+                    loggedWidgetViews.put(child, Boolean.TRUE);
+                    XposedBridge.log("[DC] 2x1 runtime view type=" + itemType
+                        + " class=" + child.getClass().getName()
+                        + " bounds=" + child.getWidth() + "x" + child.getHeight()
+                        + " children=" + (child instanceof android.view.ViewGroup
+                            ? ((android.view.ViewGroup) child).getChildCount() : -1));
+                }
+            }
+            if (itemType != 19) return;
+            int widthGap = Math.max(0, XposedHelpers.getIntField(parent, "mWidthGap"));
+            int visualCompensation = Math.round(
+                child.getResources().getDisplayMetrics().density * 16f);
+            int shrink = Math.max(widthGap, visualCompensation);
+            int leftInset = shrink / 2;
+            int rightInset = shrink - leftInset;
+            int width = child.getWidth() - shrink;
+            if (width <= 0) return;
+            child.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                    width, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                    child.getHeight(), android.view.View.MeasureSpec.EXACTLY));
+            child.layout(child.getLeft() + leftInset, child.getTop(),
+                child.getRight() - rightInset, child.getBottom());
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] 2x1 widget adaptation failed: " + e);
+        }
     }
 
     private static void applyCellLayoutOffsets(Object cellLayout) {
@@ -151,16 +202,17 @@ final class HomeGridHook {
                 + (portrait ? portraitRowGap : landscapeRowGap);
 
             int availableWidth = Math.max(countX, width - left - right);
-            int cellWidth = Math.min(baseCell, Math.max(1, availableWidth / countX));
-            int widthGap = countX > 1
-                ? Math.max(0, availableWidth - cellWidth * countX) / (countX - 1) : 0;
             int availableHeight = height - top - bottom
                 - rowGap * Math.max(0, countY - 1);
-            int cellHeight = Math.max(1, availableHeight / countY);
+            int cellSize = Math.min(baseCell, Math.min(
+                Math.max(1, availableWidth / countX),
+                Math.max(1, availableHeight / countY)));
+            int widthGap = countX > 1
+                ? Math.max(0, availableWidth - cellSize * countX) / (countX - 1) : 0;
             XposedHelpers.setIntField(cellLayout, "mCellPaddingLeft", left);
             XposedHelpers.setIntField(cellLayout, "mCellPaddingTop", top);
-            XposedHelpers.setIntField(cellLayout, "mCellWidth", cellWidth);
-            XposedHelpers.setIntField(cellLayout, "mCellHeight", cellHeight);
+            XposedHelpers.setIntField(cellLayout, "mCellWidth", cellSize);
+            XposedHelpers.setIntField(cellLayout, "mCellHeight", cellSize);
             XposedHelpers.setIntField(cellLayout, "mWidthGap", widthGap);
             XposedHelpers.setIntField(cellLayout, "mHeightGap", rowGap);
         } catch (Throwable e) {

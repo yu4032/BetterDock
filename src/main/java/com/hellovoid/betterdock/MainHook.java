@@ -1,5 +1,7 @@
 package com.hellovoid.betterdock;
 
+import android.app.Activity;
+import android.app.WallpaperManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -12,6 +14,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.IBinder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -24,6 +27,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static View overlay, shadowView, oldBg, nativeShadowTarget;
+    private static DockLiquidGlassView liquidGlassView;
+    private static volatile boolean launcherResumed;
+    private static volatile boolean launcherLifecycleKnown;
     private static int bgW, bgH, shadowPad;
     private static int strokeBaseR = 255, strokeBaseG = 255, strokeBaseB = 255, strokeBaseAlpha = 255;
     private static float bgR = 30f;
@@ -103,6 +109,10 @@ public class MainHook implements IXposedHookLoadPackage {
         int spacing = cfg.i("dock_spacing", 0);
         int bottomOffset = cfg.i("dock_bottom_offset", 0);
         ClassLoader cl = lpparam.classLoader;
+        // Install the lightweight lifecycle/wallpaper observers unconditionally once Dock
+        // customization is active.  The previous conditional install could leave a glass View
+        // permanently gated if the process-start config and setupViews config differed.
+        installLiquidGlassCaptureHooks(cl);
 
         try {
             String hsc = "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
@@ -217,11 +227,30 @@ public class MainHook implements IXposedHookLoadPackage {
                         boolean shadow = c2.b("stroke_shadow", false);
                         int shadowRadius = c2.i("shadow_radius", 8), shadowAlpha = c2.i("shadow_alpha", 70);
                         boolean dockShadow = c2.b("dock_shadow", true);
+                        boolean liquidGlass = c2.b("liquid_glass", false);
                         int dockShadowRadius = c2.i("dock_shadow_radius", 42);
                         int dockShadowSize = c2.i("dock_shadow_size", 52);
                         int dockShadowAlpha = c2.i("dock_shadow_alpha", 140);
                         int dockShadowY = c2.i("dock_shadow_y", 12);
                         if (overlay != null) return;
+                        if (liquidGlass) {
+                            View workspace = null;
+                            try {
+                                Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
+                                if (candidate instanceof View) workspace = (View) candidate;
+                            } catch (Throwable ignored) {}
+                            liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
+                                c2.i("liquid_blur", 18), c2.i("liquid_refraction", 18),
+                                c2.i("liquid_chromatic", 8) / 100f,
+                                c2.i("liquid_tint_alpha", 38), sq2, sqCp,
+                                c2.i("liquid_capture_fps", 24));
+                            liquidGlassView.setId(View.generateViewId());
+                            seedLauncherLifecycleState(param.thisObject);
+                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                            int bgIndex = parent.indexOfChild(oldBg);
+                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
+                                new FrameLayout.LayoutParams(1, 1, gv));
+                        }
                         if (dockShadow) {
                             shadowView = makeDockShadow(sq2, sqOff, sqCp, dockShadowRadius, dockShadowSize,
                                 dockShadowAlpha, dockShadowY);
@@ -244,6 +273,136 @@ public class MainHook implements IXposedHookLoadPackage {
                     } catch (Throwable e) { XposedBridge.log("[DC] err: " + e); }
                 }});
         } catch (Throwable e) { XposedBridge.log("[DC] init err: " + e); }
+    }
+
+    private static void seedLauncherLifecycleState(Object launcher) {
+        if (launcher == null) return;
+        try {
+            Object paused = XposedHelpers.callMethod(launcher, "isPause");
+            Object visible = XposedHelpers.callMethod(launcher, "isVisible");
+            Object focused = XposedHelpers.callMethod(launcher, "isWindowFocus");
+            if (paused instanceof Boolean && !((Boolean) paused)) {
+                // A positive "not paused" answer is useful.  A paused value during setupViews is
+                // ambiguous because setupViews normally runs from onCreate before the first
+                // onResume; keep UNKNOWN in that case so window focus can bootstrap capture.
+                launcherLifecycleKnown = true;
+                launcherResumed = true;
+            }
+            XposedBridge.log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
+                + " resumed=" + launcherResumed + " paused=" + paused
+                + " visible=" + visible + " focus=" + focused);
+        } catch (Throwable e) {
+            // UNKNOWN is intentional: the View's actual window visibility/focus will bootstrap
+            // capture until an explicit onResume/onPause callback is observed.
+            XposedBridge.log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+        }
+    }
+
+    private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
+        Class<?> launcherClass;
+        try {
+            launcherClass = XposedHelpers.findClass("com.miui.home.launcher.Launcher", cl);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
+            return;
+        }
+
+        XC_MethodHook resumeHook = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                launcherLifecycleKnown = true;
+                launcherResumed = true;
+                XposedBridge.log("[DC] liquid lifecycle: onResume");
+                DockLiquidGlassView glass = liquidGlassView;
+                if (glass != null) glass.setLauncherState(true, true);
+            }
+        };
+        XC_MethodHook pauseHook = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                launcherLifecycleKnown = true;
+                launcherResumed = false;
+                XposedBridge.log("[DC] liquid lifecycle: onPause");
+                DockLiquidGlassView glass = liquidGlassView;
+                if (glass != null) glass.setLauncherState(true, false);
+            }
+        };
+
+        boolean directLifecycleHooked = false;
+        try {
+            XposedHelpers.findAndHookMethod(launcherClass, "onResume", resumeHook);
+            XposedHelpers.findAndHookMethod(launcherClass, "onPause", pauseHook);
+            directLifecycleHooked = true;
+        } catch (Throwable directError) {
+            XposedBridge.log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
+        }
+
+        if (!directLifecycleHooked) {
+            // Fallback for builds where Launcher inherits the lifecycle methods without
+            // declaring them. This hook is installed only in the com.miui.home process.
+            try {
+                XposedHelpers.findAndHookMethod(Activity.class, "onResume",
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) {
+                            if (!launcherClass.isInstance(p.thisObject)) return;
+                            launcherLifecycleKnown = true;
+                            launcherResumed = true;
+                            XposedBridge.log("[DC] liquid lifecycle fallback: onResume");
+                            DockLiquidGlassView glass = liquidGlassView;
+                            if (glass != null) glass.setLauncherState(true, true);
+                        }
+                    });
+                XposedHelpers.findAndHookMethod(Activity.class, "onPause",
+                    new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam p) {
+                            if (!launcherClass.isInstance(p.thisObject)) return;
+                            launcherLifecycleKnown = true;
+                            launcherResumed = false;
+                            XposedBridge.log("[DC] liquid lifecycle fallback: onPause");
+                            DockLiquidGlassView glass = liquidGlassView;
+                            if (glass != null) glass.setLauncherState(true, false);
+                        }
+                    });
+            } catch (Throwable fallbackError) {
+                XposedBridge.log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
+            }
+        }
+
+        try {
+            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setWallpaperOffsets",
+                IBinder.class, float.class, float.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam p) {
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass == null) return;
+                        glass.onWallpaperOffsetChanged((Float) p.args[1], (Float) p.args[2]);
+                    }
+                });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] Wallpaper normalized-offset hook unavailable: " + e);
+        }
+        try {
+            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setDisplayOffset",
+                IBinder.class, int.class, int.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam p) {
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass == null) return;
+                        glass.onWallpaperDisplayOffsetChanged((Integer) p.args[1], (Integer) p.args[2]);
+                    }
+                });
+        } catch (Throwable e) {
+            // Hidden/SystemApi on AOSP, but some Launcher builds use it directly.
+            XposedBridge.log("[DC] Wallpaper raw-offset hook unavailable: " + e);
+        }
+        try {
+            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setWallpaperZoomOut",
+                IBinder.class, float.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam p) {
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass == null) return;
+                        glass.onWallpaperZoomChanged((Float) p.args[1]);
+                    }
+                });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] Wallpaper zoom hook unavailable: " + e);
+        }
     }
 
     private static View makeDockShadow(boolean sq, int sqOff, float sqCp,
@@ -313,6 +472,9 @@ public class MainHook implements IXposedHookLoadPackage {
             }
             @Override protected void onDetachedFromWindow() {
                 if (strokeEnabled && "dynamic".equals(lm)) stopMotionSensor();
+                DockLiquidGlassView glass = liquidGlassView;
+                if (glass != null) glass.setLauncherResumed(false);
+                liquidGlassView = null;
                 if (overlay == this) overlay = null;
                 if (oldBg == bg) oldBg = null;
                 super.onDetachedFromWindow();
@@ -459,6 +621,15 @@ public class MainHook implements IXposedHookLoadPackage {
             if (bgW <= 0) return; ViewGroup.LayoutParams lp = overlay.getLayoutParams();
             if (lp != null) { lp.width = bgW; lp.height = bgH; overlay.setLayoutParams(lp); }
             overlay.invalidate();
+            if (liquidGlassView != null) {
+                ViewGroup.LayoutParams glassLp = liquidGlassView.getLayoutParams();
+                if (glassLp != null) {
+                    glassLp.width = bgW; glassLp.height = bgH;
+                    liquidGlassView.setLayoutParams(glassLp);
+                }
+                liquidGlassView.setGlassRadius(bgR);
+                liquidGlassView.invalidate();
+            }
             if (shadowView != null) {
                 syncShadowGeometry();
                 overlay.post(MainHook::syncShadowGeometry);

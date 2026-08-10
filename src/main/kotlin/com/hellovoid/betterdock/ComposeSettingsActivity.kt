@@ -92,6 +92,13 @@ private val dockSpecs = listOf(
     IntSpec("dock_spacing", "Dock 图标间距", 0, -10, 20),
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, 0, 80),
 )
+private val liquidSpecs = listOf(
+    IntSpec("liquid_blur", "玻璃模糊", 18, 0, 60, "px"),
+    IntSpec("liquid_refraction", "边缘折射量", 18, 0, 60, "px"),
+    IntSpec("liquid_chromatic", "色散强度", 8, 0, 40, "%"),
+    IntSpec("liquid_tint_alpha", "玻璃底色透明度", 38, 0, 160, ""),
+    IntSpec("liquid_capture_fps", "实时捕获帧率", 24, 5, 60, "FPS"),
+)
 private val strokeSpecs = listOf(
     IntSpec("stroke_base_r", "描边底色 · 红", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
     IntSpec("stroke_base_g", "描边底色 · 绿", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
@@ -171,9 +178,13 @@ private fun GridPage(padding: PaddingValues, prefs: SharedPreferences) {
 @Composable
 private fun DockPage(padding: PaddingValues, prefs: SharedPreferences) {
     var dockEnabled by remember { mutableStateOf(prefs.getBoolean("dock_customization", true)) }
+    var liquidGlass by remember { mutableStateOf(prefs.getBoolean("liquid_glass", false)) }
     SettingsList(padding, "Dock") {
         BooleanSetting(prefs, "dock_customization", "自定义整个 Dock", true,
             "BetterDock Dock 功能总开关") { dockEnabled = it }
+        BooleanSetting(prefs, "liquid_glass", "液态玻璃", false,
+            "捕获壁纸与当前桌面页，使用 AGSL 折射、色散和模糊", dockEnabled) { liquidGlass = it }
+        liquidSpecs.forEach { IntSetting(prefs, it, dockEnabled && liquidGlass) }
         StringDropdown(prefs, "light_mode", "灯光模式", "fixed",
             listOf("固定" to "fixed", "陀螺仪动态" to "dynamic", "关闭" to "none"), dockEnabled)
         dockSpecs.forEach { IntSetting(prefs, it, dockEnabled) }
