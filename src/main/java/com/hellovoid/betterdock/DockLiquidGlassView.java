@@ -209,18 +209,44 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction = new RuntimeShader(REFRACTION_SHADER);
         tintPaint.setColor(Color.argb(Math.max(0, Math.min(255, tintAlpha)), 238, 244, 255));
         setWillNotDraw(false);
+        applyRoundedOutline();
     }
 
     void setGlassGeometry(float radius, boolean useSquircle, float cp) {
         cornerRadius = Math.max(0f, radius);
         squircle = useSquircle;
         squircleCp = cp;
+        applyRoundedOutline();
         invalidate();
     }
 
     void setGlassRadius(float radius) {
         cornerRadius = Math.max(0f, radius);
+        applyRoundedOutline();
         invalidate();
+    }
+
+    /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
+     *  glass shape instead of blurring a rectangle (blur-behind honours the outline). */
+    private void applyRoundedOutline() {
+        try {
+            setClipToOutline(true);
+            setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(android.view.View view, android.graphics.Outline outline) {
+                    float r = Math.max(0f, cornerRadius);
+                    int w = view.getWidth(), h = view.getHeight();
+                    if (w <= 0 || h <= 0) {
+                        outline.setRect(0, 0, 1, 1);
+                        return;
+                    }
+                    // Squircle and rounded-rect both approximate as a rounded rect for the
+                    // blur region (the outline only drives the SurfaceFlinger blur mask).
+                    outline.setRoundRect(0, 0, w, h, r);
+                }
+            });
+        } catch (Throwable e) {
+            Log.w(TAG, "rounded outline failed: " + e);
+        }
     }
 
     /** Called by MainHook's Launcher lifecycle hooks.  Unknown is intentionally allowed:
