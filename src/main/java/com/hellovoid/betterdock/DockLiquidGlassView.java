@@ -176,6 +176,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // scrolling the overview), so observation must also track it — but ONLY when visible,
     // so normal home-screen page swipes (recents hidden) still do not trigger captures.
     private View recentsView;
+    // True while a touch gesture is in progress on the Dock window (MainHook sets this via
+    // an OnTouchListener on the window root).  During a gesture — e.g. the up-swipe that
+    // summons multitasking — the glass must keep capturing continuously even if the Dock's
+    // geometry is momentarily static, and keep going until the touch ends.
+    private volatile boolean touchActive;
     private final View geometrySource;
     private final RuntimeShader refraction;
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -574,7 +579,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
 
-        boolean changed = !observationValid
+        boolean changed = touchActive   // continuous capture while a gesture is in progress
+                || recentsVisible      // multitasking panel is showing: keep the glass live
+                || !observationValid
                 || rotation != observedRotation
                 || tmpDisplaySize.x != observedDisplayWidth
                 || tmpDisplaySize.y != observedDisplayHeight
@@ -699,6 +706,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         recentsView = view;
     }
 
+    /** Called by MainHook's touch listener on the Dock window root.  While a gesture is in
+     *  progress the glass keeps capturing continuously; on UP/CANCEL it stops. */
+    void setTouchActive(boolean active) {
+        if (touchActive == active) return;
+        touchActive = active;
+        if (active) {
+            observationValid = false; // force an immediate observation+capture
+            requestStateCapture("touch-down");
+        }
+    }
+
     /** Configurable by the GUI (liquid_capture_stop_delay). */
     void setStopGraceMillis(int millis) {
         stopGraceMillis = Math.max(0, Math.min(2000, millis));
@@ -725,6 +743,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // !isShown()/!windowVisible while the Dock is still on screen.  Treat a short
         // "not allowed" window as still allowed (lastAllowedNanos within stopGraceMillis)
         // so the animation tail keeps being captured instead of freezing mid-frame.
+        // Touch-active gesture (Dock summon / multitasking up-swipe): capture continuously
+        // even if the window briefly reports hidden mid-transition.
+        if (touchActive) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
+        // Multitasking panel showing: keep capturing regardless of Dock window visibility.
+        View rec = recentsView;
+        if (rec != null && rec.getVisibility() == View.VISIBLE) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
         boolean baseAllowed = attached && windowVisible && isShown();
         if (baseAllowed) {
             lastAllowedNanos = System.nanoTime();
