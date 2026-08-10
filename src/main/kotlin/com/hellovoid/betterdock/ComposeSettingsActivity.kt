@@ -67,19 +67,15 @@ private data class IntSpec(
 )
 
 private val gridSpecs = listOf(
-    IntSpec("grid_landscape_margin_left", "横屏左边距偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_landscape_margin_right", "横屏右边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_landscape_margin_horizontal", "横屏水平边距偏移", 0, -600, 600, "dp"),
     IntSpec("grid_landscape_margin_top", "横屏上边距偏移", 0, -600, 600, "dp"),
     IntSpec("grid_landscape_margin_bottom", "横屏下边距偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_left", "竖屏左边距偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_portrait_margin_right", "竖屏右边距偏移", 0, -600, 600, "dp"),
+    IntSpec("grid_portrait_margin_horizontal", "竖屏水平边距偏移", 0, -600, 600, "dp"),
     IntSpec("grid_portrait_margin_top", "竖屏上边距偏移", 0, -600, 600, "dp"),
     IntSpec("grid_portrait_margin_bottom", "竖屏下边距偏移", 0, -600, 600, "dp"),
     IntSpec("grid_landscape_row_gap", "横屏图标纵向间距偏移", 0, -200, 400, "dp"),
     IntSpec("grid_portrait_row_gap", "竖屏图标纵向间距偏移", 0, -200, 400, "dp"),
-    IntSpec("indicator_landscape_x", "横屏指示器 X", 0, -400, 400),
     IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -400, 400),
-    IntSpec("indicator_portrait_x", "竖屏指示器 X", 0, -400, 400),
     IntSpec("indicator_portrait_y", "竖屏指示器 Y", 0, -400, 400),
 )
 private val dockSpecs = listOf(
@@ -342,13 +338,12 @@ private fun applyIpadPreset(activity: ComposeSettingsActivity) {
         .putInt("corner_offset", cornerOffset).putInt("blur_corner_offset", -2)
         .putBoolean("home_grid_8x4", true)
         .putBoolean("grid_margins_dp", true).putBoolean("grid_margins_offset", true)
-        .putInt("grid_landscape_margin_left", 0).putInt("grid_landscape_margin_right", 0)
+        .putInt("grid_landscape_margin_horizontal", 0)
         .putInt("grid_landscape_margin_top", 0).putInt("grid_landscape_margin_bottom", 0)
-        .putInt("grid_portrait_margin_left", 0).putInt("grid_portrait_margin_right", 0)
+        .putInt("grid_portrait_margin_horizontal", 0)
         .putInt("grid_portrait_margin_top", 0).putInt("grid_portrait_margin_bottom", 0)
         .putInt("grid_landscape_row_gap", 0).putInt("grid_portrait_row_gap", 0)
-        .putInt("indicator_landscape_x", 0).putInt("indicator_landscape_y", 0)
-        .putInt("indicator_portrait_x", 0).putInt("indicator_portrait_y", 0)
+        .putInt("indicator_landscape_y", 0).putInt("indicator_portrait_y", 0)
         .putBoolean("dock_customization", true).putBoolean("dock_stroke", true)
         .putInt("stroke_base_r", 255).putInt("stroke_base_g", 255)
         .putInt("stroke_base_b", 255).putInt("stroke_base_alpha", 255)

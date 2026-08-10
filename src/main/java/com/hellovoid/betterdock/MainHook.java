@@ -57,31 +57,32 @@ public class MainHook implements IXposedHookLoadPackage {
         int landYBase = dp ? 28 : 80;
         int portXBase = dp ? 28 : 80;
         int portYBase = dp ? 57 : 160;
-        int landLeft = cfg.i("grid_landscape_margin_left", offsets ? 0 : landXBase);
-        int landRight = cfg.i("grid_landscape_margin_right", offsets ? 0 : landXBase);
+        int landHorizontal = cfg.i("grid_landscape_margin_horizontal",
+            (cfg.i("grid_landscape_margin_left", offsets ? 0 : landXBase)
+                + cfg.i("grid_landscape_margin_right", offsets ? 0 : landXBase)) / 2);
         int landTop = cfg.i("grid_landscape_margin_top", offsets ? 0 : landYBase);
         int landBottom = cfg.i("grid_landscape_margin_bottom", offsets ? 0 : landYBase);
-        int portLeft = cfg.i("grid_portrait_margin_left", offsets ? 0 : portXBase);
-        int portRight = cfg.i("grid_portrait_margin_right", offsets ? 0 : portXBase);
+        int portHorizontal = cfg.i("grid_portrait_margin_horizontal",
+            (cfg.i("grid_portrait_margin_left", offsets ? 0 : portXBase)
+                + cfg.i("grid_portrait_margin_right", offsets ? 0 : portXBase)) / 2);
         int portTop = cfg.i("grid_portrait_margin_top", offsets ? 0 : portYBase);
         int portBottom = cfg.i("grid_portrait_margin_bottom", offsets ? 0 : portYBase);
         int landGap = cfg.i("grid_landscape_row_gap", offsets ? 0 : (dp ? 1 : 3));
         int portGap = cfg.i("grid_portrait_row_gap", offsets ? 0 : (dp ? 1 : 3));
         if (!offsets) {
-            landLeft -= landXBase; landRight -= landXBase;
+            landHorizontal -= landXBase;
             landTop -= landYBase; landBottom -= landYBase;
-            portLeft -= portXBase; portRight -= portXBase;
+            portHorizontal -= portXBase;
             portTop -= portYBase; portBottom -= portYBase;
             landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
         }
         HomeGridHook.install(lpparam.classLoader, grid8x4,
-            Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
+            Math.round(landHorizontal * gridScale),
             Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
-            Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
+            Math.round(portHorizontal * gridScale),
             Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
             Math.round(landGap * gridScale), Math.round(portGap * gridScale),
-            cfg.i("indicator_landscape_x", 0), cfg.i("indicator_landscape_y", 0),
-            cfg.i("indicator_portrait_x", 0), cfg.i("indicator_portrait_y", 0));
+            cfg.i("indicator_landscape_y", 0), cfg.i("indicator_portrait_y", 0));
         if (!cfg.b("dock_customization", true)) {
             XposedBridge.log("[DC] Dock customization disabled");
             return;

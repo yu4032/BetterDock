@@ -10,45 +10,36 @@ final class HomeGridHook {
     private static final String PAD_CELL_COUNT =
         "com.miui.home.launcher.compat.LauncherCellCountCompatPadDevice";
 
-    private static int landscapeLeft, landscapeRight, landscapeTop, landscapeBottom;
-    private static int portraitLeft, portraitRight, portraitTop, portraitBottom;
+    private static int landscapeHorizontal, landscapeTop, landscapeBottom;
+    private static int portraitHorizontal, portraitTop, portraitBottom;
     private static int landscapeRowGap, portraitRowGap;
     private static int activeRowGap;
-    private static Class<?> deviceConfigClass;
     private static boolean grid8x4Enabled;
     private static float density;
-    private static int landscapeIndicatorX, landscapeIndicatorY;
-    private static int portraitIndicatorX, portraitIndicatorY;
+    private static int landscapeIndicatorY, portraitIndicatorY;
     private static final java.util.WeakHashMap<android.view.View, float[]>
         indicatorBaseTranslations = new java.util.WeakHashMap<>();
 
     private HomeGridHook() {}
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
-                        int landLeft, int landRight, int landTop, int landBottom,
-                        int portLeft, int portRight, int portTop, int portBottom,
+                        int landHorizontal, int landTop, int landBottom,
+                        int portHorizontal, int portTop, int portBottom,
                         int landRowGap, int portRowGap,
-                        int landIndicatorX, int landIndicatorY,
-                        int portIndicatorX, int portIndicatorY) {
-        landscapeLeft = landLeft;
-        landscapeRight = landRight;
+                        int landIndicatorY, int portIndicatorY) {
+        landscapeHorizontal = landHorizontal;
         landscapeTop = landTop;
         landscapeBottom = landBottom;
-        portraitLeft = portLeft;
-        portraitRight = portRight;
+        portraitHorizontal = portHorizontal;
         portraitTop = portTop;
         portraitBottom = portBottom;
         landscapeRowGap = landRowGap;
         portraitRowGap = portRowGap;
-        landscapeIndicatorX = landIndicatorX;
         landscapeIndicatorY = landIndicatorY;
-        portraitIndicatorX = portIndicatorX;
         portraitIndicatorY = portIndicatorY;
         grid8x4Enabled = enableGrid8x4;
         density = android.content.res.Resources.getSystem().getDisplayMetrics().density;
         try {
-            deviceConfigClass = XposedHelpers.findClass(
-                "com.miui.home.launcher.DeviceConfig", classLoader);
             if (enableGrid8x4) {
                 Class<?> compat = XposedHelpers.findClass(PAD_CELL_COUNT, classLoader);
                 hookAxis(compat, "getCellCountXMin", true);
@@ -66,9 +57,9 @@ final class HomeGridHook {
             installIndicatorPosition(classLoader);
             installCellLayoutMargins(classLoader);
             XposedBridge.log("[DC] home grid hooks: 8x4=" + enableGrid8x4 + " land="
-                + landscapeLeft + "," + landscapeRight + ","
+                + landscapeHorizontal + ","
                 + landscapeTop + "," + landscapeBottom + " port="
-                + portraitLeft + "," + portraitRight + ","
+                + portraitHorizontal + ","
                 + portraitTop + "," + portraitBottom);
 
         } catch (Throwable e) {
@@ -106,43 +97,37 @@ final class HomeGridHook {
             int baseCell = (Integer) XposedHelpers.callMethod(config, "getCellSize");
             int configLeft = (Integer) XposedHelpers.callMethod(config, "getLeft");
             int baseTop = (Integer) XposedHelpers.callMethod(config, "getTop");
-            int baseWidthGap = deviceConfigClass == null ? 0 : (Integer)
-                XposedHelpers.callStaticMethod(deviceConfigClass,
-                    "getMingouAdaptWiderScreenWidthGap", baseCell);
+            int baseWidthGap = XposedHelpers.getIntField(cellLayout, "mWidthGap");
             int baseLeft = configLeft
                 - Math.max(0, countX - 1) * (baseWidthGap / 2);
             int baseHeightGap = 1;
             if (baseCell <= 0) return;
 
-            android.graphics.Point size = new android.graphics.Point();
-            android.view.Display display = ((android.view.View) cellLayout).getDisplay();
-            if (display == null) return;
-            display.getRealSize(size);
+            android.view.View layout = (android.view.View) cellLayout;
             boolean portrait = countY > countX;
-            int width = portrait ? Math.min(size.x, size.y) : Math.max(size.x, size.y);
-            int height = portrait ? Math.max(size.x, size.y) : Math.min(size.x, size.y);
+            int width = layout.getWidth();
+            int height = layout.getHeight();
+            if (width <= 0 || height <= 0) return;
 
             // With the 8x4 count hooks MIUI can retain the opposite orientation's
             // GridConfig after rotation. Use the established Pad defaults as the
             // orientation-specific baseline; native 6x4 continues using MIUI's
             // live GridConfig values.
             if (grid8x4Enabled) {
-                baseLeft = Math.round((portrait ? 28f : 57f) * density);
-                baseTop = Math.round((portrait ? 57f : 28f) * density);
                 baseWidthGap = 0;
                 baseHeightGap = Math.max(1, Math.round(density));
-                int defaultRight = baseLeft;
-                int available = Math.max(countX,
-                    width - baseLeft - defaultRight);
-                baseCell = Math.max(1, available / countX);
+                baseLeft = Math.max(0, (width - baseCell * countX) / 2);
+                baseTop = Math.max(0, (height - baseCell * countY
+                    - baseHeightGap * Math.max(0, countY - 1)) / 2);
             }
 
             int baseRight = width - (baseLeft + baseCell * countX
                 + baseWidthGap * Math.max(0, countX - 1));
             int baseBottom = height - (baseTop + baseCell * countY
                 + baseHeightGap * Math.max(0, countY - 1));
-            int left = baseLeft + (portrait ? portraitLeft : landscapeLeft);
-            int right = baseRight + (portrait ? portraitRight : landscapeRight);
+            int horizontal = portrait ? portraitHorizontal : landscapeHorizontal;
+            int left = baseLeft + horizontal;
+            int right = baseRight + horizontal;
             int top = baseTop + (portrait ? portraitTop : landscapeTop);
             int bottom = baseBottom + (portrait ? portraitBottom : landscapeBottom);
             int rowGap = baseHeightGap
@@ -219,9 +204,8 @@ final class HomeGridHook {
         }
         boolean portrait = indicator.getResources().getConfiguration().orientation
             == Configuration.ORIENTATION_PORTRAIT;
-        int offsetX = portrait ? portraitIndicatorX : landscapeIndicatorX;
         int offsetY = portrait ? portraitIndicatorY : landscapeIndicatorY;
-        indicator.setTranslationX(base[0] + offsetX);
+        indicator.setTranslationX(base[0]);
         indicator.setTranslationY(base[1] + offsetY);
     }
 

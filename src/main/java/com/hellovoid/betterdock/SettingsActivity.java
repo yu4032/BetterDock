@@ -97,6 +97,16 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 1) - 1)
                 .putBoolean("grid_margins_offset", true).commit();
         }
+        if (!sp.contains("grid_landscape_margin_horizontal")) {
+            sp.edit()
+                .putInt("grid_landscape_margin_horizontal",
+                    (sp.getInt("grid_landscape_margin_left", 0)
+                        + sp.getInt("grid_landscape_margin_right", 0)) / 2)
+                .putInt("grid_portrait_margin_horizontal",
+                    (sp.getInt("grid_portrait_margin_left", 0)
+                        + sp.getInt("grid_portrait_margin_right", 0)) / 2)
+                .apply();
+        }
     }
 
     void launchExport() {
@@ -164,19 +174,15 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", true));
         j.put("grid_margins_dp", sp.getBoolean("grid_margins_dp", true));
         j.put("grid_margins_offset", sp.getBoolean("grid_margins_offset", true));
-        j.put("grid_landscape_margin_left", sp.getInt("grid_landscape_margin_left", 0));
-        j.put("grid_landscape_margin_right", sp.getInt("grid_landscape_margin_right", 0));
+        j.put("grid_landscape_margin_horizontal", sp.getInt("grid_landscape_margin_horizontal", 0));
         j.put("grid_landscape_margin_top", sp.getInt("grid_landscape_margin_top", 0));
         j.put("grid_landscape_margin_bottom", sp.getInt("grid_landscape_margin_bottom", 0));
-        j.put("grid_portrait_margin_left", sp.getInt("grid_portrait_margin_left", 0));
-        j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 0));
+        j.put("grid_portrait_margin_horizontal", sp.getInt("grid_portrait_margin_horizontal", 0));
         j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 0));
         j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 0));
         j.put("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 0));
         j.put("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 0));
-        j.put("indicator_landscape_x", sp.getInt("indicator_landscape_x", 0));
         j.put("indicator_landscape_y", sp.getInt("indicator_landscape_y", 0));
-        j.put("indicator_portrait_x", sp.getInt("indicator_portrait_x", 0));
         j.put("indicator_portrait_y", sp.getInt("indicator_portrait_y", 0));
         j.put("dock_customization", sp.getBoolean("dock_customization", true));
         j.put("light_mode", sp.getString("light_mode", "fixed"));
@@ -225,11 +231,23 @@ public class SettingsActivity extends AppCompatActivity {
         for (String key : gridMargins) putInt(j, e, key, importedDp ? -600 : -2000, importedDp ? 600 : 2000);
         e.putBoolean("grid_margins_dp", importedDp);
         e.putBoolean("grid_margins_offset", importedOffsets);
+        if (j.has("grid_landscape_margin_horizontal")) {
+            putInt(j, e, "grid_landscape_margin_horizontal", -600, 600);
+        } else {
+            e.putInt("grid_landscape_margin_horizontal",
+                (j.optInt("grid_landscape_margin_left", 0)
+                    + j.optInt("grid_landscape_margin_right", 0)) / 2);
+        }
+        if (j.has("grid_portrait_margin_horizontal")) {
+            putInt(j, e, "grid_portrait_margin_horizontal", -600, 600);
+        } else {
+            e.putInt("grid_portrait_margin_horizontal",
+                (j.optInt("grid_portrait_margin_left", 0)
+                    + j.optInt("grid_portrait_margin_right", 0)) / 2);
+        }
         putInt(j, e, "grid_landscape_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
         putInt(j, e, "grid_portrait_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
-        putInt(j, e, "indicator_landscape_x", -400, 400);
         putInt(j, e, "indicator_landscape_y", -400, 400);
-        putInt(j, e, "indicator_portrait_x", -400, 400);
         putInt(j, e, "indicator_portrait_y", -400, 400);
         if (!j.has("grid_landscape_margin_left") && j.has("grid_margin_left")) {
             int left = Math.max(0, Math.min(400, j.optInt("grid_margin_left", 160)));
@@ -375,19 +393,15 @@ public class SettingsActivity extends AppCompatActivity {
                 .putBoolean("home_grid_8x4", true)
                 .putBoolean("grid_margins_dp", true)
                 .putBoolean("grid_margins_offset", true)
-                .putInt("grid_landscape_margin_left", 0)
-                .putInt("grid_landscape_margin_right", 0)
+                .putInt("grid_landscape_margin_horizontal", 0)
                 .putInt("grid_landscape_margin_top", 0)
                 .putInt("grid_landscape_margin_bottom", 0)
-                .putInt("grid_portrait_margin_left", 0)
-                .putInt("grid_portrait_margin_right", 0)
+                .putInt("grid_portrait_margin_horizontal", 0)
                 .putInt("grid_portrait_margin_top", 0)
                 .putInt("grid_portrait_margin_bottom", 0)
                 .putInt("grid_landscape_row_gap", 0)
                 .putInt("grid_portrait_row_gap", 0)
-                .putInt("indicator_landscape_x", 0)
                 .putInt("indicator_landscape_y", 0)
-                .putInt("indicator_portrait_x", 0)
                 .putInt("indicator_portrait_y", 0)
                 .putBoolean("dock_customization", true)
                 .putBoolean("dock_stroke", true)
