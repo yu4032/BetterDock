@@ -163,9 +163,18 @@ public class MainHook implements IXposedHookLoadPackage {
                                     cfg.i("liquid_edge_band", 32) / 1000f);
                             liquidGlassView.setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
+                            bindDockDragController(liquidGlassView, lpparam.classLoader);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(
                                     liquidGlassView, oldBg.getRootView()));
+                            try {
+                                View launcherDecor = ((android.app.Activity) param.thisObject)
+                                        .getWindow().getDecorView();
+                                installDockAreaTouchDetector(liquidGlassView, launcherDecor);
+                                liquidGlassView.post(() -> installDockAreaTouchDetector(
+                                        liquidGlassView, ((android.app.Activity) param.thisObject)
+                                                .getWindow().getDecorView()));
+                            } catch (Throwable ignored) {}
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -377,9 +386,18 @@ public class MainHook implements IXposedHookLoadPackage {
                                     c2.i("liquid_edge_band", 32) / 1000f);
                             liquidGlassView.setHighlightAlpha(c2.i("liquid_highlight_alpha", 100) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
+                            bindDockDragController(liquidGlassView, cl);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(
                                     liquidGlassView, oldBg.getRootView()));
+                            try {
+                                View launcherDecor = ((android.app.Activity) param.thisObject)
+                                        .getWindow().getDecorView();
+                                installDockAreaTouchDetector(liquidGlassView, launcherDecor);
+                                liquidGlassView.post(() -> installDockAreaTouchDetector(
+                                        liquidGlassView, ((android.app.Activity) param.thisObject)
+                                                .getWindow().getDecorView()));
+                            } catch (Throwable ignored) {}
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
@@ -780,6 +798,95 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable e) {
             XposedBridge.log("[DC] dock touch listener failed: " + e);
         }
+    }
+
+    /** Coordinate-based detector on the LAUNCHER window root: any touch point that lands
+     *  inside (or near) the Dock area counts as Dock interaction and triggers a glass
+     *  refresh.  Unlike the Dock-window listener, this also catches touches the system
+     *  dispatches elsewhere during an icon drag (drag surface), as long as the finger
+     *  stays near the Dock.  Never consumes events. */
+    private static void installDockAreaTouchDetector(DockLiquidGlassView glass, View launcherRoot) {
+        try {
+            if (launcherRoot == null || launcherRoot.getWidth() <= 0
+                    || launcherRoot.getHeight() <= 0) return;
+            launcherRoot.setOnTouchListener((View v, android.view.MotionEvent ev) -> {
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
+                            glass.onDockTouchEvent();
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                return false; // never consume
+            });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] dock area touch detector failed: " + e);
+        }
+    }
+
+    /** Hook the launcher's drag controller: while a Dock icon drag is in flight the glass
+     *  keeps capturing (so the background follows the rearrangement) and the drag surface
+     *  layer name is resolved and excluded from captures (so the floating icon never
+     *  freezes into the glass background). */
+    private static void bindDockDragController(DockLiquidGlassView glass, ClassLoader cl) {
+        try {
+            Class<?> dc = XposedHelpers.findClass("com.miui.home.launcher.DragController", cl);
+            XposedHelpers.findAndHookMethod(dc, "startDrag",
+                android.graphics.drawable.Drawable.class, boolean.class,
+                XposedHelpers.findClass("com.miui.home.launcher.ItemInfo", cl),
+                int.class, int.class, float.class,
+                XposedHelpers.findClass("com.miui.home.launcher.DragSource", cl),
+                int.class,
+                new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam p) {
+                        String dragName = resolveDragSurfaceLayerName(p.thisObject);
+                        glass.setDockDragging(true, dragName);
+                    }
+                });
+            XposedHelpers.findAndHookMethod(dc, "endDrag", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    glass.setDockDragging(false, null);
+                }
+            });
+            XposedBridge.log("[DC] dock drag controller hooked");
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] drag controller hook failed: " + e);
+        }
+    }
+
+    /** Extract the SF layer name of the drag surface ("drag surface#NNNN") from the
+     *  DragController's DragObject.mDragViews[0] view's SurfaceControl. */
+    private static String resolveDragSurfaceLayerName(Object dragController) {
+        try {
+            Object dragObject = XposedHelpers.getObjectField(dragController, "mDragObject");
+            if (dragObject == null) return null;
+            Object views = XposedHelpers.getObjectField(dragObject, "mDragViews");
+            if (!(views instanceof java.util.List) || ((java.util.List<?>) views).isEmpty()) {
+                return null;
+            }
+            Object dragView = ((java.util.List<?>) views).get(0);
+            if (dragView instanceof View) {
+                java.lang.reflect.Method getSc = View.class.getDeclaredMethod("getSurfaceControl");
+                getSc.setAccessible(true);
+                Object sc = getSc.invoke(dragView);
+                if (sc != null) {
+                    String s = sc.toString(); // Surface(name=drag surface#16904)/@0x...
+                    int i = s.indexOf("name=");
+                    int j = s.indexOf(')', i);
+                    if (i >= 0 && j > i) {
+                        String name = s.substring(i + 5, j);
+                        XposedBridge.log("[DC] drag surface layer: " + name);
+                        return name;
+                    }
+                }
+            }
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] drag surface resolve failed: " + e);
+        }
+        return null;
     }
 
     private static void syncAll(View bg) { if (bg == null) return;

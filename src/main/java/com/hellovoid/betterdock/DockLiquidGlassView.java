@@ -216,6 +216,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
     // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
     private float glassHighlightAlpha = 1.0f;
+    // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
+    // endDrag).  During a drag the glass keeps capturing so the background follows the icon
+    // re-arrangement, and the drag surface layer is excluded so the floating icon never
+    // freezes into the captured background.
+    private volatile boolean dockDragging = false;
+    private volatile String dragLayerName = null;
     private final long captureIntervalNanos;
     private final int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
@@ -612,7 +618,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
 
-        boolean changed = !observationValid
+        boolean changed = dockDragging   // icon drag: keep capturing through the rearrange
+                || !observationValid
                 || rotation != observedRotation
                 || tmpDisplaySize.x != observedDisplayWidth
                 || tmpDisplaySize.y != observedDisplayHeight
@@ -750,6 +757,34 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture("dock-touch");
     }
 
+    /** Coordinate test: is this screen point inside (or near) the Dock window area?
+     *  MainHook uses this from the launcher window's touch listener, so touches that the
+     *  system dispatches elsewhere (e.g. the drag surface during an icon drag) still count
+     *  as Dock-area interaction as long as the finger stays near the Dock. */
+    boolean isTouchInDockArea(float rawX, float rawY) {
+        geometrySource.getLocationOnScreen(tmpDockLocation);
+        int w = geometrySource.getWidth();
+        int h = geometrySource.getHeight();
+        if (w <= 0 || h <= 0) return false;
+        int margin = (int) Math.max(80f, getResources().getDisplayMetrics().density * 40f);
+        return rawX >= tmpDockLocation[0] - margin
+                && rawX <= tmpDockLocation[0] + w + margin
+                && rawY >= tmpDockLocation[1] - margin
+                && rawY <= tmpDockLocation[1] + h + margin;
+    }
+
+    /** Dock icon drag state (MainHook hooks DragController.startDrag/endDrag).  While
+     *  dragging, the glass keeps capturing continuously so the background follows the icon
+     *  rearrangement; the drag surface layer is excluded from captures. */
+    void setDockDragging(boolean dragging, String dragSurfaceLayerName) {
+        dockDragging = dragging;
+        dragLayerName = dragging ? dragSurfaceLayerName : null;
+        if (dragging) {
+            observationValid = false;
+            requestStateCapture("drag-start");
+        }
+    }
+
     /** Configurable by the GUI (liquid_capture_stop_delay, up to 10s). */
     void setStopGraceMillis(int millis) {
         stopGraceMillis = Math.max(0, Math.min(10000, millis));
@@ -831,6 +866,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // !isShown()/!windowVisible while the Dock is still on screen.  Treat a short
         // "not allowed" window as still allowed (lastAllowedNanos within stopGraceMillis)
         // so the animation tail keeps being captured instead of freezing mid-frame.
+        // Dock icon drag in flight: keep capturing so the background follows the icon
+        // rearrangement (the drag surface layer is excluded from captures).
+        if (dockDragging) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
         boolean baseAllowed = attached && windowVisible && isShown();
         if (baseAllowed) {
             lastAllowedNanos = System.nanoTime();
@@ -948,8 +989,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // thread, so this worker thread is free to service the next request
                     // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
+                    String[] excludeNames = dockWindowLayerName != null
+                            ? new String[]{dockWindowLayerName, dragLayerName}
+                            : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
-                            excludes, dockWindowLayerName,
+                            excludes, excludeNames,
                             new LiveScreenCapture.CaptureCallback() {
                                 @Override public void onResult(Bitmap bmp) {
                                     handleCaptureResult(bmp, req, generation);

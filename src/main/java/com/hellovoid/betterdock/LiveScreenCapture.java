@@ -254,7 +254,7 @@ final class LiveScreenCapture {
      * Falls back to the synchronous path when the async listener cannot be built.
      */
     void captureScreenAsync(Rect sourceCrop, float scale, int displayId,
-                            android.view.SurfaceControl[] excludeLayers, String excludeLayerName,
+                            android.view.SurfaceControl[] excludeLayers, String[] excludeLayerNames,
                             CaptureCallback callback) {
         try {
             if (sourceCrop == null || sourceCrop.isEmpty()) throw new IllegalArgumentException(
@@ -270,8 +270,10 @@ final class LiveScreenCapture {
             }
             java.util.ArrayList<String> names = new java.util.ArrayList<>();
             names.add("Floating Dock");
-            if (excludeLayerName != null && !excludeLayerName.isEmpty()) {
-                names.add(excludeLayerName);
+            if (excludeLayerNames != null) {
+                for (String n : excludeLayerNames) {
+                    if (n != null && !n.isEmpty() && !names.contains(n)) names.add(n);
+                }
             }
             setExcludeOrIncludeLayerNames.invoke(builder, (Object) names.toArray(new String[0]));
             setCaptureMode.invoke(builder, 1);
@@ -279,8 +281,10 @@ final class LiveScreenCapture {
 
             if (asyncListenerConstructor == null) {
                 // No async listener on this build: fall back to the synchronous path.
+                String firstName = (excludeLayerNames != null && excludeLayerNames.length > 0)
+                        ? excludeLayerNames[0] : null;
                 Bitmap result = captureScreen(sourceCrop, scale, displayId,
-                        excludeLayers, excludeLayerName);
+                        excludeLayers, firstName);
                 if (result != null) callback.onResult(result);
                 else callback.onError(new RuntimeException("sync fallback returned null"));
                 return;
