@@ -76,6 +76,8 @@ private val gridSpecs = listOf(
     IntSpec("grid_portrait_margin_right", "竖屏右边距", 28, -600, 600, "dp"),
     IntSpec("grid_portrait_margin_top", "竖屏上边距", 57, -600, 600, "dp"),
     IntSpec("grid_portrait_margin_bottom", "竖屏下边距", 57, -600, 600, "dp"),
+    IntSpec("grid_landscape_row_gap", "横屏图标纵向间距", 1, -200, 400, "dp"),
+    IntSpec("grid_portrait_row_gap", "竖屏图标纵向间距", 1, -200, 400, "dp"),
     IntSpec("indicator_landscape_x", "横屏指示器 X", 0, -400, 400),
     IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -400, 400),
     IntSpec("indicator_portrait_x", "竖屏指示器 X", 0, -400, 400),
@@ -345,6 +347,7 @@ private fun applyIpadPreset(activity: ComposeSettingsActivity) {
         .putInt("grid_landscape_margin_top", 28).putInt("grid_landscape_margin_bottom", 28)
         .putInt("grid_portrait_margin_left", 28).putInt("grid_portrait_margin_right", 28)
         .putInt("grid_portrait_margin_top", 57).putInt("grid_portrait_margin_bottom", 57)
+        .putInt("grid_landscape_row_gap", 1).putInt("grid_portrait_row_gap", 1)
         .putInt("indicator_landscape_x", 0).putInt("indicator_landscape_y", 0)
         .putInt("indicator_portrait_x", 0).putInt("indicator_portrait_y", 0)
         .putBoolean("dock_customization", true).putBoolean("dock_stroke", true)

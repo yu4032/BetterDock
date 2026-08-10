@@ -12,6 +12,8 @@ final class HomeGridHook {
 
     private static int landscapeLeft, landscapeRight, landscapeTop, landscapeBottom;
     private static int portraitLeft, portraitRight, portraitTop, portraitBottom;
+    private static int landscapeRowGap, portraitRowGap;
+    private static int activeRowGap;
     private static int landscapeIndicatorX, landscapeIndicatorY;
     private static int portraitIndicatorX, portraitIndicatorY;
     private static final java.util.WeakHashMap<android.view.View, int[]>
@@ -22,6 +24,7 @@ final class HomeGridHook {
     static void install(ClassLoader classLoader,
                         int landLeft, int landRight, int landTop, int landBottom,
                         int portLeft, int portRight, int portTop, int portBottom,
+                        int landRowGap, int portRowGap,
                         int landIndicatorX, int landIndicatorY,
                         int portIndicatorX, int portIndicatorY) {
         landscapeLeft = landLeft;
@@ -32,6 +35,8 @@ final class HomeGridHook {
         portraitRight = portRight;
         portraitTop = portTop;
         portraitBottom = portBottom;
+        landscapeRowGap = landRowGap;
+        portraitRowGap = portRowGap;
         landscapeIndicatorX = landIndicatorX;
         landscapeIndicatorY = landIndicatorY;
         portraitIndicatorX = portIndicatorX;
@@ -80,6 +85,15 @@ final class HomeGridHook {
                     applyCellLayoutMargins(param.thisObject);
                 }
             });
+        XposedHelpers.findAndHookMethod(cellLayout, "calculateY",
+            int.class, int.class, int.class, int.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    int index = (Integer) param.args[0];
+                    int padding = (Integer) param.args[1];
+                    int cell = (Integer) param.args[2];
+                    param.setResult(padding + index * (cell + activeRowGap));
+                }
+            });
     }
 
     private static void applyCellLayoutMargins(Object cellLayout) {
@@ -90,14 +104,12 @@ final class HomeGridHook {
             int countY = XposedHelpers.getIntField(config, "countY");
             int cell = XposedHelpers.getIntField(config, "cellSize");
             if (countX <= 0 || cell <= 0) return;
-            android.content.Context context = ((android.view.View) cellLayout)
-                .getContext();
-            android.view.WindowManager windowManager = (android.view.WindowManager)
-                context.getSystemService(android.content.Context.WINDOW_SERVICE);
-            android.graphics.Rect displayBounds = windowManager
-                .getMaximumWindowMetrics().getBounds();
-            int width = displayBounds.width();
-            int height = displayBounds.height();
+            android.graphics.Point realSize = new android.graphics.Point();
+            android.view.Display display = ((android.view.View) cellLayout).getDisplay();
+            if (display == null) return;
+            display.getRealSize(realSize);
+            int width = realSize.x;
+            int height = realSize.y;
             if (width <= 0 || height <= 0) return;
             boolean portrait = countY > countX;
             if ((portrait && width > height) || (!portrait && height > width)) {
@@ -111,12 +123,16 @@ final class HomeGridHook {
             int bottom = portrait ? portraitBottom : landscapeBottom;
             int freeWidth = Math.max(0,
                 width - left - right - cell * countX);
-            int freeHeight = Math.max(0,
-                height - top - bottom - cell * countY);
             int widthGap = countX > 1 ? freeWidth / (countX - 1) : 0;
-            int heightGap = countY > 1 ? freeHeight / (countY - 1) : 0;
+            int heightGap = portrait ? portraitRowGap : landscapeRowGap;
+            activeRowGap = heightGap;
+            int availableHeight = height - top - bottom
+                - heightGap * Math.max(0, countY - 1);
+            int cellHeight = Math.max(1, availableHeight / countY);
             XposedHelpers.setIntField(cellLayout, "mCellPaddingLeft", left);
             XposedHelpers.setIntField(cellLayout, "mCellPaddingTop", top);
+            XposedHelpers.setIntField(cellLayout, "mCellWidth", cell);
+            XposedHelpers.setIntField(cellLayout, "mCellHeight", cellHeight);
             XposedHelpers.setIntField(cellLayout, "mWidthGap", widthGap);
             XposedHelpers.setIntField(cellLayout, "mHeightGap", heightGap);
         } catch (Throwable e) {

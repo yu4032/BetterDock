@@ -157,6 +157,8 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("grid_portrait_margin_right", sp.getInt("grid_portrait_margin_right", 28));
         j.put("grid_portrait_margin_top", sp.getInt("grid_portrait_margin_top", 57));
         j.put("grid_portrait_margin_bottom", sp.getInt("grid_portrait_margin_bottom", 57));
+        j.put("grid_landscape_row_gap", sp.getInt("grid_landscape_row_gap", 1));
+        j.put("grid_portrait_row_gap", sp.getInt("grid_portrait_row_gap", 1));
         j.put("indicator_landscape_x", sp.getInt("indicator_landscape_x", 0));
         j.put("indicator_landscape_y", sp.getInt("indicator_landscape_y", 0));
         j.put("indicator_portrait_x", sp.getInt("indicator_portrait_x", 0));
@@ -206,6 +208,8 @@ public class SettingsActivity extends AppCompatActivity {
         boolean importedDp = j.optBoolean("grid_margins_dp", false);
         for (String key : gridMargins) putInt(j, e, key, importedDp ? -600 : -2000, importedDp ? 600 : 2000);
         e.putBoolean("grid_margins_dp", importedDp);
+        putInt(j, e, "grid_landscape_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
+        putInt(j, e, "grid_portrait_row_gap", importedDp ? -200 : -600, importedDp ? 400 : 1200);
         putInt(j, e, "indicator_landscape_x", -400, 400);
         putInt(j, e, "indicator_landscape_y", -400, 400);
         putInt(j, e, "indicator_portrait_x", -400, 400);
@@ -361,6 +365,8 @@ public class SettingsActivity extends AppCompatActivity {
                 .putInt("grid_portrait_margin_right", 28)
                 .putInt("grid_portrait_margin_top", 57)
                 .putInt("grid_portrait_margin_bottom", 57)
+                .putInt("grid_landscape_row_gap", 1)
+                .putInt("grid_portrait_row_gap", 1)
                 .putInt("indicator_landscape_x", 0)
                 .putInt("indicator_landscape_y", 0)
                 .putInt("indicator_portrait_x", 0)

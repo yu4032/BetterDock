@@ -64,6 +64,8 @@ public class MainHook implements IXposedHookLoadPackage {
                 Math.round(cfg.i("grid_portrait_margin_right", oldBottom) * gridScale),
                 Math.round(cfg.i("grid_portrait_margin_top", oldRight) * gridScale),
                 Math.round(cfg.i("grid_portrait_margin_bottom", oldLeft) * gridScale),
+                Math.round(cfg.i("grid_landscape_row_gap", 1) * gridScale),
+                Math.round(cfg.i("grid_portrait_row_gap", 1) * gridScale),
                 cfg.i("indicator_landscape_x", 0),
                 cfg.i("indicator_landscape_y", 0),
                 cfg.i("indicator_portrait_x", 0),
