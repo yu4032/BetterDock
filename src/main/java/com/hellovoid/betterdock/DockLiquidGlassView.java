@@ -579,8 +579,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
 
-        boolean changed = touchActive   // continuous capture while a gesture is in progress
-                || recentsVisible      // multitasking panel is showing: keep the glass live
+        boolean changed = (touchActive && recentsVisible)  // finger swiping INTO multitasking
                 || !observationValid
                 || rotation != observedRotation
                 || tmpDisplaySize.x != observedDisplayWidth
@@ -744,14 +743,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // "not allowed" window as still allowed (lastAllowedNanos within stopGraceMillis)
         // so the animation tail keeps being captured instead of freezing mid-frame.
         // Touch-active gesture (Dock summon / multitasking up-swipe): capture continuously
-        // even if the window briefly reports hidden mid-transition.
-        if (touchActive) {
-            lastAllowedNanos = System.nanoTime();
-            return true;
-        }
-        // Multitasking panel showing: keep capturing regardless of Dock window visibility.
+        // even if the window briefly reports hidden mid-transition.  Requires BOTH the
+        // finger moving AND the multitasking panel appearing (AND semantics): a finger on
+        // the Dock alone, or a static multitasking screen alone, does not force capture.
         View rec = recentsView;
-        if (rec != null && rec.getVisibility() == View.VISIBLE) {
+        boolean recentsVisibleNow = rec != null && rec.getVisibility() == View.VISIBLE;
+        if (touchActive && recentsVisibleNow) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
