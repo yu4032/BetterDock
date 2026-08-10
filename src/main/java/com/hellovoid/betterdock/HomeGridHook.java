@@ -94,6 +94,14 @@ final class HomeGridHook {
             int countX = XposedHelpers.getIntField(config, "countX");
             int countY = XposedHelpers.getIntField(config, "countY");
             if (countX <= 0 || countY <= 0) return;
+            int[] xs = (int[]) XposedHelpers.getObjectField(cellLayout, "mXs");
+            int[] ys = (int[]) XposedHelpers.getObjectField(cellLayout, "mYs");
+            if (xs == null || xs.length != countX)
+                XposedHelpers.setObjectField(cellLayout, "mXs", new int[countX]);
+            if (ys == null || ys.length != countY)
+                XposedHelpers.setObjectField(cellLayout, "mYs", new int[countY]);
+            XposedHelpers.setIntField(cellLayout, "mHCells", countX);
+            XposedHelpers.setIntField(cellLayout, "mVCells", countY);
             int baseCell = (Integer) XposedHelpers.callMethod(config, "getCellSize");
             int configLeft = (Integer) XposedHelpers.callMethod(config, "getLeft");
             int baseTop = (Integer) XposedHelpers.callMethod(config, "getTop");
