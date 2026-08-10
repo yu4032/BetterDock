@@ -860,6 +860,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
+    private boolean isRecentsVisible() {
+        View rec = recentsView;
+        return rec != null && rec.getVisibility() == View.VISIBLE && rec.isShown();
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -876,7 +881,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // so the animation tail keeps being captured instead of freezing mid-frame.
         // Dock icon drag in flight: keep capturing so the background follows the icon
         // rearrangement (the drag surface layer is excluded from captures).
-        if (dockDragging) {
+        // Recents/multitasking panel visible: keep capturing — pulling the Dock up into
+        // multitasking hides the Dock window (base gate would drop), but the glass must
+        // follow the task-card animation behind it.
+        if (dockDragging || isRecentsVisible()) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
@@ -1002,6 +1010,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // capture path) — fast AND inherently icon/dock-free.  Over an app the
                     // glass refracts the app content, so fall back to full-display capture
                     // with the Dock + drag-surface layers excluded (mode 1).
+                    // Launcher window focus is the reliable home-screen signal (the Dock
+                    // overlay is NOT_FOCUSABLE and never steals it; Dock pulls keep the
+                    // app focused).  When HOME is pressed the launcher gains focus at the
+                    // START of the return animation, so the whole animation captures the
+                    // wallpaper layer.
                     boolean wallpaperMode = launcherResumed && launcherLifecycleKnown;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
@@ -1095,6 +1108,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 nullFrameLogged = false;
                 installCapture(frame);
                 if (sourceDirty) requestStateCapture();
+                // Recents still visible: keep the capture loop alive — the Dock window is
+                // hidden during multitasking so onPreDraw no longer ticks; the self-sustained
+                // loop above (capture -> result -> recents-continue) follows the task cards.
+                if (isRecentsVisible()) requestStateCapture("recents-continue");
             });
         } catch (Throwable e) {
             if (strip != null && !strip.isRecycled()) strip.recycle();

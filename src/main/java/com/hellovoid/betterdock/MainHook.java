@@ -490,10 +490,46 @@ public class MainHook implements IXposedHookLoadPackage {
             }
         };
 
+        XC_MethodHook startHook = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                // onStart fires for BOTH returning home AND pulling the Dock out over an
+                // app (MIUI restores the launcher activity during the gesture), so it can
+                // NOT decide capture mode.  Window visibility (onWindowVisibilityChanged)
+                // is the discriminating signal: returning home makes the launcher WINDOW
+                // visible at the start of the animation; a Dock pull leaves it GONE.
+                XposedBridge.log("[DC] liquid lifecycle: onStart (visibility decides)");
+            }
+        };
+        XC_MethodHook stopHook = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                XposedBridge.log("[DC] liquid lifecycle: onStop (visibility decides)");
+            }
+        };
+
+        XC_MethodHook visibilityHook = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam p) {
+                if (!launcherClass.isInstance(p.thisObject)) return;
+                boolean visible = (((Integer) p.args[0]) & View.VISIBLE) != 0;
+                launcherLifecycleKnown = true;
+                launcherResumed = visible;
+                XposedBridge.log("[DC] liquid window visibility: " + p.args[0]);
+                DockLiquidGlassView glass = liquidGlassView;
+                if (glass != null) glass.setLauncherState(true, visible);
+            }
+        };
+        try {
+            XposedHelpers.findAndHookMethod(Activity.class, "onWindowVisibilityChanged",
+                    int.class, visibilityHook);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] onWindowVisibilityChanged hook failed: " + e);
+        }
+
         boolean directLifecycleHooked = false;
         try {
             XposedHelpers.findAndHookMethod(launcherClass, "onResume", resumeHook);
             XposedHelpers.findAndHookMethod(launcherClass, "onPause", pauseHook);
+            XposedHelpers.findAndHookMethod(launcherClass, "onStart", startHook);
+            XposedHelpers.findAndHookMethod(launcherClass, "onStop", stopHook);
             directLifecycleHooked = true;
         } catch (Throwable directError) {
             XposedBridge.log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
