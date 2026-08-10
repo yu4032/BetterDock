@@ -274,6 +274,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean kickScheduled;
     private long captureGeneration;
     private long lastCaptureStartNanos;
+    // Dock animation grace: while Dock geometry is changing (expand/collapse/interruption)
+    // we stay in wallpaper mode (cheaper + avoids capturing in-transit Dock content).
+    // After DOCK_ANIM_GRACE_MS of stable geometry we revert to focus-driven selection.
+    private long dockMovingUntilNanos;
+    private static final long DOCK_ANIM_GRACE_MS = 500L;
 
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
@@ -671,6 +676,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observedRecentsTranslationX = recentsTx;
         observedRecentsTranslationY = recentsTy;
         observationValid = true;
+        // Dock geometry change = animation/transition in flight (incl. interruptions).
+        // Keep us in wallpaper mode until stability returns.
+        if (changed) dockMovingUntilNanos = System.nanoTime() + DOCK_ANIM_GRACE_MS * 1_000_000L;
         return changed;
     }
 
@@ -943,6 +951,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return false;
     }
 
+    /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation
+     *  started/interrupted — the animation keeps the glass's backdrop in sync). */
+    void requestCapture(String reason) {
+        requestStateCapture(reason);
+    }
+
     private void requestStateCapture() {
         requestStateCapture("state");
     }
@@ -1054,11 +1068,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // glass refracts the app content, so fall back to full-display capture
                     // with the Dock + drag-surface layers excluded (mode 1).
                     // Launcher window focus is the reliable home-screen signal (the Dock
-                    // overlay is NOT_FOCUSABLE and never steals it; Dock pulls keep the
-                    // app focused).  When HOME is pressed the launcher gains focus at the
-                    // START of the return animation, so the whole animation captures the
-                    // wallpaper layer.
-                    boolean wallpaperMode = launcherResumed && launcherLifecycleKnown;
+                    // Default to wallpaper-only capture.  Only switch to full-screen
+                    // (mode=1) when the Dock sits over a non-home app AND the Dock
+                    // geometry is stable (the foreground app's content is what the
+                    // glass should refract).  Animations, interruptions, and all
+                    // home-screen states stay in wallpaper mode.
+                    boolean appFront = !(launcherResumed && launcherLifecycleKnown);
+                    boolean dockSettled = System.nanoTime() > dockMovingUntilNanos;
+                    boolean wallpaperMode = !(appFront && dockSettled);
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null

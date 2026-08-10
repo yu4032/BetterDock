@@ -828,6 +828,35 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
+    /** While the Dock's Folme animation is running (expand/collapse, including
+     *  interruptions where the animation restarts mid-flight), keep requesting capture:
+     *  the glass backdrop must follow the Dock geometry on every animation frame.  The
+     *  capture rate is throttled by the glass's own captureInterval. */
+    private static void bindDockAnimHook(ClassLoader cl) {
+        try {
+            XposedHelpers.findAndHookMethod("com.miui.home.launcher.dock.DockControllerImpl",
+                cl, "isDockFolmeAnimRunning",
+                new XC_MethodHook() {
+                    private int animLogCount = 0;
+                    @Override protected void afterHookedMethod(MethodHookParam p) {
+                        try {
+                            boolean running = Boolean.TRUE.equals(p.getResult());
+                            if (animLogCount++ < 8) {
+                                XposedBridge.log("[DC] folme anim running=" + running);
+                            }
+                            if (running) {
+                                DockLiquidGlassView glass = liquidGlassView;
+                                if (glass != null) glass.requestCapture("dock-anim");
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                });
+            XposedBridge.log("[DC] dock anim hook bound");
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] dock anim hook failed: " + e);
+        }
+    }
+
     /** Watch touches on the DOCK window root: any touch on the Dock area triggers a glass
      *  refresh (tap, hover before an up-swipe, drag).  Listener never consumes events. */
     private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
