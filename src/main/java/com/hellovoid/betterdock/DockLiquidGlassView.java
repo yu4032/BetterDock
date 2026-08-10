@@ -700,6 +700,37 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
+    /** Resolve the foreground (focused) app window's SurfaceControl — the layer BEHIND
+     *  the Dock overlay.  Capturing this layer yields the app content with the Dock
+     *  inherently excluded (it is a separate overlay layer). */
+    private android.view.SurfaceControl resolveAppWindowSurfaceControl() {
+        try {
+            Object wms = Class.forName("android.view.WindowManagerGlobal")
+                    .getMethod("getWindowManagerService").invoke(null);
+            if (wms == null) return null;
+            Object focused = wms.getClass().getMethod("getFocusedWindow").invoke(wms);
+            if (focused == null) return null;
+            try {
+                Object sc = focused.getClass().getMethod("getSurfaceControl").invoke(focused);
+                if (sc instanceof android.view.SurfaceControl) {
+                    return (android.view.SurfaceControl) sc;
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
+                java.lang.reflect.Field f = focused.getClass().getDeclaredField("mSurfaceControl");
+                f.setAccessible(true);
+                Object sc = f.get(focused);
+                if (sc instanceof android.view.SurfaceControl) {
+                    return (android.view.SurfaceControl) sc;
+                }
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     /** The Dock's own window layer, resolved once at attach, so full-display captures can
      * exclude it (matching the native blur-behind which blurs only layers below the Dock).
      *
@@ -1087,23 +1118,36 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // collapse the SF layer tree shifts and the wallpaper include can pick
                     // up the Dock's content; excluding the Dock layer is a belt-and-braces
                     // guard in both modes.
+                    final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
+                        @Override public void onResult(Bitmap bmp) {
+                            handleCaptureResult(bmp, req, generation);
+                        }
+                        @Override public void onError(Throwable error) {
+                            liveCapture = null;
+                            mainHandler.post(() -> {
+                                if (generation != captureGeneration) return;
+                                capturing = false;
+                                Log.e(TAG, "async fullscreen capture failed", error);
+                                if (sourceDirty) requestStateCapture();
+                            });
+                        }
+                    };
+                    if (!wallpaperMode) {
+                        // App behind the Dock: capture the focused app window's layer
+                        // directly — the Dock overlay is a separate layer so it can never
+                        // leak into the backdrop (display capture + Dock exclusion does
+                        // not work on HyperOS).
+                        android.view.SurfaceControl appLayer = resolveAppWindowSurfaceControl();
+                        if (appLayer != null && client.captureLayerAsync(
+                                req.stripRect, captureScale, appLayer, captureCb)) {
+                            return; // async path owns completion via handleCaptureResult
+                        }
+                        Log.w(TAG, "layer capture unavailable, falling back to display capture");
+                    }
                     client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
                             excludes, excludeNames,
                             wallpaperMode ? 2 : 1,
-                            new LiveScreenCapture.CaptureCallback() {
-                                @Override public void onResult(Bitmap bmp) {
-                                    handleCaptureResult(bmp, req, generation);
-                                }
-                                @Override public void onError(Throwable error) {
-                                    liveCapture = null;
-                                    mainHandler.post(() -> {
-                                        if (generation != captureGeneration) return;
-                                        capturing = false;
-                                        Log.e(TAG, "async fullscreen capture failed", error);
-                                        if (sourceDirty) requestStateCapture();
-                                    });
-                                }
-                            });
+                            captureCb);
                     return; // async path owns completion via handleCaptureResult
                 } else {
                     strip = client.captureWallpaper(request.stripRect, captureScale, request.displayId);
