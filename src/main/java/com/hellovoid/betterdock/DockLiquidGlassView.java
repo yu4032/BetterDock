@@ -260,6 +260,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int observedRecentsScrollY;
     private int observedRecentsTranslationX;
     private int observedRecentsTranslationY;
+    // When the multitasking panel closes, keep refreshing the glass for this long so the
+    // backdrop (home screen settle animation) stays live after the exit gesture ends.
+    private static final long RECENTS_EXIT_REFRESH_NANOS = 2_000_000_000L; // 2s
+    private long recentsExitRefreshEndNanos = 0L;
 
     private boolean wallpaperOffsetValid;
     private int wallpaperOffsetXBits;
@@ -578,8 +582,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTx = Float.floatToIntBits(rec.getTranslationX());
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
+        long now = System.nanoTime();
+        // Multitasking panel just closed: refresh the glass for a short grace period so the
+        // backdrop settles live instead of freezing on the last multitasking frame.
+        if (observedRecentsVisible && !recentsVisible) {
+            recentsExitRefreshEndNanos = now + RECENTS_EXIT_REFRESH_NANOS;
+        }
+        boolean inRecentsExitRefresh = now <= recentsExitRefreshEndNanos;
 
         boolean changed = (touchActive && recentsVisible)  // finger swiping INTO multitasking
+                || inRecentsExitRefresh                   // just left multitasking: keep refreshing
                 || !observationValid
                 || rotation != observedRotation
                 || tmpDisplaySize.x != observedDisplayWidth
@@ -749,6 +761,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         View rec = recentsView;
         boolean recentsVisibleNow = rec != null && rec.getVisibility() == View.VISIBLE;
         if (touchActive && recentsVisibleNow) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
+        // Just left multitasking: keep refreshing for the exit grace period.
+        if (System.nanoTime() <= recentsExitRefreshEndNanos) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
