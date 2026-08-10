@@ -60,10 +60,13 @@ private enum class Page(val title: String) {
     Stroke("描边与流光"), Shadow("阴影"), Data("预设与数据")
 }
 
+private enum class IntSection { General, StrokeBackground, StrokeGeometry }
+
 private data class IntSpec(
     val key: String, val title: String, val default: Int,
     val min: Int, val max: Int, val unit: String = "px",
-    val dependency: String? = null
+    val dependency: String? = null,
+    val section: IntSection = IntSection.General,
 )
 
 private val gridSpecs = listOf(
@@ -90,15 +93,15 @@ private val dockSpecs = listOf(
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, 0, 80),
 )
 private val strokeSpecs = listOf(
-    IntSpec("stroke_base_r", "描边底色 · 红", 255, 0, 255, "", "dock_stroke"),
-    IntSpec("stroke_base_g", "描边底色 · 绿", 255, 0, 255, "", "dock_stroke"),
-    IntSpec("stroke_base_b", "描边底色 · 蓝", 255, 0, 255, "", "dock_stroke"),
-    IntSpec("stroke_base_alpha", "描边底色 · 透明度", 255, 0, 255, "", "dock_stroke"),
-    IntSpec("sq_stroke_w", "方圆形描边宽度", 4, 1, 20, "px", "squircle"),
-    IntSpec("sq_stroke_off", "方圆形描边内缩", 8, 0, 30, "px", "squircle"),
-    IntSpec("sq_outer_cp", "方圆曲线控制点", 58, 40, 80, "", "squircle"),
-    IntSpec("stroke_w", "Fill-Diff 宽度", 2, 1, 10, "px", "fill_diff"),
-    IntSpec("std_stroke_w", "标准描边宽度", 4, 1, 20),
+    IntSpec("stroke_base_r", "描边底色 · 红", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec("stroke_base_g", "描边底色 · 绿", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec("stroke_base_b", "描边底色 · 蓝", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec("stroke_base_alpha", "描边底色 · 透明度", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec("sq_stroke_w", "方圆形描边宽度", 4, 1, 20, "px", "squircle", IntSection.StrokeGeometry),
+    IntSpec("sq_stroke_off", "方圆形描边内缩", 8, 0, 30, "px", "squircle", IntSection.StrokeGeometry),
+    IntSpec("sq_outer_cp", "方圆曲线控制点", 58, 40, 80, "", "squircle", IntSection.StrokeGeometry),
+    IntSpec("stroke_w", "Fill-Diff 宽度", 2, 1, 10, "px", "fill_diff", IntSection.StrokeGeometry),
+    IntSpec("std_stroke_w", "标准描边宽度", 4, 1, 20, "px", null, IntSection.StrokeGeometry),
 )
 private val shadowSpecs = listOf(
     IntSpec("dock_shadow_radius", "Dock 阴影柔化", 42, 1, 80, "px", "dock_shadow"),
@@ -188,11 +191,11 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences) {
         BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", dockEnabled) { squircle = it }
         BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", dockEnabled) { fillDiff = it }
         SmallTitle("描边背景色")
-        strokeSpecs.take(4).forEach {
+        strokeSpecs.filter { it.section == IntSection.StrokeBackground }.forEach {
             IntSetting(prefs, it, dockEnabled && dockStroke)
         }
         SmallTitle("方圆形与线宽")
-        strokeSpecs.drop(4).forEach {
+        strokeSpecs.filter { it.section == IntSection.StrokeGeometry }.forEach {
             val enabled = when (it.dependency) {
                 "dock_stroke" -> dockStroke
                 "squircle" -> squircle

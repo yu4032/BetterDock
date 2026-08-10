@@ -9,6 +9,7 @@ import android.util.Log;
 
 public class ConfigReader {
     private static final String PATH = "/data/local/tmp/betterdock_config.json";
+    private static final int MAX_CONFIG_BYTES = 64 * 1024;
     private JSONObject json;
 
     private ConfigReader() {
@@ -19,7 +20,13 @@ public class ConfigReader {
                  ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 byte[] buf = new byte[4096];
                 int n;
-                while ((n = fis.read(buf)) != -1) out.write(buf, 0, n);
+                int total = 0;
+                while ((n = fis.read(buf)) != -1) {
+                    total += n;
+                    if (total > MAX_CONFIG_BYTES)
+                        throw new IllegalArgumentException("Config exceeds 64 KiB");
+                    out.write(buf, 0, n);
+                }
                 byte[] data = out.toByteArray();
                 json = data.length > 0
                     ? new JSONObject(new String(data, StandardCharsets.UTF_8))
