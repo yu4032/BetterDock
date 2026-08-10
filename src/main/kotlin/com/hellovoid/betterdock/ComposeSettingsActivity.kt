@@ -123,6 +123,9 @@ private fun BetterDockSettings(activity: ComposeSettingsActivity) {
                 navigationIcon = {
                     if (page != Page.Home) TextButton(text = "返回", onClick = { page = Page.Home })
                 },
+                actions = {
+                    TextButton(text = "重启桌面", onClick = activity::restartLauncher)
+                },
             )
         },
     ) { padding ->
@@ -221,7 +224,6 @@ private fun DataPage(padding: PaddingValues, activity: ComposeSettingsActivity) 
             SettingsCard {
                 ArrowPreference("导出当前参数", summary = "保存为 BetterDock JSON", onClick = activity::launchExport)
                 ArrowPreference("导入参数", summary = "校验、写入并重启桌面", onClick = activity::launchImport)
-                ArrowPreference("重启系统桌面", summary = "写入当前参数并立即应用", onClick = activity::restartLauncher)
             }
         }
     }

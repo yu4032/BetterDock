@@ -14,6 +14,8 @@ final class HomeGridHook {
     private static int portraitLeft, portraitRight, portraitTop, portraitBottom;
     private static int landscapeIndicatorX, landscapeIndicatorY;
     private static int portraitIndicatorX, portraitIndicatorY;
+    private static final java.util.WeakHashMap<android.view.View, int[]>
+        indicatorBaseMargins = new java.util.WeakHashMap<>();
 
     private HomeGridHook() {}
 
@@ -75,14 +77,13 @@ final class HomeGridHook {
             "com.miui.home.launcher.Workspace", classLoader);
         XposedHelpers.findAndHookMethod(screenView, "updateIndicatorPositions",
             int.class, boolean.class, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
                     if (!workspace.isInstance(param.thisObject)) return;
                     try {
                         Object indicator = XposedHelpers.callMethod(
                             param.thisObject, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
-                            applyIndicatorOffset((android.view.View) indicator,
-                                (Integer) param.args[0]);
+                            applyIndicatorMargins((android.view.View) indicator);
                     } catch (Throwable e) {
                         XposedBridge.log("[DC] indicator offset failed: " + e);
                     }
@@ -90,12 +91,37 @@ final class HomeGridHook {
             });
     }
 
-    private static void applyIndicatorOffset(android.view.View indicator, int scrollX) {
+    private static void applyIndicatorMargins(android.view.View indicator) {
+        android.view.ViewGroup.LayoutParams raw = indicator.getLayoutParams();
+        if (!(raw instanceof android.widget.FrameLayout.LayoutParams)) return;
+        android.widget.FrameLayout.LayoutParams lp =
+            (android.widget.FrameLayout.LayoutParams) raw;
+        int[] base;
+        synchronized (indicatorBaseMargins) {
+            base = indicatorBaseMargins.get(indicator);
+            if (base == null) {
+                base = new int[] { lp.leftMargin, lp.topMargin,
+                    lp.rightMargin, lp.bottomMargin };
+                indicatorBaseMargins.put(indicator, base);
+            }
+        }
         boolean portrait = indicator.getResources().getConfiguration().orientation
             == Configuration.ORIENTATION_PORTRAIT;
         int offsetX = portrait ? portraitIndicatorX : landscapeIndicatorX;
-        indicator.setTranslationX(scrollX + offsetX);
-        indicator.setTranslationY(portrait ? portraitIndicatorY : landscapeIndicatorY);
+        int offsetY = portrait ? portraitIndicatorY : landscapeIndicatorY;
+        int gravity = lp.gravity;
+        int horizontal = android.view.Gravity.getAbsoluteGravity(gravity,
+            indicator.getLayoutDirection()) & android.view.Gravity.HORIZONTAL_GRAVITY_MASK;
+        int vertical = gravity & android.view.Gravity.VERTICAL_GRAVITY_MASK;
+
+        lp.leftMargin = base[0];
+        lp.topMargin = base[1];
+        lp.rightMargin = base[2];
+        lp.bottomMargin = base[3];
+        if (horizontal == android.view.Gravity.RIGHT) lp.rightMargin -= offsetX;
+        else lp.leftMargin += offsetX;
+        if (vertical == android.view.Gravity.BOTTOM) lp.bottomMargin -= offsetY;
+        else lp.topMargin += offsetY;
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {
@@ -138,7 +164,6 @@ final class HomeGridHook {
             int countY = XposedHelpers.getIntField(config, "countY");
             int oldCell = XposedHelpers.getIntField(config, "cellSize");
             int oldTop = XposedHelpers.getIntField(config, "top");
-            int oldBottom = XposedHelpers.getIntField(config, "bottom");
             if (width <= 0 || countX <= 0 || countY <= 0 || oldCell <= 0) return;
 
             boolean portrait = countY > countX;
@@ -157,13 +182,9 @@ final class HomeGridHook {
             int remainingHeight = Math.max(0,
                 availableHeight - newCell * countY);
             int newTop = oldTop + marginTop + remainingHeight / 2;
-            int newBottom = oldBottom + marginBottom
-                + remainingHeight - remainingHeight / 2;
-
             XposedHelpers.setIntField(config, "cellSize", newCell);
             XposedHelpers.setIntField(config, "left", newLeft);
             XposedHelpers.setIntField(config, "top", newTop);
-            XposedHelpers.setIntField(config, "bottom", newBottom);
         } catch (Throwable e) {
             XposedBridge.log("[DC] home grid margin apply failed: " + e);
         }
