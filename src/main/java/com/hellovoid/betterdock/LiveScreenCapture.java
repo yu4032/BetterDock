@@ -37,6 +37,12 @@ final class LiveScreenCapture {
     private final Method getBuffer;
     private final Method asBitmap;
     private final Method getHardwareBuffer;
+    // Async path: on HyperOS, ScreenCaptureListener is a CLASS (not the AOSP interface)
+    // constructed with a java.util.function.ObjIntConsumer<ScreenshotHardwareBuffer> —
+    // the consumer receives (buffer, status) when SurfaceFlinger completes the capture.
+    // There is no onCaptureComplete method on this build, so the async listener is built
+    // from that constructor instead of a dynamic Proxy.
+    private final Constructor<?> asyncListenerConstructor;
 
     private final Method launcherCaptureWallpaperBitmap;
     private final String[] wallpaperLayerNames;
@@ -78,6 +84,18 @@ final class LiveScreenCapture {
         getBuffer = syncListenerClass.getMethod("getBuffer");
         asBitmap = screenshotBufferClass.getMethod("asBitmap");
         getHardwareBuffer = screenshotBufferClass.getMethod("getHardwareBuffer");
+        Constructor<?> asyncCtor = null;
+        try {
+            asyncCtor = listenerClass.getConstructor(java.util.function.ObjIntConsumer.class);
+        } catch (Throwable t) {
+            try {
+                asyncCtor = listenerClass.getDeclaredConstructor(java.util.function.ObjIntConsumer.class);
+                asyncCtor.setAccessible(true);
+            } catch (Throwable t2) {
+                Log.w(TAG, "ScreenCaptureListener(ObjIntConsumer) ctor unavailable: " + t2);
+            }
+        }
+        asyncListenerConstructor = asyncCtor;
 
         Method capture = null;
         for (Method method : windowManager.getClass().getMethods()) {
@@ -221,6 +239,85 @@ final class LiveScreenCapture {
             throw new RuntimeException(fullFailure);
         }
         return null;
+    }
+
+    /** Result sink for async captures; called on the SurfaceFlinger callback thread. */
+    interface CaptureCallback {
+        void onResult(Bitmap bitmap);
+        void onError(Throwable error);
+    }
+
+    /**
+     * Asynchronous full-display capture: submits the request and returns immediately; the
+     * result arrives via {@link CaptureCallback} on the SF callback thread.  The caller
+     * thread never blocks on the Binder round-trip (the sync path waits inside getBuffer).
+     * Falls back to the synchronous path when the async listener cannot be built.
+     */
+    void captureScreenAsync(Rect sourceCrop, float scale, int displayId,
+                            android.view.SurfaceControl[] excludeLayers, String excludeLayerName,
+                            CaptureCallback callback) {
+        try {
+            if (sourceCrop == null || sourceCrop.isEmpty()) throw new IllegalArgumentException(
+                    "sourceCrop must be non-empty");
+            if (!(scale > 0f)) throw new IllegalArgumentException("scale must be > 0");
+            if (callback == null) throw new IllegalArgumentException("callback must not be null");
+
+            Object builder = captureBuilderConstructor.newInstance();
+            setSourceCrop.invoke(builder, new Rect(sourceCrop));
+            setFrameScale.invoke(builder, scale, scale);
+            if (excludeLayers != null && excludeLayers.length > 0) {
+                setExcludeLayers.invoke(builder, (Object) excludeLayers);
+            }
+            java.util.ArrayList<String> names = new java.util.ArrayList<>();
+            names.add("Floating Dock");
+            if (excludeLayerName != null && !excludeLayerName.isEmpty()) {
+                names.add(excludeLayerName);
+            }
+            setExcludeOrIncludeLayerNames.invoke(builder, (Object) names.toArray(new String[0]));
+            setCaptureMode.invoke(builder, 1);
+            Object args = build.invoke(builder);
+
+            if (asyncListenerConstructor == null) {
+                // No async listener on this build: fall back to the synchronous path.
+                Bitmap result = captureScreen(sourceCrop, scale, displayId,
+                        excludeLayers, excludeLayerName);
+                if (result != null) callback.onResult(result);
+                else callback.onError(new RuntimeException("sync fallback returned null"));
+                return;
+            }
+            Object listener = asyncListenerConstructor.newInstance(
+                    (java.util.function.ObjIntConsumer<Object>) (buffer, status) -> {
+                        Log.i(TAG, "async capture callback: buffer=" + buffer + " status=" + status);
+                        Object hardwareBuffer = null;
+                        try {
+                            if (buffer == null) {
+                                callback.onError(new RuntimeException(
+                                        "async capture: null buffer status=" + status));
+                                return;
+                            }
+                            Object bitmap = asBitmap.invoke(buffer);
+                            if (bitmap instanceof Bitmap) {
+                                callback.onResult((Bitmap) bitmap);
+                            } else {
+                                callback.onError(new RuntimeException(
+                                        "async capture: asBitmap returned non-Bitmap"));
+                            }
+                            try {
+                                hardwareBuffer = getHardwareBuffer.invoke(buffer);
+                            } catch (Throwable ignored) {
+                            }
+                        } catch (Throwable e) {
+                            callback.onError(e);
+                        } finally {
+                            closeHardwareBuffer(hardwareBuffer);
+                        }
+                    });
+            captureDisplay.invoke(windowManager, displayId, args, listener);
+            Log.i(TAG, "async fullscreen capture submitted: display=" + displayId
+                    + " crop=" + sourceCrop + " scale=" + scale);
+        } catch (Throwable error) {
+            callback.onError(error);
+        }
     }
 
     private int dumpCounter;

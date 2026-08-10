@@ -237,6 +237,7 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_chromatic", sp.getInt("liquid_chromatic", 8));
         j.put("liquid_tint_alpha", sp.getInt("liquid_tint_alpha", 38));
         j.put("liquid_capture_fps", sp.getInt("liquid_capture_fps", 60));
+        j.put("liquid_capture_scale", sp.getInt("liquid_capture_scale", 50));
         j.put("liquid_capture_stop_delay", sp.getInt("liquid_capture_stop_delay", 150));
         j.put("liquid_capture_bleed_top", sp.getInt("liquid_capture_bleed_top", 48));
         j.put("liquid_capture_bleed_bottom", sp.getInt("liquid_capture_bleed_bottom", 16));
@@ -325,6 +326,7 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "liquid_chromatic", 0, 40);
         putInt(j, e, "liquid_tint_alpha", 0, 160);
         putInt(j, e, "liquid_capture_fps", 5, 165);
+        putInt(j, e, "liquid_capture_scale", 10, 100);
         putInt(j, e, "liquid_capture_stop_delay", 0, 10000);
         putInt(j, e, "liquid_capture_bleed_top", 0, 256);
         putInt(j, e, "liquid_capture_bleed_bottom", 0, 256);

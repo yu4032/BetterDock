@@ -140,6 +140,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                     cfg.i("liquid_dome", 100) / 100f,
                                     cfg.i("liquid_lens_refraction", 12),
                                     cfg.i("liquid_refraction_inset", 20));
+                            liquidGlassView.setCaptureScale(cfg.i("liquid_capture_scale", 50) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
@@ -329,6 +330,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                     c2.i("liquid_dome", 100) / 100f,
                                     c2.i("liquid_lens_refraction", 12),
                                     c2.i("liquid_refraction_inset", 20));
+                            liquidGlassView.setCaptureScale(c2.i("liquid_capture_scale", 50) / 100f);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             int bgIndex = parent.indexOfChild(oldBg);
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),

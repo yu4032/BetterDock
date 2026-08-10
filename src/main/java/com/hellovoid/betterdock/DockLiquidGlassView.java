@@ -30,7 +30,10 @@ import android.view.ViewTreeObserver;
  */
 final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDrawListener {
     private static final String TAG = "BetterDock";
-    private static final float CAPTURE_SCALE = 0.5f;
+    // Compositor readback scale: 1.0 = full resolution, 0.5 = half (4x fewer pixels).
+    // GUI-configurable via liquid_capture_scale (%); 0.25 is the recommended low-cost
+    // setting — the glass is blurred anyway, so refraction is visually lossless there.
+    private float captureScale = 0.5f;
     private static final String REFRACTION_SHADER =
         "uniform shader content;"
       + "uniform float2 size;"
@@ -731,6 +734,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
+    /** Compositor readback scale (GUI: liquid_capture_scale, 10-100%).  Lower = cheaper
+     *  captures; the glass is blurred anyway so refraction stays visually lossless. */
+    void setCaptureScale(float scale) {
+        captureScale = Math.max(0.1f, Math.min(1.0f, scale));
+    }
+
     private boolean isCaptureAllowed() {
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
@@ -840,7 +849,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dockWindowSurface = resolveWindowSurfaceControl();
         Log.i(TAG, (useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
                 + " strip=" + request.stripRect + " tile=" + request.tileRect
-                + " scale=" + CAPTURE_SCALE + " exclude=" + (dockWindowSurface != null));
+                + " scale=" + captureScale + " exclude=" + (dockWindowSurface != null));
 
         worker.post(() -> {
             Bitmap strip = null;
@@ -850,7 +859,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 LiveScreenCapture client = liveCapture;
                 if (client == null) {
                     client = new LiveScreenCapture(
-                            CAPTURE_SCALE, geometrySource.getContext().getClassLoader());
+                            captureScale, geometrySource.getContext().getClassLoader());
                     liveCapture = client;
                 }
                 if (useFullscreen) {
@@ -858,15 +867,34 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     if (dockWindowSurface != null) {
                         excludes = new android.view.SurfaceControl[]{dockWindowSurface};
                     }
-                    strip = client.captureScreen(request.stripRect, CAPTURE_SCALE, request.displayId,
-                            excludes, dockWindowLayerName);
+                    // Async path: submit and return; the result arrives on the SF callback
+                    // thread, so this worker thread is free to service the next request
+                    // immediately (no blocking wait inside getBuffer()).
+                    final CaptureRequest req = request;
+                    client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
+                            excludes, dockWindowLayerName,
+                            new LiveScreenCapture.CaptureCallback() {
+                                @Override public void onResult(Bitmap bmp) {
+                                    handleCaptureResult(bmp, req, generation);
+                                }
+                                @Override public void onError(Throwable error) {
+                                    liveCapture = null;
+                                    mainHandler.post(() -> {
+                                        if (generation != captureGeneration) return;
+                                        capturing = false;
+                                        Log.e(TAG, "async fullscreen capture failed", error);
+                                        if (sourceDirty) requestStateCapture();
+                                    });
+                                }
+                            });
+                    return; // async path owns completion via handleCaptureResult
                 } else {
-                    strip = client.captureWallpaper(request.stripRect, CAPTURE_SCALE, request.displayId);
-                }
-                if (strip != null) {
-                    cropped = cropWallpaperTile(strip, request.stripRect,
-                            request.tileRect, request.dockRect);
-                    strip = null; // cropWallpaperTile owns/recycles it.
+                    strip = client.captureWallpaper(request.stripRect, captureScale, request.displayId);
+                    if (strip != null) {
+                        cropped = cropWallpaperTile(strip, request.stripRect,
+                                request.tileRect, request.dockRect);
+                        strip = null; // cropWallpaperTile owns/recycles it.
+                    }
                 }
             } catch (Throwable error) {
                 failure = error;
@@ -902,6 +930,38 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (sourceDirty) requestStateCapture();
             });
         });
+    }
+
+    /** Shared completion path for async captures: crop on the SF callback thread, install
+     *  on the main thread. */
+    private void handleCaptureResult(Bitmap strip, CaptureRequest request, long generation) {
+        try {
+            CroppedFrame cropped = cropWallpaperTile(strip, request.stripRect,
+                    request.tileRect, request.dockRect);
+            strip = null; // cropWallpaperTile owns/recycles it.
+            final CroppedFrame frame = cropped;
+            mainHandler.post(() -> {
+                if (generation != captureGeneration || !isCaptureAllowed()) {
+                    if (frame != null) frame.recycle();
+                    Log.i(TAG, "Liquid async capture result discarded: generation="
+                            + (generation == captureGeneration)
+                            + " allowed=" + isCaptureAllowed());
+                    return;
+                }
+                capturing = false;
+                nullFrameLogged = false;
+                installCapture(frame);
+                if (sourceDirty) requestStateCapture();
+            });
+        } catch (Throwable e) {
+            if (strip != null && !strip.isRecycled()) strip.recycle();
+            mainHandler.post(() -> {
+                if (generation != captureGeneration) return;
+                capturing = false;
+                Log.e(TAG, "async capture crop failed", e);
+                if (sourceDirty) requestStateCapture();
+            });
+        }
     }
 
     /**
