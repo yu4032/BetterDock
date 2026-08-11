@@ -1,5 +1,6 @@
 package com.hellovoid.betterdock;
 
+import android.app.WallpaperManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
@@ -275,6 +276,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean kickScheduled;
     private long captureGeneration;
     private long lastCaptureStartNanos;
+    // Wallpaper strip cache: mode-2 (wallpaper-only) capture is skipped entirely while
+    // the wallpaper is unchanged — the strip is static, so one capture is enough.  The
+    // cached strip is cropped per request; it is invalidated on rotation, display-size
+    // change, wallpaper ID change, or a taller strip request (Dock higher on screen).
+    private Bitmap wallpaperStripCache;
+    private Rect cacheStripRect;
+    private int cacheRotation = -1;
+    private int cacheWallpaperId = -1;
 
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
@@ -1085,6 +1094,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 ? new String[]{dockWindowLayerName, dragLayerName}
                                 : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     }
+                    // Wallpaper is static: if a valid strip cache exists (same wallpaper,
+                    // same rotation, strip covers the request), serve the crop from cache
+                    // and skip the SF capture entirely.
+                    if (wallpaperMode && tryServeWallpaperFromCache(req)) {
+                        return;
+                    }
                     Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
@@ -1096,6 +1111,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // guard in both modes.
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
+                            if (wallpaperMode) cacheWallpaperStrip(bmp, req);
                             handleCaptureResult(bmp, req, generation);
                         }
                         @Override public void onError(Throwable error) {
@@ -1245,10 +1261,75 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return new CaptureRequest(display.getDisplayId(), stripRect, tileRect, dockRect);
     }
 
+    /** Serve the mode-2 crop from the cached wallpaper strip when it is still valid
+     *  (same wallpaper ID, same rotation, strip covers the requested region).  Runs on
+     *  the capture worker thread; installs the frame on the main thread.  Returns true
+     *  when the request was fully served (no SF capture needed). */
+    private boolean tryServeWallpaperFromCache(CaptureRequest req) {
+        if (wallpaperStripCache == null || wallpaperStripCache.isRecycled()
+                || cacheStripRect == null) return false;
+        Display display = geometrySource.getDisplay();
+        int rotation = display != null ? display.getRotation() : -1;
+        if (rotation != cacheRotation) return false;
+        if (req.stripRect.top < cacheStripRect.top) return false;   // need more above
+        if (req.stripRect.width() != cacheStripRect.width()) return false;
+        try {
+            int id = WallpaperManager.getInstance(getContext())
+                    .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
+            if (id != cacheWallpaperId) return false;
+        } catch (Throwable ignored) {
+        }
+        // Crop the cached strip (do NOT recycle it) and install on the main thread.
+        CroppedFrame frame = cropWallpaperTile(wallpaperStripCache, cacheStripRect,
+                req.tileRect, req.dockRect, false);
+        if (frame == null) return false;
+        final long generation = captureGeneration;
+        mainHandler.post(() -> {
+            if (generation != captureGeneration || !isCaptureAllowed()) {
+                frame.recycle();
+                return;
+            }
+            capturing = false;
+            installCapture(frame);
+            if (sourceDirty) requestStateCapture();
+            if (isRecentsVisible()) requestStateCapture("recents-continue");
+        });
+        return true;
+    }
+
+    /** Deep-copy a mode-2 strip into the wallpaper cache (the strip is otherwise
+     *  recycled by cropWallpaperTile).  Called on the SF callback thread. */
+    private void cacheWallpaperStrip(Bitmap strip, CaptureRequest req) {
+        try {
+            if (strip == null || strip.isRecycled()) return;
+            Bitmap copy = strip.copy(Bitmap.Config.ARGB_8888, false);
+            if (copy == null) return;
+            Bitmap old = wallpaperStripCache;
+            wallpaperStripCache = copy;
+            cacheStripRect = new Rect(req.stripRect);
+            Display display = geometrySource.getDisplay();
+            cacheRotation = display != null ? display.getRotation() : -1;
+            try {
+                cacheWallpaperId = WallpaperManager.getInstance(getContext())
+                        .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
+            } catch (Throwable ignored) {
+                cacheWallpaperId = -1;
+            }
+            if (old != null && old != copy && !old.isRecycled()) old.recycle();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
                                                    Rect tileRect, Rect dockRect) {
+        return cropWallpaperTile(strip, stripRect, tileRect, dockRect, true);
+    }
+
+    private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
+                                                   Rect tileRect, Rect dockRect,
+                                                   boolean recycleStrip) {
         if (strip == null || strip.isRecycled() || stripRect.isEmpty() || tileRect.isEmpty()) {
-            if (strip != null && !strip.isRecycled()) strip.recycle();
+            if (recycleStrip && strip != null && !strip.isRecycled()) strip.recycle();
             return null;
         }
 
@@ -1269,7 +1350,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 top + 1, strip.getHeight());
 
         Bitmap tile = Bitmap.createBitmap(strip, left, top, right - left, bottom - top);
-        if (tile != strip && !strip.isRecycled()) strip.recycle();
+        if (recycleStrip && tile != strip && !strip.isRecycled()) strip.recycle();
 
         float actualLeft = stripRect.left + left / sx;
         float actualTop = stripRect.top + top / sy;
