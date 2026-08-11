@@ -1071,7 +1071,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Edge-highlight thickness multiplier (GUI: liquid_highlight_width, 20-300%).
      *  Scales both the shader's edge-glow band and the canvas stroke highlight. */
     void setHighlightWidth(float multiplier) {
-        glassHighlightWidth = Math.max(0.2f, Math.min(3.0f, multiplier));
+        float next = Math.max(0.2f, Math.min(3.0f, multiplier));
+        if (next == glassHighlightWidth) return; // idempotent: no repaint on hot-reload
+        glassHighlightWidth = next;
         invalidate();
     }
 
@@ -1086,9 +1088,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /** Glass tint RGB (GUI: liquid_tint_r/g/b, 0-255).  Alpha is liquid_tint_alpha. */
     void setTintColor(int r, int g, int b) {
-        glassTintR = Math.max(0, Math.min(255, r));
-        glassTintG = Math.max(0, Math.min(255, g));
-        glassTintB = Math.max(0, Math.min(255, b));
+        int nr = Math.max(0, Math.min(255, r));
+        int ng = Math.max(0, Math.min(255, g));
+        int nb = Math.max(0, Math.min(255, b));
+        if (nr == glassTintR && ng == glassTintG && nb == glassTintB) return;
+        glassTintR = nr;
+        glassTintG = ng;
+        glassTintB = nb;
         invalidate();
     }
 
@@ -1097,24 +1103,38 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  liquid_caustics / liquid_edge_band). */
     void setAppearance(float depthEffect, float brightness, float specularSharp,
                        float specularStrength, float rimLight, float caustics, float edgeBand) {
-        glassDepthEffect = Math.max(0f, Math.min(1f, depthEffect));
-        glassBrightness = Math.max(0.5f, Math.min(2f, brightness));
-        glassSpecularSharp = Math.max(1f, Math.min(400f, specularSharp));
-        glassSpecularStrength = Math.max(0f, Math.min(5f, specularStrength));
-        glassRimLight = Math.max(0f, Math.min(3f, rimLight));
-        glassCaustics = Math.max(0f, Math.min(1f, caustics));
-        glassEdgeBand = Math.max(0.005f, Math.min(0.1f, edgeBand));
+        float nd = Math.max(0f, Math.min(1f, depthEffect));
+        float nb = Math.max(0.5f, Math.min(2f, brightness));
+        float ns = Math.max(1f, Math.min(400f, specularSharp));
+        float nst = Math.max(0f, Math.min(5f, specularStrength));
+        float nr = Math.max(0f, Math.min(3f, rimLight));
+        float nc = Math.max(0f, Math.min(1f, caustics));
+        float ne = Math.max(0.005f, Math.min(0.1f, edgeBand));
+        if (nd == glassDepthEffect && nb == glassBrightness && ns == glassSpecularSharp
+                && nst == glassSpecularStrength && nr == glassRimLight
+                && nc == glassCaustics && ne == glassEdgeBand) return;
+        glassDepthEffect = nd;
+        glassBrightness = nb;
+        glassSpecularSharp = ns;
+        glassSpecularStrength = nst;
+        glassRimLight = nr;
+        glassCaustics = nc;
+        glassEdgeBand = ne;
         invalidate();
     }
 
     /** Canvas stroke highlight opacity multiplier (GUI: liquid_highlight_alpha). */
     void setHighlightAlpha(float multiplier) {
-        glassHighlightAlpha = Math.max(0f, Math.min(2f, multiplier));
+        float next = Math.max(0f, Math.min(2f, multiplier));
+        if (next == glassHighlightAlpha) return;
+        glassHighlightAlpha = next;
         invalidate();
     }
 
     void setNativeBlurInsetDp(float insetDp) {
-        nativeBlurInsetDp = Math.max(0f, Math.min(16f, insetDp));
+        float next = Math.max(0f, Math.min(16f, insetDp));
+        if (next == nativeBlurInsetDp) return;
+        nativeBlurInsetDp = next;
         invalidate();
     }
 
