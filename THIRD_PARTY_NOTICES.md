@@ -8,9 +8,8 @@ BetterDock uses or compiles against the following open-source projects:
 
 Implementation and interaction references:
 
-- **HyperCeiler** — settings organization and module engineering reference; GPL-3.0 — <https://github.com/ReChronoRain/HyperCeiler>
+- **HyperCeiler** — module engineering practice reference (module structure, settings organization); GPL-3.0 — <https://github.com/ReChronoRain/HyperCeiler>
 - **Prismal** — liquid-glass optical model and shader parameter design reference; MIT License — <https://github.com/styropyr0/Prismal>
-- **HyperLight** — runtime behavior research reference for liquid-glass capture and rendering; it is not bundled as a code dependency.
-- **HyperOS Launcher (`com.miui.home`)** — compatibility research target for Dock hierarchy, layout, and wallpaper capture; it is a system component and is not redistributed by BetterDock.
+- **HyperLight** — idea reference only; no methods or code from it are used by BetterDock.
 
 The names and trademarks of referenced projects belong to their respective owners.
