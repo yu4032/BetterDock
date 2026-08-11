@@ -1,0 +1,11 @@
+# LiquidDock is an LSPosed/Xposed module. Hook entry points and reflective
+# project code must keep stable names/members; dependencies remain shrinkable.
+-keep class com.hellovoid.liquiddock.** { *; }
+
+# Compose Miuix KMP: ThemeController / MiuixTheme are reached reflectively and
+# the KMP runtime relies on stable class names — keep the whole tree.
+-keep class top.yukonga.miuix.kmp.** { *; }
+
+# Hidden framework / vendor classes referenced by hooks (Xposed-style access).
+-dontwarn com.android.internal.**
+-dontwarn miui.**

@@ -36,6 +36,10 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // AGP 9.3: R8 code shrinking + optimized resource shrinking.
+            optimization.enable = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
+                "src/main/keepRules/liquiddock.keep")
         }
     }
 
