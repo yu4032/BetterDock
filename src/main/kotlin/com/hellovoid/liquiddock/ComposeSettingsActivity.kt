@@ -516,7 +516,7 @@ private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity)
         item {
             SettingsCard {
                 ArrowPreference("第三方开源声明", summary = "完整依赖版本、用途与许可证文本链接",
-                    onClick = { openUrl(activity, "https://github.com/compose-miuix-ui/miuix/blob/master/LICENSE") })
+                    onClick = { openUrl(activity, "https://github.com/yu4032/LiquidDock/blob/main/THIRD_PARTY_NOTICES.md") })
             }
         }
     }
