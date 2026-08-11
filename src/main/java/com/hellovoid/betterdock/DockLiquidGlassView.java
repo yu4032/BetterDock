@@ -746,6 +746,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             appVisualSignatureValid = false;
             dynamicAppActiveUntilNanos = 0L;
         }
+        // Dock geometry motion (drag-out / expand / collapse) activates the dynamic
+        // app-capture rate for the animation window; static content would otherwise fall
+        // back to the slow probe cadence (~3 fps) while the Dock is being pulled out.
+        if (dynamicAppCapture && changed
+                && (tmpDockLocation[0] != observedDockX
+                 || tmpDockLocation[1] != observedDockY
+                 || dockW != observedDockWidth
+                 || dockH != observedDockHeight
+                 || dockTx != observedDockTranslationX
+                 || dockTy != observedDockTranslationY
+                 || dockSx != observedDockScaleX
+                 || dockSy != observedDockScaleY)) {
+            dynamicAppActiveUntilNanos = Math.max(dynamicAppActiveUntilNanos,
+                    System.nanoTime() + dynamicMotionHoldNanos);
+        }
         observedRotation = rotation;
         observedDisplayWidth = tmpDisplaySize.x;
         observedDisplayHeight = tmpDisplaySize.y;
