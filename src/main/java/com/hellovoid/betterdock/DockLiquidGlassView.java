@@ -272,6 +272,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean sourceDirty;
     private boolean nullFrameLogged;
     private int drawFailLogged;
+    private int blackFrameLogCount;
     private boolean nativeBackgroundHiddenByGlass;
     private boolean kickScheduled;
     private long captureGeneration;
@@ -1177,6 +1178,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  on the main thread. */
     private void handleCaptureResult(Bitmap strip, CaptureRequest request, long generation) {
         try {
+            // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
+            // returns status=0 with a PURE BLACK buffer while a non-home app is in front
+            // (verified: Dock pull-up over an app).  Installing such a frame freezes a
+            // black backdrop forever; discard it and keep the previous frame.
+            if (isNearBlack(strip)) {
+                if (!strip.isRecycled()) strip.recycle();
+                mainHandler.post(() -> {
+                    if (generation != captureGeneration) return;
+                    capturing = false;
+                    if (blackFrameLogCount++ < 5) {
+                        Log.w(TAG, "black frame discarded (status=0 but content black), "
+                                + "keeping previous backdrop");
+                    }
+                    if (sourceDirty) requestStateCapture();
+                });
+                return;
+            }
             CroppedFrame cropped = cropWallpaperTile(strip, request.stripRect,
                     request.tileRect, request.dockRect);
             strip = null; // cropWallpaperTile owns/recycles it.
@@ -1318,6 +1336,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (old != null && old != copy && !old.isRecycled()) old.recycle();
         } catch (Throwable ignored) {
         }
+    }
+
+    /** Cheap 16-point luminance probe: HyperOS may return status=0 with a pure-black
+     *  buffer (wallpaper-layer capture while an app is in front).  Average channel value
+     *  below 10 counts as black. */
+    private static boolean isNearBlack(Bitmap bmp) {
+        if (bmp == null || bmp.isRecycled()) return true;
+        int w = bmp.getWidth(), h = bmp.getHeight();
+        if (w <= 0 || h <= 0) return true;
+        long sum = 0;
+        int count = 0;
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 4; j++) {
+                int x = Math.min(w - 1, w * i / 4);
+                int y = Math.min(h - 1, h * j / 4);
+                int c = bmp.getPixel(x, y);
+                sum += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
+                count += 3;
+            }
+        }
+        return count > 0 && sum / count < 10;
     }
 
     private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
