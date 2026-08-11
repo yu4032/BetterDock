@@ -61,7 +61,7 @@ final class HomeGridHook {
         // Layout customization is intentionally all-or-nothing. When 8x4 is disabled,
         // leave MIUI's native 6x4 CellLayout, indicator and folder measurement untouched.
         if (!enableGrid8x4) {
-            XposedBridge.log("[DC] home grid customization disabled; using stock layout");
+            MainHook.log("[DC] home grid customization disabled; using stock layout");
             return;
         }
         try {
@@ -82,14 +82,14 @@ final class HomeGridHook {
             installSmallFolderAlignment(classLoader);
             installRotationRefresh(classLoader);
             installWorkspaceRefresh(classLoader);
-            XposedBridge.log("[DC] home grid hooks: 8x4=" + enableGrid8x4 + " land="
+            MainHook.log("[DC] home grid hooks: 8x4=" + enableGrid8x4 + " land="
                 + landscapeLeft + "," + landscapeRight + ","
                 + landscapeTop + "," + landscapeBottom + " port="
                 + portraitLeft + "," + portraitRight + ","
                 + portraitTop + "," + portraitBottom);
 
         } catch (Throwable e) {
-            XposedBridge.log("[DC] home grid hook unavailable: " + e);
+            MainHook.log("[DC] home grid hook unavailable: " + e);
         }
     }
 
@@ -115,7 +115,7 @@ final class HomeGridHook {
                             param.setObjectExtra("bd_cell_size", original);
                             XposedHelpers.setIntField(config, "cellSize", cell);
                         } catch (Throwable e) {
-                            XposedBridge.log("[DC] small folder alignment failed: " + e);
+                            MainHook.log("[DC] small folder alignment failed: " + e);
                         }
                     }
                     @Override protected void afterHookedMethod(MethodHookParam param) {
@@ -124,7 +124,7 @@ final class HomeGridHook {
                         if (config == null || !(original instanceof Integer)) return;
                         try { XposedHelpers.setIntField(config, "cellSize", (Integer) original); }
                         catch (Throwable e) {
-                            XposedBridge.log("[DC] small folder grid restore failed: " + e);
+                            MainHook.log("[DC] small folder grid restore failed: " + e);
                         }
                     }
                 });
@@ -176,7 +176,7 @@ final class HomeGridHook {
             XposedHelpers.setObjectField(cellLayout, "mXs", xs);
             XposedHelpers.setObjectField(cellLayout, "mYs", ys);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] final cell coordinate rebuild failed: " + e);
+            MainHook.log("[DC] final cell coordinate rebuild failed: " + e);
         }
     }
 
@@ -192,7 +192,7 @@ final class HomeGridHook {
             synchronized (loggedWidgetViews) {
                 if (!loggedWidgetViews.containsKey(child)) {
                     loggedWidgetViews.put(child, Boolean.TRUE);
-                    XposedBridge.log("[DC] 2x1 runtime view type=" + itemType
+                    MainHook.log("[DC] 2x1 runtime view type=" + itemType
                         + " class=" + child.getClass().getName()
                         + " bounds=" + child.getWidth() + "x" + child.getHeight()
                         + " children=" + (child instanceof android.view.ViewGroup
@@ -216,7 +216,7 @@ final class HomeGridHook {
             child.layout(child.getLeft() + leftInset, child.getTop(),
                 child.getRight() - rightInset, child.getBottom());
         } catch (Throwable e) {
-            XposedBridge.log("[DC] 2x1 widget adaptation failed: " + e);
+            MainHook.log("[DC] 2x1 widget adaptation failed: " + e);
         }
     }
 
@@ -236,7 +236,7 @@ final class HomeGridHook {
                 int matrixY = matrixX == 0 ? 0
                     : java.lang.reflect.Array.getLength(java.lang.reflect.Array.get(gridCells, 0));
                 if (matrixX != countX || matrixY != countY) {
-                    XposedBridge.log("[DC] grid count/matrix mismatch: config="
+                    MainHook.log("[DC] grid count/matrix mismatch: config="
                         + countX + "x" + countY + " matrix=" + matrixX + "x" + matrixY);
                     countX = matrixX;
                     countY = matrixY;
@@ -312,7 +312,7 @@ final class HomeGridHook {
             XposedHelpers.setIntField(cellLayout, "mWidthGap", widthGap);
             XposedHelpers.setIntField(cellLayout, "mHeightGap", rowGap);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] CellLayout offset apply failed: " + e);
+            MainHook.log("[DC] CellLayout offset apply failed: " + e);
         }
     }
 
@@ -344,7 +344,7 @@ final class HomeGridHook {
                         workspace.addOnLayoutChangeListener(listener);
                         workspace.requestLayout();
                     } catch (Throwable e) {
-                        XposedBridge.log("[DC] rotation refresh hook failed: " + e);
+                        MainHook.log("[DC] rotation refresh hook failed: " + e);
                     }
                 }
             });
@@ -362,7 +362,7 @@ final class HomeGridHook {
                             workspaceRef = new java.lang.ref.WeakReference<>(workspace);
                             scheduleAllPageRefresh();
                         } catch (Throwable e) {
-                            XposedBridge.log("[DC] workspace refresh bind failed: " + e);
+                            MainHook.log("[DC] workspace refresh bind failed: " + e);
                         }
                     }
                 });
@@ -392,7 +392,7 @@ final class HomeGridHook {
             workspace.requestLayout();
             workspace.invalidate();
         } catch (Throwable e) {
-            XposedBridge.log("[DC] rotation grid refresh failed: " + e);
+            MainHook.log("[DC] rotation grid refresh failed: " + e);
         }
     }
 
@@ -411,7 +411,7 @@ final class HomeGridHook {
                         if (indicator instanceof android.view.View)
                             restoreIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
-                        XposedBridge.log("[DC] indicator offset failed: " + e);
+                        MainHook.log("[DC] indicator offset failed: " + e);
                     }
                 }
                 @Override protected void afterHookedMethod(MethodHookParam param) {
@@ -422,7 +422,7 @@ final class HomeGridHook {
                         if (indicator instanceof android.view.View)
                             captureAndApplyIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
-                        XposedBridge.log("[DC] indicator offset failed: " + e);
+                        MainHook.log("[DC] indicator offset failed: " + e);
                     }
                 }
             });

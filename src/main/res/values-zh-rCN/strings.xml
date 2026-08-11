@@ -50,4 +50,7 @@
     <string name="liquid_material_blur">HyperOS 高级材质</string>
     <string name="liquid_dynamic_capture">动态应用持续捕获</string>
     <string name="liquid_dynamic_capture_summary">游戏或视频中 Dock 展开时持续刷新；Dock 收起后立即停止</string>
+    <string name="pref_debug_log">调试日志</string>
+    <string name="pref_debug_log_summary">向 logcat 输出 [DC] 诊断日志（关于页），重启桌面生效</string>
 </resources>
+

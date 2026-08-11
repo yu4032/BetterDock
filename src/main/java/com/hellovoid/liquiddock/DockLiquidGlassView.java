@@ -33,6 +33,12 @@ import de.robv.android.xposed.XposedHelpers;
  */
 final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDrawListener {
     private static final String TAG = "LiquidDock";
+
+    /** Debug logs gated by the master switch (MainHook.debugLogging); also
+     *  appended to Download/liquiddock.log by MainHook.fileLog. */
+    private static void logI(String m) { if (MainHook.debugLogging) { Log.i(TAG, m); MainHook.log(m); } }
+    private static void logW(String m) { if (MainHook.debugLogging) { Log.w(TAG, m); MainHook.log(m); } }
+    private static void logW(String m, Throwable t) { if (MainHook.debugLogging) { Log.w(TAG, m, t); MainHook.log(m + " " + t); } }
     // Compositor readback scale: 1.0 = full resolution, 0.5 = half (4x fewer pixels).
     // GUI-configurable via liquid_capture_scale (%); 0.25 is the recommended low-cost
     // setting — the glass is blurred anyway, so refraction is visually lossless there.
@@ -461,7 +467,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 }
             });
         } catch (Throwable e) {
-            Log.w(TAG, "rounded outline failed: " + e);
+            logW("rounded outline failed: " + e);
         }
     }
 
@@ -480,12 +486,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // visible over other apps.  A Launcher onPause does NOT mean the Dock is hidden, so
             // we must not hard-cancel capture here: window visibility/isShown() below is the
             // authoritative gate for the floating window.  Just re-evaluate.
-            Log.i(TAG, "Liquid capture lifecycle=PAUSED; window visibility decides");
+            logI("Liquid capture lifecycle=PAUSED; window visibility decides");
             requestStateCapture("lifecycle-paused");
             return;
         }
         if (changed) {
-            Log.i(TAG, "Liquid capture lifecycle=" + (known ? "RESUMED" : "UNKNOWN")
+            logI("Liquid capture lifecycle=" + (known ? "RESUMED" : "UNKNOWN")
                     + "; window gate will decide capture");
             observationValid = false;
             requestStateCapture("lifecycle");
@@ -507,11 +513,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (systemUiPanelExpanded == expanded) return;
         systemUiPanelExpanded = expanded;
         if (expanded) {
-            Log.i(TAG, "Liquid capture stopped: SystemUI panel expanded");
+            logI("Liquid capture stopped: SystemUI panel expanded");
             mainHandler.removeCallbacks(cancelGrace);
             cancelPendingCaptureWork();
         } else {
-            Log.i(TAG, "Liquid capture resumed: SystemUI panel collapsed");
+            logI("Liquid capture resumed: SystemUI panel collapsed");
             observationValid = false;
             requestStateCapture("systemui-panel-collapsed");
         }
@@ -568,7 +574,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dockWindowSurface = resolveWindowSurfaceControl();
         logOwnWindowInfo();
         refreshForegroundAppLayer();
-        Log.i(TAG, "Liquid foreground app layer: " + appLayerName);
+        logI("Liquid foreground app layer: " + appLayerName);
         observationValid = false;
         // Independent config hot-reload ticker: GUI edits to tint/highlight keys
         // apply within ~1s even when the Dock is static (no captures -> no capture-loop
@@ -583,7 +589,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observedTree = getRootView().getViewTreeObserver();
         observedTree.addOnPreDrawListener(this);
         geometrySource.addOnLayoutChangeListener(geometryLayoutListener);
-        Log.i(TAG, "Liquid capture attached: visible=" + windowVisible
+        logI("Liquid capture attached: visible=" + windowVisible
                 + " focus=" + windowFocused + " shown=" + isShown()
                 + " lifecycleKnown=" + launcherLifecycleKnown
                 + " resumed=" + launcherResumed);
@@ -639,7 +645,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // tail is still captured instead of freezing mid-animation.
             mainHandler.removeCallbacks(cancelGrace);
             if (stopGraceMillis > 0) {
-                Log.i(TAG, "Liquid capture window hidden; grace " + stopGraceMillis + "ms before stop");
+                logI("Liquid capture window hidden; grace " + stopGraceMillis + "ms before stop");
                 mainHandler.postDelayed(cancelGrace, stopGraceMillis);
             } else {
                 cancelPendingCaptureWork();
@@ -788,7 +794,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             java.lang.reflect.Method getVri = View.class.getDeclaredMethod("getViewRootImpl");
             getVri.setAccessible(true);
             Object vri = getVri.invoke(this);
-            if (vri == null) { Log.i(TAG, "own window: no ViewRootImpl"); return; }
+            if (vri == null) { logI("own window: no ViewRootImpl"); return; }
             Class<?> vriClass = Class.forName("android.view.ViewRootImpl");
             java.lang.reflect.Field attrsField = vriClass.getDeclaredField("mWindowAttributes");
             attrsField.setAccessible(true);
@@ -796,10 +802,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (attrs instanceof android.view.WindowManager.LayoutParams) {
                 android.view.WindowManager.LayoutParams lp =
                         (android.view.WindowManager.LayoutParams) attrs;
-                Log.i(TAG, "own window: type=" + lp.type + " title=" + lp.getTitle());
+                logI("own window: type=" + lp.type + " title=" + lp.getTitle());
             }
         } catch (Throwable e) {
-            Log.w(TAG, "own window info failed: " + e);
+            logW("own window info failed: " + e);
         }
     }
 
@@ -833,9 +839,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (pkg.equals(appLayerPkg) && appLayerName != null) return; // cached
             appLayerName = resolveAppLayerByUid(pkg);
             appLayerPkg = pkg;
-            Log.i(TAG, "foreground app layer: pkg=" + pkg + " layer=" + appLayerName);
+            logI("foreground app layer: pkg=" + pkg + " layer=" + appLayerName);
         } catch (Throwable e) {
-            Log.w(TAG, "refreshForegroundAppLayer failed: " + e);
+            logW("refreshForegroundAppLayer failed: " + e);
         }
     }
 
@@ -875,7 +881,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }
             return best;
         } catch (Throwable e) {
-            Log.w(TAG, "resolveForegroundAppLayerName failed: " + e);
+            logW("resolveForegroundAppLayerName failed: " + e);
             return null;
         }
     }
@@ -921,7 +927,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 if (nm instanceof String) dockWindowLayerName = (String) nm;
                             } catch (Throwable ignored) {
                             }
-                            Log.i(TAG, "Liquid capture dock window surface resolved from root["
+                            logI("Liquid capture dock window surface resolved from root["
                                     + list.indexOf(root) + "] type=" + lp.type
                                     + " title=" + lp.getTitle() + " sc=" + sc
                                     + " layerName=" + dockWindowLayerName);
@@ -931,9 +937,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 } catch (Throwable ignored) {
                 }
             }
-            Log.w(TAG, "dock window surface: no root with type 2997 found (roots=" + list.size() + ")");
+            logW("dock window surface: no root with type 2997 found (roots=" + list.size() + ")");
         } catch (Throwable e) {
-            Log.w(TAG, "dock window surface resolve failed: " + e);
+            logW("dock window surface resolve failed: " + e);
         }
         return null;
     }
@@ -972,7 +978,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 && !Float.isNaN(gestureDownRawY)
                 && gestureDownRawY - rawY >= recentsPrearmDistancePx) {
             prearmRecentsCapture("recents-prearm-distance");
-            Log.i(TAG, "Recents capture pre-armed after upward distance="
+            logI("Recents capture pre-armed after upward distance="
                     + (gestureDownRawY - rawY));
             return;
         }
@@ -990,7 +996,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         prearmRecentsCapture("recents-prearm-haptic");
-        Log.i(TAG, "Recents capture pre-armed by launcher haptic event");
+        logI("Recents capture pre-armed by launcher haptic event");
     }
 
     private void prearmRecentsCapture(String reason) {
@@ -1232,7 +1238,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed)) return;
         sourceDirty = true;
-        Log.i(TAG, "Liquid capture scene=" + sceneState.desired()
+        logI("Liquid capture scene=" + sceneState.desired()
                 + " revision=" + sceneState.revision());
     }
 
@@ -1324,7 +1330,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
         if (capturing || kickScheduled) return;
         kickScheduled = true;
-        Log.i(TAG, "Liquid capture scheduled reason=" + reason);
+        logI("Liquid capture scheduled reason=" + reason);
         mainHandler.post(captureKick);
     }
 
@@ -1342,7 +1348,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!summary.equals(lastGateSummary) || now - lastGateLogNanos > 1_000_000_000L) {
             lastGateSummary = summary;
             lastGateLogNanos = now;
-            Log.i(TAG, "Liquid capture gated: " + summary);
+            logI("Liquid capture gated: " + summary);
         }
     }
 
@@ -1366,7 +1372,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
         final CaptureRequest request = makeCaptureRequest();
         if (request == null) {
-            Log.w(TAG, "Liquid capture request has no valid Dock/display geometry: "
+            logW("Liquid capture request has no valid Dock/display geometry: "
                     + "dock=" + geometrySource.getWidth() + "x" + geometrySource.getHeight());
             return;
         }
@@ -1387,7 +1393,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // (dock show/hide, launcher restart).  Re-resolve the current handle before each
         // capture so the exclusion never goes stale.
         dockWindowSurface = resolveWindowSurfaceControl();
-        Log.i(TAG, (useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
+        logI((useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
                 + " strip=" + request.stripRect + " tile=" + request.tileRect
                 + " scale=" + captureScale + " exclude=" + (dockWindowSurface != null));
 
@@ -1429,7 +1435,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             req, requestScene, requestSceneRevision)) {
                         return;
                     }
-                    Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
+                    logI("capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
                             + " crop=" + req.stripRect + " scale=" + captureScale
@@ -1481,7 +1487,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
                     capturing = false;
-                    Log.i(TAG, "Liquid capture result discarded: generation="
+                    logI("Liquid capture result discarded: generation="
                             + (generation == captureGeneration)
                             + " allowed=" + isCaptureAllowed());
                     if (isCaptureAllowed()) requestStateCapture("stale-orientation-result");
@@ -1496,7 +1502,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     installCapture(frame);
                 } else if (!nullFrameLogged) {
                     nullFrameLogged = true;
-                    Log.w(TAG, "HyperOS captureMode(2) wallpaper path returned no buffer");
+                    logW("HyperOS captureMode(2) wallpaper path returned no buffer");
                 }
 
                 // Autonomous cadence in captureKick drives the next frame; this catches any
@@ -1529,7 +1535,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     }
                     capturing = false;
                     if (blackFrameLogCount++ < 5) {
-                        Log.w(TAG, "black frame discarded (status=0 but content black), "
+                        logW("black frame discarded (status=0 but content black), "
                                 + "keeping previous backdrop");
                     }
                     if (sourceDirty) requestStateCapture();
@@ -1548,7 +1554,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
                     capturing = false;
-                    Log.i(TAG, "Liquid async capture result discarded: generation="
+                    logI("Liquid async capture result discarded: generation="
                             + (generation == captureGeneration)
                             + " scene=" + requestScene + "->" + sceneState.desired()
                             + " allowed=" + isCaptureAllowed());
@@ -1771,7 +1777,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }
             return new VisualProbe(count > 0 && sum / count < blackThreshold, signature);
         } catch (Throwable error) {
-            Log.w(TAG, "Unable to probe capture luminance; accepting frame", error);
+            logW("Unable to probe capture luminance; accepting frame", error);
             return new VisualProbe(false, 0L);
         } finally {
             if (readable != bmp && readable != null && !readable.isRecycled()) {
@@ -1871,11 +1877,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 flagMethod.setAccessible(true);
                 flagMethod.invoke(this, 0x200, 0x200);
             } catch (NoSuchMethodException e) {
-                Log.w(TAG, "setMiSelfBlurEnhanceFlag not available");
+                logW("setMiSelfBlurEnhanceFlag not available");
             }
-            Log.i(TAG, "Liquid glass: system self-blur applied radius=" + radius);
+            logI("Liquid glass: system self-blur applied radius=" + radius);
         } catch (Throwable e) {
-            Log.w(TAG, "system self-blur failed: " + e);
+            logW("system self-blur failed: " + e);
         }
     }
 
@@ -1905,9 +1911,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }
             XposedHelpers.callMethod(this, "setMiViewBlurMode", 1);
             XposedHelpers.callMethod(this, "setMiBackgroundBlendColors", colors);
-            Log.i(TAG, "Liquid glass: HyperOS material colors applied dark=" + dark);
+            logI("Liquid glass: HyperOS material colors applied dark=" + dark);
         } catch (Throwable e) {
-            Log.w(TAG, "HyperOS material colors unavailable; native blur retained", e);
+            logW("HyperOS material colors unavailable; native blur retained", e);
         }
     }
 
@@ -1947,7 +1953,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (captureShader == null || capture == null || capture.isRecycled()
                 || getWidth() <= 0 || getHeight() <= 0) {
             if (drawFailLogged < 2) { drawFailLogged++;
-                Log.w(TAG, "onDraw skip: shader=" + (captureShader != null)
+                logW("onDraw skip: shader=" + (captureShader != null)
                         + " capture=" + (capture != null && !capture.isRecycled())
                         + " w=" + getWidth() + " h=" + getHeight()); }
             return;

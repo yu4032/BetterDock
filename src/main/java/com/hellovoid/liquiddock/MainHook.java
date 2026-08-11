@@ -22,6 +22,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static View overlay, shadowView, oldBg, nativeShadowTarget;
+    private static int lastShadowW;
     private static DockLiquidGlassView liquidGlassView;
     private static volatile boolean launcherResumed;
     private static volatile boolean launcherLifecycleKnown;
@@ -53,8 +54,10 @@ public class MainHook implements IXposedHookLoadPackage {
 
         installWorkstationModeGuard(lpparam.classLoader);
         LiquidDockConfig config = LiquidDockConfig.load();
+        debugLogging = config.debugLog;
+        log("[DC] LiquidDock " + (debugLogging ? "debug logging ON" : "loaded"));
         if (!config.enabled) {
-            XposedBridge.log("[DC] LiquidDock master switch disabled");
+            log("[DC] LiquidDock master switch disabled");
             return;
         }
         RecentsHapticHook.install(lpparam.classLoader, () -> {
@@ -66,7 +69,7 @@ public class MainHook implements IXposedHookLoadPackage {
             installDockResizeAnimationBypass(lpparam.classLoader,
                     config.dock.smoothResizeAnimation);
         if (workstationMode) {
-            XposedBridge.log("[DC] workstation active; using isolated workstation parameters");
+            log("[DC] workstation active; using isolated workstation parameters");
         }
         LiquidDockConfig.Grid grid = config.grid;
         boolean grid8x4 = grid.enabled;
@@ -114,11 +117,11 @@ public class MainHook implements IXposedHookLoadPackage {
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
         if (!dockCustomization && !liquidGlass) {
-            XposedBridge.log("[DC] Dock customization and liquid glass both disabled");
+            log("[DC] Dock customization and liquid glass both disabled");
             return;
         }
         if (!dockCustomization) {
-            XposedBridge.log("[DC] Dock customization disabled (liquid glass only)");
+            log("[DC] Dock customization disabled (liquid glass only)");
             // Liquid glass runs standalone: install its capture lifecycle hooks and the
             // setupViews initializer, then skip all non-glass dock modification hooks below.
             installLiquidGlassCaptureHooks(lpparam.classLoader);
@@ -133,7 +136,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         strokeR = Math.max(0f, (Float) p.args[0]);
                     }});
             } catch (Throwable e) {
-                XposedBridge.log("[DC] stroke corner hook failed: " + e);
+                log("[DC] stroke corner hook failed: " + e);
             }
             try {
                 XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", lpparam.classLoader, "setupViews",
@@ -173,7 +176,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             // its parent, recreate it so the glass does not silently revert
                             // to the default background.
                             if (liquidGlassView != null) {
-                                XposedBridge.log("[DC] re-creating glass view (previous detached)");
+                                log("[DC] re-creating glass view (previous detached)");
                             }
                             liquidGlassView = LiquidGlassFactory.create(oldBg, workspace,
                                     config.glass, false, 0.58f);
@@ -201,7 +204,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             // view from the dock background immediately so it is not 1x1.
                             syncAll(oldBg);
                             liquidGlassView.post(() -> syncAll(oldBg));
-                        } catch (Throwable e) { XposedBridge.log("[DC] liquid-only init err: " + e); }
+                        } catch (Throwable e) { log("[DC] liquid-only init err: " + e); }
                     }});
                 // The launcher calls setBackgroundWidth/Height/Radius when it lays out the
                 // dock background; hook them (sync-only, no offset modification) so the
@@ -218,11 +221,11 @@ public class MainHook implements IXposedHookLoadPackage {
                 XposedHelpers.findAndHookMethod(hsc2, "setBackgroundRadius", float.class,
                     new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-            } catch (Throwable e) { XposedBridge.log("[DC] liquid-only hooks err: " + e); }
+            } catch (Throwable e) { log("[DC] liquid-only hooks err: " + e); }
             return;
         }
         LiquidDockConfig.Dock dock = config.dock;
-        XposedBridge.log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
+        log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
         boolean sq = dock.squircle, fd = dock.fillDiff;
         float dockScale = dock.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
@@ -253,7 +256,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             p.setResult((Integer) p.getResult() + bottomOffset);
                         }
                     });
-            } catch (Throwable e) { XposedBridge.log("[DC] bottom offset hook unavailable: " + e); } }
+            } catch (Throwable e) { log("[DC] bottom offset hook unavailable: " + e); } }
 
             if (spacing != 0) { try {
                 Class<?> recyclerView = XposedHelpers.findClass("androidx.recyclerview.widget.RecyclerView", cl);
@@ -281,7 +284,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                 p.args[1] = (Integer) p.args[1] + spacing * 2 * itemCount;
                         }
                     });
-            } catch (Throwable e) { XposedBridge.log("[DC] spacing hook unavailable: " + e); } }
+            } catch (Throwable e) { log("[DC] spacing hook unavailable: " + e); } }
 
             XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundWidth", int.class,
                 new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && wo != 0) p.args[0] = (int) p.args[0] + wo; }
@@ -292,12 +295,17 @@ public class MainHook implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundRadius", float.class,
                 new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
                         if (workstationMode) return;
+                        // Skip mid-animation so the stroke radius does not flicker with
+                        // the icon-drop background animation (see syncAll).
+                        View v = (View) p.thisObject;
+                        if (animating(v)) return;
                         float systemRadius = (Float) p.args[0];
                         strokeR = Math.max(0f, systemRadius + co);
                         p.args[0] = Math.max(0f, systemRadius + blurCo);
                     }
                     @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject);
-                        if (sq) { View v = (View) p.thisObject; float r = (Float) XposedHelpers.getObjectField(v, "mCornerRadius");
+                        if (sq) { View v = (View) p.thisObject; if (animating(v)) return;
+                            float r = (Float) XposedHelpers.getObjectField(v, "mCornerRadius");
                             if (r > 0) v.setOutlineProvider(new android.view.ViewOutlineProvider() {
                                 @Override public void getOutline(View vv, android.graphics.Outline o) { o.setPath(squirclePath(new RectF(0, 0, v.getWidth(), v.getHeight()), r)); }}); } }});
 
@@ -326,7 +334,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
                     });
             } catch (Throwable e) {
-                XposedBridge.log("[DC] native Dock shadow hook unavailable: " + e);
+                log("[DC] native Dock shadow hook unavailable: " + e);
             }
 
             XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", cl, "setupViews",
@@ -344,7 +352,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                     nativeShadowTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
                             }
                         } catch (Throwable e) {
-                            XposedBridge.log("[DC] native Dock shadow clear failed: " + e);
+                            log("[DC] native Dock shadow clear failed: " + e);
                         }
                         oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2"); if (oldBg == null) return;
                         ViewGroup parent = (ViewGroup) oldBg.getParent(); if (parent == null) return;
@@ -372,11 +380,11 @@ public class MainHook implements IXposedHookLoadPackage {
                         int dockShadowY = Math.round(c2.shadowY * dockScale2);
                         if (overlay != null && overlay.getParent() != null) return;
                         if (overlay != null) {
-                            XposedBridge.log("[DC] re-creating dock overlay (previous detached)");
+                            log("[DC] re-creating dock overlay (previous detached)");
                         }
                         if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
                         if (liquidGlassView != null) {
-                            XposedBridge.log("[DC] re-creating glass view (previous detached)");
+                            log("[DC] re-creating glass view (previous detached)");
                         }
                         if (liquidGlass) {
                             View workspace = null;
@@ -433,9 +441,9 @@ public class MainHook implements IXposedHookLoadPackage {
                             shadow, shadowRadius, shadowAlpha);
                         overlay.setId(View.generateViewId()); parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
                         syncAll(oldBg);
-                    } catch (Throwable e) { XposedBridge.log("[DC] err: " + e); }
+                    } catch (Throwable e) { log("[DC] err: " + e); }
                 }});
-        } catch (Throwable e) { XposedBridge.log("[DC] init err: " + e); }
+        } catch (Throwable e) { log("[DC] init err: " + e); }
     }
 
     private static void seedLauncherLifecycleState(Object launcher) {
@@ -451,13 +459,13 @@ public class MainHook implements IXposedHookLoadPackage {
                 launcherLifecycleKnown = true;
                 launcherResumed = true;
             }
-            XposedBridge.log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
+            log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
                 + " resumed=" + launcherResumed + " paused=" + paused
                 + " visible=" + visible + " focus=" + focused);
         } catch (Throwable e) {
             // UNKNOWN is intentional: the View's actual window visibility/focus will bootstrap
             // capture until an explicit onResume/onPause callback is observed.
-            XposedBridge.log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+            log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
         }
     }
 
@@ -466,7 +474,7 @@ public class MainHook implements IXposedHookLoadPackage {
         try {
             launcherClass = XposedHelpers.findClass("com.miui.home.launcher.Launcher", cl);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
+            log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
             return;
         }
 
@@ -483,11 +491,11 @@ public class MainHook implements IXposedHookLoadPackage {
                             systemUiPanelExpanded = expanded;
                             DockLiquidGlassView glass = liquidGlassView;
                             if (glass != null) glass.setSystemUiPanelExpanded(expanded);
-                            XposedBridge.log("[DC] liquid SystemUI panel expanded=" + expanded);
+                            log("[DC] liquid SystemUI panel expanded=" + expanded);
                         }
                     });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] SystemUI panel capture gate unavailable: " + e);
+            log("[DC] SystemUI panel capture gate unavailable: " + e);
         }
 
         XC_MethodHook focusHook = new XC_MethodHook() {
@@ -495,7 +503,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 boolean hasFocus = Boolean.TRUE.equals(p.args[0]);
                 launcherLifecycleKnown = true;
                 launcherResumed = hasFocus; // window focus is the reliable home-screen signal
-                XposedBridge.log("[DC] liquid focus: " + hasFocus);
+                log("[DC] liquid focus: " + hasFocus);
                 DockLiquidGlassView glass = liquidGlassView;
                 if (glass != null) {
                     glass.setLauncherState(true, hasFocus);
@@ -517,7 +525,7 @@ public class MainHook implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(launcherClass, "onWindowFocusChanged",
                     boolean.class, focusHook);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] onWindowFocusChanged hook failed: " + e);
+            log("[DC] onWindowFocusChanged hook failed: " + e);
         }
 
         // Dock v3 resolves the final gesture target before Launcher focus/lifecycle catches up.
@@ -539,7 +547,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
                     });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] liquid configuration hook unavailable: " + e);
+            log("[DC] liquid configuration hook unavailable: " + e);
         }
 
         XC_MethodHook resumeHook = new XC_MethodHook() {
@@ -547,13 +555,13 @@ public class MainHook implements IXposedHookLoadPackage {
                 // onResume is NOT authoritative: pulling the Dock out over an app can
                 // trigger launcher onResume while the launcher window is NOT focused.
                 // Window focus (onWindowFocusChanged) decides launcherResumed.
-                XposedBridge.log("[DC] liquid lifecycle: onResume (focus decides)");
+                log("[DC] liquid lifecycle: onResume (focus decides)");
             }
         };
         XC_MethodHook pauseHook = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 // onPause is likewise overridden by the window-focus signal.
-                XposedBridge.log("[DC] liquid lifecycle: onPause (focus decides)");
+                log("[DC] liquid lifecycle: onPause (focus decides)");
             }
         };
 
@@ -564,12 +572,12 @@ public class MainHook implements IXposedHookLoadPackage {
                 // NOT decide capture mode.  Window visibility (onWindowVisibilityChanged)
                 // is the discriminating signal: returning home makes the launcher WINDOW
                 // visible at the start of the animation; a Dock pull leaves it GONE.
-                XposedBridge.log("[DC] liquid lifecycle: onStart (visibility decides)");
+                log("[DC] liquid lifecycle: onStart (visibility decides)");
             }
         };
         XC_MethodHook stopHook = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
-                XposedBridge.log("[DC] liquid lifecycle: onStop (visibility decides)");
+                log("[DC] liquid lifecycle: onStop (visibility decides)");
             }
         };
 
@@ -577,7 +585,7 @@ public class MainHook implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 if (!launcherClass.isInstance(p.thisObject)) return;
                 boolean visible = (((Integer) p.args[0]) & View.VISIBLE) != 0;
-                XposedBridge.log("[DC] liquid window visibility: " + p.args[0]);
+                log("[DC] liquid window visibility: " + p.args[0]);
                 DockLiquidGlassView glass = liquidGlassView;
                 // Visibility changes during both Dock pull-up and return-home animations;
                 // they are not a HOME/APP signal. Window focus owns that decision.
@@ -589,7 +597,7 @@ public class MainHook implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(Activity.class, "onWindowVisibilityChanged",
                     int.class, visibilityHook);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] onWindowVisibilityChanged hook failed: " + e);
+            log("[DC] onWindowVisibilityChanged hook failed: " + e);
         }
 
         boolean directLifecycleHooked = false;
@@ -600,7 +608,7 @@ public class MainHook implements IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(launcherClass, "onStop", stopHook);
             directLifecycleHooked = true;
         } catch (Throwable directError) {
-            XposedBridge.log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
+            log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
         }
 
         if (!directLifecycleHooked) {
@@ -613,7 +621,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             if (!launcherClass.isInstance(p.thisObject)) return;
                             launcherLifecycleKnown = true;
                             launcherResumed = true;
-                            XposedBridge.log("[DC] liquid lifecycle fallback: onResume");
+                            log("[DC] liquid lifecycle fallback: onResume");
                             DockLiquidGlassView glass = liquidGlassView;
                             if (glass != null) glass.setLauncherState(true, true);
                         }
@@ -624,13 +632,13 @@ public class MainHook implements IXposedHookLoadPackage {
                             if (!launcherClass.isInstance(p.thisObject)) return;
                             launcherLifecycleKnown = true;
                             launcherResumed = false;
-                            XposedBridge.log("[DC] liquid lifecycle fallback: onPause");
+                            log("[DC] liquid lifecycle fallback: onPause");
                             DockLiquidGlassView glass = liquidGlassView;
                             if (glass != null) glass.setLauncherState(true, false);
                         }
                     });
             } catch (Throwable fallbackError) {
-                XposedBridge.log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
+                log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
             }
         }
 
@@ -644,7 +652,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     }
                 });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] Wallpaper normalized-offset hook unavailable: " + e);
+            log("[DC] Wallpaper normalized-offset hook unavailable: " + e);
         }
         try {
             XposedHelpers.findAndHookMethod(WallpaperManager.class, "setDisplayOffset",
@@ -657,7 +665,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 });
         } catch (Throwable e) {
             // Hidden/SystemApi on AOSP, but some Launcher builds use it directly.
-            XposedBridge.log("[DC] Wallpaper raw-offset hook unavailable: " + e);
+            log("[DC] Wallpaper raw-offset hook unavailable: " + e);
         }
         try {
             XposedHelpers.findAndHookMethod(WallpaperManager.class, "setWallpaperZoomOut",
@@ -669,7 +677,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     }
                 });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] Wallpaper zoom hook unavailable: " + e);
+            log("[DC] Wallpaper zoom hook unavailable: " + e);
         }
     }
 
@@ -681,11 +689,11 @@ public class MainHook implements IXposedHookLoadPackage {
                 @Override protected void afterHookedMethod(MethodHookParam p) {
                     DockLiquidGlassView glass = liquidGlassView;
                     if (glass != null) glass.setGestureCaptureTarget(target);
-                    XposedBridge.log("[DC] liquid gesture target=" + target);
+                    log("[DC] liquid gesture target=" + target);
                 }
             });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] " + eventName + " capture hook unavailable: " + e);
+            log("[DC] " + eventName + " capture hook unavailable: " + e);
         }
     }
 
@@ -822,16 +830,19 @@ public class MainHook implements IXposedHookLoadPackage {
     }
     private static void clear(Paint p) { p.setColor(0); p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)); }
     private static void syncShadowGeometry() {
-        View shadow = shadowView, stroke = overlay;
-        if (shadow == null || stroke == null || bgW <= 0 || bgH <= 0) return;
+        View shadow = shadowView, stroke = overlay, dockBg = oldBg;
+        if (shadow == null || stroke == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
         ViewGroup.LayoutParams lp = shadow.getLayoutParams();
         if (lp != null) {
             lp.width = bgW + shadowPad * 2;
             lp.height = bgH + shadowPad * 2;
             shadow.setLayoutParams(lp);
         }
-        shadow.setX(stroke.getX() - shadowPad);
-        shadow.setY(stroke.getY() - shadowPad);
+        // Anchor to the dock background's actual position.  The stroke overlay is
+        // match_parent (its getX/getY are meaningless), so using it here put the
+        // shadow at the wrong spot.
+        shadow.setX(dockBg.getX() - shadowPad);
+        shadow.setY(dockBg.getY() - shadowPad);
         shadow.invalidate();
     }
 
@@ -844,7 +855,7 @@ public class MainHook implements IXposedHookLoadPackage {
             Object panel = XposedHelpers.getObjectField(launcher, "mOverviewPanel");
             if (panel instanceof View) glass.setRecentsView((View) panel);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] recents bind failed: " + e);
+            log("[DC] recents bind failed: " + e);
         }
     }
 
@@ -870,7 +881,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 return false; // never consume; the Dock's own handlers stay untouched
             });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] dock touch listener failed: " + e);
+            log("[DC] dock touch listener failed: " + e);
         }
     }
 
@@ -902,7 +913,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 return false; // never consume
             });
         } catch (Throwable e) {
-            XposedBridge.log("[DC] dock area touch detector failed: " + e);
+            log("[DC] dock area touch detector failed: " + e);
         }
     }
 
@@ -930,9 +941,9 @@ public class MainHook implements IXposedHookLoadPackage {
                     glass.setDockDragging(false, null);
                 }
             });
-            XposedBridge.log("[DC] dock drag controller hooked");
+            log("[DC] dock drag controller hooked");
         } catch (Throwable e) {
-            XposedBridge.log("[DC] drag controller hook failed: " + e);
+            log("[DC] drag controller hook failed: " + e);
         }
     }
 
@@ -957,27 +968,85 @@ public class MainHook implements IXposedHookLoadPackage {
                     int j = s.indexOf(')', i);
                     if (i >= 0 && j > i) {
                         String name = s.substring(i + 5, j);
-                        XposedBridge.log("[DC] drag surface layer: " + name);
+                        log("[DC] drag surface layer: " + name);
                         return name;
                     }
                 }
             }
         } catch (Throwable e) {
-            XposedBridge.log("[DC] drag surface resolve failed: " + e);
+            log("[DC] drag surface resolve failed: " + e);
         }
         return null;
+    }
+
+    /** Master debug-log switch (about page → liquiddock_debug_log).  All [DC] logs
+     *  are gated behind it; kept off in normal use. */
+    static boolean debugLogging;
+
+    static void log(String s) { if (!debugLogging) return; XposedBridge.log(s); fileLog(s); }
+
+    /** Append a diagnostic line to /sdcard/Download/liquiddock.log (fallback:
+     *  /data/local/tmp/liquiddock.log) so the user can pull logs without root. */
+    private static void fileLog(String s) {
+        try {
+            String line = new java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.ROOT)
+                .format(new java.util.Date()) + " " + s + "\n";
+            java.io.File dir = new java.io.File("/sdcard/Download");
+            if (!dir.canWrite()) dir = new java.io.File("/data/local/tmp");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(
+                new java.io.File(dir, "liquiddock.log"), true);
+            out.write(line.getBytes("UTF-8"));
+            out.close();
+        } catch (Throwable ignored) { }
+    }
+
+    /** True while the view has an active animation (ViewPropertyAnimator/Animation).
+     *  View.isAnimating() is not resolvable against the compile SDK stub, so call it
+     *  reflectively. */
+    private static boolean animating(View v) {
+        try { return Boolean.TRUE.equals(XposedHelpers.callMethod(v, "isAnimating")); }
+        catch (Throwable e) { return false; }
     }
 
     private static void syncAll(View bg) { if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
         if (overlay == null && liquidGlassView == null && shadowView == null) return;
+        // Icon-drop relayouts animate the dock background: forcing our overlay/glass
+        // LayoutParams every animation frame competes with the launcher's own layout
+        // pass and makes the stroke flash.  Skip mid-animation; the final frame lands
+        // with the last setBackground* call after the animation ends.
+        boolean anim = animating(bg);
+        if (anim) {
+            log("[DC] syncAll skip (animating)");
+            return;
+        }
         try { bgW = XposedHelpers.getIntField(bg, "mWidth"); bgH = XposedHelpers.getIntField(bg, "mHeight");
             Object r = XposedHelpers.getObjectField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
             if (overlay != null) {
                 if (workstationMode) overlay.setVisibility(View.GONE);
                 ViewGroup.LayoutParams lp = overlay.getLayoutParams();
-                if (lp != null) { lp.width = bgW; lp.height = bgH; overlay.setLayoutParams(lp); }
+                if (lp != null) {
+                    boolean sizeChanged = lp.width != bgW || lp.height != bgH;
+                    if (sizeChanged) {
+                        // Interrupted dock animations leave the overlay at the old size
+                        // while the background snaps to the final one; animating the
+                        // overlay size removes the one-frame jump (the flash).
+                        final int fromW = lp.width, fromH = lp.height;
+                        overlay.animate().cancel();
+                        overlay.animate().setDuration(160)
+                            .setUpdateListener(a -> {
+                                float t = a.getAnimatedFraction();
+                                ViewGroup.LayoutParams l = overlay.getLayoutParams();
+                                l.width = fromW + (int) ((bgW - fromW) * t);
+                                l.height = fromH + (int) ((bgH - fromH) * t);
+                                overlay.setLayoutParams(l);
+                                overlay.invalidate();
+                            }).start();
+                        log("[DC] syncAll overlay animate " + fromW + "x" + fromH
+                            + " -> " + bgW + "x" + bgH);
+                    }
+                }
                 overlay.invalidate();
             }
             if (liquidGlassView != null) {
@@ -996,8 +1065,14 @@ public class MainHook implements IXposedHookLoadPackage {
                     shadowView.setVisibility(View.GONE);
                     return;
                 }
-                syncShadowGeometry();
-                overlay.post(MainHook::syncShadowGeometry);
+                // The shadow follows the dock *length*: only re-sync when the dock
+                // width actually changed (icon add/remove), not on every height/radius
+                // callback.  The posted pass re-aligns it after the stroke settles.
+                if (bgW != lastShadowW) {
+                    lastShadowW = bgW;
+                    syncShadowGeometry();
+                    overlay.post(MainHook::syncShadowGeometry);
+                }
             }
         } catch (Throwable ignored) {} }
 
@@ -1036,9 +1111,9 @@ public class MainHook implements IXposedHookLoadPackage {
                             else syncAll(view);
                         }
                     });
-            XposedBridge.log("[DC] Dock resize animation disabled");
+            log("[DC] Dock resize animation disabled");
         } catch (Throwable e) {
-            XposedBridge.log("[DC] Dock resize animation bypass unavailable: " + e);
+            log("[DC] Dock resize animation bypass unavailable: " + e);
         }
     }
 
@@ -1090,7 +1165,7 @@ public class MainHook implements IXposedHookLoadPackage {
             }
         } catch (Throwable e) {
             syncAll(view);
-            XposedBridge.log("[DC] smooth Dock resize failed: " + e);
+            log("[DC] smooth Dock resize failed: " + e);
         }
     }
 
@@ -1111,9 +1186,9 @@ public class MainHook implements IXposedHookLoadPackage {
                                 param.args[0] = (Integer) param.args[0] + widthOffset;
                         }
                     });
-            XposedBridge.log("[DC] workstation Dock width hook offset=" + widthOffset);
+            log("[DC] workstation Dock width hook offset=" + widthOffset);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] workstation Dock hook unavailable: " + e);
+            log("[DC] workstation Dock hook unavailable: " + e);
         }
         try {
             Class<?> recyclerView = XposedHelpers.findClass(
@@ -1131,10 +1206,10 @@ public class MainHook implements IXposedHookLoadPackage {
                             out.bottom += iconBottomOffset;
                         }
                     });
-            XposedBridge.log("[DC] workstation Dock icon vertical offsets top="
+            log("[DC] workstation Dock icon vertical offsets top="
                     + iconTopOffset + " bottom=" + iconBottomOffset);
         } catch (Throwable e) {
-            XposedBridge.log("[DC] workstation Dock icon offset hook unavailable: " + e);
+            log("[DC] workstation Dock icon offset hook unavailable: " + e);
         }
     }
 
@@ -1164,10 +1239,10 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
                     });
             detected = true;
-            XposedBridge.log("[DC] workstation guard uses LauncherModeController; active="
+            log("[DC] workstation guard uses LauncherModeController; active="
                     + workstationMode);
         } catch (Throwable currentApiError) {
-            XposedBridge.log("[DC] current workstation API unavailable: " + currentApiError);
+            log("[DC] current workstation API unavailable: " + currentApiError);
         }
         // Older Mingou builds used a DeviceConfig preference directly.
         if (!detected) try {
@@ -1182,22 +1257,22 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
                     });
             detected = true;
-            XposedBridge.log("[DC] workstation guard uses legacy DeviceConfig; active="
+            log("[DC] workstation guard uses legacy DeviceConfig; active="
                     + workstationMode);
         } catch (Throwable legacyApiError) {
-            XposedBridge.log("[DC] legacy workstation API unavailable: " + legacyApiError);
+            log("[DC] legacy workstation API unavailable: " + legacyApiError);
         }
         if (!detected) {
             // Keep normal mode usable, but report loudly instead of the old silent fallback.
             workstationMode = false;
-            XposedBridge.log("[DC] ERROR: no supported workstation state API found");
+            log("[DC] ERROR: no supported workstation state API found");
         }
     }
 
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
         HomeGridHook.setWorkstationMode(enabled);
-        XposedBridge.log("[DC] Mingou workstation mode changed=" + enabled);
+        log("[DC] Mingou workstation mode changed=" + enabled);
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
                 if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
@@ -1224,7 +1299,7 @@ public class MainHook implements IXposedHookLoadPackage {
         normalLayoutBackup.clear();
         View root = oldBg == null ? null : oldBg.getRootView();
         if (root != null) collectHomeItemPositions(root, false);
-        XposedBridge.log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
+        log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
     }
 
     private static void scheduleNormalLayoutRestore() {
@@ -1271,7 +1346,7 @@ public class MainHook implements IXposedHookLoadPackage {
         collectHomeItemPositions(root, true);
         root.requestLayout();
         root.invalidate();
-        XposedBridge.log("[DC] normal 8x4 layout restored from backup items="
+        log("[DC] normal 8x4 layout restored from backup items="
                 + normalLayoutBackup.size());
     }
 

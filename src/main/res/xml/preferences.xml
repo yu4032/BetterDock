@@ -370,11 +370,17 @@
         android:title="Apply iPad Preset"
         android:summary="Calculated from MIUI Home dimensions and this display"
         android:icon="@android:drawable/ic_menu_manage" />
-
-    <Preference
-        android:key="restart_launcher"
+    <PreferenceCategory android:title="@string/category_about">
+        <SwitchPreference
+            android:key="liquiddock_debug_log"
+            android:title="@string/pref_debug_log"
+            android:summary="@string/pref_debug_log_summary"
+            android:defaultValue="false" />
+        <Preference
+            android:key="restart_launcher"
         android:title="Restart Launcher"
         android:summary="Apply changes"
         android:icon="@android:drawable/ic_menu_rotate" />
+    </PreferenceCategory>
 
 </PreferenceScreen>

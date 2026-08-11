@@ -50,4 +50,7 @@
     <string name="liquid_material_blur">HyperOS advanced material</string>
     <string name="liquid_dynamic_capture">Continuous capture for dynamic apps</string>
     <string name="liquid_dynamic_capture_summary">Refreshes while the Dock is open over games or video, and stops immediately after it closes</string>
+    <string name="pref_debug_log">Debug Logging</string>
+    <string name="pref_debug_log_summary">Write [DC] diagnostics to logcat (about page), restart desktop to apply</string>
 </resources>
+

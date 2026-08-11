@@ -323,7 +323,7 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
                 Page.Stroke -> StrokePage(padding, prefs, masterEnabled)
                 Page.Shadow -> ShadowPage(padding, prefs, masterEnabled)
                 Page.Data -> DataPage(padding, activity)
-                Page.About -> AboutPage(padding, activity)
+                Page.About -> AboutPage(padding, activity, prefs)
             }
         }
     }
@@ -487,9 +487,15 @@ private fun openUrl(context: Context, url: String) {
 }
 
 @Composable
-private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity) {
+private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity, prefs: SharedPreferences) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader("引用与许可", "LiquidDock 使用的框架与实现参考") }
+        item {
+            SettingsCard {
+                BooleanSetting(prefs, "liquiddock_debug_log", "调试日志",
+                    false, "输出诊断日志到 Download/liquiddock.log，重启桌面生效")
+            }
+        }
         item { SmallTitle("界面与运行框架") }
         item {
             SettingsCard {

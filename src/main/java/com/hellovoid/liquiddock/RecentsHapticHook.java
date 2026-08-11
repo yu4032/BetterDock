@@ -28,10 +28,10 @@ final class RecentsHapticHook {
                         });
                 hooked++;
             } catch (Throwable error) {
-                XposedBridge.log("[DC] recents haptic hook unavailable for " + name
+                MainHook.log("[DC] recents haptic hook unavailable for " + name
                         + ": " + error);
             }
         }
-        XposedBridge.log("[DC] recents haptic trigger hooked implementations=" + hooked);
+        MainHook.log("[DC] recents haptic trigger hooked implementations=" + hooked);
     }
 }

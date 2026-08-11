@@ -4,6 +4,7 @@ package com.hellovoid.liquiddock;
  * hooks and renderers do not need to know JSON keys. */
 final class LiquidDockConfig {
     final boolean enabled;
+    final boolean debugLog;
     final Grid grid;
     final Dock dock;
     final Glass glass;
@@ -13,6 +14,7 @@ final class LiquidDockConfig {
 
     private LiquidDockConfig(ConfigReader c) {
         enabled = c.b("liquiddock_enabled", true);
+        debugLog = c.b("liquiddock_debug_log", false);
         grid = new Grid(c);
         dock = new Dock(c);
         glass = new Glass(c);
