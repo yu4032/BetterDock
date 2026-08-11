@@ -8,30 +8,40 @@ import java.nio.charset.StandardCharsets;
 import android.util.Log;
 
 public class ConfigReader {
-    private static final String PATH = "/data/local/tmp/betterdock_config.json";
+    // Primary location: the launcher's data dir (persistent, not wiped like /data/local/tmp).
+    // Fallback: the historical /data/local/tmp path so pre-existing configs keep working.
+    private static final String[] PATHS = {
+        "/data/data/com.miui.home/files/betterdock_config.json",
+        "/data/local/tmp/betterdock_config.json",
+    };
     private static final int MAX_CONFIG_BYTES = 64 * 1024;
     private JSONObject json;
 
     private ConfigReader() {
         try {
-            File f = new File(PATH);
-            if (!f.exists()) { json = new JSONObject(); return; }
-            try (FileInputStream fis = new FileInputStream(f);
-                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-                byte[] buf = new byte[4096];
-                int n;
-                int total = 0;
-                while ((n = fis.read(buf)) != -1) {
-                    total += n;
-                    if (total > MAX_CONFIG_BYTES)
-                        throw new IllegalArgumentException("Config exceeds 64 KiB");
-                    out.write(buf, 0, n);
+            JSONObject loaded = null;
+            for (String path : PATHS) {
+                File f = new File(path);
+                if (!f.exists()) continue;
+                try (FileInputStream fis = new FileInputStream(f);
+                     ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                    byte[] buf = new byte[4096];
+                    int n;
+                    int total = 0;
+                    while ((n = fis.read(buf)) != -1) {
+                        total += n;
+                        if (total > MAX_CONFIG_BYTES)
+                            throw new IllegalArgumentException("Config exceeds 64 KiB");
+                        out.write(buf, 0, n);
+                    }
+                    byte[] data = out.toByteArray();
+                    if (data.length > 0) {
+                        loaded = new JSONObject(new String(data, StandardCharsets.UTF_8));
+                        break;
+                    }
                 }
-                byte[] data = out.toByteArray();
-                json = data.length > 0
-                    ? new JSONObject(new String(data, StandardCharsets.UTF_8))
-                    : new JSONObject();
             }
+            json = loaded != null ? loaded : new JSONObject();
         } catch (Throwable e) {
             Log.e("LiquidDock", "Failed to read config", e);
             json = new JSONObject();

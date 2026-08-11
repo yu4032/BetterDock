@@ -71,6 +71,48 @@ private enum class Page(val titleRes: Int) {
     About(R.string.page_about)
 }
 
+// Debounced mirror of UI prefs to the launcher's data dir: the module (running inside
+// com.miui.home) reads betterdock_config.json from there, so every UI write must land
+// in that file to take effect.  su is used for the write (launcher's dir is not writable
+// by the settings app directly).
+private val jsonSyncHandler = android.os.Handler(android.os.Looper.getMainLooper())
+private var jsonSyncPrefs: SharedPreferences? = null
+private var jsonSyncContext: Context? = null
+private fun syncConfigNow(prefs: SharedPreferences, ctx: Context) {
+    try {
+        val json = org.json.JSONObject()
+        for ((k, v) in prefs.all) {
+            when (v) {
+                is Int -> json.put(k, v)
+                is Long -> json.put(k, v)
+                is Float -> json.put(k, v)
+                is Boolean -> json.put(k, v)
+                is String -> json.put(k, v)
+            }
+        }
+        val tmp = java.io.File(ctx.cacheDir, "betterdock_config.json")
+        tmp.writeText(json.toString())
+        val target = "/data/data/com.miui.home/files/betterdock_config.json"
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c",
+            "mkdir -p /data/data/com.miui.home/files && cp "
+                + tmp.absolutePath + " " + target + " && chmod 644 " + target))
+        p.waitFor()
+    } catch (e: Throwable) {
+        android.util.Log.w("LiquidDock", "json sync failed", e)
+    }
+}
+private val jsonSyncRunnable = Runnable {
+    val prefs = jsonSyncPrefs ?: return@Runnable
+    val ctx = jsonSyncContext ?: return@Runnable
+    syncConfigNow(prefs, ctx)
+}
+private fun requestJsonSync(prefs: SharedPreferences, ctx: Context) {
+    jsonSyncPrefs = prefs
+    jsonSyncContext = ctx
+    jsonSyncHandler.removeCallbacks(jsonSyncRunnable)
+    jsonSyncHandler.postDelayed(jsonSyncRunnable, 400L)
+}
+
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }
 
 private data class IntSpec(
@@ -251,7 +293,7 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
                     if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = Page.Home })
                 },
                 actions = {
-                    TextButton(text = stringResource(R.string.action_restart_launcher), onClick = activity::restartLauncher)
+                    TextButton(text = stringResource(R.string.action_restart_launcher), onClick = { syncConfigNow(prefs, activity); activity.restartLauncher() })
                 },
             )
         },
@@ -514,9 +556,10 @@ private fun BooleanSetting(
     enabled: Boolean = true, onChanged: (Boolean) -> Unit = {},
 ) {
     var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
+    val context = LocalContext.current
     SwitchPreference(
         checked = value,
-        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
+        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it); requestJsonSync(prefs, context) },
         title = title,
         summary = summary,
         enabled = enabled,
@@ -538,6 +581,7 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         val editor = prefs.edit().putInt(spec.key, value.roundToInt())
         if (decimalDp) editor.putInt("${spec.key}_tenths", (value * 10f).roundToInt())
         editor.apply()
+        requestJsonSync(prefs, context)
     }
     val displayValue = if (decimalDp) String.format(java.util.Locale.ROOT, "%.1f", value)
         else value.roundToInt().toString()
@@ -675,5 +719,6 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
     dp("workstation_dock_icon_top_offset", 0f); dp("workstation_dock_icon_bottom_offset", 0f)
     editor.commit()
     Toast.makeText(activity, "默认预设已应用", Toast.LENGTH_LONG).show()
+    syncConfigNow(PreferenceManager.getDefaultSharedPreferences(activity), activity)
     activity.restartLauncher()
 }
