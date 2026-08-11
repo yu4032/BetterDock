@@ -27,8 +27,8 @@ import de.robv.android.xposed.XposedHelpers;
 /**
  * Event-driven liquid-glass renderer for the Launcher Dock.
  *
- * The capture source follows HyperOS Home's own wallpaper-only capture path:
- * captureDisplay + vendor captureMode(2) + the Launcher wallpaper layer selector.
+ * The capture source uses the display-capture API's wallpaper-only mode:
+ * captureDisplay + vendor captureMode(2) + the wallpaper layer selector.
  * Captures are one-shot and coalesced: scrolling/wallpaper-offset/rotation/Dock geometry
  * changes mark the source dirty, while an unchanged pre-draw does not request another frame.
  */
@@ -1392,7 +1392,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
                     // On the home screen the glass sits over the wallpaper: use MIUI's
-                    // wallpaper-only capture mode (captureMode=2, same as HyperOS Home's own
+                    // wallpaper-only capture mode (captureMode=2, vendor display-capture
+                    // wallpaper mode)
                     // capture path) — fast AND inherently icon/dock-free.  Over an app the
                     // glass refracts the app content, so fall back to full-display capture
                     // with the Dock + drag-surface layers excluded (mode 1).

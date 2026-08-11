@@ -468,9 +468,7 @@ private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity)
                     onClick = { openUrl(activity, "https://github.com/ReChronoRain/HyperCeiler") })
                 ArrowPreference("Prismal", summary = "液态玻璃光学模型与 Shader 参数设计参考 · MIT",
                     onClick = { openUrl(activity, "https://github.com/styropyr0/Prismal") })
-                ArrowPreference("HyperLight", summary = "液态玻璃捕获与渲染行为研究参考；未作为代码依赖",
-                    onClick = {})
-                ArrowPreference("HyperOS Launcher", summary = "Dock 层级、壁纸捕获与布局兼容性研究参考；系统组件",
+                ArrowPreference("HyperLight", summary = "仅思路参考；未使用其任何方法或代码",
                     onClick = {})
             }
         }

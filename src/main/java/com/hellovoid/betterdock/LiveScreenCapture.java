@@ -11,10 +11,10 @@ import java.lang.reflect.Method;
 /**
  * Wallpaper-only capture for HyperOS Launcher.
  *
- * HyperOS Home's own Utilities.captureWallpaperBitmap() uses captureDisplay() with
- * vendor captureMode(2) and the layer-name selector "Wallpaper BBQ wrapper".  We
- * reproduce that path, but additionally provide sourceCrop + frameScale so SurfaceFlinger
- * only reads back the lower strip needed by the Dock.  If this optimized variant is not
+ * The wallpaper-only path uses captureDisplay() with vendor captureMode(2) and the
+ * layer-name selector "Wallpaper BBQ wrapper".  We use that same vendor mode, but
+ * additionally provide sourceCrop + frameScale so SurfaceFlinger only reads back the
+ * lower strip needed by the Dock.  If this optimized variant is not
  * accepted by a particular framework build, we fall back to Launcher Utilities' exact
  * full-frame implementation and crop/scale it immediately on the worker thread.
  */
@@ -275,8 +275,8 @@ final class LiveScreenCapture {
             java.util.ArrayList<String> names = new java.util.ArrayList<>();
             if (captureMode == 2) {
                 // MIUI vendor wallpaper mode: setExcludeOrIncludeLayerNames is INCLUDE
-                // semantics — SF captures ONLY the listed layers.  HyperOS Home itself
-                // passes ["Wallpaper BBQ wrapper"] (Launcher.Utilities.
+                // semantics — SF captures ONLY the listed layers.  The launcher's wallpaper
+                // selector passes ["Wallpaper BBQ wrapper"] (Launcher.Utilities.
                 // EXCLUDE_OR_INCLUDE_LAYER_NAMES).  We ALSO include the wallpaper service
                 // layer: while the Dock animates (icon fly-in/out) its blur pass reuses
                 // the BBQ wrapper, whose captured content then contains Dock icons.
@@ -359,14 +359,14 @@ final class LiveScreenCapture {
         }
     }
 
-    /** HyperOS Home's own wallpaper-selector semantics, with compositor-side crop/scale added. */
+    /** Wallpaper-selector semantics (vendor captureMode 2), with compositor-side crop/scale added. */
     private Bitmap captureVendorWallpaperStrip(Rect sourceCrop, float scale, int displayId)
             throws Exception {
         Object builder = captureBuilderConstructor.newInstance();
         setSourceCrop.invoke(builder, new Rect(sourceCrop));
         setFrameScale.invoke(builder, scale, scale);
 
-        // Verified from HyperOS Home Utilities.captureWallpaperBitmap():
+        // Wallpaper-only selector:
         //   setExcludeOrIncludeLayerNames({"Wallpaper BBQ wrapper"})
         //   setCaptureMode(2)
         //   captureDisplay(...)
