@@ -10,6 +10,7 @@ Implementation and interaction references:
 
 - **HyperCeiler** — module engineering practice reference (module structure, settings organization); GPL-3.0 — <https://github.com/ReChronoRain/HyperCeiler>
 - **Prismal** — liquid-glass optical model and shader parameter design reference; MIT License — <https://github.com/styropyr0/Prismal>
-- **HyperLight** — idea reference only; no methods or code from it are used by BetterDock.
+- **HyperLight** — design reference for the liquid-glass look.
+- **HyperOS Launcher (`com.miui.home`)** — per the Xposed convention of calling host-app methods at runtime, BetterDock invokes the launcher's wallpaper-capture method as a fallback; no launcher code is copied, and the launcher is not redistributed.
 
 The names and trademarks of referenced projects belong to their respective owners.

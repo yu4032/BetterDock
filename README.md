@@ -17,14 +17,10 @@ Development structure and extension rules are documented in [ARCHITECTURE.md](AR
 
 ## Disclaimer
 
-This is an unofficial community project. It is **not affiliated with, endorsed by, or
-related to Xiaomi Inc.** or HyperOS/MIUI. "HyperOS" and "MIUI" are trademarks of their
-respective owners, referenced here only for compatibility description.
+An unofficial community project, not affiliated with Xiaomi. "HyperOS" and "MIUI" are
+trademarks of their owners, used here for compatibility description only.
 
-- For personal learning and research use only.
-- Use at your own risk. The author is not responsible for any device damage, data loss,
-  or warranty issues caused by this module.
-- Commercial use is not permitted.
+For learning and research use. Use at your own risk; no commercial use.
 
 ## Build
 
