@@ -30,7 +30,6 @@ public class MainHook implements IXposedHookLoadPackage {
     private static int strokeBaseR = 255, strokeBaseG = 255, strokeBaseB = 255, strokeBaseAlpha = 255;
     private static float bgR = 30f;
     private static float strokeR = 30f;
-    private static float strokeRadiusOffsetPx; // stroke corner = Dock corner + offset
     private static volatile boolean workstationMode;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
@@ -266,7 +265,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
                         if (workstationMode) return;
                         float systemRadius = (Float) p.args[0];
-                        strokeR = Math.max(0f, systemRadius + co + strokeRadiusOffsetPx);
+                        strokeR = Math.max(0f, systemRadius + co);
                         p.args[0] = Math.max(0f, systemRadius + blurCo);
                     }
                     @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject);
@@ -334,9 +333,6 @@ public class MainHook implements IXposedHookLoadPackage {
                         float sqCp = c2.squircleCp;
                         int sw = Math.max(1, Math.round(c2.strokeWidth * dockScale2));
                         int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * dockScale2));
-                        strokeRadiusOffsetPx = c2.strokeRadiusOffset * dockScale2;
-                        int stdOffW = Math.round(c2.standardStrokeOffsetW * dockScale2);
-                        int stdOffH = Math.round(c2.standardStrokeOffsetH * dockScale2);
                         boolean shadow = c2.strokeShadow;
                         int shadowRadius = Math.max(1, Math.round(c2.strokeShadowRadius * dockScale2));
                         int shadowAlpha = c2.strokeShadowAlpha;
@@ -406,7 +402,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             }
                         }
                         overlay = makeOverlay(oldBg, strokeEnabled, sq2, sqOff, sqW, sqCp, fd2, sw, stdSw,
-                                stdOffW, stdOffH, shadow, shadowRadius, shadowAlpha);
+                            shadow, shadowRadius, shadowAlpha);
                         overlay.setId(View.generateViewId()); parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
                         syncAll(oldBg);
                     } catch (Throwable e) { XposedBridge.log("[DC] err: " + e); }
@@ -704,8 +700,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static View makeOverlay(View bg, boolean strokeEnabled, boolean sq, int sqOff, int sqW, float sqCp,
-                                    boolean fd, int sw, int stdSw, int stdOffW, int stdOffH,
-                                    boolean shadow,
+                                    boolean fd, int sw, int stdSw, boolean shadow,
                                     int shadowRadius, int shadowAlpha) {
         return new View(bg.getContext()) {
             @Override protected void onDraw(Canvas c) {
@@ -719,9 +714,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 if (fd) c.drawPath(roundRectRing(w, h, r, sw), noc(150));
                 else {
                     Paint stroke = noc(150); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(stdSw);
-                    // Width/height offsets let the stroke frame the glass edge instead of
-                    // always hugging it (positive = inset, negative = grow beyond).
-                    c.drawRoundRect(1 + stdOffW, 1 + stdOffH, w - 1 - stdOffW, h - 1 - stdOffH, r, r, stroke);
+                    c.drawRoundRect(1, 1, w - 1, h - 1, r, r, stroke);
                 }
             }
             @Override protected void onDetachedFromWindow() {

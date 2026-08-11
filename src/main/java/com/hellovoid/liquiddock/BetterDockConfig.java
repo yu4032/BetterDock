@@ -58,8 +58,7 @@ final class LiquidDockConfig {
         final int blurRadius;
         final boolean cornersDp, squircle, fillDiff, strokeEnabled, strokeShadow, shadowEnabled;
         final float cornerOffset, blurCornerOffset, squircleCp, squircleStrokeWidth,
-                squircleStrokeOffset, strokeWidth, standardStrokeWidth,
-                standardStrokeOffsetW, standardStrokeOffsetH, strokeRadiusOffset;
+                squircleStrokeOffset, strokeWidth, standardStrokeWidth;
         final int strokeR, strokeG, strokeB, strokeAlpha;
         final float strokeShadowRadius, shadowRadius, shadowSize, shadowY;
         final int strokeShadowAlpha, shadowAlpha;
@@ -85,9 +84,6 @@ final class LiquidDockConfig {
             squircleStrokeOffset = c.f("sq_stroke_off", 8);
             strokeWidth = c.f("stroke_w", 2);
             standardStrokeWidth = c.f("std_stroke_w", 4);
-            standardStrokeOffsetW = c.f("std_stroke_off_w", 0);
-            standardStrokeOffsetH = c.f("std_stroke_off_h", 0);
-            strokeRadiusOffset = c.f("stroke_radius_offset", 0);
             strokeR = channel(c.i("stroke_base_r", 255));
             strokeG = channel(c.i("stroke_base_g", 255));
             strokeB = channel(c.i("stroke_base_b", 255));
