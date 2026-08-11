@@ -382,17 +382,16 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
 
 @Composable
 private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    val dockEnabled = prefs.getBoolean("dock_customization", true)
     var dockStroke by remember { mutableStateOf(prefs.getBoolean("dock_stroke", true)) }
     var squircle by remember { mutableStateOf(prefs.getBoolean("squircle", false)) }
     var fillDiff by remember { mutableStateOf(prefs.getBoolean("fill_diff", false)) }
     SettingsList(padding, "描边") {
-        BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光", masterEnabled && dockEnabled) { dockStroke = it }
-        BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", masterEnabled && dockEnabled) { squircle = it }
-        BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", masterEnabled && dockEnabled) { fillDiff = it }
+        BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光", masterEnabled) { dockStroke = it }
+        BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", masterEnabled) { squircle = it }
+        BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", masterEnabled) { fillDiff = it }
         SmallTitle("描边背景色")
         strokeSpecs.filter { it.section == IntSection.StrokeBackground }.forEach {
-            IntSetting(prefs, it, masterEnabled && dockEnabled && dockStroke)
+            IntSetting(prefs, it, masterEnabled && dockStroke)
         }
         SmallTitle("方圆形与线宽")
         strokeSpecs.filter { it.section == IntSection.StrokeGeometry }.forEach {
@@ -402,7 +401,7 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterE
                 "fill_diff" -> fillDiff
                 else -> true
             }
-            IntSetting(prefs, it, masterEnabled && dockEnabled && enabled)
+            IntSetting(prefs, it, masterEnabled && enabled)
         }
     }
 }

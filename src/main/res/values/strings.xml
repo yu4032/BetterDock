@@ -7,7 +7,7 @@
     <string name="page_dock">Dock size and blur</string>
     <string name="page_workstation">Workstation Dock</string>
     <string name="page_liquid">Liquid glass</string>
-    <string name="page_stroke">Stroke and lighting</string>
+    <string name="page_stroke">Stroke</string>
     <string name="page_shadow">Shadow</string>
     <string name="page_data">Presets and data</string>
     <string name="page_about">Credits and licenses</string>
