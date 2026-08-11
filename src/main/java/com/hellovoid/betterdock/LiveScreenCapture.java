@@ -47,19 +47,6 @@ final class LiveScreenCapture {
     private final Method launcherCaptureWallpaperBitmap;
     private final String[] wallpaperLayerNames;
 
-    // LayerCapture path: captureLayers(LayerCaptureArgs, ScreenCaptureListener) reads
-    // back ONLY the given layer (e.g. the foreground app window) — the Dock overlay is
-    // a separate layer so it can never leak into the glass backdrop.  This is the
-    // reliable "app behind the Dock" capture; display capture + exclusion of the Dock
-    // layer does NOT work on HyperOS (both name-list and SurfaceControl exclusion are
-    // ignored/black on this build).
-    private final Constructor<?> layerCaptureBuilderConstructor;
-    private final Method layerSetLayer;
-    private final Method layerSetSourceCrop;
-    private final Method layerSetFrameScale;
-    private final Method layerBuild;
-    private final Method captureLayers;
-
     private boolean optimizedFailureLogged;
     private boolean launcherFallbackFailureLogged;
 
@@ -153,33 +140,6 @@ final class LiveScreenCapture {
         }
         launcherCaptureWallpaperBitmap = launcherCapture;
         wallpaperLayerNames = names != null ? names : DEFAULT_WALLPAPER_LAYER_NAMES.clone();
-
-        // LayerCaptureArgs / captureLayers (app-window capture for the "behind the Dock"
-        // scene).  If this build lacks them, mode-1 falls back to display capture.
-        Constructor<?> lcCtor = null;
-        Method lSetLayer = null, lSetCrop = null, lSetScale = null, lBuild = null, lCapture = null;
-        try {
-            Class<?> layerArgsClass = Class.forName(
-                    "android.window.ScreenCapture$LayerCaptureArgs");
-            Class<?> layerBuilderClass = Class.forName(
-                    "android.window.ScreenCapture$LayerCaptureArgs$Builder");
-            lcCtor = layerBuilderClass.getDeclaredConstructor(
-                    android.view.SurfaceControl.class);
-            lcCtor.setAccessible(true);
-            lSetCrop = layerBuilderClass.getMethod("setSourceCrop", Rect.class);
-            lSetScale = layerBuilderClass.getMethod("setFrameScale", float.class, float.class);
-            lBuild = layerBuilderClass.getMethod("build");
-            lCapture = screenCaptureClass.getMethod(
-                    "captureLayers", layerArgsClass, listenerClass);
-        } catch (Throwable e) {
-            Log.w(TAG, "LayerCapture path unavailable: " + e);
-        }
-        layerCaptureBuilderConstructor = lcCtor;
-        layerSetLayer = null;
-        layerSetSourceCrop = lSetCrop;
-        layerSetFrameScale = lSetScale;
-        layerBuild = lBuild;
-        captureLayers = lCapture;
     }
 
     Bitmap captureWallpaper(Rect sourceCrop, float scale, int displayId) throws Exception {
@@ -316,10 +276,13 @@ final class LiveScreenCapture {
             if (captureMode == 2) {
                 // MIUI vendor wallpaper mode: setExcludeOrIncludeLayerNames is INCLUDE
                 // semantics — SF captures ONLY the listed layers.  HyperOS Home itself
-                // passes ["Wallpaper BBQ wrapper"] here (Launcher.Utilities.
-                // EXCLUDE_OR_INCLUDE_LAYER_NAMES); we must do the same or the capture
-                // includes the wrong layer (e.g. the Dock).
+                // passes ["Wallpaper BBQ wrapper"] (Launcher.Utilities.
+                // EXCLUDE_OR_INCLUDE_LAYER_NAMES).  We ALSO include the wallpaper service
+                // layer: while the Dock animates (icon fly-in/out) its blur pass reuses
+                // the BBQ wrapper, whose captured content then contains Dock icons.
+                // The service layer is pure wallpaper in every state.
                 names.add("Wallpaper BBQ wrapper");
+                names.add("com.miui.miwallpaper.wallpaperservice.ImageWallpaper");
             } else {
                 // Mode 1: exclusion by layer NAME (the historical working path).
                 names.add("Floating Dock");
@@ -529,61 +492,7 @@ final class LiveScreenCapture {
         return scaled;
     }
 
-    /**
-     * Capture a single layer (the foreground app window behind the Dock) asynchronously.
-     * The Dock overlay is a separate SF layer, so it never appears in the result.
-     *
-     * @param layer     the app window's SurfaceControl (null -> fall back to display capture)
-     * @return true if the layer-capture path was used (callback will fire), false if the
-     *         layer path is unavailable and the caller should fall back.
-     */
-    boolean captureLayerAsync(Rect sourceCrop, float scale,
-                              android.view.SurfaceControl layer,
-                              CaptureCallback callback) {
-        if (layer == null || layerCaptureBuilderConstructor == null || captureLayers == null) {
-            return false;
-        }
-        try {
-            Object builder = layerCaptureBuilderConstructor.newInstance(layer);
-            layerSetSourceCrop.invoke(builder, new Rect(sourceCrop));
-            layerSetFrameScale.invoke(builder, scale, scale);
-            Object args = layerBuild.invoke(builder);
-            Object listener = asyncListenerConstructor.newInstance(
-                    (java.util.function.ObjIntConsumer<Object>) (buffer, status) -> {
-                        Log.i(TAG, "layer capture callback: buffer=" + buffer + " status=" + status);
-                        Object hardwareBuffer = null;
-                        try {
-                            if (buffer == null) {
-                                callback.onError(new RuntimeException(
-                                        "layer capture: null buffer status=" + status));
-                                return;
-                            }
-                            Object bitmap = asBitmap.invoke(buffer);
-                            if (bitmap instanceof Bitmap) {
-                                callback.onResult((Bitmap) bitmap);
-                            } else {
-                                callback.onError(new RuntimeException(
-                                        "layer capture: asBitmap returned non-Bitmap"));
-                            }
-                        } catch (Throwable e) {
-                            callback.onError(e);
-                        } finally {
-                            try {
-                                hardwareBuffer = getHardwareBuffer.invoke(buffer);
-                            } catch (Throwable ignored) {
-                            }
-                            closeHardwareBuffer(hardwareBuffer);
-                        }
-                    });
-            captureLayers.invoke(null, args, listener);
-            return true;
-        } catch (Throwable e) {
-            Log.w(TAG, "layer capture failed", e);
-            return false;
-        }
-    }
-
-    private void closeHardwareBuffer(Object hardwareBuffer) {
+    private static void closeHardwareBuffer(Object hardwareBuffer) {
         if (hardwareBuffer == null) return;
         try {
             if (hardwareBuffer instanceof AutoCloseable) {

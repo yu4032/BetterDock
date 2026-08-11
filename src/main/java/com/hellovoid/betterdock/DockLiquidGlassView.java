@@ -275,14 +275,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean kickScheduled;
     private long captureGeneration;
     private long lastCaptureStartNanos;
-    // Dock animation grace: while Dock geometry is changing (expand/collapse/interruption)
-    // we stay in wallpaper mode (cheaper + avoids capturing in-transit Dock content).
-    // After DOCK_ANIM_GRACE_MS of stable geometry we revert to focus-driven selection.
-    private long dockMovingUntilNanos;
-    private static final long DOCK_ANIM_GRACE_MS = 500L;
-    private int obsLogCount;
-    private int settledLogCount;
-    private int renderLogCount;
 
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
@@ -643,37 +635,22 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
 
-        boolean dockMoved = tmpDockLocation[0] != observedDockX
+        boolean changed = dockDragging   // icon drag: keep capturing through the rearrange
+                || !observationValid
+                || tmpDockLocation[0] != observedDockX
                 || tmpDockLocation[1] != observedDockY
                 || dockW != observedDockWidth
                 || dockH != observedDockHeight
                 || dockTx != observedDockTranslationX
                 || dockTy != observedDockTranslationY
                 || dockSx != observedDockScaleX
-                || dockSy != observedDockScaleY;
-        boolean changed = dockDragging   // icon drag: keep capturing through the rearrange
-                || !observationValid
-                || dockMoved
+                || dockSy != observedDockScaleY
                 || recentsVisible != observedRecentsVisible
                 || (recentsVisible && (
                         recentsScrollX != observedRecentsScrollX
                         || recentsScrollY != observedRecentsScrollY
                         || recentsTx != observedRecentsTranslationX
                         || recentsTy != observedRecentsTranslationY));
-        if (changed) {
-            if (obsLogCount++ < 10) {
-                Log.i(TAG, "obs: dockMoved=" + dockMoved + " recents=" + recentsVisible
-                        + " rot=" + (rotation != observedRotation)
-                        + " size=" + (tmpDisplaySize.x != observedDisplayWidth || tmpDisplaySize.y != observedDisplayHeight)
-                        + " txy=" + Float.intBitsToFloat(dockTx) + "," + Float.intBitsToFloat(dockTy)
-                        + " sxy=" + Float.intBitsToFloat(dockSx) + "," + Float.intBitsToFloat(dockSy)
-                        + " dock=" + tmpDockLocation[0] + "," + tmpDockLocation[1] + " wh=" + dockW + "x" + dockH);
-            }
-        }
-        // Dock geometry change = animation/transition in flight (incl. interruptions).
-        // Recents visibility alone does NOT reset the animation grace (the recents panel
-        // toggles independently of Dock motion — it must not keep us in wallpaper mode).
-        if (dockMoved) dockMovingUntilNanos = System.nanoTime() + DOCK_ANIM_GRACE_MS * 1_000_000L;
         observedDisplayHeight = tmpDisplaySize.y;
         observedDockX = tmpDockLocation[0];
         observedDockY = tmpDockLocation[1];
@@ -712,45 +689,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } catch (Throwable e) {
             Log.w(TAG, "own window info failed: " + e);
         }
-    }
-
-    /** Resolve the foreground (focused) app window's SurfaceControl — the layer BEHIND
-     *  the Dock overlay.  Capturing this layer yields the app content with the Dock
-     *  inherently excluded (it is a separate overlay layer).  Scans the LOCAL
-     *  WindowManagerGlobal roots for the focused ViewRootImpl (WMS.getFocusedWindow()
-     *  cannot cross the binder boundary — WindowState is not parcelable). */
-    private android.view.SurfaceControl resolveAppWindowSurfaceControl() {
-        try {
-            Class<?> wmgClass = Class.forName("android.view.WindowManagerGlobal");
-            java.lang.reflect.Method getInstance = wmgClass.getDeclaredMethod("getInstance");
-            getInstance.setAccessible(true);
-            Object wmg = getInstance.invoke(null);
-            java.lang.reflect.Field rootsField = wmgClass.getDeclaredField("mRoots");
-            rootsField.setAccessible(true);
-            Object roots = rootsField.get(wmg);
-            if (!(roots instanceof java.util.ArrayList)) return null;
-            java.util.ArrayList<?> list = (java.util.ArrayList<?>) roots;
-            for (Object root : list) {
-                if (root == null) continue;
-                try {
-                    Class<?> vriClass = Class.forName("android.view.ViewRootImpl");
-                    java.lang.reflect.Method hasFocus = vriClass.getMethod("hasWindowFocus");
-                    if (!Boolean.TRUE.equals(hasFocus.invoke(root))) continue;
-                    java.lang.reflect.Method getSc = vriClass.getDeclaredMethod("getSurfaceControl");
-                    getSc.setAccessible(true);
-                    Object sc = getSc.invoke(root);
-                    if (sc instanceof android.view.SurfaceControl) {
-                        Log.i(TAG, "app layer resolved from focused root: " + sc);
-                        return (android.view.SurfaceControl) sc;
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-            Log.w(TAG, "no focused window root found for layer capture");
-        } catch (Throwable e) {
-            Log.w(TAG, "resolveAppWindowSurfaceControl failed", e);
-        }
-        return null;
     }
 
     /** The Dock's own window layer, resolved once at attach, so full-display captures can
@@ -1000,6 +938,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return false;
     }
 
+    /** Public entry for MainHook: launcher gained focus (returning home).  The Dock
+     *  collapse animation may paint icon ghosts into an in-flight capture; schedule one
+     *  fresh capture shortly after (once the animation settled) so the backdrop is the
+     *  clean wallpaper. */
+    void onLauncherFocused() {
+        mainHandler.postDelayed(() -> {
+            if (!isCaptureAllowed()) return;
+            requestStateCapture("focus-home");
+        }, 500L);
+    }
+
     /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation
      *  started/interrupted — the animation keeps the glass's backdrop in sync). */
     void requestCapture(String reason) {
@@ -1159,18 +1108,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             });
                         }
                     };
-                    if (!wallpaperMode) {
-                        // App behind the Dock: capture the focused app window's layer
-                        // directly — the Dock overlay is a separate layer so it can never
-                        // leak into the backdrop (display capture + Dock exclusion does
-                        // not work on HyperOS).
-                        android.view.SurfaceControl appLayer = resolveAppWindowSurfaceControl();
-                        if (appLayer != null && client.captureLayerAsync(
-                                req.stripRect, captureScale, appLayer, captureCb)) {
-                            return; // async path owns completion via handleCaptureResult
-                        }
-                        Log.w(TAG, "layer capture unavailable, falling back to display capture");
-                    }
                     client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
                             wallpaperMode ? null : excludes, excludeNames,
                             wallpaperMode ? 2 : 1,
@@ -1453,13 +1390,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("screenOffset", captureSampleOffsetX, captureSampleOffsetY);
         float csx = capture.getWidth() / Math.max(1f, captureSourceWidth);
         float csy = capture.getHeight() / Math.max(1f, captureSourceHeight);
-        if (renderLogCount++ < 8) {
-            Log.i(TAG, "render: capture=" + capture.getWidth() + "x" + capture.getHeight()
-                    + " src=" + captureSourceWidth + "x" + captureSourceHeight
-                    + " cs=" + csx + "," + csy
-                    + " off=" + captureSampleOffsetX + "," + captureSampleOffsetY
-                    + " glass=" + getWidth() + "x" + getHeight());
-        }
         refraction.setFloatUniform("captureSize", capture.getWidth(), capture.getHeight());
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);

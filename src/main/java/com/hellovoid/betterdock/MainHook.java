@@ -465,7 +465,15 @@ public class MainHook implements IXposedHookLoadPackage {
                 launcherResumed = hasFocus; // window focus is the reliable home-screen signal
                 XposedBridge.log("[DC] liquid focus: " + hasFocus);
                 DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) glass.setLauncherState(true, hasFocus);
+                if (glass != null) {
+                    glass.setLauncherState(true, hasFocus);
+                    // Focus returning to the launcher = the way-home transition starts
+                    // (Dock collapses with the icon fly-in animation).  Record the
+                    // timestamp (render logs correlate with the animation window) and
+                    // arm the capture-skip grace so the collapse is never painted into
+                    // the backdrop.
+                    if (hasFocus) glass.onLauncherFocused();
+                }
             }
         };
         try {
@@ -825,35 +833,6 @@ public class MainHook implements IXposedHookLoadPackage {
             if (panel instanceof View) glass.setRecentsView((View) panel);
         } catch (Throwable e) {
             XposedBridge.log("[DC] recents bind failed: " + e);
-        }
-    }
-
-    /** While the Dock's Folme animation is running (expand/collapse, including
-     *  interruptions where the animation restarts mid-flight), keep requesting capture:
-     *  the glass backdrop must follow the Dock geometry on every animation frame.  The
-     *  capture rate is throttled by the glass's own captureInterval. */
-    private static void bindDockAnimHook(ClassLoader cl) {
-        try {
-            XposedHelpers.findAndHookMethod("com.miui.home.launcher.dock.DockControllerImpl",
-                cl, "isDockFolmeAnimRunning",
-                new XC_MethodHook() {
-                    private int animLogCount = 0;
-                    @Override protected void afterHookedMethod(MethodHookParam p) {
-                        try {
-                            boolean running = Boolean.TRUE.equals(p.getResult());
-                            if (animLogCount++ < 8) {
-                                XposedBridge.log("[DC] folme anim running=" + running);
-                            }
-                            if (running) {
-                                DockLiquidGlassView glass = liquidGlassView;
-                                if (glass != null) glass.requestCapture("dock-anim");
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                });
-            XposedBridge.log("[DC] dock anim hook bound");
-        } catch (Throwable e) {
-            XposedBridge.log("[DC] dock anim hook failed: " + e);
         }
     }
 
