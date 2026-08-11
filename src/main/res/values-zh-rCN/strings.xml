@@ -34,7 +34,7 @@
     <string name="enable_grid_8x4">启用 8×4 / 4×8 网格</string>
     <string name="enable_grid_8x4_summary">关闭时完全使用 MIUI 原生布局；下方全部参数仅在开启后生效</string>
     <string name="dock_customization">自定义 Dock 几何与外观</string>
-    <string name="dock_customization_summary">控制尺寸、位置、描边和阴影；液态玻璃有独立开关</string>
+    <string name="dock_customization_summary">控制尺寸、位置、描边和阴影</string>
     <string name="dock_resize_animation">Dock 尺寸过渡动画</string>
     <string name="dock_resize_animation_summary">宽度、高度和圆角变化时播放 200 ms 动画；关闭后立即应用最终尺寸</string>
     <string name="dock_smooth_resize_animation">BetterDock 顺滑尺寸动画</string>

@@ -34,7 +34,7 @@
     <string name="enable_grid_8x4">Enable 8×4 / 4×8 grid</string>
     <string name="enable_grid_8x4_summary">Uses the stock MIUI layout when disabled; all settings below require this switch</string>
     <string name="dock_customization">Customize Dock geometry and appearance</string>
-    <string name="dock_customization_summary">Controls size, position, stroke, and shadow; liquid glass has its own switch</string>
+    <string name="dock_customization_summary">Controls size, position, stroke, and shadow</string>
     <string name="dock_resize_animation">Dock size transition</string>
     <string name="dock_resize_animation_summary">Animates width, height, and corner changes for 200 ms; disable to apply the final size immediately</string>
     <string name="dock_smooth_resize_animation">Smooth BetterDock size transition</string>
