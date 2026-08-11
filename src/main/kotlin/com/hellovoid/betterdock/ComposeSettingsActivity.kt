@@ -226,7 +226,7 @@ private val strokeSpecs = listOf(
     IntSpec("std_stroke_w", "标准描边宽度", 1, 1, 10, "dp", null, IntSection.StrokeGeometry),
     IntSpec("std_stroke_off_w", "标准描边宽偏移", 0, -16, 16, "dp", null, IntSection.StrokeGeometry),
     IntSpec("std_stroke_off_h", "标准描边高偏移", 0, -16, 16, "dp", null, IntSection.StrokeGeometry),
-    IntSpec("stroke_radius", "标准描边圆角（0=跟随 Dock）", 0, 0, 100, "dp", null, IntSection.StrokeGeometry),
+    IntSpec("stroke_radius_offset", "标准描边圆角偏移", 0, -40, 40, "dp", null, IntSection.StrokeGeometry),
 )
 private val shadowSpecs = listOf(
     IntSpec("dock_shadow_radius", "Dock 阴影柔化", 15, 1, 40, "dp", "dock_shadow"),

@@ -30,7 +30,7 @@ public class MainHook implements IXposedHookLoadPackage {
     private static int strokeBaseR = 255, strokeBaseG = 255, strokeBaseB = 255, strokeBaseAlpha = 255;
     private static float bgR = 30f;
     private static float strokeR = 30f;
-    private static float strokeRadiusPx; // independent stroke corner (0 = follow Dock)
+    private static float strokeRadiusOffsetPx; // stroke corner = Dock corner + offset
     private static volatile boolean workstationMode;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
@@ -266,7 +266,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
                         if (workstationMode) return;
                         float systemRadius = (Float) p.args[0];
-                        strokeR = Math.max(0f, strokeRadiusPx > 0f ? strokeRadiusPx : systemRadius + co);
+                        strokeR = Math.max(0f, systemRadius + co + strokeRadiusOffsetPx);
                         p.args[0] = Math.max(0f, systemRadius + blurCo);
                     }
                     @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject);
@@ -334,7 +334,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         float sqCp = c2.squircleCp;
                         int sw = Math.max(1, Math.round(c2.strokeWidth * dockScale2));
                         int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * dockScale2));
-                        strokeRadiusPx = Math.max(0f, c2.strokeRadius * dockScale2);
+                        strokeRadiusOffsetPx = c2.strokeRadiusOffset * dockScale2;
                         int stdOffW = Math.round(c2.standardStrokeOffsetW * dockScale2);
                         int stdOffH = Math.round(c2.standardStrokeOffsetH * dockScale2);
                         boolean shadow = c2.strokeShadow;
