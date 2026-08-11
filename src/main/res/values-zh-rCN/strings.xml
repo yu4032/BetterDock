@@ -11,7 +11,6 @@
     <string name="page_shadow">阴影</string>
     <string name="page_data">预设与数据</string>
     <string name="page_about">引用与许可</string>
-    <string name="home_subtitle">HyperOS Pad 桌面与 Dock 自定义</string>
     <string name="category_master">总开关</string>
     <string name="category_customization">自定义</string>
     <string name="category_configuration">配置</string>
