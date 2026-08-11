@@ -1,0 +1,78 @@
+# Hook 点总览
+
+LiquidDock 是一个注入 `com.miui.home` 的 LSPosed 模块，通过 Xposed API 在运行时调整桌面与 Dock 的外观和行为。本文档按功能域列出模块所 hook 的全部类与方法，以及每个 hook 的作用。Hook 的具体实现以源码为准。
+
+## 场景判定与生命周期
+
+桌面与应用场景的区分是模块所有行为的起点：壁纸捕获、动态捕获、玻璃渲染都依赖这一判定链。
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `com.miui.home.launcher.Launcher` | `setupViews` | Dock 视图树初始化完成点，在此注入玻璃与描边 overlay |
+| `com.miui.home.launcher.Launcher` | `onWindowFocusChanged(boolean)` | 窗口焦点变化——桌面聚焦/失焦的核心信号，驱动场景切换 |
+| `com.miui.home.launcher.Launcher` | `onResume` / `onPause` | 前台状态跟踪（`launcherResumed`），参与场景判定 |
+| `com.miui.home.launcher.Launcher` | `onStart` / `onStop` | 窗口可见性跟踪（launcher 是否被全屏应用覆盖） |
+| `com.miui.home.launcher.Launcher` | `onConfigurationChanged` | 横竖屏与配置变化，触发几何参数重算 |
+| `android.app.Activity` | `onWindowVisibilityChanged(int)` | 通用窗口可见性（与 launcher 可见性交叉验证） |
+| `android.app.Activity` | `onResume` / `onPause` | 前台应用判定（非 launcher 的 Activity 生命周期） |
+
+场景判定链：`wallpaperMode = !appFront`，其中 `appFront = !(launcherResumed && launcherLifecycleKnown)`。
+
+## Dock 外观
+
+Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 overlay 以 Hook 到的背景几何为基准绘制。
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `HotSeatsListContentBlurBackground2` | `setBackgroundWidth(int)` | 读取/校正 Dock 背景宽度（描边对齐基准） |
+| `HotSeatsListContentBlurBackground2` | `setBackgroundHeight(int)` | 背景高度 |
+| `HotSeatsListContentBlurBackground2` | `setBackgroundRadius(float)` | 背景圆角（描边圆角 = 系统圆角 + 偏移） |
+| `HotSeatsListContentBlurBackground2` | `setBackgroundBlur(View, int, float[], int[][])` | 原生模糊参数（radius 版本） |
+| `HotSeatsListContentBlurBackground2` 的 `LayoutManager` | `updateBackgroundView` | 背景视图更新时机，同步 overlay 几何 |
+| `HotSeats` | `setBackgroundWidth/Height/Radius` | 桌面 Dock 主背景的尺寸与圆角 |
+| `BlurUtilities` 类 | `setBackgroundBlur(...)` | 原生模糊另一入口（float 版本） |
+| 阴影工具类 | `applyViewShadow(View, int, ...)` | Dock 与描边的投影参数（柔化/扩散/透明度/偏移） |
+| 设备配置类 | `getHotSeatsMarginBottom` | 读取底部边距，参与 Dock 几何计算 |
+| 设备配置类 | `setControlPanelExpanded` | 控制中心展开状态（影响捕获门控） |
+
+## 壁纸行为
+
+桌面壁纸保持静止：滚动与缩放被拦截，使捕获到的壁纸条带长期可复用。
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `android.app.WallpaperManager` | `setWallpaperOffsets` | 拦截壁纸横向滚动 |
+| `android.app.WallpaperManager` | `setDisplayOffset` | 拦截壁纸位移 |
+| `android.app.WallpaperManager` | `setWallpaperZoomOut` | 拦截壁纸缩放 |
+
+## 拖拽与多任务
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `DockContainer` | `startDrag` / `endDrag` | 拖拽会话跟踪——Dock 几何运动期间激活高频动态采样 |
+| 设备状态类 | `onLaptopModeChanged` | 笔记本/平板模式切换（工作站场景） |
+| `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为 |
+
+## 桌面网格
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `com.miui.home.launcher.Launcher` | `setupViews`（网格路径） | 网格初始化入口 |
+| `Folder` | `onMeasure` | 文件夹测量（网格尺寸参与） |
+| `CellLayout` | `calculateXsAndYs` | 图标行列坐标计算——8x4/4x8 布局的核心 |
+| `CellLayout` | `onLayout` | 布局阶段，应用行列偏移 |
+| `com.miui.home.launcher.Launcher` | `onConfigurationChanged` | 配置变化时网格重算 |
+| `Workspace`（screenView） | `updateIndicatorPositions` | 指示器位置 |
+| 占位计算工具 | `addOccupied` / `transformToHVArray` | 网格占位与行列映射 |
+| 网格规则类 | `checkCellCount` | 行列数校验 |
+| 网格配置类 | 行列数 getter/setter | 读写行列数配置 |
+
+## 捕获与渲染架构（非 Hook）
+
+背景捕获与玻璃渲染不依赖 Hook，而是通过 SurfaceControl/Display 捕获与 RuntimeShader 完成：
+
+- **捕获管线**：`LiveScreenCapture` 负责屏幕/壁纸层捕获（桌面壁纸条带缓存复用；应用前台时全屏捕获），`CaptureCadence` 控制采样节奏（高频动态采样与静态低频探针），`CaptureSceneState` 维护场景状态机（桌面 / 应用 / 最近任务）
+- **渲染**：`DockLiquidGlassView` 用 RuntimeShader 实现液态玻璃光学（折射、高光、色散、穹顶），叠加在 Dock 原生模糊之上
+- **配置**：设置界面通过 `su` 将偏好同步为 launcher 数据目录下的 `liquiddock_config.json`，模块侧 `ConfigReader` 读取该文件
+
+各 hook 的触发时机与参数细节请直接阅读 `MainHook`、`HomeGridHook`、`RecentsHapticHook` 三个文件。
