@@ -1,6 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application") version "9.3.0"
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
+}
+
+// Release signing: keystore + passwords are git-ignored locally; a backup copy
+// lives in the private yu4032/liquiddock-keys repository.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -13,6 +22,21 @@ android {
         targetSdk = 37
         versionCode = 3
         versionName = "3.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file(keystoreProps.getProperty("storeFile", "liquiddock-release.keystore"))
+            storePassword = keystoreProps.getProperty("storePassword", "")
+            keyAlias = keystoreProps.getProperty("keyAlias", "liquiddock")
+            keyPassword = keystoreProps.getProperty("keyPassword", "")
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures { compose = true }

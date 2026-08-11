@@ -11,6 +11,11 @@ captures/
 .idea/
 *.iml
 
+# Release signing secrets (keystore + passwords stay local / private backup repo)
+liquiddock-release.keystore
+.keystore-pass.txt
+keystore.properties
+
 # Hermes desktop attachments
 .hermes/
 
