@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BetterDock</string>
+    <string name="app_name">LiquidDock</string>
     <string name="action_back">返回</string>
     <string name="action_restart_launcher">重启桌面</string>
     <string name="page_grid">主屏幕布局</string>
@@ -15,7 +15,7 @@
     <string name="category_customization">自定义</string>
     <string name="category_configuration">配置</string>
     <string name="category_about">关于</string>
-    <string name="enable_betterdock">启用 BetterDock</string>
+    <string name="enable_betterdock">启用 LiquidDock</string>
     <string name="enable_betterdock_summary">关闭后停止主屏幕布局、Dock、液态玻璃、描边和阴影的全部 Hook</string>
     <string name="home_grid_summary">8×4 / 4×8、横竖屏边距与指示器</string>
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
@@ -37,7 +37,7 @@
     <string name="dock_customization_summary">控制尺寸、位置、描边和阴影</string>
     <string name="dock_resize_animation">Dock 尺寸过渡动画</string>
     <string name="dock_resize_animation_summary">宽度、高度和圆角变化时播放 200 ms 动画；关闭后立即应用最终尺寸</string>
-    <string name="dock_smooth_resize_animation">BetterDock 顺滑尺寸动画</string>
+    <string name="dock_smooth_resize_animation">LiquidDock 顺滑尺寸动画</string>
     <string name="dock_smooth_resize_animation_summary">使用连续的 180 ms 缓出过渡，不会出现系统动画先扩张再缩回的行为</string>
     <string name="option_off">关闭</string>
     <string name="workstation_customization">自定义工作台 Dock</string>

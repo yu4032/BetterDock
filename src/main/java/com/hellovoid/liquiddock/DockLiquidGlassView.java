@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.app.WallpaperManager;
 import android.content.Context;
@@ -32,7 +32,7 @@ import de.robv.android.xposed.XposedHelpers;
  * one-shot and coalesced; unchanged pre-draws do not request new frames.
  */
 final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDrawListener {
-    private static final String TAG = "BetterDock";
+    private static final String TAG = "LiquidDock";
     // Compositor readback scale: 1.0 = full resolution, 0.5 = half (4x fewer pixels).
     // GUI-configurable via liquid_capture_scale (%); 0.25 is the recommended low-cost
     // setting — the glass is blurred anyway, so refraction is visually lossless there.
@@ -576,7 +576,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         mainHandler.removeCallbacks(configReloadTick);
         mainHandler.postDelayed(configReloadTick, 1000L);
 
-        captureThread = new HandlerThread("BetterDock-WallpaperCapture");
+        captureThread = new HandlerThread("LiquidDock-WallpaperCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
 
@@ -1166,7 +1166,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  window lifetime, so creation-time values would otherwise go stale). */
     private void reloadAppearanceFromConfig() {
         try {
-            BetterDockConfig.Glass cfg = BetterDockConfig.load().glass;
+            LiquidDockConfig.Glass cfg = LiquidDockConfig.load().glass;
             setTintColor(cfg.tintR, cfg.tintG, cfg.tintB);
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);

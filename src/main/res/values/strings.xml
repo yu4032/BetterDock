@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BetterDock</string>
+    <string name="app_name">LiquidDock</string>
     <string name="action_back">Back</string>
     <string name="action_restart_launcher">Restart launcher</string>
     <string name="page_grid">Home screen layout</string>
@@ -15,7 +15,7 @@
     <string name="category_customization">Customization</string>
     <string name="category_configuration">Configuration</string>
     <string name="category_about">About</string>
-    <string name="enable_betterdock">Enable BetterDock</string>
+    <string name="enable_betterdock">Enable LiquidDock</string>
     <string name="enable_betterdock_summary">Disables all home-grid, Dock, liquid-glass, stroke, and shadow hooks when turned off</string>
     <string name="home_grid_summary">8×4 / 4×8 grid, orientation spacing, and page indicator</string>
     <string name="home_dock_summary">Size, corners, icon spacing, position, and blur</string>
@@ -37,7 +37,7 @@
     <string name="dock_customization_summary">Controls size, position, stroke, and shadow</string>
     <string name="dock_resize_animation">Dock size transition</string>
     <string name="dock_resize_animation_summary">Animates width, height, and corner changes for 200 ms; disable to apply the final size immediately</string>
-    <string name="dock_smooth_resize_animation">Smooth BetterDock size transition</string>
+    <string name="dock_smooth_resize_animation">Smooth LiquidDock size transition</string>
     <string name="dock_smooth_resize_animation_summary">Uses a continuous 180 ms ease-out transition without the system expansion-and-shrink behavior</string>
     <string name="option_off">Off</string>
     <string name="workstation_customization">Customize Workstation Dock</string>

@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.content.SharedPreferences;
 import android.content.Context;
@@ -230,7 +230,7 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     void launchExport() {
-        exportConfigLauncher.launch("BetterDock-settings.json");
+        exportConfigLauncher.launch("LiquidDock-settings.json");
     }
 
     void launchImport() {
@@ -269,7 +269,7 @@ public class SettingsActivity extends AppCompatActivity {
                 JSONObject json = new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
                 String format = json.optString("_format", "betterdock-settings");
                 if (!"betterdock-settings".equals(format))
-                    throw new IOException("Not a BetterDock settings file");
+                    throw new IOException("Not a LiquidDock settings file");
                 SharedPreferences.Editor editor = PreferenceManager
                     .getDefaultSharedPreferences(this).edit();
                 applyImportedParameters(json, editor);

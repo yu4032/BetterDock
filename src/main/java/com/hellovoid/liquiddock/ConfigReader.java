@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import org.json.JSONObject;
 import java.io.File;
@@ -33,7 +33,7 @@ public class ConfigReader {
                     : new JSONObject();
             }
         } catch (Throwable e) {
-            Log.e("BetterDock", "Failed to read config", e);
+            Log.e("LiquidDock", "Failed to read config", e);
             json = new JSONObject();
         }
     }

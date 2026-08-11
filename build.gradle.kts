@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.hellovoid.betterdock"
+    namespace = "com.hellovoid.liquiddock"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.hellovoid.betterdock"
+        applicationId = "com.hellovoid.liquiddock"
         minSdk = 33
         targetSdk = 37
         versionCode = 3
@@ -39,5 +39,5 @@ dependencies {
 }
 
 base {
-    archivesName.set("BetterDock")
+    archivesName.set("LiquidDock")
 }

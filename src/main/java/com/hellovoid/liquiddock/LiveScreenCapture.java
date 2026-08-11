@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.graphics.Bitmap;
 import android.graphics.Rect;
@@ -19,7 +19,7 @@ import java.lang.reflect.Method;
  * full-frame implementation and crop/scale it immediately on the worker thread.
  */
 final class LiveScreenCapture {
-    private static final String TAG = "BetterDock";
+    private static final String TAG = "LiquidDock";
     private static final String[] DEFAULT_WALLPAPER_LAYER_NAMES = {
             "Wallpaper BBQ wrapper"
     };

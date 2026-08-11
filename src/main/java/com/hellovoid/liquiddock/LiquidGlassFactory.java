@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.view.View;
 
@@ -7,7 +7,7 @@ final class LiquidGlassFactory {
     private LiquidGlassFactory() {}
 
     static DockLiquidGlassView create(View background, View workspace,
-                                      BetterDockConfig.Glass config,
+                                      LiquidDockConfig.Glass config,
                                       boolean squircle, float squircleCp) {
         float scale = config.dimensionsDp
                 ? background.getResources().getDisplayMetrics().density : 1f;

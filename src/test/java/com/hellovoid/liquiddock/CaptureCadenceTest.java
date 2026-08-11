@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertEquals;
 import org.junit.Test;

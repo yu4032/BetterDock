@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 /** Owns scene transitions and revisioning used to reject stale asynchronous frames. */
 final class CaptureSceneState {

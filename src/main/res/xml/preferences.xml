@@ -10,7 +10,7 @@
             android:summary="Landscape 8 columns x 4 rows; portrait 4 columns x 8 rows"
             android:defaultValue="true" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_left"
             android:title="Landscape Grid Left Margin"
             android:summary="%d px"
@@ -19,7 +19,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_right"
             android:title="Landscape Grid Right Margin"
             android:summary="%d px"
@@ -28,7 +28,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_top"
             android:title="Landscape Grid Top Margin"
             android:summary="%d px"
@@ -37,7 +37,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_bottom"
             android:title="Landscape Grid Bottom Margin"
             android:summary="%d px"
@@ -46,7 +46,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_left"
             android:title="Portrait Grid Left Margin"
             android:summary="%d px"
@@ -55,7 +55,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_right"
             android:title="Portrait Grid Right Margin"
             android:summary="%d px"
@@ -64,7 +64,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_top"
             android:title="Portrait Grid Top Margin"
             android:summary="%d px"
@@ -73,7 +73,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_bottom"
             android:title="Portrait Grid Bottom Margin"
             android:summary="%d px"
@@ -82,7 +82,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_landscape_x"
             android:title="Landscape Indicator X Offset"
             android:summary="%d px"
@@ -91,7 +91,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_landscape_y"
             android:title="Landscape Indicator Y Offset"
             android:summary="%d px"
@@ -100,7 +100,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_portrait_x"
             android:title="Portrait Indicator X Offset"
             android:summary="%d px"
@@ -109,7 +109,7 @@
             app:max="400"
             android:dependency="home_grid_8x4" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_portrait_y"
             android:title="Portrait Indicator Y Offset"
             android:summary="%d px"
@@ -124,10 +124,10 @@
         <SwitchPreference
             android:key="dock_customization"
             android:title="Customize Entire Dock"
-            android:summary="Master switch for all BetterDock Dock appearance, shadow, spacing and offset hooks"
+            android:summary="Master switch for all LiquidDock Dock appearance, shadow, spacing and offset hooks"
             android:defaultValue="true" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="blur_radius"
             android:title="Blur Radius"
             android:summary="%d"
@@ -135,7 +135,7 @@
             app:min="0"
             app:max="400" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="height_offset"
             android:title="Height Offset"
             android:summary="%d px"
@@ -143,7 +143,7 @@
             app:min="-200"
             app:max="200" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="width_offset"
             android:title="Width Offset"
             android:summary="%d px"
@@ -151,7 +151,7 @@
             app:min="-200"
             app:max="200" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="corner_offset"
             android:title="Stroke Corner Offset"
             android:summary="%d px"
@@ -159,7 +159,7 @@
             app:min="-50"
             app:max="100" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="blur_corner_offset"
             android:title="Blur Background Corner Offset"
             android:summary="%d px"
@@ -173,7 +173,7 @@
             android:summary="Draw the complete Dock border and lighting"
             android:defaultValue="true" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="stroke_base_r"
             android:title="Stroke Base Red"
             android:summary="%d"
@@ -182,7 +182,7 @@
             app:max="255"
             android:dependency="dock_stroke" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="stroke_base_g"
             android:title="Stroke Base Green"
             android:summary="%d"
@@ -191,7 +191,7 @@
             app:max="255"
             android:dependency="dock_stroke" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="stroke_base_b"
             android:title="Stroke Base Blue"
             android:summary="%d"
@@ -200,7 +200,7 @@
             app:max="255"
             android:dependency="dock_stroke" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="stroke_base_alpha"
             android:title="Stroke Base Alpha"
             android:summary="%d"
@@ -215,7 +215,7 @@
             android:summary="iOS-style continuous curve"
             android:defaultValue="false" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="sq_stroke_w"
             android:title="Squircle Stroke Width"
             android:summary="%d px"
@@ -224,7 +224,7 @@
             app:max="20"
             android:dependency="squircle" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="sq_stroke_off"
             android:title="Squircle Stroke Offset"
             android:summary="%d px"
@@ -233,7 +233,7 @@
             app:max="30"
             android:dependency="squircle" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="sq_outer_cp"
             android:title="Squircle Outer CP"
             android:summary="%d"
@@ -248,7 +248,7 @@
             android:summary="Crisp anti-alias via fill+punch"
             android:defaultValue="false" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="stroke_w"
             android:title="Fill-Diff Width"
             android:summary="%d px"
@@ -257,7 +257,7 @@
             app:max="10"
             android:dependency="fill_diff" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="std_stroke_w"
             android:title="Stroke Thickness"
             android:summary="%d px"
@@ -271,7 +271,7 @@
             android:summary="External shadow below the whole Dock"
             android:defaultValue="true" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_shadow_radius"
             android:title="Drop Shadow Softness"
             android:summary="%d px"
@@ -280,7 +280,7 @@
             app:max="80"
             android:dependency="dock_shadow" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_shadow_size"
             android:title="Drop Shadow Size"
             android:summary="Maximum %d px beyond Dock"
@@ -289,7 +289,7 @@
             app:max="120"
             android:dependency="dock_shadow" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_shadow_alpha"
             android:title="Drop Shadow Alpha"
             android:summary="%d"
@@ -298,7 +298,7 @@
             app:max="200"
             android:dependency="dock_shadow" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_shadow_y"
             android:title="Drop Shadow Y Offset"
             android:summary="%d px"
@@ -313,7 +313,7 @@
             android:summary="Soft inner shadow below the border"
             android:defaultValue="true" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="shadow_radius"
             android:title="Shadow Radius"
             android:summary="%d px"
@@ -322,7 +322,7 @@
             app:max="40"
             android:dependency="stroke_shadow" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="shadow_alpha"
             android:title="Shadow Alpha"
             android:summary="%d"
@@ -331,7 +331,7 @@
             app:max="200"
             android:dependency="stroke_shadow" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_spacing"
             android:title="Dock Icon Spacing"
             android:summary="%d px each side"
@@ -339,7 +339,7 @@
             app:min="-10"
             app:max="20" />
 
-        <com.hellovoid.betterdock.SeekBarPreference
+        <com.hellovoid.liquiddock.SeekBarPreference
             android:key="dock_bottom_offset"
             android:title="Dock Bottom Offset"
             android:summary="%d px"
@@ -354,13 +354,13 @@
         <Preference
             android:key="export_config"
             android:title="Export Current Parameters"
-            android:summary="Save all BetterDock settings as JSON"
+            android:summary="Save all LiquidDock settings as JSON"
             android:icon="@android:drawable/ic_menu_save" />
 
         <Preference
             android:key="import_config"
             android:title="Import Parameters"
-            android:summary="Validate and apply a BetterDock JSON file"
+            android:summary="Validate and apply a LiquidDock JSON file"
             android:icon="@android:drawable/ic_menu_upload" />
 
     </PreferenceCategory>

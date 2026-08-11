@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.app.Activity;
 import android.app.WallpaperManager;
@@ -52,9 +52,9 @@ public class MainHook implements IXposedHookLoadPackage {
         if (!lpparam.packageName.equals("com.miui.home")) return;
 
         installWorkstationModeGuard(lpparam.classLoader);
-        BetterDockConfig config = BetterDockConfig.load();
+        LiquidDockConfig config = LiquidDockConfig.load();
         if (!config.enabled) {
-            XposedBridge.log("[DC] BetterDock master switch disabled");
+            XposedBridge.log("[DC] LiquidDock master switch disabled");
             return;
         }
         RecentsHapticHook.install(lpparam.classLoader, () -> {
@@ -68,7 +68,7 @@ public class MainHook implements IXposedHookLoadPackage {
         if (workstationMode) {
             XposedBridge.log("[DC] workstation active; using isolated workstation parameters");
         }
-        BetterDockConfig.Grid grid = config.grid;
+        LiquidDockConfig.Grid grid = config.grid;
         boolean grid8x4 = grid.enabled;
         boolean dp = grid.dp;
         boolean offsets = grid.offsets;
@@ -193,7 +193,7 @@ public class MainHook implements IXposedHookLoadPackage {
             } catch (Throwable e) { XposedBridge.log("[DC] liquid-only hooks err: " + e); }
             return;
         }
-        BetterDockConfig.Dock dock = config.dock;
+        LiquidDockConfig.Dock dock = config.dock;
         XposedBridge.log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
         boolean sq = dock.squircle, fd = dock.fillDiff;
         float dockScale = dock.dimensionsDp
@@ -303,8 +303,8 @@ public class MainHook implements IXposedHookLoadPackage {
 
             XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", cl, "setupViews",
                 new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
-                    try { BetterDockConfig current = BetterDockConfig.load();
-                        BetterDockConfig.Dock c2 = current.dock;
+                    try { LiquidDockConfig current = LiquidDockConfig.load();
+                        LiquidDockConfig.Dock c2 = current.dock;
                         Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats"); if (hs == null) return;
                         if (!workstationMode) try {
                             Object target = XposedHelpers.callMethod(hs, "getMingouStaticDockBlurShadowTarget");
@@ -1064,7 +1064,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void installWorkstationDockHooks(ClassLoader classLoader,
-                                                    BetterDockConfig.Workstation config) {
+                                                    LiquidDockConfig.Workstation config) {
         if (!config.dockEnabled) return;
         float scale = config.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
@@ -1111,7 +1111,7 @@ public class MainHook implements IXposedHookLoadPackage {
         boolean detected = false;
         // Current HyperOS build: this is the actual active LauncherMode, not merely a
         // preference. LaptopStateManager receives the transition before the hierarchy is
-        // rebuilt, which lets every BetterDock hook stand down during that rebuild.
+        // rebuilt, which lets every LiquidDock hook stand down during that rebuild.
         try {
             Class<?> modeController = XposedHelpers.findClass(
                     "com.miui.home.launcher.allapps.LauncherModeController", classLoader);

@@ -1,17 +1,17 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 /** Immutable, typed runtime configuration. All defaults and unit semantics live here so
  * hooks and renderers do not need to know JSON keys. */
-final class BetterDockConfig {
+final class LiquidDockConfig {
     final boolean enabled;
     final Grid grid;
     final Dock dock;
     final Glass glass;
     final Workstation workstation;
 
-    static BetterDockConfig load() { return new BetterDockConfig(ConfigReader.load()); }
+    static LiquidDockConfig load() { return new LiquidDockConfig(ConfigReader.load()); }
 
-    private BetterDockConfig(ConfigReader c) {
+    private LiquidDockConfig(ConfigReader c) {
         enabled = c.b("betterdock_enabled", true);
         grid = new Grid(c);
         dock = new Dock(c);

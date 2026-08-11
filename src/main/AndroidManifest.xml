@@ -8,8 +8,8 @@
         <activity
             android:name=".ComposeSettingsActivity"
             android:exported="true"
-            android:theme="@style/Theme.BetterDock"
-            android:label="BetterDock">
+            android:theme="@style/Theme.LiquidDock"
+            android:label="LiquidDock">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

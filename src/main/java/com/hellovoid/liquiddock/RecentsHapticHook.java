@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 import android.view.View;
 import de.robv.android.xposed.XC_MethodHook;

@@ -1,10 +1,10 @@
-# BetterDock architecture
+# LiquidDock architecture
 
-BetterDock has two processes and one configuration boundary:
+LiquidDock has two processes and one configuration boundary:
 
 - The settings application owns preferences, import/export, presets, and writes the JSON file.
 - The LSPosed entry point runs inside `com.miui.home` and installs small compatibility hooks.
-- `BetterDockConfig` is the immutable, typed boundary between JSON and runtime code.
+- `LiquidDockConfig` is the immutable, typed boundary between JSON and runtime code.
 
 ## Runtime modules
 
@@ -23,7 +23,7 @@ must not own rendering state.
 
 ## Adding a feature
 
-1. Add its key and default to the appropriate section of `BetterDockConfig`.
+1. Add its key and default to the appropriate section of `LiquidDockConfig`.
 2. Add one settings specification and translated label/summary.
 3. Put launcher reflection in a dedicated `*Hook` adapter.
 4. Put deterministic policy in a small Android-free class and add a unit test.

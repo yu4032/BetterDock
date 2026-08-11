@@ -1,6 +1,6 @@
-# BetterDock third-party notices
+# LiquidDock third-party notices
 
-BetterDock uses or compiles against the following open-source projects:
+LiquidDock uses or compiles against the following open-source projects:
 
 - **Compose Miuix 0.9.3** (`miuix-ui-android`, `miuix-preference-android`) — Apache License 2.0 — <https://github.com/compose-miuix-ui/miuix>
 - **AndroidX Activity Compose 1.13.0, Preference 1.2.1, AppCompat 1.7.0** — Apache License 2.0 — <https://source.android.com/docs/setup/about/licenses>

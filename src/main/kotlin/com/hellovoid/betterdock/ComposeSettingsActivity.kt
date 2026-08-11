@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock
+package com.hellovoid.liquiddock
 
 import android.content.Context
 import android.content.Intent
@@ -59,7 +59,7 @@ class ComposeSettingsActivity : SettingsActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val controller = remember { ThemeController(ColorSchemeMode.MonetSystem) }
-            MiuixTheme(controller = controller) { BetterDockSettings(this) }
+            MiuixTheme(controller = controller) { LiquidDockSettings(this) }
         }
     }
 }
@@ -235,7 +235,7 @@ private val shadowSpecs = listOf(
 )
 
 @Composable
-private fun BetterDockSettings(activity: ComposeSettingsActivity) {
+private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
     val prefs = remember { PreferenceManager.getDefaultSharedPreferences(activity) }
     var masterEnabled by remember { mutableStateOf(prefs.getBoolean("betterdock_enabled", true)) }
     var page by rememberSaveable { mutableStateOf(Page.Home) }
@@ -428,13 +428,13 @@ private fun ShadowPage(padding: PaddingValues, prefs: SharedPreferences, masterE
 @Composable
 private fun DataPage(padding: PaddingValues, activity: ComposeSettingsActivity) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
-        item { PageHeader("预设与数据", "保存、恢复或迁移 BetterDock 配置") }
+        item { PageHeader("预设与数据", "保存、恢复或迁移 LiquidDock 配置") }
         item { SmallTitle("预设") }
         item { SettingsCard { ArrowPreference("应用默认预设", summary = "恢复当前保存的布局与液态玻璃参数", onClick = { applyDefaultPreset(activity) }) } }
         item { SmallTitle("备份与应用") }
         item {
             SettingsCard {
-                ArrowPreference("导出当前参数", summary = "保存为 BetterDock JSON", onClick = activity::launchExport)
+                ArrowPreference("导出当前参数", summary = "保存为 LiquidDock JSON", onClick = activity::launchExport)
                 ArrowPreference("导入参数", summary = "校验、写入并重启桌面", onClick = activity::launchImport)
             }
         }
@@ -448,7 +448,7 @@ private fun openUrl(context: Context, url: String) {
 @Composable
 private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
-        item { PageHeader("引用与许可", "BetterDock 使用的框架与实现参考") }
+        item { PageHeader("引用与许可", "LiquidDock 使用的框架与实现参考") }
         item { SmallTitle("界面与运行框架") }
         item {
             SettingsCard {

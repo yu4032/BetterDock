@@ -1,4 +1,4 @@
-package com.hellovoid.betterdock;
+package com.hellovoid.liquiddock;
 
 /** Central capture-rate policy. Values are intervals so the strictest power limit wins. */
 final class CaptureCadence {

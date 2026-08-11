@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BetterDock" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="Theme.LiquidDock" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="colorPrimary">#37474F</item>
         <item name="colorPrimaryDark">#263238</item>
         <item name="colorAccent">#607D8B</item>
