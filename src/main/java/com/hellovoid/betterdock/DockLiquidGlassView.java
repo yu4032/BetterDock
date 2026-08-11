@@ -27,10 +27,9 @@ import de.robv.android.xposed.XposedHelpers;
 /**
  * Event-driven liquid-glass renderer for the Launcher Dock.
  *
- * The capture source uses the display-capture API's wallpaper-only mode:
- * captureDisplay + vendor captureMode(2) + the wallpaper layer selector.
- * Captures are one-shot and coalesced: scrolling/wallpaper-offset/rotation/Dock geometry
- * changes mark the source dirty, while an unchanged pre-draw does not request another frame.
+ * Backdrop sources: wallpaper-only display capture (vendor captureMode 2) on the home
+ * screen, full-display capture with Dock-layer exclusion over apps.  Captures are
+ * one-shot and coalesced; unchanged pre-draws do not request new frames.
  */
 final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDrawListener {
     private static final String TAG = "BetterDock";
@@ -691,12 +690,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /**
-     * Cheap state polling only; this never captures by itself when all tracked values are static.
-     * Tracks the Dock's own geometry (position/size/scale/translation) plus display
-     * rotation/size, and — while the recents/multitasking panel is VISIBLE — the recents
-     * view's scroll/translation, so task-card animations keep the glass live even though the
-     * Dock itself has stopped moving.  Normal home-screen page swipes (recents hidden) do
-     * NOT trigger captures.
+     * Cheap state polling; never captures by itself when all tracked values are static.
+     * Tracks the Dock's own geometry plus — while the recents panel is VISIBLE — its
+     * scroll/translation, so task-card animations keep the glass live.  Normal
+     * home-screen page swipes (recents hidden) do NOT trigger captures.
      */
     private boolean updateObservation() {
         Display display = geometrySource.getDisplay();
@@ -1209,24 +1206,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
         // while it is expanded only wastes GPU/binder work and risks sampling its animation.
         if (systemUiPanelExpanded) return false;
-        // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
-        // The Dock is a floating overlay window (type 2997) that stays on screen over other
-        // apps, so a Launcher onPause alone must not gate capture: windowVisible/isShown()
-        // reflect the actual floating-window state.
-        //
-        // HyperOS 3.0 Pad hosts the Dock in a dedicated NOT_FOCUSABLE overlay window
-        // ("Floating Dock", window type 2997).  NOT_FOCUSABLE windows never receive window
-        // focus, so hasWindowFocus() is permanently false there and MUST NOT gate capture.
-        //
-        // Stop grace: during collapse/hide animations the window briefly reports
-        // !isShown()/!windowVisible while the Dock is still on screen.  Treat a short
-        // "not allowed" window as still allowed (lastAllowedNanos within stopGraceMillis)
-        // so the animation tail keeps being captured instead of freezing mid-frame.
-        // Dock icon drag in flight: keep capturing so the background follows the icon
-        // rearrangement (the drag surface layer is excluded from captures).
-        // Recents/multitasking panel visible: keep capturing — pulling the Dock up into
-        // multitasking hides the Dock window (base gate would drop), but the glass must
-        // follow the task-card animation behind it.
+        // Launcher onPause alone must not gate capture: the Dock is a floating overlay
+        // (type 2997) over other apps, and NOT_FOCUSABLE windows never get window focus.
+        // Gate on the actual floating-window state instead (windowVisible/isShown).
+        // Stop grace: a short !isShown() during collapse/hide animations is still allowed
+        // (lastAllowedNanos within stopGraceMillis) so the animation tail is captured.
+        // Keep capturing while an icon drag or the recents panel is active.
         if (dockDragging || isRecentsVisible()) {
             lastAllowedNanos = System.nanoTime();
             return true;
@@ -1391,20 +1376,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // thread, so this worker thread is free to service the next request
                     // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
-                    // On the home screen the glass sits over the wallpaper: use MIUI's
-                    // wallpaper-only capture mode (captureMode=2, vendor display-capture
-                    // wallpaper mode)
-                    // capture path) — fast AND inherently icon/dock-free.  Over an app the
-                    // glass refracts the app content, so fall back to full-display capture
-                    // with the Dock + drag-surface layers excluded (mode 1).
-                    // Launcher window focus is the reliable home-screen signal (the Dock
-                    // Default to wallpaper-only capture.  Only switch to full-screen
-                    // (mode=1) when the Dock sits over a non-home app AND the Dock
-                    // geometry is stable (the foreground app's content is what the
-                    // glass should refract).  Animations, interruptions, and all
-                    // home-screen states stay in wallpaper mode.
-                    // Source selection is independent of animation progress. HOME alone uses
-                    // wallpaper; APP and RECENTS always capture their live screen content.
+                    // Home screen: wallpaper-only capture (vendor captureMode 2 — fast,
+                    // inherently icon/dock-free).  Over a non-home app: full-display capture
+                    // with the Dock + drag layers excluded (mode 1) so the glass refracts
+                    // the app content.  Launcher window focus is the home-screen signal.
                     boolean wallpaperMode = requestScene == CaptureScene.HOME;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
