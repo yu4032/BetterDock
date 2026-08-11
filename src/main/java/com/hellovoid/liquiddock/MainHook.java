@@ -122,6 +122,19 @@ public class MainHook implements IXposedHookLoadPackage {
             // Liquid glass runs standalone: install its capture lifecycle hooks and the
             // setupViews initializer, then skip all non-glass dock modification hooks below.
             installLiquidGlassCaptureHooks(lpparam.classLoader);
+            // The stroke is independent of dock customization — keep it alive on the
+            // native background even when dock geometry customization is off.
+            final BetterDockConfig.Dock strokeCfg = config.dock;
+            try {
+                XposedHelpers.findAndHookMethod("com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    lpparam.classLoader, "setBackgroundRadius", float.class,
+                    new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
+                        if (workstationMode) return;
+                        strokeR = Math.max(0f, (Float) p.args[0]);
+                    }});
+            } catch (Throwable e) {
+                XposedBridge.log("[DC] stroke corner hook failed: " + e);
+            }
             try {
                 XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", lpparam.classLoader, "setupViews",
                     new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
@@ -140,6 +153,21 @@ public class MainHook implements IXposedHookLoadPackage {
                                 if (candidate instanceof View) workspace = (View) candidate;
                             } catch (Throwable ignored) {}
                             if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
+                            // Stroke overlay independent of dock customization.
+                            if (overlay == null || overlay.getParent() == null) {
+                                float ds = oldBg.getResources().getDisplayMetrics().density;
+                                int sqW = Math.max(1, Math.round(strokeCfg.squircleStrokeWidth * ds));
+                                int sqOff = Math.round(strokeCfg.squircleStrokeOffset * ds);
+                                int sw = Math.max(1, Math.round(strokeCfg.strokeWidth * ds));
+                                int stdSw = Math.max(1, Math.round(strokeCfg.standardStrokeWidth * ds));
+                                overlay = makeOverlay(oldBg, strokeCfg.strokeEnabled, strokeCfg.squircle,
+                                        sqOff, sqW, strokeCfg.squircleCp, strokeCfg.fillDiff, sw, stdSw,
+                                        strokeCfg.strokeShadow,
+                                        Math.max(1, Math.round(strokeCfg.strokeShadowRadius * ds)),
+                                        strokeCfg.strokeShadowAlpha);
+                                overlay.setId(View.generateViewId());
+                                parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
+                            }
                             // The Dock window's view tree can be rebuilt (dock hide/show,
                             // scene switches); if the previous glass view was destroyed with
                             // its parent, recreate it so the glass does not silently revert
@@ -704,8 +732,11 @@ public class MainHook implements IXposedHookLoadPackage {
                                     int shadowRadius, int shadowAlpha) {
         return new View(bg.getContext()) {
             @Override protected void onDraw(Canvas c) {
-                if (!strokeEnabled || bgW < 1 || bgH < 1) return;
-                float w = bgW, h = bgH, r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f);
+                if (!strokeEnabled || getWidth() < 1 || getHeight() < 1) return;
+                // Size from the overlay's own layout (match_parent on the dock background)
+                // so the stroke also works when dock customization is disabled and the
+                // syncAll-driven static bgW/bgH are never updated.
+                float w = getWidth(), h = getHeight(), r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f);
                 if (sq) {
                     if (shadow) drawSqShadow(c, w, h, r, sqOff, sqCp, shadowRadius, shadowAlpha);
                     drawSq(c, w, h, r, sqOff, sqW, sqCp); return;
