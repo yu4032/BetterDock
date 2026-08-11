@@ -244,7 +244,6 @@ private fun BetterDockSettings(activity: ComposeSettingsActivity) {
         topBar = {
             SmallTopAppBar(
                 title = stringResource(page.titleRes),
-                subtitle = if (page == Page.Home) "HyperOS 3 Pad" else "",
                 navigationIcon = {
                     if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = Page.Home })
                 },
@@ -294,7 +293,7 @@ private fun HomePage(
     onMasterChanged: (Boolean) -> Unit, open: (Page) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
-        item { PageHeader(stringResource(R.string.app_name), stringResource(R.string.home_subtitle)) }
+        item { PageHeader(stringResource(R.string.app_name)) }
         item { SmallTitle(stringResource(R.string.category_master)) }
         item { SettingsCard { BooleanSetting(prefs, "betterdock_enabled", stringResource(R.string.enable_betterdock), true,
             stringResource(R.string.enable_betterdock_summary)) { onMasterChanged(it) } } }

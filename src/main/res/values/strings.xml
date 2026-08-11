@@ -11,7 +11,6 @@
     <string name="page_shadow">Shadow</string>
     <string name="page_data">Presets and data</string>
     <string name="page_about">Credits and licenses</string>
-    <string name="home_subtitle">HyperOS Pad home screen and Dock customization</string>
     <string name="category_master">Master switch</string>
     <string name="category_customization">Customization</string>
     <string name="category_configuration">Configuration</string>
