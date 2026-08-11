@@ -1,5 +1,7 @@
 # LiquidDock
 
+![LiquidDock 效果](artwork/liquid-dock-screenshot.jpg)
+
 LiquidDock 是一个 LSPosed 模块，为 HyperOS 3 Pad 的启动器 Dock 带来液态玻璃效果。
 
 ## 特性
