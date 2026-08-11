@@ -276,14 +276,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean kickScheduled;
     private long captureGeneration;
     private long lastCaptureStartNanos;
-    // Wallpaper strip cache: mode-2 (wallpaper-only) capture is skipped entirely while
-    // the wallpaper is unchanged — the strip is static, so one capture is enough.  The
-    // cached strip is cropped per request; it is invalidated on rotation, display-size
-    // change, wallpaper ID change, or a taller strip request (Dock higher on screen).
-    private Bitmap wallpaperStripCache;
-    private Rect cacheStripRect;
-    private int cacheRotation = -1;
-    private int cacheWallpaperId = -1;
+    // Wallpaper texture source (mode-2): the wallpaper is a static Bitmap obtainable
+    // from WallpaperManager — no SurfaceFlinger capture is needed on the home screen.
+    // Refreshed only when the wallpaper ID changes (user switches wallpaper) or the
+    // process restarts.  Dynamic wallpapers (getDrawable() == null) fall back to the
+    // SF capture path.
+    private Bitmap wallpaperSource;
+    private int wallpaperSourceId = -1;
 
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
@@ -1094,10 +1093,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 ? new String[]{dockWindowLayerName, dragLayerName}
                                 : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     }
-                    // Wallpaper is static: if a valid strip cache exists (same wallpaper,
-                    // same rotation, strip covers the request), serve the crop from cache
-                    // and skip the SF capture entirely.
-                    if (wallpaperMode && tryServeWallpaperFromCache(req)) {
+                    // Home screen: serve from the static wallpaper texture — zero SF
+                    // captures (dynamic wallpapers fall back to the capture path below).
+                    if (wallpaperMode && tryServeWallpaperSource(req)) {
                         return;
                     }
                     Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
@@ -1111,7 +1109,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // guard in both modes.
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
-                            if (wallpaperMode) cacheWallpaperStrip(bmp, req);
                             handleCaptureResult(bmp, req, generation);
                         }
                         @Override public void onError(Throwable error) {
@@ -1261,28 +1258,35 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return new CaptureRequest(display.getDisplayId(), stripRect, tileRect, dockRect);
     }
 
-    /** Serve the mode-2 crop from the cached wallpaper strip when it is still valid
-     *  (same wallpaper ID, same rotation, strip covers the requested region).  Runs on
-     *  the capture worker thread; installs the frame on the main thread.  Returns true
-     *  when the request was fully served (no SF capture needed). */
-    private boolean tryServeWallpaperFromCache(CaptureRequest req) {
-        if (wallpaperStripCache == null || wallpaperStripCache.isRecycled()
-                || cacheStripRect == null) return false;
-        Display display = geometrySource.getDisplay();
-        int rotation = display != null ? display.getRotation() : -1;
-        if (rotation != cacheRotation) return false;
-        if (req.stripRect.top < cacheStripRect.top) return false;   // need more above
-        if (req.stripRect.width() != cacheStripRect.width()) return false;
+    /** Serve the mode-2 frame from the WallpaperManager texture directly — zero
+     *  SurfaceFlinger captures on the home screen.  The wallpaper Bitmap is copied once
+     *  and reused until the wallpaper ID changes; the frame maps the glass's on-screen
+     *  rect into wallpaper pixel space via captureScale (wallpaper/screen ratio).
+     *  Returns false when the wallpaper is dynamic/unavailable, so the caller falls
+     *  back to the SF capture path.  Runs on the capture worker thread. */
+    private boolean tryServeWallpaperSource(CaptureRequest req) {
+        int id;
         try {
-            int id = WallpaperManager.getInstance(getContext())
+            id = WallpaperManager.getInstance(getContext())
                     .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
-            if (id != cacheWallpaperId) return false;
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+            id = -1;
         }
-        // Crop the cached strip (do NOT recycle it) and install on the main thread.
-        CroppedFrame frame = cropWallpaperTile(wallpaperStripCache, cacheStripRect,
-                req.tileRect, req.dockRect, false);
-        if (frame == null) return false;
+        if (wallpaperSource == null || wallpaperSource.isRecycled()
+                || id != wallpaperSourceId) {
+            refreshWallpaperSource(id);
+        }
+        if (wallpaperSource == null || wallpaperSource.isRecycled()) return false;
+        Display display = geometrySource.getDisplay();
+        if (display == null) return false;
+        display.getRealSize(tmpDisplaySize);
+        if (tmpDisplaySize.x <= 0 || tmpDisplaySize.y <= 0) return false;
+        // Frame maps glass screen position into wallpaper pixels: captureScale (set in
+        // onDraw as bitmap/source) becomes wallpaper/screen; sampleOffset is the glass's
+        // screen position; source size is the screen size so the scale comes out right.
+        final CroppedFrame frame = new CroppedFrame(wallpaperSource,
+                req.dockRect.left, req.dockRect.top,
+                tmpDisplaySize.x, tmpDisplaySize.y);
         final long generation = captureGeneration;
         mainHandler.post(() -> {
             if (generation != captureGeneration || !isCaptureAllowed()) {
@@ -1297,39 +1301,34 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return true;
     }
 
-    /** Deep-copy a mode-2 strip into the wallpaper cache (the strip is otherwise
-     *  recycled by cropWallpaperTile).  Called on the SF callback thread. */
-    private void cacheWallpaperStrip(Bitmap strip, CaptureRequest req) {
+    /** Fetch + copy the static wallpaper Bitmap.  Returns true on success. */
+    private boolean refreshWallpaperSource(int id) {
         try {
-            if (strip == null || strip.isRecycled()) return;
-            Bitmap copy = strip.copy(Bitmap.Config.ARGB_8888, false);
-            if (copy == null) return;
-            Bitmap old = wallpaperStripCache;
-            wallpaperStripCache = copy;
-            cacheStripRect = new Rect(req.stripRect);
-            Display display = geometrySource.getDisplay();
-            cacheRotation = display != null ? display.getRotation() : -1;
-            try {
-                cacheWallpaperId = WallpaperManager.getInstance(getContext())
-                        .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
-            } catch (Throwable ignored) {
-                cacheWallpaperId = -1;
+            android.graphics.drawable.Drawable d = WallpaperManager.getInstance(getContext())
+                    .getDrawable();
+            Bitmap bmp = null;
+            if (d instanceof android.graphics.drawable.BitmapDrawable) {
+                bmp = ((android.graphics.drawable.BitmapDrawable) d).getBitmap();
             }
+            if (bmp == null) return false;   // dynamic wallpaper: fall back to SF capture
+            Bitmap copy = bmp.copy(Bitmap.Config.ARGB_8888, false);
+            if (copy == null) return false;
+            Bitmap old = wallpaperSource;
+            wallpaperSource = copy;
+            wallpaperSourceId = id;
             if (old != null && old != copy && !old.isRecycled()) old.recycle();
-        } catch (Throwable ignored) {
+            Log.i(TAG, "wallpaper texture source ready: " + copy.getWidth() + "x" + copy.getHeight());
+            return true;
+        } catch (Throwable e) {
+            Log.w(TAG, "wallpaper texture unavailable: " + e);
+            return false;
         }
     }
 
     private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
                                                    Rect tileRect, Rect dockRect) {
-        return cropWallpaperTile(strip, stripRect, tileRect, dockRect, true);
-    }
-
-    private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
-                                                   Rect tileRect, Rect dockRect,
-                                                   boolean recycleStrip) {
         if (strip == null || strip.isRecycled() || stripRect.isEmpty() || tileRect.isEmpty()) {
-            if (recycleStrip && strip != null && !strip.isRecycled()) strip.recycle();
+            if (strip != null && !strip.isRecycled()) strip.recycle();
             return null;
         }
 
@@ -1350,7 +1349,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 top + 1, strip.getHeight());
 
         Bitmap tile = Bitmap.createBitmap(strip, left, top, right - left, bottom - top);
-        if (recycleStrip && tile != strip && !strip.isRecycled()) strip.recycle();
+        if (tile != strip && !strip.isRecycled()) strip.recycle();
 
         float actualLeft = stripRect.left + left / sx;
         float actualTop = stripRect.top + top / sy;
@@ -1429,7 +1428,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureSourceHeight = Math.max(1f, frame.sourceHeight);
         captureShader = new BitmapShader(capture, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         invalidate();
-        if (old != null && old != capture && !old.isRecycled()) old.recycle();
+        // Never recycle the shared wallpaper texture source.
+        if (old != null && old != capture && old != wallpaperSource && !old.isRecycled()) {
+            old.recycle();
+        }
     }
 
     @Override protected void onDraw(Canvas canvas) {
