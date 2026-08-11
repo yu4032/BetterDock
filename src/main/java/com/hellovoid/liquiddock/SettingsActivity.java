@@ -243,7 +243,7 @@ public class SettingsActivity extends AppCompatActivity {
                 if (out == null) throw new IOException("Unable to open destination");
                 JSONObject json = collectParameters(
                     PreferenceManager.getDefaultSharedPreferences(this));
-                json.put("_format", "betterdock-settings");
+                json.put("_format", "liquiddock-settings");
                 json.put("_version", 2);
                 out.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
                 runOnUiThread(() -> Toast.makeText(this,
@@ -267,8 +267,8 @@ public class SettingsActivity extends AppCompatActivity {
                     out.write(buffer, 0, count);
                 }
                 JSONObject json = new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
-                String format = json.optString("_format", "betterdock-settings");
-                if (!"betterdock-settings".equals(format))
+                String format = json.optString("_format", "liquiddock-settings");
+                if (!"liquiddock-settings".equals(format))
                     throw new IOException("Not a LiquidDock settings file");
                 SharedPreferences.Editor editor = PreferenceManager
                     .getDefaultSharedPreferences(this).edit();
@@ -291,7 +291,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private static JSONObject collectParameters(SharedPreferences sp) throws Exception {
         JSONObject j = new JSONObject();
-        j.put("betterdock_enabled", sp.getBoolean("betterdock_enabled", true));
+        j.put("liquiddock_enabled", sp.getBoolean("liquiddock_enabled", true));
         j.put("home_grid_8x4", sp.getBoolean("home_grid_8x4", false));
         j.put("grid_margins_dp", sp.getBoolean("grid_margins_dp", true));
         j.put("grid_margins_offset", sp.getBoolean("grid_margins_offset", true));
@@ -552,8 +552,8 @@ public class SettingsActivity extends AppCompatActivity {
         };
         for (String key : dpKeys) putDp(j, e, key);
         if (j.has("home_grid_8x4")) e.putBoolean("home_grid_8x4", j.optBoolean("home_grid_8x4"));
-        if (j.has("betterdock_enabled")) e.putBoolean("betterdock_enabled",
-                j.optBoolean("betterdock_enabled"));
+        if (j.has("liquiddock_enabled")) e.putBoolean("liquiddock_enabled",
+                j.optBoolean("liquiddock_enabled"));
         if (j.has("dock_customization")) e.putBoolean("dock_customization", j.optBoolean("dock_customization"));
         if (j.has("dock_resize_animation")) e.putBoolean(
                 "dock_resize_animation", j.optBoolean("dock_resize_animation"));
@@ -598,8 +598,8 @@ public class SettingsActivity extends AppCompatActivity {
 
                 Process p = new ProcessBuilder("su").redirectErrorStream(true).start();
                 try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
-                    os.writeBytes("echo '"+json+"' > /data/local/tmp/betterdock_config.json && "
-                        + "chmod 644 /data/local/tmp/betterdock_config.json && "
+                    os.writeBytes("echo '"+json+"' > /data/local/tmp/liquiddock_config.json && "
+                        + "chmod 644 /data/local/tmp/liquiddock_config.json && "
                         + "am force-stop com.miui.home && sleep 1 && "
                         + "am start -n com.miui.home/.launcher.Launcher\nexit\n");
                     os.flush();

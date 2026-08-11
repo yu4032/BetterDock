@@ -72,7 +72,7 @@ private enum class Page(val titleRes: Int) {
 }
 
 // Debounced mirror of UI prefs to the launcher's data dir: the module (running inside
-// com.miui.home) reads betterdock_config.json from there, so every UI write must land
+// com.miui.home) reads liquiddock_config.json from there, so every UI write must land
 // in that file to take effect.  su is used for the write (launcher's dir is not writable
 // by the settings app directly).
 private val jsonSyncHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -90,9 +90,9 @@ private fun syncConfigNow(prefs: SharedPreferences, ctx: Context) {
                 is String -> json.put(k, v)
             }
         }
-        val tmp = java.io.File(ctx.cacheDir, "betterdock_config.json")
+        val tmp = java.io.File(ctx.cacheDir, "liquiddock_config.json")
         tmp.writeText(json.toString())
-        val target = "/data/data/com.miui.home/files/betterdock_config.json"
+        val target = "/data/data/com.miui.home/files/liquiddock_config.json"
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c",
             "mkdir -p /data/data/com.miui.home/files && cp "
                 + tmp.absolutePath + " " + target + " && chmod 644 " + target))
@@ -279,7 +279,7 @@ private val shadowSpecs = listOf(
 @Composable
 private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
     val prefs = remember { PreferenceManager.getDefaultSharedPreferences(activity) }
-    var masterEnabled by remember { mutableStateOf(prefs.getBoolean("betterdock_enabled", true)) }
+    var masterEnabled by remember { mutableStateOf(prefs.getBoolean("liquiddock_enabled", true)) }
     var page by rememberSaveable { mutableStateOf(Page.Home) }
     BackHandler(enabled = page != Page.Home) { page = Page.Home }
     Scaffold(
@@ -337,8 +337,8 @@ private fun HomePage(
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.app_name)) }
         item { SmallTitle(stringResource(R.string.category_master)) }
-        item { SettingsCard { BooleanSetting(prefs, "betterdock_enabled", stringResource(R.string.enable_betterdock), true,
-            stringResource(R.string.enable_betterdock_summary)) { onMasterChanged(it) } } }
+        item { SettingsCard { BooleanSetting(prefs, "liquiddock_enabled", stringResource(R.string.enable_liquiddock), true,
+            stringResource(R.string.enable_liquiddock_summary)) { onMasterChanged(it) } } }
         item { SmallTitle(stringResource(R.string.category_customization)) }
         item {
             SettingsCard {
@@ -653,7 +653,7 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
         editor.putInt(key, value.roundToInt()).putInt("${key}_tenths", (value * 10f).roundToInt())
     }
     editor
-        .putBoolean("betterdock_enabled", true)
+        .putBoolean("liquiddock_enabled", true)
         .putBoolean("home_grid_8x4", false)
         .putBoolean("grid_margins_dp", true).putBoolean("grid_margins_offset", true)
         .putInt("grid_landscape_margin_left", 0).putInt("grid_landscape_margin_right", 0)

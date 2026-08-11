@@ -12,7 +12,7 @@ final class LiquidDockConfig {
     static LiquidDockConfig load() { return new LiquidDockConfig(ConfigReader.load()); }
 
     private LiquidDockConfig(ConfigReader c) {
-        enabled = c.b("betterdock_enabled", true);
+        enabled = c.b("liquiddock_enabled", true);
         grid = new Grid(c);
         dock = new Dock(c);
         glass = new Glass(c);

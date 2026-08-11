@@ -15,8 +15,8 @@
     <string name="category_customization">Customization</string>
     <string name="category_configuration">Configuration</string>
     <string name="category_about">About</string>
-    <string name="enable_betterdock">Enable LiquidDock</string>
-    <string name="enable_betterdock_summary">Disables all home-grid, Dock, liquid-glass, stroke, and shadow hooks when turned off</string>
+    <string name="enable_liquiddock">Enable LiquidDock</string>
+    <string name="enable_liquiddock_summary">Disables all home-grid, Dock, liquid-glass, stroke, and shadow hooks when turned off</string>
     <string name="home_grid_summary">8×4 / 4×8 grid, orientation spacing, and page indicator</string>
     <string name="home_dock_summary">Size, corners, icon spacing, position, and blur</string>
     <string name="home_workstation_summary">Independent length and spacing; does not inherit normal Dock parameters</string>

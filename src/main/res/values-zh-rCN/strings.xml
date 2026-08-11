@@ -15,8 +15,8 @@
     <string name="category_customization">自定义</string>
     <string name="category_configuration">配置</string>
     <string name="category_about">关于</string>
-    <string name="enable_betterdock">启用 LiquidDock</string>
-    <string name="enable_betterdock_summary">关闭后停止主屏幕布局、Dock、液态玻璃、描边和阴影的全部 Hook</string>
+    <string name="enable_liquiddock">启用 LiquidDock</string>
+    <string name="enable_liquiddock_summary">关闭后停止主屏幕布局、Dock、液态玻璃、描边和阴影的全部 Hook</string>
     <string name="home_grid_summary">8×4 / 4×8、横竖屏边距与指示器</string>
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
     <string name="home_workstation_summary">独立长度与间距；不继承普通 Dock 参数</string>

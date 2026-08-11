@@ -11,8 +11,8 @@ public class ConfigReader {
     // Primary location: the launcher's data dir (persistent, not wiped like /data/local/tmp).
     // Fallback: the historical /data/local/tmp path so pre-existing configs keep working.
     private static final String[] PATHS = {
-        "/data/data/com.miui.home/files/betterdock_config.json",
-        "/data/local/tmp/betterdock_config.json",
+        "/data/data/com.miui.home/files/liquiddock_config.json",
+        "/data/local/tmp/liquiddock_config.json",
     };
     private static final int MAX_CONFIG_BYTES = 64 * 1024;
     private JSONObject json;
