@@ -124,7 +124,7 @@ public class MainHook implements IXposedHookLoadPackage {
             installLiquidGlassCaptureHooks(lpparam.classLoader);
             // The stroke is independent of dock customization — keep it alive on the
             // native background even when dock geometry customization is off.
-            final BetterDockConfig.Dock strokeCfg = config.dock;
+            final LiquidDockConfig.Dock strokeCfg = config.dock;
             try {
                 XposedHelpers.findAndHookMethod("com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
                     lpparam.classLoader, "setBackgroundRadius", float.class,
