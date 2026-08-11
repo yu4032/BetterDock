@@ -25,7 +25,9 @@ LiquidDock 是一个 LSPosed 模块，为 HyperOS 3 Pad 的启动器 Dock 带来
 
     ANDROID_HOME=/path/to/Android ./gradlew assembleRelease --no-daemon
 
-Release APK 生成于 build/outputs/apk/release/。
+Release 构建启用了 R8 代码与资源裁剪（`optimization.enable`），模块类与
+Compose Miuix 类通过 `src/main/keepRules/liquiddock.keep` 保持不混淆；
+产物生成于 build/outputs/apk/release/（约 4-5 MB，签名发布）。
 
 ## 免责声明
 
