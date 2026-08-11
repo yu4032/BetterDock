@@ -19,7 +19,7 @@ android {
 
     lint {
         // LSPosed module: reflective access to hidden framework APIs is the whole point.
-        disable += "BlockedPrivateApi"
+        disable += listOf("BlockedPrivateApi", "SoonBlockedPrivateApi")
     }
 
     compileOptions {
@@ -35,6 +35,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
+    testImplementation("junit:junit:4.13.2")
 }
 
 base {

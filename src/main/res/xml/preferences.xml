@@ -127,14 +127,6 @@
             android:summary="Master switch for all BetterDock Dock appearance, shadow, spacing and offset hooks"
             android:defaultValue="true" />
 
-        <ListPreference
-            android:key="light_mode"
-            android:title="Light Mode"
-            android:summary="%s"
-            android:entries="@array/light_mode_entries"
-            android:entryValues="@array/light_mode_values"
-            android:defaultValue="fixed" />
-
         <com.hellovoid.betterdock.SeekBarPreference
             android:key="blur_radius"
             android:title="Blur Radius"

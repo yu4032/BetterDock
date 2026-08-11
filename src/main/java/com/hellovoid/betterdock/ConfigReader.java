@@ -39,7 +39,9 @@ public class ConfigReader {
     }
 
     public static ConfigReader load() { return new ConfigReader(); }
+    public boolean has(String k)              { return json.has(k); }
     public String  s(String k, String d)  { return json.optString(k, d); }
     public int     i(String k, int d)     { return json.optInt(k, d); }
+    public float   f(String k, float d)   { return (float) json.optDouble(k, d); }
     public boolean b(String k, boolean d) { return json.optBoolean(k, d); }
 }

@@ -7,12 +7,13 @@ BetterDock is an LSPosed module for customizing the HyperOS 3 Pad launcher Dock 
 - Dock blur strength, width, height, bottom offset, and independent blur/stroke corner radii
 - Round-rect and continuous squircle outlines
 - Adjustable stroke thickness, base RGBA color, fill-diff rendering, and stroke toggle
-- Fixed or gyroscope-driven highlight
 - Adjustable icon spacing with matching Dock background width
 - Independent whole-Dock shadow with softness, maximum spread, opacity, and signed Y offset
 - HyperOS native Dock shadow suppression
-- Resolution-aware iPad-style preset
+- Saved default preset matching the recommended layout and glass parameters
 - JSON parameter import and export
+
+Development structure and extension rules are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Build
 

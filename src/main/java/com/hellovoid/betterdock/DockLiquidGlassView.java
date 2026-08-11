@@ -1,6 +1,8 @@
 package com.hellovoid.betterdock;
 
 import android.app.WallpaperManager;
+import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
@@ -20,6 +22,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.View;
 import android.view.ViewTreeObserver;
+import de.robv.android.xposed.XposedHelpers;
 
 /**
  * Event-driven liquid-glass renderer for the Launcher Dock.
@@ -41,7 +44,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float2 offset;"
       + "uniform float4 cornerRadii;"
       + "uniform float refractionHeight;"
-      + "uniform float refractionAmount;"
       + "uniform float depthEffect;"
       + "uniform float chromaticAberration;"
       + "uniform float blurRadius;"
@@ -52,7 +54,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float normalStrength;"
       + "uniform float liquidDome;"
       + "uniform float lensRefractionPx;"
-      + "uniform float refractionInset;"
       + "uniform float highlightWidth;"
       + "uniform float brightness;"
       + "uniform float specularSharp;"
@@ -74,16 +75,38 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float hny=getHeightFromDist(sdRound(p-float2(0.0,s),halfSz,cr),tw);"
       + "return float2((hpx-hnx)*0.5,(hpy-hny)*0.5);}"
       + "uniform float2 captureSize;"
-      + "half4 source(float2 p){float2 c=clamp((p+screenOffset)*captureScale,float2(0.0,0.0),captureSize-float2(1.0,1.0));return content.eval(c);}"
+      + "half4 source(float2 p){"
+      + "float2 c=(p+screenOffset)*captureScale;"
+      + "float2 hi=max(captureSize-float2(1.0),float2(1.0));"
+      + "float2 period=hi*2.0;"
+      + "c=mod(mod(c,period)+period,period);"
+      + "c=min(c,period-c);"
+      + "return content.eval(clamp(c,float2(0.0),hi));}"
       + "half4 blurred(float2 p){"
       + "if(blurRadius<=0.5){return source(p);}"
-      + "float stepPx=max(blurRadius/3.0,1.0);"
-      + "half3 col=half3(0.0);float norm=0.0;"
-      + "for(float i=-3.0;i<=3.0;i+=1.0){"
-      + "for(float j=-3.0;j<=3.0;j+=1.0){"
-      + "float d2=i*i+j*j;float w=exp(-d2*0.5);"
-      + "col+=source(p+float2(i*stepPx,j*stepPx)).rgb*w;norm+=w;}}"
-      + "return half4(col/norm,1.0);}"
+      + "float r=max(blurRadius,1.0);"
+      + "half3 col=source(p).rgb*0.16;"
+      // Inner octagonal ring: avoids the visible square lattice of the old 7x7 kernel.
+      + "float ri=r*0.35;"
+      + "col+=source(p+float2(1.0,0.0)*ri).rgb*0.065;"
+      + "col+=source(p+float2(0.7071,0.7071)*ri).rgb*0.065;"
+      + "col+=source(p+float2(0.0,1.0)*ri).rgb*0.065;"
+      + "col+=source(p+float2(-0.7071,0.7071)*ri).rgb*0.065;"
+      + "col+=source(p+float2(-1.0,0.0)*ri).rgb*0.065;"
+      + "col+=source(p+float2(-0.7071,-0.7071)*ri).rgb*0.065;"
+      + "col+=source(p+float2(0.0,-1.0)*ri).rgb*0.065;"
+      + "col+=source(p+float2(0.7071,-0.7071)*ri).rgb*0.065;"
+      // Outer ring rotated by 22.5 degrees so neither ring shares sampling axes.
+      + "float ro=r*0.85;"
+      + "col+=source(p+float2(0.9239,0.3827)*ro).rgb*0.04;"
+      + "col+=source(p+float2(0.3827,0.9239)*ro).rgb*0.04;"
+      + "col+=source(p+float2(-0.3827,0.9239)*ro).rgb*0.04;"
+      + "col+=source(p+float2(-0.9239,0.3827)*ro).rgb*0.04;"
+      + "col+=source(p+float2(-0.9239,-0.3827)*ro).rgb*0.04;"
+      + "col+=source(p+float2(-0.3827,-0.9239)*ro).rgb*0.04;"
+      + "col+=source(p+float2(0.3827,-0.9239)*ro).rgb*0.04;"
+      + "col+=source(p+float2(0.9239,-0.3827)*ro).rgb*0.04;"
+      + "return half4(col,1.0);}"
       + "float2 backdropUv(float2 uv,float2 offsetPx){return clamp(uv+offsetPx,0.0,1.0);}"
       + "half4 main(float2 coord){"
       + "float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float2 pPx=cc;"
@@ -172,8 +195,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float specP=pow(max(dot(N,Hp),0.0),sh)*sp;"
       + "specP*=(0.32+0.68*height);"
       + "color+=specP*float3(0.99,0.993,1.0);"
-      + "float dotNV=clamp(dot(N,V),0.0,1.0);"
-      + "float FedgeRim=pow(1.0-cosVNeff,3.25);"
       + "float bandFracR=max(edgeBand,0.005);"
       + "float bandR=clamp(minDim*bandFracR,0.5,min(12.0,minDim*0.1));"
       + "float shellRim=smoothstep(bandR,bandR*0.06,edgeDist)*smoothstep(-2.2,0.0,sd);"
@@ -202,7 +223,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
-    private final float refractionAmount;
+    private String blurMethod = "shader";
+    private boolean fullscreenCapture = true;
+    // Keep the native/material blur body away from the outer highlight.  The outer
+    // path remains unchanged, so this does not alter Dock size, corner or stroke geometry.
+    private float nativeBlurInsetDp = 1f;
     private final float chromaticAberration;
     // Prismal liquid-glass parameters (GUI-configurable)
     private float glassThickness = 18f;      // liquid_thickness (dp -> px at render)
@@ -210,7 +235,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassNormalStrength = 1.15f; // liquid_normal_strength
     private float glassLiquidDome = 1.0f;    // liquid_dome
     private float glassLensRefraction = 12f; // liquid_lens_refraction (dp -> px)
-    private float glassRefractionInset = 20f; // liquid_refraction_inset (dp -> px)
     // Edge highlight thickness multiplier (liquid_highlight_width): scales the shader's
     // edge-glow band (silW) AND the canvas stroke highlight width.
     private float glassHighlightWidth = 1.0f;
@@ -234,7 +258,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // freezes into the captured background.
     private volatile boolean dockDragging = false;
     private volatile String dragLayerName = null;
-    private final long captureIntervalNanos;
+    private final CaptureCadence captureCadence;
+    private boolean dynamicAppCapture;
+    private long dynamicAppActiveUntilNanos;
+    private long lastAppVisualSignature;
+    private boolean appVisualSignatureValid;
+    private int dynamicMotionDifferenceThreshold = 12;
+    private int dynamicMotionBitThreshold = 18;
+    private long dynamicMotionHoldNanos = 900_000_000L;
+    private int blackFrameThreshold = 10;
     private final int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
     // liquid_capture_bleed_bottom).  The Dock's distance from the screen bottom is fixed,
@@ -266,6 +298,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean launcherLifecycleKnown;
     private boolean windowVisible;
     private boolean windowFocused;
+    private boolean systemUiPanelExpanded;
     private android.view.SurfaceControl dockWindowSurface;
     private String dockWindowLayerName;
     private boolean capturing;
@@ -276,6 +309,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean nativeBackgroundHiddenByGlass;
     private boolean kickScheduled;
     private long captureGeneration;
+    private final CaptureSceneState sceneState = new CaptureSceneState();
+    private float gestureDownRawY = Float.NaN;
+    private float recentsPrearmDistancePx;
+    private boolean recentsPrearmed;
     private long lastCaptureStartNanos;
     // Wallpaper strip cache: mode-2 (wallpaper-only) capture is skipped entirely while
     // the wallpaper is unchanged — the strip is static, so one capture is enough.  The
@@ -340,8 +377,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (capturing || !sourceDirty) return;
 
             long now = System.nanoTime();
+            long interval = captureCadence.intervalNanos(sceneState.desired(), dynamicAppCapture,
+                    dynamicAppActiveUntilNanos, now);
             long remaining = lastCaptureStartNanos == 0L
-                    ? 0L : captureIntervalNanos - (now - lastCaptureStartNanos);
+                    ? 0L : interval - (now - lastCaptureStartNanos);
             if (remaining > 0L) {
                 // One trailing, coalesced frame only.  Capture is event-driven: it only
                 // runs when the Dock itself moves (observation/state change), never on a
@@ -365,20 +404,20 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             };
 
     DockLiquidGlassView(View geometrySource, View workspace, int blurRadius,
-                        float refractionAmount, float chromaticAberration,
+                        float chromaticAberration,
                         int tintAlpha, boolean squircle, float squircleCp,
                         int captureFps) {
         super(geometrySource.getContext());
         this.geometrySource = geometrySource;
         this.workspace = workspace;
         this.blurRadius = Math.max(0, blurRadius);
-        this.refractionAmount = refractionAmount;
+        this.recentsPrearmDistancePx = geometrySource.getResources()
+                .getDisplayMetrics().density * 8f;
         this.chromaticAberration = chromaticAberration;
-        int fps = Math.max(5, Math.min(165, captureFps));
-        this.captureIntervalNanos = 1_000_000_000L / fps;
+        this.captureCadence = new CaptureCadence(captureFps);
 
         float density = getResources().getDisplayMetrics().density;
-        float displacement = Math.abs(refractionAmount) * (1f + Math.abs(chromaticAberration));
+        float displacement = this.blurRadius * .5f * (1f + Math.abs(chromaticAberration));
         captureBleedPx = Math.max(8, Math.min(512,
                 (int) Math.ceil(this.blurRadius + displacement + 8f * density)));
 
@@ -458,6 +497,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         setLauncherState(true, resumed);
     }
 
+    /** Notification shade / control center is a SystemUI surface above Launcher and apps.
+     * It must never drive Dock backdrop capture. Expansion hard-cancels queued work without
+     * the Dock animation grace; collapse schedules one fresh frame for the underlying scene. */
+    void setSystemUiPanelExpanded(boolean expanded) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setSystemUiPanelExpanded(expanded));
+            return;
+        }
+        if (systemUiPanelExpanded == expanded) return;
+        systemUiPanelExpanded = expanded;
+        if (expanded) {
+            Log.i(TAG, "Liquid capture stopped: SystemUI panel expanded");
+            mainHandler.removeCallbacks(cancelGrace);
+            cancelPendingCaptureWork();
+        } else {
+            Log.i(TAG, "Liquid capture resumed: SystemUI panel collapsed");
+            observationValid = false;
+            requestStateCapture("systemui-panel-collapsed");
+        }
+    }
+
     /** Called from WallpaperManager wallpaper-transform hooks in this process. */
     void onWallpaperOffsetChanged(float xOffset, float yOffset) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -508,6 +568,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         windowFocused = hasWindowFocus();
         dockWindowSurface = resolveWindowSurfaceControl();
         logOwnWindowInfo();
+        refreshForegroundAppLayer();
+        Log.i(TAG, "Liquid foreground app layer: " + appLayerName);
         observationValid = false;
         // Independent config hot-reload ticker: GUI edits to tint/highlight keys
         // apply within ~1s even when the Dock is static (no captures -> no capture-loop
@@ -612,6 +674,22 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return true;
     }
 
+    @Override protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // HyperOS may stop drawing the floating Dock while rebuilding its window, so rotation
+        // cannot rely on onPreDraw polling. Invalidate immediately, then capture again after
+        // the new orientation's Dock geometry has settled.
+        observationValid = false;
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        requestStateCapture("configuration-changed");
+        mainHandler.postDelayed(() -> {
+            if (!attached) return;
+            observationValid = false;
+            requestStateCapture("configuration-settled");
+        }, 180L);
+    }
+
     /**
      * Cheap state polling only; this never captures by itself when all tracked values are static.
      * Tracks the Dock's own geometry (position/size/scale/translation) plus display
@@ -645,8 +723,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             recentsTy = Float.floatToIntBits(rec.getTranslationY());
         }
 
+        boolean rotationChanged = observationValid && rotation != observedRotation;
         boolean changed = dockDragging   // icon drag: keep capturing through the rearrange
                 || !observationValid
+                || rotation != observedRotation
+                || tmpDisplaySize.x != observedDisplayWidth
+                || tmpDisplaySize.y != observedDisplayHeight
                 || tmpDockLocation[0] != observedDockX
                 || tmpDockLocation[1] != observedDockY
                 || dockW != observedDockWidth
@@ -661,6 +743,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || recentsScrollY != observedRecentsScrollY
                         || recentsTx != observedRecentsTranslationX
                         || recentsTy != observedRecentsTranslationY));
+        if (rotationChanged) {
+            // Never compare samples from two coordinate systems. The changed observation
+            // schedules one fresh capture using the new display geometry below.
+            appVisualSignatureValid = false;
+            dynamicAppActiveUntilNanos = 0L;
+        }
+        observedRotation = rotation;
+        observedDisplayWidth = tmpDisplaySize.x;
         observedDisplayHeight = tmpDisplaySize.y;
         observedDockX = tmpDockLocation[0];
         observedDockY = tmpDockLocation[1];
@@ -698,6 +788,83 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }
         } catch (Throwable e) {
             Log.w(TAG, "own window info failed: " + e);
+        }
+    }
+
+    /** Cached foreground-app SF layer name (resolved on focus loss; used as the mode-1
+     *  include target so the capture hits exactly the app layer). */
+    private String appLayerName;
+    private String appLayerPkg;
+
+    /** Resolve + cache the foreground app's SF layer name.  Called when the launcher
+     *  loses focus (an app came to the front). */
+    void refreshForegroundAppLayer() {
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager)
+                    getContext().getSystemService(Context.ACTIVITY_SERVICE);
+            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
+                    am.getRunningTasks(1);
+            if (tasks == null || tasks.isEmpty()) {
+                appLayerName = null;
+                return;
+            }
+            String pkg = tasks.get(0).topActivity != null
+                    ? tasks.get(0).topActivity.getPackageName() : null;
+            if (pkg == null) {
+                appLayerName = null;
+                return;
+            }
+            if (pkg.equals("com.miui.home")) {
+                appLayerName = null;
+                return;
+            }
+            if (pkg.equals(appLayerPkg) && appLayerName != null) return; // cached
+            appLayerName = resolveAppLayerByUid(pkg);
+            appLayerPkg = pkg;
+            Log.i(TAG, "foreground app layer: pkg=" + pkg + " layer=" + appLayerName);
+        } catch (Throwable e) {
+            Log.w(TAG, "refreshForegroundAppLayer failed: " + e);
+        }
+    }
+
+    /** Resolve the foreground app window's SF layer name (e.g. "#27820") via the
+     *  SurfaceFlinger layer tree — the low-level way to hit exactly the app layer and
+     *  avoid the Dock overlay / wallpaper layers entirely (no name-list guessing, no
+     *  exclusion).  Matches by owner uid of the foreground task. */
+    private String resolveAppLayerByUid(String pkg) {
+        try {
+            int uid;
+            try {
+                uid = getContext().getPackageManager().getPackageUid(pkg, 0);
+            } catch (Throwable e) {
+                return null;
+            }
+            Class<?> stub = Class.forName("android.view.ISurfaceComposer$Stub");
+            java.lang.reflect.Method asInterface = stub.getMethod("asInterface",
+                    android.os.IBinder.class);
+            Class<?> sm = Class.forName("android.os.ServiceManager");
+            java.lang.reflect.Method getService = sm.getMethod("getService", String.class);
+            Object binder = getService.invoke(null, "SurfaceFlinger");
+            Object composer = asInterface.invoke(null, binder);
+            java.lang.reflect.Method getLayers = composer.getClass()
+                    .getMethod("getLayerDebugInfo");
+            Object layersObj = getLayers.invoke(composer);
+            if (!(layersObj instanceof java.util.List)) return null;
+            String best = null;
+            for (Object layer : (java.util.List<?>) layersObj) {
+                try {
+                    Class<?> lc = layer.getClass();
+                    Object ownerUid = lc.getMethod("getOwnerUid").invoke(layer);
+                    if (!(ownerUid instanceof Integer) || (Integer) ownerUid != uid) continue;
+                    Object name = lc.getMethod("getName").invoke(layer);
+                    if (name != null) best = (String) name;  // last match = topmost z
+                } catch (Throwable ignored) {
+                }
+            }
+            return best;
+        } catch (Throwable e) {
+            Log.w(TAG, "resolveForegroundAppLayerName failed: " + e);
+            return null;
         }
     }
 
@@ -778,6 +945,53 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture("dock-touch");
     }
 
+    void onDockGestureMotion(int action, float rawY) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> onDockGestureMotion(action, rawY));
+            return;
+        }
+        if (action == android.view.MotionEvent.ACTION_DOWN) {
+            gestureDownRawY = rawY;
+            recentsPrearmed = false;
+            requestStateCapture("dock-gesture-down");
+            return;
+        }
+        if (action == android.view.MotionEvent.ACTION_MOVE && !recentsPrearmed
+                && !Float.isNaN(gestureDownRawY)
+                && gestureDownRawY - rawY >= recentsPrearmDistancePx) {
+            prearmRecentsCapture("recents-prearm-distance");
+            Log.i(TAG, "Recents capture pre-armed after upward distance="
+                    + (gestureDownRawY - rawY));
+            return;
+        }
+        if (action == android.view.MotionEvent.ACTION_UP
+                || action == android.view.MotionEvent.ACTION_CANCEL) {
+            gestureDownRawY = Float.NaN;
+            recentsPrearmed = false;
+        }
+    }
+
+    /** Called from the launcher's dedicated performEnterRecent haptic event. */
+    void onRecentsHapticTrigger() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onRecentsHapticTrigger);
+            return;
+        }
+        prearmRecentsCapture("recents-prearm-haptic");
+        Log.i(TAG, "Recents capture pre-armed by launcher haptic event");
+    }
+
+    private void prearmRecentsCapture(String reason) {
+        recentsPrearmed = true;
+        // This is only an early cadence/source hint. GestureToHome/App/Recent remains
+        // authoritative and immediately replaces it if the gesture is interrupted.
+        sceneState.prearmRecents(System.nanoTime());
+        observationValid = false;
+        // Allow the first frame at the state boundary through immediately.
+        lastCaptureStartNanos = 0L;
+        requestStateCapture(reason);
+    }
+
     /** Coordinate test: is this screen point inside (or near) the Dock window area?
      *  MainHook uses this from the launcher window's touch listener, so touches that the
      *  system dispatches elsewhere (e.g. the drag surface during an icon drag) still count
@@ -821,13 +1035,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Prismal liquid-glass parameters (GUI-configurable; values are dp where noted,
      *  converted to px at render time using the display density). */
     void setPrismalParams(float thicknessDp, float ior, float normalStrength,
-                          float liquidDome, float lensRefractionDp, float refractionInsetDp) {
+                          float liquidDome, float lensRefractionDp) {
         glassThickness = thicknessDp;
         glassIor = ior;
         glassNormalStrength = normalStrength;
         glassLiquidDome = liquidDome;
         glassLensRefraction = lensRefractionDp;
-        glassRefractionInset = refractionInsetDp;
         invalidate();
     }
 
@@ -837,10 +1050,40 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureScale = Math.max(0.1f, Math.min(1.0f, scale));
     }
 
+    /** Optional continuous refresh for games/video while the floating Dock is visible. */
+    void setDynamicAppCapture(boolean enabled, int fps, int probeFps,
+                              int differenceThreshold, int bitThreshold,
+                              int holdMillis, int blackThreshold) {
+        dynamicAppCapture = enabled;
+        captureCadence.setDynamicFps(fps, probeFps);
+        dynamicMotionDifferenceThreshold = Math.max(1, Math.min(240, differenceThreshold));
+        dynamicMotionBitThreshold = Math.max(1, Math.min(64, bitThreshold));
+        dynamicMotionHoldNanos = Math.max(0, Math.min(5000, holdMillis)) * 1_000_000L;
+        blackFrameThreshold = Math.max(0, Math.min(64, blackThreshold));
+        if (!enabled) {
+            dynamicAppActiveUntilNanos = 0L;
+            appVisualSignatureValid = false;
+        }
+    }
+
+    /** Hard ceiling shared by animation, recents and adaptive APP captures. */
+    void setCapturePowerLimitFps(int fps) {
+        captureCadence.setPowerLimitFps(fps);
+    }
+
     /** Edge-highlight thickness multiplier (GUI: liquid_highlight_width, 20-300%).
      *  Scales both the shader's edge-glow band and the canvas stroke highlight. */
     void setHighlightWidth(float multiplier) {
         glassHighlightWidth = Math.max(0.2f, Math.min(3.0f, multiplier));
+        invalidate();
+    }
+
+    void setBlurMethod(String method) {
+        String next = "native".equals(method) || "material".equals(method)
+                ? method : "shader";
+        if (next.equals(blurMethod)) return;
+        blurMethod = next;
+        if (nativeBackgroundHiddenByGlass) applySelectedBlurBackend();
         invalidate();
     }
 
@@ -873,27 +1116,40 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
+    void setNativeBlurInsetDp(float insetDp) {
+        nativeBlurInsetDp = Math.max(0f, Math.min(16f, insetDp));
+        invalidate();
+    }
+
+    void setRecentsPrearmDistanceDp(float distanceDp) {
+        recentsPrearmDistancePx = Math.max(1f,
+                distanceDp * getResources().getDisplayMetrics().density);
+    }
+
+    void setFullscreenCapture(boolean enabled) { fullscreenCapture = enabled; }
+
     /** Re-read GUI-adjustable appearance keys from the config file and apply them live.
      *  Called periodically from the capture loop so GUI edits take effect within ~1s
      *  without restarting the launcher (the glass view is only created once per Dock
      *  window lifetime, so creation-time values would otherwise go stale). */
     private void reloadAppearanceFromConfig() {
         try {
-            ConfigReader cfg = ConfigReader.load();
-            setTintColor(cfg.i("liquid_tint_r", 238), cfg.i("liquid_tint_g", 244),
-                    cfg.i("liquid_tint_b", 255));
-            tintPaint.setAlpha(Math.max(0, Math.min(255, cfg.i("liquid_tint_alpha", 38))));
-            setHighlightWidth(cfg.i("liquid_highlight_width", 100) / 100f);
-            setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
-            setAppearance(
-                    cfg.i("liquid_depth_effect", 8) / 100f,
-                    cfg.i("liquid_brightness", 108) / 100f,
-                    cfg.i("liquid_specular_sharp", 88),
-                    cfg.i("liquid_specular_strength", 105) / 100f,
-                    cfg.i("liquid_rim_light", 100) / 100f,
-                    cfg.i("liquid_caustics", 28) / 100f,
-                    cfg.i("liquid_edge_band", 32) / 1000f);
-            setCaptureScale(cfg.i("liquid_capture_scale", 50) / 100f);
+            BetterDockConfig.Glass cfg = BetterDockConfig.load().glass;
+            setTintColor(cfg.tintR, cfg.tintG, cfg.tintB);
+            tintPaint.setAlpha(cfg.tintAlpha);
+            setHighlightWidth(cfg.highlightWidth);
+            setHighlightAlpha(cfg.highlightAlpha);
+            setNativeBlurInsetDp(cfg.nativeBlurInset);
+            setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
+                    cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
+            setCaptureScale(cfg.captureScale);
+            setBlurMethod(cfg.blurMethod);
+            setDynamicAppCapture(cfg.dynamicAppCapture, cfg.captureFps, cfg.probeFps,
+                    cfg.motionThreshold, cfg.motionBitThreshold, cfg.motionHoldMs,
+                    cfg.blackThreshold);
+            setCapturePowerLimitFps(cfg.captureFps);
+            setRecentsPrearmDistanceDp(cfg.recentsPrearmDistance);
+            setFullscreenCapture(cfg.fullscreenCapture);
         } catch (Throwable e) {
             // Config missing/corrupt: keep the current values.
         }
@@ -914,7 +1170,45 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return rec != null && rec.getVisibility() == View.VISIBLE && rec.isShown();
     }
 
+    /** Capture source is target-state driven; animation progress only controls cadence. */
+    private CaptureScene resolveCaptureScene() {
+        return sceneState.resolve(System.nanoTime(), isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed);
+    }
+
+    /** HyperOS Dock v3 reports the gesture's destination before window focus changes.
+     * Keep that target authoritative for the transition, so a closing app surface is never
+     * sampled into the Dock. A later target event replaces it immediately (interrupted gesture). */
+    void setGestureCaptureTarget(String target) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setGestureCaptureTarget(target));
+            return;
+        }
+        sceneState.setGestureTarget(target, System.nanoTime());
+        updateDesiredScene();
+        observationValid = false;
+        requestStateCapture("gesture-target-" + target.toLowerCase(java.util.Locale.ROOT));
+        mainHandler.postDelayed(() -> {
+            if (!sceneState.gestureTargetExpired(System.nanoTime())) return;
+            sceneState.clearGestureTarget();
+            updateDesiredScene();
+            requestStateCapture("gesture-target-expired");
+        }, 1550L);
+    }
+
+    private void updateDesiredScene() {
+        if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed)) return;
+        sourceDirty = true;
+        Log.i(TAG, "Liquid capture scene=" + sceneState.desired()
+                + " revision=" + sceneState.revision());
+    }
+
     private boolean isCaptureAllowed() {
+        // DeviceConfig mirrors notification shade and control-center expansion from SystemUI.
+        // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
+        // while it is expanded only wastes GPU/binder work and risks sampling its animation.
+        if (systemUiPanelExpanded) return false;
         // A confirmed onPause is authoritative ONLY while the Dock window itself is hidden.
         // The Dock is a floating overlay window (type 2997) that stays on screen over other
         // apps, so a Launcher onPause alone must not gate capture: windowVisible/isShown()
@@ -965,6 +1259,36 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture(reason);
     }
 
+    /** Workstation Dock is stationary: capture only the wallpaper layer and reuse the
+     * mode-2 cache. Geometry changes are served by recropping that cached strip. */
+    void setWorkstationMode(boolean enabled) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setWorkstationMode(enabled));
+            return;
+        }
+        if (sceneState.workstationWallpaperOnly() == enabled) return;
+        cancelPendingCaptureWork();
+        captureGeneration++;
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        sceneState.setWorkstationWallpaperOnly(enabled, System.nanoTime(), isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed);
+        if (enabled) {
+            Bitmap old = capture;
+            capture = null;
+            captureShader = null;
+            if (old != null && !old.isRecycled()) old.recycle();
+            if (nativeBackgroundHiddenByGlass) {
+                geometrySource.setAlpha(1f);
+                nativeBackgroundHiddenByGlass = false;
+                clearSystemMaterial();
+            }
+            invalidate();
+        }
+        sourceDirty = true;
+        requestStateCapture(enabled ? "workstation-wallpaper-once" : "workstation-exit");
+    }
+
     private void requestStateCapture() {
         requestStateCapture("state");
     }
@@ -973,6 +1297,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Dirty is a state fact, not a scheduling fact.  Preserve it even if the Home window is
         // not captureable yet; the next focus/visibility/resume transition will consume it.
         sourceDirty = true;
+        updateDesiredScene();
         if (!isCaptureAllowed()) {
             logCaptureGate(reason);
             return;
@@ -1030,16 +1355,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Wallpaper-only capture is wrong there: the glass must refract the app content below.
         // Default to full-display capture; keep wallpaper mode for desktop-only setups via
         // config key "liquid_capture_fullscreen" (false = wallpaper layer only).
-        boolean fullscreen = true;
-        try {
-            ConfigReader cfg = ConfigReader.load();
-            fullscreen = cfg.b("liquid_capture_fullscreen", true);
-        } catch (Throwable e) {
-            fullscreen = true;
-        }
-        final boolean useFullscreen = fullscreen;
+        final boolean useFullscreen = fullscreenCapture;
 
         final long generation = captureGeneration;
+        updateDesiredScene();
+        final CaptureScene requestScene = sceneState.desired();
+        final long requestSceneRevision = sceneState.revision();
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
         // The Dock window's SF layer handle changes every time the window is recreated
@@ -1081,14 +1402,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // geometry is stable (the foreground app's content is what the
                     // glass should refract).  Animations, interruptions, and all
                     // home-screen states stay in wallpaper mode.
-                    boolean appFront = !(launcherResumed && launcherLifecycleKnown);
-                    // Wallpaper-only capture (mode=2) is used on the home screen / recents /
-                    // return animations.  When a non-home app is in front, capture the
-                    // screen (mode=1): the Dock's own blur pass makes the BBQ-wallpaper
-                    // layer unreliable while pulling the Dock out over an app (black
-                    // frames), whereas mode 1 with the Dock layer excluded works in all
-                    // Dock states (verified 01:49 path).
-                    boolean wallpaperMode = !appFront;
+                    // Source selection is independent of animation progress. HOME alone uses
+                    // wallpaper; APP and RECENTS always capture their live screen content.
+                    boolean wallpaperMode = requestScene == CaptureScene.HOME;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
@@ -1098,14 +1414,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // Wallpaper is static: if a valid strip cache exists (same wallpaper,
                     // same rotation, strip covers the request), serve the crop from cache
                     // and skip the SF capture entirely.
-                    if (wallpaperMode && tryServeWallpaperFromCache(req)) {
+                    if (wallpaperMode && tryServeWallpaperFromCache(
+                            req, requestScene, requestSceneRevision)) {
                         return;
                     }
                     Log.i(TAG, "capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
                             + " crop=" + req.stripRect + " scale=" + captureScale
-                            + " appFront=" + appFront);
+                            + " scene=" + requestScene + " revision=" + requestSceneRevision);
                     // Wallpaper mode still passes the Dock exclusion: during Dock expand/
                     // collapse the SF layer tree shifts and the wallpaper include can pick
                     // up the Dock's content; excluding the Dock layer is a belt-and-braces
@@ -1113,7 +1430,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
                             if (wallpaperMode) cacheWallpaperStrip(bmp, req);
-                            handleCaptureResult(bmp, req, generation);
+                            handleCaptureResult(bmp, req, generation,
+                                    requestScene, requestSceneRevision);
                         }
                         @Override public void onError(Throwable error) {
                             liveCapture = null;
@@ -1148,11 +1466,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             final CroppedFrame frame = cropped;
             final Throwable captureFailure = failure;
             mainHandler.post(() -> {
-                if (generation != captureGeneration || !isCaptureAllowed()) {
+                if (generation != captureGeneration || !isRequestOrientationCurrent(request)
+                        || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
+                    capturing = false;
                     Log.i(TAG, "Liquid capture result discarded: generation="
                             + (generation == captureGeneration)
                             + " allowed=" + isCaptureAllowed());
+                    if (isCaptureAllowed()) requestStateCapture("stale-orientation-result");
                     return;
                 }
 
@@ -1176,16 +1497,25 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /** Shared completion path for async captures: crop on the SF callback thread, install
      *  on the main thread. */
-    private void handleCaptureResult(Bitmap strip, CaptureRequest request, long generation) {
+    private void handleCaptureResult(Bitmap strip, CaptureRequest request, long generation,
+                                     CaptureScene requestScene, long requestSceneRevision) {
         try {
             // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
             // returns status=0 with a PURE BLACK buffer while a non-home app is in front
             // (verified: Dock pull-up over an app).  Installing such a frame freezes a
             // black backdrop forever; discard it and keep the previous frame.
-            if (isNearBlack(strip)) {
+            VisualProbe visualProbe = probeBitmap(strip, blackFrameThreshold);
+            if (visualProbe.nearBlack) {
                 if (!strip.isRecycled()) strip.recycle();
                 mainHandler.post(() -> {
-                    if (generation != captureGeneration) return;
+                    updateDesiredScene();
+                    if (generation != captureGeneration
+                            || !sceneState.matches(requestScene, requestSceneRevision)
+                            || !isRequestOrientationCurrent(request)) {
+                        capturing = false;
+                        requestStateCapture("stale-black-frame");
+                        return;
+                    }
                     capturing = false;
                     if (blackFrameLogCount++ < 5) {
                         Log.w(TAG, "black frame discarded (status=0 but content black), "
@@ -1200,15 +1530,25 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             strip = null; // cropWallpaperTile owns/recycles it.
             final CroppedFrame frame = cropped;
             mainHandler.post(() -> {
-                if (generation != captureGeneration || !isCaptureAllowed()) {
+                updateDesiredScene();
+                if (generation != captureGeneration
+                        || !sceneState.matches(requestScene, requestSceneRevision)
+                        || !isRequestOrientationCurrent(request)
+                        || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
+                    capturing = false;
                     Log.i(TAG, "Liquid async capture result discarded: generation="
                             + (generation == captureGeneration)
+                            + " scene=" + requestScene + "->" + sceneState.desired()
                             + " allowed=" + isCaptureAllowed());
+                    if (isCaptureAllowed()) requestStateCapture("stale-scene-result");
                     return;
                 }
                 capturing = false;
                 nullFrameLogged = false;
+                if (requestScene == CaptureScene.APP && dynamicAppCapture) {
+                    updateDynamicAppActivity(visualProbe.signature);
+                }
                 installCapture(frame);
                 // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
                 // apply without a launcher restart.
@@ -1217,6 +1557,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     reloadAppearanceFromConfig();
                 }
                 if (sourceDirty) requestStateCapture();
+                if (dynamicAppCapture && requestScene == CaptureScene.APP
+                        && sceneState.desired() == CaptureScene.APP && isCaptureAllowed()) {
+                    requestStateCapture("dynamic-app-continue");
+                }
                 // Recents still visible: keep the capture loop alive — the Dock window is
                 // hidden during multitasking so onPreDraw no longer ticks; the self-sustained
                 // loop above (capture -> result -> recents-continue) follows the task cards.
@@ -1231,6 +1575,37 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (sourceDirty) requestStateCapture();
             });
         }
+    }
+
+    private void updateDynamicAppActivity(long signature) {
+        long now = System.nanoTime();
+        if (appVisualSignatureValid) {
+            int difference = 0;
+            long changed = lastAppVisualSignature ^ signature;
+            for (int i = 0; i < 16; i++) {
+                int oldValue = (int) ((lastAppVisualSignature >>> (i * 4)) & 0xF);
+                int newValue = (int) ((signature >>> (i * 4)) & 0xF);
+                difference += Math.abs(oldValue - newValue);
+            }
+            // Roughly one luminance step per sample is enough to classify video/game motion.
+            if (difference >= dynamicMotionDifferenceThreshold
+                    || Long.bitCount(changed) >= dynamicMotionBitThreshold) {
+                dynamicAppActiveUntilNanos = now + dynamicMotionHoldNanos;
+            }
+        }
+        lastAppVisualSignature = signature;
+        appVisualSignatureValid = true;
+    }
+
+    private boolean isRequestOrientationCurrent(CaptureRequest request) {
+        Display display = geometrySource.getDisplay();
+        if (display == null) return false;
+        display.getRealSize(tmpDisplaySize);
+        int orientation = tmpDisplaySize.x >= tmpDisplaySize.y ? 1 : 0;
+        return request.rotation == display.getRotation()
+                && request.orientationIndex == orientation
+                && request.displayWidth == tmpDisplaySize.x
+                && request.displayHeight == tmpDisplaySize.y;
     }
 
     /**
@@ -1272,18 +1647,24 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         tileRect.bottom += bleedBottom;
         if (!tileRect.intersect(displayRect) || tileRect.isEmpty()) return null;
 
-        // Deliberately hard-limit compositor readback to the lower display region.
-        Rect stripRect = new Rect(0, tileRect.top, displayRect.right, displayRect.bottom);
+        // Capture only Dock + refraction bleed. Reading the entire display width here wastes
+        // compositor bandwidth and can pin the GPU during Dock animations.
+        Rect stripRect = new Rect(tileRect);
         if (stripRect.isEmpty()) return null;
 
-        return new CaptureRequest(display.getDisplayId(), stripRect, tileRect, dockRect);
+        return new CaptureRequest(display.getDisplayId(), display.getRotation(),
+                tmpDisplaySize.x, tmpDisplaySize.y,
+                tmpDisplaySize.x >= tmpDisplaySize.y ? 1 : 0,
+                stripRect, tileRect, dockRect);
     }
 
     /** Serve the mode-2 crop from the cached wallpaper strip when it is still valid
      *  (same wallpaper ID, same rotation, strip covers the requested region).  Runs on
      *  the capture worker thread; installs the frame on the main thread.  Returns true
      *  when the request was fully served (no SF capture needed). */
-    private boolean tryServeWallpaperFromCache(CaptureRequest req) {
+    private boolean tryServeWallpaperFromCache(CaptureRequest req,
+                                                CaptureScene requestScene,
+                                                long requestSceneRevision) {
         if (wallpaperStripCache == null || wallpaperStripCache.isRecycled()
                 || cacheStripRect == null) return false;
         Display display = geometrySource.getDisplay();
@@ -1303,8 +1684,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (frame == null) return false;
         final long generation = captureGeneration;
         mainHandler.post(() -> {
-            if (generation != captureGeneration || !isCaptureAllowed()) {
+            updateDesiredScene();
+            if (generation != captureGeneration
+                    || !sceneState.matches(requestScene, requestSceneRevision)
+                    || !isRequestOrientationCurrent(req)
+                    || !isCaptureAllowed()) {
                 frame.recycle();
+                capturing = false;
+                if (isCaptureAllowed()) requestStateCapture("stale-cache-result");
                 return;
             }
             capturing = false;
@@ -1341,22 +1728,54 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Cheap 16-point luminance probe: HyperOS may return status=0 with a pure-black
      *  buffer (wallpaper-layer capture while an app is in front).  Average channel value
      *  below 10 counts as black. */
-    private static boolean isNearBlack(Bitmap bmp) {
-        if (bmp == null || bmp.isRecycled()) return true;
-        int w = bmp.getWidth(), h = bmp.getHeight();
-        if (w <= 0 || h <= 0) return true;
-        long sum = 0;
-        int count = 0;
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                int x = Math.min(w - 1, w * i / 4);
-                int y = Math.min(h - 1, h * j / 4);
-                int c = bmp.getPixel(x, y);
-                sum += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
-                count += 3;
+    private static VisualProbe probeBitmap(Bitmap bmp, int blackThreshold) {
+        if (bmp == null || bmp.isRecycled()) return new VisualProbe(true, 0L);
+        Bitmap readable = bmp;
+        try {
+            // ScreenshotHardwareBuffer.asBitmap() normally returns Config.HARDWARE.
+            // Hardware bitmaps deliberately reject getPixel()/getPixels(), so make a
+            // software-readable copy before probing them.  Never let this diagnostic
+            // guard discard an otherwise valid capture frame.
+            if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
+                readable = bmp.copy(Bitmap.Config.ARGB_8888, false);
+                if (readable == null) return new VisualProbe(false, 0L);
+            }
+            int w = readable.getWidth(), h = readable.getHeight();
+            if (w <= 0 || h <= 0) return new VisualProbe(true, 0L);
+            long sum = 0;
+            int count = 0;
+            long signature = 0L;
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    int x = Math.min(w - 1, w * i / 4);
+                    int y = Math.min(h - 1, h * j / 4);
+                    int c = readable.getPixel(x, y);
+                    sum += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
+                    count += 3;
+                    int luminance = ((c >> 16 & 0xFF) * 3 + (c >> 8 & 0xFF) * 6
+                            + (c & 0xFF)) / 10;
+                    int sample = Math.min(15, luminance >> 4);
+                    signature |= (long) sample << ((i * 4 + j) * 4);
+                }
+            }
+            return new VisualProbe(count > 0 && sum / count < blackThreshold, signature);
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to probe capture luminance; accepting frame", error);
+            return new VisualProbe(false, 0L);
+        } finally {
+            if (readable != bmp && readable != null && !readable.isRecycled()) {
+                readable.recycle();
             }
         }
-        return count > 0 && sum / count < 10;
+    }
+
+    private static final class VisualProbe {
+        final boolean nearBlack;
+        final long signature;
+        VisualProbe(boolean nearBlack, long signature) {
+            this.nearBlack = nearBlack;
+            this.signature = signature;
+        }
     }
 
     private static CroppedFrame cropWallpaperTile(Bitmap strip, Rect stripRect,
@@ -1449,6 +1868,46 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
+    private void clearSystemMaterial() {
+        try { XposedHelpers.callMethod(this, "setMiSelfBlur", 0); } catch (Throwable ignored) {}
+        try { XposedHelpers.callMethod(this, "setMiSelfBlurEnhanceFlag", 0x200, 0); }
+        catch (Throwable ignored) {}
+        try { XposedHelpers.callMethod(this, "clearMiBackgroundBlendColor"); }
+        catch (Throwable ignored) {}
+        try { XposedHelpers.callMethod(this, "setMiViewBlurMode", 0); }
+        catch (Throwable ignored) {}
+    }
+
+    private void applyHyperMaterialColors() {
+        try {
+            boolean dark = (getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            java.util.ArrayList<android.graphics.Point> colors = new java.util.ArrayList<>();
+            if (dark) {
+                colors.add(new android.graphics.Point(1719105399, 19));
+                colors.add(new android.graphics.Point(863270004, 15));
+                colors.add(new android.graphics.Point(855638016, 3));
+            } else {
+                colors.add(new android.graphics.Point(-428575628, 15));
+                colors.add(new android.graphics.Point(-1722658222, 18));
+                colors.add(new android.graphics.Point(869388753, 3));
+            }
+            XposedHelpers.callMethod(this, "setMiViewBlurMode", 1);
+            XposedHelpers.callMethod(this, "setMiBackgroundBlendColors", colors);
+            Log.i(TAG, "Liquid glass: HyperOS material colors applied dark=" + dark);
+        } catch (Throwable e) {
+            Log.w(TAG, "HyperOS material colors unavailable; native blur retained", e);
+        }
+    }
+
+    private void applySelectedBlurBackend() {
+        clearSystemMaterial();
+        if ("native".equals(blurMethod) || "material".equals(blurMethod)) {
+            applySystemSelfBlur(blurRadius);
+            if ("material".equals(blurMethod)) applyHyperMaterialColors();
+        }
+    }
+
     private void installCapture(CroppedFrame frame) {
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
@@ -1458,6 +1917,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // Blur is now done in-shader (Prismal-style Gaussian in blurred()); the MIUI
             // system self-blur pass is disabled because it double-blurs and its quality
             // was reported poor.
+            applySelectedBlurBackend();
         }
 
         Bitmap old = capture;
@@ -1487,10 +1947,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("offset", 0f, 0f);
         refraction.setFloatUniform("cornerRadii", cornerRadius, cornerRadius, cornerRadius, cornerRadius);
         refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
-        refraction.setFloatUniform("refractionAmount", refractionAmount);
         refraction.setFloatUniform("depthEffect", glassDepthEffect);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
-        refraction.setFloatUniform("blurRadius", blurRadius);
+        refraction.setFloatUniform("blurRadius", "shader".equals(blurMethod) ? blurRadius : 0f);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
         // GUI-configurable via liquid_* settings.
         float density = getResources().getDisplayMetrics().density;
@@ -1499,7 +1958,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("normalStrength", Math.max(0f, Math.min(5f, glassNormalStrength)));
         refraction.setFloatUniform("liquidDome", Math.max(0f, Math.min(2f, glassLiquidDome)));
         refraction.setFloatUniform("lensRefractionPx", Math.max(0f, glassLensRefraction * density));
-        refraction.setFloatUniform("refractionInset", Math.max(0f, glassRefractionInset * density));
         refraction.setFloatUniform("highlightWidth", glassHighlightWidth);
         refraction.setFloatUniform("brightness", glassBrightness);
         refraction.setFloatUniform("specularSharp", glassSpecularSharp);
@@ -1514,12 +1972,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);
         Path shape = shapePath(getWidth(), getHeight(), cornerRadius);
+        boolean nativeBackend = "native".equals(blurMethod) || "material".equals(blurMethod);
+        float blurInset = nativeBackend
+                ? nativeBlurInsetDp * getResources().getDisplayMetrics().density : 0f;
+        Path blurShape = blurInset > 0f
+                ? shapePathInset(getWidth(), getHeight(), cornerRadius, blurInset) : shape;
         canvas.save();
-        canvas.clipPath(shape);
+        canvas.clipPath(blurShape);
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
         tintPaint.setColor(Color.argb(tintPaint.getAlpha(),
                 glassTintR, glassTintG, glassTintB));
-        canvas.drawPath(shape, tintPaint);
+        canvas.drawPath(blurShape, tintPaint);
+        canvas.restore();
+        // Draw the highlight on the unchanged outer geometry.  Keeping this outside
+        // the blur body's clip creates the requested clear separation at the edge.
+        canvas.save();
         highlightPaint.setStyle(Paint.Style.STROKE);
         highlightPaint.setStrokeWidth(Math.max(1f,
                 getResources().getDisplayMetrics().density * .65f * glassHighlightWidth));
@@ -1530,6 +1997,30 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             null, Shader.TileMode.CLAMP));
         canvas.drawPath(shape, highlightPaint);
         canvas.restore();
+    }
+
+    private Path shapePathInset(float width, float height, float radius, float inset) {
+        float safeInset = Math.max(0f, Math.min(inset, Math.min(width, height) * .5f - .5f));
+        RectF r = new RectF(.5f + safeInset, .5f + safeInset,
+                width - .5f - safeInset, height - .5f - safeInset);
+        float adjustedRadius = Math.max(0f, radius - safeInset);
+        Path p = new Path();
+        if (!squircle || adjustedRadius <= 1f) {
+            p.addRoundRect(r, adjustedRadius, adjustedRadius, Path.Direction.CW);
+            return p;
+        }
+        float a = Math.min(adjustedRadius, Math.min(r.width(), r.height()) * .5f);
+        float c = a * squircleCp;
+        p.moveTo(r.left, r.top + a);
+        p.cubicTo(r.left, r.top + a - c, r.left + a - c, r.top, r.left + a, r.top);
+        p.lineTo(r.right - a, r.top);
+        p.cubicTo(r.right - a + c, r.top, r.right, r.top + a - c, r.right, r.top + a);
+        p.lineTo(r.right, r.bottom - a);
+        p.cubicTo(r.right, r.bottom - a + c, r.right - a + c, r.bottom, r.right - a, r.bottom);
+        p.lineTo(r.left + a, r.bottom);
+        p.cubicTo(r.left + a - c, r.bottom, r.left, r.bottom - a + c, r.left, r.bottom - a);
+        p.close();
+        return p;
     }
 
     private Path shapePath(float width, float height, float radius) {
@@ -1554,12 +2045,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private static final class CaptureRequest {
         final int displayId;
+        final int rotation;
+        final int displayWidth;
+        final int displayHeight;
+        final int orientationIndex;
         final Rect stripRect;
         final Rect tileRect;
         final Rect dockRect;
 
-        CaptureRequest(int displayId, Rect stripRect, Rect tileRect, Rect dockRect) {
+        CaptureRequest(int displayId, int rotation, int displayWidth, int displayHeight,
+                       int orientationIndex, Rect stripRect, Rect tileRect, Rect dockRect) {
             this.displayId = displayId;
+            this.rotation = rotation;
+            this.displayWidth = displayWidth;
+            this.displayHeight = displayHeight;
+            this.orientationIndex = orientationIndex;
             this.stripRect = new Rect(stripRect);
             this.tileRect = new Rect(tileRect);
             this.dockRect = new Rect(dockRect);

@@ -2,18 +2,13 @@ package com.hellovoid.betterdock;
 
 import android.app.Activity;
 import android.app.WallpaperManager;
+import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Rect;
-import android.graphics.Shader;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.os.IBinder;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,13 +25,16 @@ public class MainHook implements IXposedHookLoadPackage {
     private static DockLiquidGlassView liquidGlassView;
     private static volatile boolean launcherResumed;
     private static volatile boolean launcherLifecycleKnown;
+    private static volatile boolean systemUiPanelExpanded;
     private static int bgW, bgH, shadowPad;
     private static int strokeBaseR = 255, strokeBaseG = 255, strokeBaseB = 255, strokeBaseAlpha = 255;
     private static float bgR = 30f;
     private static float strokeR = 30f;
-    private static float gyroX, gyroY, smoothLx, smoothLy;
-    private static SensorManager motionSensorManager;
-    private static SensorEventListener motionSensorListener;
+    private static volatile boolean workstationMode;
+    private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
+            new java.util.HashMap<>();
+    private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
+            dockResizeAnimators = new java.util.WeakHashMap<>();
 
     private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }
     private static Path squirclePath(RectF r, float rad) { return squirclePath(r, rad, 0.65f); }
@@ -53,32 +51,49 @@ public class MainHook implements IXposedHookLoadPackage {
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals("com.miui.home")) return;
 
-        ConfigReader cfg = ConfigReader.load();
-        boolean grid8x4 = cfg.b("home_grid_8x4", true);
-        boolean dp = cfg.b("grid_margins_dp", false);
-        boolean offsets = cfg.b("grid_margins_offset", false);
+        installWorkstationModeGuard(lpparam.classLoader);
+        BetterDockConfig config = BetterDockConfig.load();
+        if (!config.enabled) {
+            XposedBridge.log("[DC] BetterDock master switch disabled");
+            return;
+        }
+        RecentsHapticHook.install(lpparam.classLoader, () -> {
+            DockLiquidGlassView glass = liquidGlassView;
+            if (glass != null) glass.onRecentsHapticTrigger();
+        });
+        installWorkstationDockHooks(lpparam.classLoader, config.workstation);
+        if (!config.dock.resizeAnimation)
+            installDockResizeAnimationBypass(lpparam.classLoader,
+                    config.dock.smoothResizeAnimation);
+        if (workstationMode) {
+            XposedBridge.log("[DC] workstation active; using isolated workstation parameters");
+        }
+        BetterDockConfig.Grid grid = config.grid;
+        boolean grid8x4 = grid.enabled;
+        boolean dp = grid.dp;
+        boolean offsets = grid.offsets;
         float gridScale = dp
             ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
         int landXBase = dp ? 57 : 160;
         int landYBase = dp ? 28 : 80;
         int portXBase = dp ? 28 : 80;
         int portYBase = dp ? 57 : 160;
-        int landHorizontal = cfg.i("grid_landscape_margin_horizontal", 0);
-        int landLeft = cfg.i("grid_landscape_margin_left",
-            offsets ? landHorizontal : landXBase);
-        int landRight = cfg.i("grid_landscape_margin_right",
-            offsets ? landHorizontal : landXBase);
-        int landTop = cfg.i("grid_landscape_margin_top", offsets ? 0 : landYBase);
-        int landBottom = cfg.i("grid_landscape_margin_bottom", offsets ? 0 : landYBase);
-        int portHorizontal = cfg.i("grid_portrait_margin_horizontal", 0);
-        int portLeft = cfg.i("grid_portrait_margin_left",
-            offsets ? portHorizontal : portXBase);
-        int portRight = cfg.i("grid_portrait_margin_right",
-            offsets ? portHorizontal : portXBase);
-        int portTop = cfg.i("grid_portrait_margin_top", offsets ? 0 : portYBase);
-        int portBottom = cfg.i("grid_portrait_margin_bottom", offsets ? 0 : portYBase);
-        int landGap = cfg.i("grid_landscape_row_gap", offsets ? 0 : (dp ? 1 : 3));
-        int portGap = cfg.i("grid_portrait_row_gap", offsets ? 0 : (dp ? 1 : 3));
+        float landHorizontal = grid.landscapeHorizontal;
+        float landTopDistance = grid.landscapeTop;
+        float landBottomDistance = grid.landscapeBottom;
+        float portraitHorizontal = grid.portraitHorizontal;
+        float portraitTopDistance = grid.portraitTop;
+        float portraitBottomDistance = grid.portraitBottom;
+        float landLeft = offsets ? landHorizontal : landXBase + landHorizontal;
+        float landRight = offsets ? landHorizontal : landXBase + landHorizontal;
+        float landTop = offsets ? landTopDistance : landYBase + landTopDistance;
+        float landBottom = offsets ? landBottomDistance : landYBase + landBottomDistance;
+        float portLeft = offsets ? portraitHorizontal : portXBase + portraitHorizontal;
+        float portRight = offsets ? portraitHorizontal : portXBase + portraitHorizontal;
+        float portTop = offsets ? portraitTopDistance : portYBase + portraitTopDistance;
+        float portBottom = offsets ? portraitBottomDistance : portYBase + portraitBottomDistance;
+        float landGap = grid.landscapeRowGap;
+        float portGap = grid.portraitRowGap;
         if (!offsets) {
             landLeft -= landXBase; landRight -= landXBase;
             landTop -= landYBase; landBottom -= landYBase;
@@ -92,9 +107,12 @@ public class MainHook implements IXposedHookLoadPackage {
             Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
             Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
             Math.round(landGap * gridScale), Math.round(portGap * gridScale),
-            cfg.i("indicator_landscape_y", 0), cfg.i("indicator_portrait_y", 0));
-        boolean dockCustomization = cfg.b("dock_customization", true);
-        boolean liquidGlass = cfg.b("liquid_glass", false);
+            Math.round(grid.landscapeIndicatorY * gridScale),
+            Math.round(grid.portraitIndicatorY * gridScale));
+        HomeGridHook.setWorkstationHorizontalOffset(Math.round(
+                config.workstation.gridHorizontalOffset * gridScale));
+        boolean dockCustomization = config.dock.enabled;
+        boolean liquidGlass = config.glass.enabled;
         if (!dockCustomization && !liquidGlass) {
             XposedBridge.log("[DC] Dock customization and liquid glass both disabled");
             return;
@@ -107,6 +125,7 @@ public class MainHook implements IXposedHookLoadPackage {
             try {
                 XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", lpparam.classLoader, "setupViews",
                     new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (workstationMode) return;
                         try {
                             Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats");
                             if (hs == null) return;
@@ -128,40 +147,12 @@ public class MainHook implements IXposedHookLoadPackage {
                             if (liquidGlassView != null) {
                                 XposedBridge.log("[DC] re-creating glass view (previous detached)");
                             }
-                            liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
-                                cfg.i("liquid_blur", 18), cfg.i("liquid_refraction", 18),
-                                cfg.i("liquid_chromatic", 8) / 100f,
-                                cfg.i("liquid_tint_alpha", 38), false, 0.58f,
-                                cfg.i("liquid_capture_fps", 24));
+                            liquidGlassView = LiquidGlassFactory.create(oldBg, workspace,
+                                    config.glass, false, 0.58f);
                             liquidGlassView.setId(View.generateViewId());
                             seedLauncherLifecycleState(param.thisObject);
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                            liquidGlassView.setStopGraceMillis(cfg.i("liquid_capture_stop_delay", 150));
-                            liquidGlassView.setBleedVerticalPx(
-                                    cfg.i("liquid_capture_bleed_top", -1),
-                                    cfg.i("liquid_capture_bleed_bottom", -1));
-                            liquidGlassView.setPrismalParams(
-                                    cfg.i("liquid_thickness", 18),
-                                    cfg.i("liquid_ior", 155) / 100f,
-                                    cfg.i("liquid_normal_strength", 115) / 100f,
-                                    cfg.i("liquid_dome", 100) / 100f,
-                                    cfg.i("liquid_lens_refraction", 12),
-                                    cfg.i("liquid_refraction_inset", 20));
-                            liquidGlassView.setCaptureScale(cfg.i("liquid_capture_scale", 50) / 100f);
-                            liquidGlassView.setHighlightWidth(cfg.i("liquid_highlight_width", 100) / 100f);
-                            liquidGlassView.setTintColor(
-                                    cfg.i("liquid_tint_r", 238),
-                                    cfg.i("liquid_tint_g", 244),
-                                    cfg.i("liquid_tint_b", 255));
-                            liquidGlassView.setAppearance(
-                                    cfg.i("liquid_depth_effect", 8) / 100f,
-                                    cfg.i("liquid_brightness", 108) / 100f,
-                                    cfg.i("liquid_specular_sharp", 88),
-                                    cfg.i("liquid_specular_strength", 105) / 100f,
-                                    cfg.i("liquid_rim_light", 100) / 100f,
-                                    cfg.i("liquid_caustics", 28) / 100f,
-                                    cfg.i("liquid_edge_band", 32) / 1000f);
-                            liquidGlassView.setHighlightAlpha(cfg.i("liquid_highlight_alpha", 100) / 100f);
+                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             bindDockDragController(liquidGlassView, lpparam.classLoader);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
@@ -202,17 +193,20 @@ public class MainHook implements IXposedHookLoadPackage {
             } catch (Throwable e) { XposedBridge.log("[DC] liquid-only hooks err: " + e); }
             return;
         }
-        XposedBridge.log("[DC] init: bl=" + cfg.i("blur_radius", -1) + " lm=" + cfg.s("light_mode", "?") + " sq=" + cfg.b("squircle", false));
-
-        String lm = cfg.s("light_mode", "fixed");
-        boolean sq = cfg.b("squircle", false), fd = cfg.b("fill_diff", false);
-        int wo = cfg.i("width_offset", 0), ho = cfg.i("height_offset", 0), br = cfg.i("blur_radius", 100);
-        float cornerScale = cfg.b("corners_dp", false)
+        BetterDockConfig.Dock dock = config.dock;
+        XposedBridge.log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
+        boolean sq = dock.squircle, fd = dock.fillDiff;
+        float dockScale = dock.dimensionsDp
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int wo = Math.round(dock.widthOffset * dockScale);
+        int ho = Math.round(dock.heightOffset * dockScale);
+        int br = dock.blurRadius;
+        float cornerScale = dock.cornersDp
             ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int co = Math.round(cfg.i("corner_offset", -1) * cornerScale);
-        int blurCo = Math.round(cfg.i("blur_corner_offset", 0) * cornerScale);
-        int spacing = cfg.i("dock_spacing", 0);
-        int bottomOffset = cfg.i("dock_bottom_offset", 0);
+        int co = Math.round(dock.cornerOffset * cornerScale);
+        int blurCo = Math.round(dock.blurCornerOffset * cornerScale);
+        int spacing = Math.round(dock.spacing * dockScale);
+        int bottomOffset = Math.round(dock.bottomOffset * dockScale);
         ClassLoader cl = lpparam.classLoader;
         // Install the lightweight lifecycle/wallpaper observers unconditionally once Dock
         // customization is active.  The previous conditional install could leave a glass View
@@ -227,6 +221,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 XposedHelpers.findAndHookMethod(deviceConfig, "getHotSeatsMarginBottom",
                     new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam p) {
+                            if (workstationMode) return;
                             p.setResult((Integer) p.getResult() + bottomOffset);
                         }
                     });
@@ -242,6 +237,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     cl, "getItemOffsets", Rect.class, View.class, recyclerView, recyclerState,
                     new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam p) {
+                            if (workstationMode) return;
                             Rect out = (Rect) p.args[0];
                             out.left += spacing;
                             out.right += spacing;
@@ -251,6 +247,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     FrameLayout.class, int.class, int.class, float.class,
                     new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam p) {
+                            if (workstationMode) return;
                             int itemCount = (Integer) XposedHelpers.callMethod(p.thisObject, "getItemCount");
                             if (itemCount > 0)
                                 p.args[1] = (Integer) p.args[1] + spacing * 2 * itemCount;
@@ -259,13 +256,14 @@ public class MainHook implements IXposedHookLoadPackage {
             } catch (Throwable e) { XposedBridge.log("[DC] spacing hook unavailable: " + e); } }
 
             XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundWidth", int.class,
-                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (wo != 0) p.args[0] = (int) p.args[0] + wo; }
+                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && wo != 0) p.args[0] = (int) p.args[0] + wo; }
                     @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
             XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundHeight", int.class,
-                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (ho != 0) p.args[0] = (int) p.args[0] + ho; }
+                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && ho != 0) p.args[0] = (int) p.args[0] + ho; }
                     @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
             XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundRadius", float.class,
                 new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
+                        if (workstationMode) return;
                         float systemRadius = (Float) p.args[0];
                         strokeR = Math.max(0f, systemRadius + co);
                         p.args[0] = Math.max(0f, systemRadius + blurCo);
@@ -277,7 +275,7 @@ public class MainHook implements IXposedHookLoadPackage {
 
             try { Class<?> bu = XposedHelpers.findClass("com.miui.home.launcher.common.BlurUtilities", cl);
                 XposedHelpers.findAndHookMethod(bu, "setBackgroundBlur", View.class, int.class, float[].class, int[][].class,
-                    new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (br != 100) p.args[1] = br; }});
+                    new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && br != 100) p.args[1] = br; }});
             } catch (Throwable ignored) {}
             try {
                 XposedHelpers.findAndHookMethod("com.miui.home.launcher.hotseats.HotSeats", cl,
@@ -291,6 +289,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 XposedHelpers.findAndHookMethod(ms, "applyViewShadow", View.class, int.class,
                     float.class, float.class, float.class, float.class, new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam p) {
+                            if (workstationMode) return;
                             if (p.args[0] != nativeShadowTarget) return;
                             p.args[1] = Color.TRANSPARENT;
                             p.args[2] = 0f;
@@ -304,9 +303,10 @@ public class MainHook implements IXposedHookLoadPackage {
 
             XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", cl, "setupViews",
                 new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
-                    try { ConfigReader c2 = ConfigReader.load();
+                    try { BetterDockConfig current = BetterDockConfig.load();
+                        BetterDockConfig.Dock c2 = current.dock;
                         Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats"); if (hs == null) return;
-                        try {
+                        if (!workstationMode) try {
                             Object target = XposedHelpers.callMethod(hs, "getMingouStaticDockBlurShadowTarget");
                             if (target instanceof View) {
                                 nativeShadowTarget = (View) target;
@@ -321,22 +321,27 @@ public class MainHook implements IXposedHookLoadPackage {
                         oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2"); if (oldBg == null) return;
                         ViewGroup parent = (ViewGroup) oldBg.getParent(); if (parent == null) return;
                         int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
-                        String lm2 = c2.s("light_mode", "fixed"); boolean strokeEnabled = c2.b("dock_stroke", true), sq2 = c2.b("squircle", false), fd2 = c2.b("fill_diff", false);
-                        strokeBaseR = c2.i("stroke_base_r", 255);
-                        strokeBaseG = c2.i("stroke_base_g", 255);
-                        strokeBaseB = c2.i("stroke_base_b", 255);
-                        strokeBaseAlpha = c2.i("stroke_base_alpha", 255);
-                        int sqW = c2.i("sq_stroke_w", 4), sqOff = c2.i("sq_stroke_off", 8);
-                        float sqCp = c2.i("sq_outer_cp", 58) / 100f;
-                        int sw = c2.i("stroke_w", 2), stdSw = c2.i("std_stroke_w", 4);
-                        boolean shadow = c2.b("stroke_shadow", false);
-                        int shadowRadius = c2.i("shadow_radius", 8), shadowAlpha = c2.i("shadow_alpha", 70);
-                        boolean dockShadow = c2.b("dock_shadow", true);
-                        boolean liquidGlass = c2.b("liquid_glass", false);
-                        int dockShadowRadius = c2.i("dock_shadow_radius", 42);
-                        int dockShadowSize = c2.i("dock_shadow_size", 52);
-                        int dockShadowAlpha = c2.i("dock_shadow_alpha", 140);
-                        int dockShadowY = c2.i("dock_shadow_y", 12);
+                        boolean strokeEnabled = c2.strokeEnabled, sq2 = c2.squircle, fd2 = c2.fillDiff;
+                        strokeBaseR = c2.strokeR;
+                        strokeBaseG = c2.strokeG;
+                        strokeBaseB = c2.strokeB;
+                        strokeBaseAlpha = c2.strokeAlpha;
+                        float dockScale2 = c2.dimensionsDp
+                                ? oldBg.getResources().getDisplayMetrics().density : 1f;
+                        int sqW = Math.max(1, Math.round(c2.squircleStrokeWidth * dockScale2));
+                        int sqOff = Math.round(c2.squircleStrokeOffset * dockScale2);
+                        float sqCp = c2.squircleCp;
+                        int sw = Math.max(1, Math.round(c2.strokeWidth * dockScale2));
+                        int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * dockScale2));
+                        boolean shadow = c2.strokeShadow;
+                        int shadowRadius = Math.max(1, Math.round(c2.strokeShadowRadius * dockScale2));
+                        int shadowAlpha = c2.strokeShadowAlpha;
+                        boolean dockShadow = c2.shadowEnabled;
+                        boolean liquidGlass = current.glass.enabled;
+                        int dockShadowRadius = Math.max(1, Math.round(c2.shadowRadius * dockScale2));
+                        int dockShadowSize = Math.max(1, Math.round(c2.shadowSize * dockScale2));
+                        int dockShadowAlpha = c2.shadowAlpha;
+                        int dockShadowY = Math.round(c2.shadowY * dockScale2);
                         if (overlay != null && overlay.getParent() != null) return;
                         if (overlay != null) {
                             XposedBridge.log("[DC] re-creating dock overlay (previous detached)");
@@ -351,40 +356,12 @@ public class MainHook implements IXposedHookLoadPackage {
                                 Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
                                 if (candidate instanceof View) workspace = (View) candidate;
                             } catch (Throwable ignored) {}
-                            liquidGlassView = new DockLiquidGlassView(oldBg, workspace,
-                                c2.i("liquid_blur", 18), c2.i("liquid_refraction", 18),
-                                c2.i("liquid_chromatic", 8) / 100f,
-                                c2.i("liquid_tint_alpha", 38), sq2, sqCp,
-                                c2.i("liquid_capture_fps", 24));
+                            liquidGlassView = LiquidGlassFactory.create(oldBg, workspace,
+                                    current.glass, sq2, sqCp);
                             liquidGlassView.setId(View.generateViewId());
                             seedLauncherLifecycleState(param.thisObject);
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                            liquidGlassView.setStopGraceMillis(c2.i("liquid_capture_stop_delay", 150));
-                            liquidGlassView.setBleedVerticalPx(
-                                    c2.i("liquid_capture_bleed_top", -1),
-                                    c2.i("liquid_capture_bleed_bottom", -1));
-                            liquidGlassView.setPrismalParams(
-                                    c2.i("liquid_thickness", 18),
-                                    c2.i("liquid_ior", 155) / 100f,
-                                    c2.i("liquid_normal_strength", 115) / 100f,
-                                    c2.i("liquid_dome", 100) / 100f,
-                                    c2.i("liquid_lens_refraction", 12),
-                                    c2.i("liquid_refraction_inset", 20));
-                            liquidGlassView.setCaptureScale(c2.i("liquid_capture_scale", 50) / 100f);
-                            liquidGlassView.setHighlightWidth(c2.i("liquid_highlight_width", 100) / 100f);
-                            liquidGlassView.setTintColor(
-                                    c2.i("liquid_tint_r", 238),
-                                    c2.i("liquid_tint_g", 244),
-                                    c2.i("liquid_tint_b", 255));
-                            liquidGlassView.setAppearance(
-                                    c2.i("liquid_depth_effect", 8) / 100f,
-                                    c2.i("liquid_brightness", 108) / 100f,
-                                    c2.i("liquid_specular_sharp", 88),
-                                    c2.i("liquid_specular_strength", 105) / 100f,
-                                    c2.i("liquid_rim_light", 100) / 100f,
-                                    c2.i("liquid_caustics", 28) / 100f,
-                                    c2.i("liquid_edge_band", 32) / 1000f);
-                            liquidGlassView.setHighlightAlpha(c2.i("liquid_highlight_alpha", 100) / 100f);
+                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                             bindRecentsView(liquidGlassView, param.thisObject);
                             bindDockDragController(liquidGlassView, cl);
                             installDockTouchListener(liquidGlassView, oldBg.getRootView());
@@ -402,6 +379,13 @@ public class MainHook implements IXposedHookLoadPackage {
                             parent.addView(liquidGlassView, Math.max(0, bgIndex),
                                 new FrameLayout.LayoutParams(1, 1, gv));
                         }
+                        if (workstationMode) {
+                            if (liquidGlassView != null) {
+                                liquidGlassView.setWorkstationMode(true);
+                                syncAll(oldBg);
+                            }
+                            return;
+                        }
                         if (dockShadow) {
                             shadowView = makeDockShadow(sq2, sqOff, sqCp, dockShadowRadius, dockShadowSize,
                                 dockShadowAlpha, dockShadowY);
@@ -417,10 +401,10 @@ public class MainHook implements IXposedHookLoadPackage {
                                 unclipped = next instanceof ViewGroup ? (ViewGroup) next : null;
                             }
                         }
-                        overlay = makeOverlay(oldBg, strokeEnabled, lm2, sq2, sqOff, sqW, sqCp, fd2, sw, stdSw,
+                        overlay = makeOverlay(oldBg, strokeEnabled, sq2, sqOff, sqW, sqCp, fd2, sw, stdSw,
                             shadow, shadowRadius, shadowAlpha);
                         overlay.setId(View.generateViewId()); parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
-                        syncAll(oldBg); if (strokeEnabled && "dynamic".equals(lm2)) startMotionSensor(oldBg);
+                        syncAll(oldBg);
                     } catch (Throwable e) { XposedBridge.log("[DC] err: " + e); }
                 }});
         } catch (Throwable e) { XposedBridge.log("[DC] init err: " + e); }
@@ -458,6 +442,26 @@ public class MainHook implements IXposedHookLoadPackage {
             return;
         }
 
+        // HyperOS Launcher already mirrors SystemUI's notification/control-center expansion
+        // into DeviceConfig.  This is more precise than treating every focus loss as SystemUI:
+        // the floating Dock also legitimately loses focus while it is shown above an app.
+        try {
+            Class<?> deviceConfig = XposedHelpers.findClass(
+                    "com.miui.home.launcher.DeviceConfig", cl);
+            XposedHelpers.findAndHookMethod(deviceConfig, "setControlPanelExpanded",
+                    boolean.class, new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) {
+                            boolean expanded = Boolean.TRUE.equals(p.args[0]);
+                            systemUiPanelExpanded = expanded;
+                            DockLiquidGlassView glass = liquidGlassView;
+                            if (glass != null) glass.setSystemUiPanelExpanded(expanded);
+                            XposedBridge.log("[DC] liquid SystemUI panel expanded=" + expanded);
+                        }
+                    });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] SystemUI panel capture gate unavailable: " + e);
+        }
+
         XC_MethodHook focusHook = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 boolean hasFocus = Boolean.TRUE.equals(p.args[0]);
@@ -467,6 +471,11 @@ public class MainHook implements IXposedHookLoadPackage {
                 DockLiquidGlassView glass = liquidGlassView;
                 if (glass != null) {
                     glass.setLauncherState(true, hasFocus);
+                    if (!hasFocus) {
+                        // An app came to the front: resolve its SF layer name so mode-1
+                        // captures can include exactly that layer.
+                        glass.refreshForegroundAppLayer();
+                    }
                     // Focus returning to the launcher = the way-home transition starts
                     // (Dock collapses with the icon fly-in animation).  Record the
                     // timestamp (render logs correlate with the animation window) and
@@ -481,6 +490,28 @@ public class MainHook implements IXposedHookLoadPackage {
                     boolean.class, focusHook);
         } catch (Throwable e) {
             XposedBridge.log("[DC] onWindowFocusChanged hook failed: " + e);
+        }
+
+        // Dock v3 resolves the final gesture target before Launcher focus/lifecycle catches up.
+        // These events are emitted again when an animation is interrupted, so they provide the
+        // correct source switch for HOME, APP and RECENTS without timing guesses.
+        hookDockGestureTarget(cl, "GestureToHome", "HOME");
+        hookDockGestureTarget(cl, "GestureToApp", "APP");
+        hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
+
+        try {
+            XposedHelpers.findAndHookMethod(launcherClass, "onConfigurationChanged",
+                    Configuration.class, new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam p) {
+                            DockLiquidGlassView glass = liquidGlassView;
+                            if (glass == null) return;
+                            glass.requestCapture("launcher-configuration-changed");
+                            glass.postDelayed(() -> glass.requestCapture(
+                                    "launcher-configuration-settled"), 220L);
+                        }
+                    });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] liquid configuration hook unavailable: " + e);
         }
 
         XC_MethodHook resumeHook = new XC_MethodHook() {
@@ -518,11 +549,12 @@ public class MainHook implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 if (!launcherClass.isInstance(p.thisObject)) return;
                 boolean visible = (((Integer) p.args[0]) & View.VISIBLE) != 0;
-                launcherLifecycleKnown = true;
-                launcherResumed = visible;
                 XposedBridge.log("[DC] liquid window visibility: " + p.args[0]);
                 DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) glass.setLauncherState(true, visible);
+                // Visibility changes during both Dock pull-up and return-home animations;
+                // they are not a HOME/APP signal. Window focus owns that decision.
+                if (glass != null) glass.requestCapture(
+                        visible ? "launcher-window-visible" : "launcher-window-hidden");
             }
         };
         try {
@@ -613,6 +645,22 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
+    private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
+        try {
+            Class<?> eventClass = XposedHelpers.findClass(
+                    "com.miui.home.launcher.dock.v3." + eventName, cl);
+            XposedBridge.hookAllConstructors(eventClass, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    DockLiquidGlassView glass = liquidGlassView;
+                    if (glass != null) glass.setGestureCaptureTarget(target);
+                    XposedBridge.log("[DC] liquid gesture target=" + target);
+                }
+            });
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] " + eventName + " capture hook unavailable: " + e);
+        }
+    }
+
     private static View makeDockShadow(boolean sq, int sqOff, float sqCp,
                                        int radius, int size, int alpha, int offsetY) {
         final int maxDistance = Math.max(1, size);
@@ -651,39 +699,30 @@ public class MainHook implements IXposedHookLoadPackage {
         return view;
     }
 
-    private static View makeOverlay(View bg, boolean strokeEnabled, String lm, boolean sq, int sqOff, int sqW, float sqCp,
+    private static View makeOverlay(View bg, boolean strokeEnabled, boolean sq, int sqOff, int sqW, float sqCp,
                                     boolean fd, int sw, int stdSw, boolean shadow,
                                     int shadowRadius, int shadowAlpha) {
         return new View(bg.getContext()) {
             @Override protected void onDraw(Canvas c) {
                 if (!strokeEnabled || bgW < 1 || bgH < 1) return;
-                float w = bgW, h = bgH, r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f), md = Math.max(w, h);
+                float w = bgW, h = bgH, r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f);
                 if (sq) {
                     if (shadow) drawSqShadow(c, w, h, r, sqOff, sqCp, shadowRadius, shadowAlpha);
-                    drawSq(c, w, h, r, sqOff, sqW, sqCp, lm, md); return;
+                    drawSq(c, w, h, r, sqOff, sqW, sqCp); return;
                 }
                 if (shadow) drawRoundShadow(c, w, h, r, shadowRadius, shadowAlpha);
-                if ("none".equals(lm)) {
-                    if (fd) c.drawPath(roundRectRing(w, h, r, sw), noc(150));
-                    else {
-                        Paint stroke = noc(150); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(stdSw);
-                        c.drawRoundRect(1, 1, w - 1, h - 1, r, r, stroke);
-                    }
-                    return;
+                if (fd) c.drawPath(roundRectRing(w, h, r, sw), noc(150));
+                else {
+                    Paint stroke = noc(150); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(stdSw);
+                    c.drawRoundRect(1, 1, w - 1, h - 1, r, r, stroke);
                 }
-                drawDyn(c, w, h, r, fd, sw, stdSw, md, lm);
-            }
-            @Override protected void onWindowVisibilityChanged(int visibility) {
-                super.onWindowVisibilityChanged(visibility);
-                if (!strokeEnabled || !"dynamic".equals(lm)) return;
-                if (visibility == View.VISIBLE) startMotionSensor(bg); else stopMotionSensor();
             }
             @Override protected void onDetachedFromWindow() {
-                if (strokeEnabled && "dynamic".equals(lm)) stopMotionSensor();
+                boolean ownsGlobalState = overlay == this;
                 DockLiquidGlassView glass = liquidGlassView;
                 if (glass != null) glass.setLauncherResumed(false);
                 liquidGlassView = null;
-                if (overlay == this) overlay = null;
+                if (ownsGlobalState) overlay = null;
                 if (oldBg == bg) oldBg = null;
                 super.onDetachedFromWindow();
             }
@@ -735,28 +774,12 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
-    private static void drawSq(Canvas c, float w, float h, float r, int sqOff, int sqW, float sqCp, String lm, float md) {
+    private static void drawSq(Canvas c, float w, float h, float r, int sqOff, int sqW, float sqCp) {
         Path outer = squirclePath(new RectF(-sqOff, -sqOff, w + sqOff, h + sqOff), r, sqCp);
         Path inner = squirclePath(new RectF(-sqOff + sqW, -sqOff + sqW, w + sqOff - sqW, h + sqOff - sqW),
             Math.max(0, r - sqW * .5f), .65f);
         outer.op(inner, Path.Op.DIFFERENCE);
-        Paint base = noc("none".equals(lm) ? 200 : 120);
-        c.drawPath(outer, base);
-        if (!"none".equals(lm)) c.drawPath(outer, grad(w, h, lm, md));
-    }
-
-    private static void drawDyn(Canvas c, float w, float h, float r, boolean fd, int sw, int stdSw, float md, String lm) {
-        Paint gradient = grad(w, h, lm, md);
-        if (fd) {
-            Path ring = roundRectRing(w, h, r, sw);
-            c.drawPath(ring, noc(120));
-            c.drawPath(ring, gradient);
-        } else {
-            Paint base = noc(120); base.setStyle(Paint.Style.STROKE); base.setStrokeWidth(stdSw);
-            c.drawRoundRect(1, 1, w - 1, h - 1, r, r, base);
-            gradient.setStyle(Paint.Style.STROKE); gradient.setStrokeWidth(stdSw);
-            c.drawRoundRect(1, 1, w - 1, h - 1, r, r, gradient);
-        }
+        c.drawPath(outer, noc(200));
     }
 
     private static Paint noc(int a) {
@@ -767,48 +790,6 @@ public class MainHook implements IXposedHookLoadPackage {
         return p;
     }
     private static void clear(Paint p) { p.setColor(0); p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)); }
-    private static Paint grad(float w, float h, String lm, float md) {
-        boolean dyn = "dynamic".equals(lm); if (dyn) { smoothLx += (gyroY - smoothLx) * .06f; smoothLy += (gyroX - smoothLy) * .06f; }
-        float lx = dyn ? smoothLx : 0, ly = dyn ? smoothLy : 0, ang = (float) Math.atan2(ly, lx), cs = (float) Math.cos(ang), sn = (float) Math.sin(ang);
-        Paint p = new Paint(1); p.setStyle(Paint.Style.FILL);
-        p.setShader(new LinearGradient(w * .5f - cs * md * .6f, h * .5f - sn * md * .6f, w * .5f + cs * md * .6f, h * .5f + sn * md * .6f,
-            new int[]{Color.argb(0, 255, 255, 255), Color.argb(60, 255, 255, 255), Color.argb(220, 255, 255, 255), Color.argb(60, 255, 255, 255)},
-            new float[]{0f, .3f, .5f, 1f}, Shader.TileMode.CLAMP)); return p;
-    }
-
-    private static void startMotionSensor(View bg) {
-        try {
-            SensorManager sm = (SensorManager) bg.getContext().getSystemService(android.content.Context.SENSOR_SERVICE);
-            if (sm == null) return;
-            stopMotionSensor();
-            Sensor sensor = sm.getDefaultSensor(Sensor.TYPE_GRAVITY);
-            if (sensor == null) sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-            if (sensor == null) { XposedBridge.log("[DC] dynamic light: no motion sensor"); return; }
-            motionSensorManager = sm;
-            motionSensorListener = new SensorEventListener() {
-                @Override public void onSensorChanged(SensorEvent e) {
-                    if (e.values.length < 2) return;
-                    gyroX = clamp(-e.values[0] / SensorManager.GRAVITY_EARTH * 1.35f, -1.35f, 1.35f);
-                    gyroY = clamp(e.values[1] / SensorManager.GRAVITY_EARTH * 1.35f, -1.35f, 1.35f);
-                    View v = overlay; if (v != null) v.postInvalidateOnAnimation();
-                }
-                @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-            };
-            boolean ok = sm.registerListener(motionSensorListener, sensor, SensorManager.SENSOR_DELAY_GAME);
-            XposedBridge.log("[DC] dynamic light sensor=" + sensor.getName() + " registered=" + ok);
-        } catch (Throwable e) { XposedBridge.log("[DC] dynamic light sensor error: " + e); }
-    }
-
-
-    private static synchronized void stopMotionSensor() {
-        if (motionSensorManager != null && motionSensorListener != null) {
-            try { motionSensorManager.unregisterListener(motionSensorListener); }
-            catch (Throwable e) { XposedBridge.log("[DC] unregister motion sensor error: " + e); }
-        }
-        motionSensorManager = null;
-        motionSensorListener = null;
-    }
-
     private static void syncShadowGeometry() {
         View shadow = shadowView, stroke = overlay;
         if (shadow == null || stroke == null || bgW <= 0 || bgH <= 0) return;
@@ -846,6 +827,11 @@ public class MainHook implements IXposedHookLoadPackage {
                     case android.view.MotionEvent.ACTION_DOWN:
                     case android.view.MotionEvent.ACTION_MOVE:
                         glass.onDockTouchEvent();
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
                         break;
                     default:
                         break;
@@ -872,7 +858,12 @@ public class MainHook implements IXposedHookLoadPackage {
                     case android.view.MotionEvent.ACTION_MOVE:
                         if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
                             glass.onDockTouchEvent();
+                            glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
                         }
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
                         break;
                     default:
                         break;
@@ -947,11 +938,13 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void syncAll(View bg) { if (bg == null) return;
+        if (workstationMode && liquidGlassView == null) return;
         if (overlay == null && liquidGlassView == null && shadowView == null) return;
         try { bgW = XposedHelpers.getIntField(bg, "mWidth"); bgH = XposedHelpers.getIntField(bg, "mHeight");
             Object r = XposedHelpers.getObjectField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
             if (overlay != null) {
+                if (workstationMode) overlay.setVisibility(View.GONE);
                 ViewGroup.LayoutParams lp = overlay.getLayoutParams();
                 if (lp != null) { lp.width = bgW; lp.height = bgH; overlay.setLayoutParams(lp); }
                 overlay.invalidate();
@@ -968,9 +961,299 @@ public class MainHook implements IXposedHookLoadPackage {
                 liquidGlassView.invalidate();
             }
             if (shadowView != null) {
+                if (workstationMode) {
+                    shadowView.setVisibility(View.GONE);
+                    return;
+                }
                 syncShadowGeometry();
                 overlay.post(MainHook::syncShadowGeometry);
             }
         } catch (Throwable ignored) {} }
+
+    static boolean isWorkstationMode() { return workstationMode; }
+
+    private static void installDockResizeAnimationBypass(ClassLoader classLoader,
+                                                          boolean smoothAnimation) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    classLoader, "updateBackgroundSize", int.class, int.class, float.class,
+                    new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                param.setObjectExtra("bd_old_w", XposedHelpers.getIntField(param.thisObject, "mWidth"));
+                                param.setObjectExtra("bd_old_h", XposedHelpers.getIntField(param.thisObject, "mHeight"));
+                                param.setObjectExtra("bd_old_r", XposedHelpers.getObjectField(param.thisObject, "mCornerRadius"));
+                            } catch (Throwable ignored) {}
+                        }
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object set = XposedHelpers.getObjectField(
+                                        param.thisObject, "animatorSet");
+                                if (set instanceof android.animation.Animator)
+                                    ((android.animation.Animator) set).end();
+                                Object radius = XposedHelpers.getObjectField(
+                                        param.thisObject, "mViewRadiusAnimator");
+                                if (radius instanceof android.animation.Animator)
+                                    ((android.animation.Animator) radius).end();
+                            } catch (Throwable ignored) {}
+                            View view = (View) param.thisObject;
+                            if (smoothAnimation) animateDockGeometryFromPrevious(view,
+                                    param.getObjectExtra("bd_old_w"),
+                                    param.getObjectExtra("bd_old_h"),
+                                    param.getObjectExtra("bd_old_r"));
+                            else syncAll(view);
+                        }
+                    });
+            XposedBridge.log("[DC] Dock resize animation disabled");
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] Dock resize animation bypass unavailable: " + e);
+        }
+    }
+
+    private static void animateDockGeometryFromPrevious(View view, Object oldWObject,
+                                                         Object oldHObject, Object oldRObject) {
+        try {
+            int targetW = XposedHelpers.getIntField(view, "mWidth");
+            int targetH = XposedHelpers.getIntField(view, "mHeight");
+            float targetR = ((Number) XposedHelpers.getObjectField(view, "mCornerRadius")).floatValue();
+            int startW = oldWObject instanceof Number ? ((Number) oldWObject).intValue() : targetW;
+            int startH = oldHObject instanceof Number ? ((Number) oldHObject).intValue() : targetH;
+            float startR = oldRObject instanceof Number ? ((Number) oldRObject).floatValue() : targetR;
+            synchronized (dockResizeAnimators) {
+                android.animation.ValueAnimator previous = dockResizeAnimators.remove(view);
+                if (previous != null) {
+                    startW = XposedHelpers.getIntField(view, "mWidth");
+                    startH = XposedHelpers.getIntField(view, "mHeight");
+                    startR = ((Number) XposedHelpers.getObjectField(view, "mCornerRadius")).floatValue();
+                    previous.cancel();
+                }
+                if (startW == targetW && startH == targetH && Math.abs(startR - targetR) < .01f) {
+                    syncAll(view);
+                    return;
+                }
+                final int fromW = startW, fromH = startH;
+                final float fromR = startR;
+                XposedHelpers.setIntField(view, "mWidth", fromW);
+                XposedHelpers.setIntField(view, "mHeight", fromH);
+                XposedHelpers.setObjectField(view, "mCornerRadius", fromR);
+                android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+                animator.setDuration(180L);
+                animator.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0f, 0f, 1f));
+                animator.addUpdateListener(a -> {
+                    float t = (Float) a.getAnimatedValue();
+                    XposedHelpers.setIntField(view, "mWidth", Math.round(fromW + (targetW - fromW) * t));
+                    XposedHelpers.setIntField(view, "mHeight", Math.round(fromH + (targetH - fromH) * t));
+                    XposedHelpers.setObjectField(view, "mCornerRadius", fromR + (targetR - fromR) * t);
+                    try { XposedHelpers.callMethod(view, "triggerMeasure"); } catch (Throwable ignored) {}
+                    view.requestLayout();
+                    syncAll(view);
+                });
+                animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) {
+                        synchronized (dockResizeAnimators) { dockResizeAnimators.remove(view); }
+                    }
+                });
+                dockResizeAnimators.put(view, animator);
+                animator.start();
+            }
+        } catch (Throwable e) {
+            syncAll(view);
+            XposedBridge.log("[DC] smooth Dock resize failed: " + e);
+        }
+    }
+
+    private static void installWorkstationDockHooks(ClassLoader classLoader,
+                                                    BetterDockConfig.Workstation config) {
+        if (!config.dockEnabled) return;
+        float scale = config.dimensionsDp
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int widthOffset = Math.round(config.dockWidthOffset * scale);
+        int iconTopOffset = Math.round(config.iconTopOffset * scale);
+        int iconBottomOffset = Math.round(config.iconBottomOffset * scale);
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    classLoader, "setBackgroundWidth", int.class, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            if (workstationMode && widthOffset != 0)
+                                param.args[0] = (Integer) param.args[0] + widthOffset;
+                        }
+                    });
+            XposedBridge.log("[DC] workstation Dock width hook offset=" + widthOffset);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] workstation Dock hook unavailable: " + e);
+        }
+        try {
+            Class<?> recyclerView = XposedHelpers.findClass(
+                    "androidx.recyclerview.widget.RecyclerView", classLoader);
+            Class<?> recyclerState = XposedHelpers.findClass(
+                    "androidx.recyclerview.widget.RecyclerView$State", classLoader);
+            XposedHelpers.findAndHookMethod(
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
+                    classLoader, "getItemOffsets", Rect.class, View.class,
+                    recyclerView, recyclerState, new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            if (!workstationMode) return;
+                            Rect out = (Rect) param.args[0];
+                            out.top += iconTopOffset;
+                            out.bottom += iconBottomOffset;
+                        }
+                    });
+            XposedBridge.log("[DC] workstation Dock icon vertical offsets top="
+                    + iconTopOffset + " bottom=" + iconBottomOffset);
+        } catch (Throwable e) {
+            XposedBridge.log("[DC] workstation Dock icon offset hook unavailable: " + e);
+        }
+    }
+
+    private static void installWorkstationModeGuard(ClassLoader classLoader) {
+        boolean detected = false;
+        // Current HyperOS build: this is the actual active LauncherMode, not merely a
+        // preference. LaptopStateManager receives the transition before the hierarchy is
+        // rebuilt, which lets every BetterDock hook stand down during that rebuild.
+        try {
+            Class<?> modeController = XposedHelpers.findClass(
+                    "com.miui.home.launcher.allapps.LauncherModeController", classLoader);
+            workstationMode = (Boolean) XposedHelpers.callStaticMethod(
+                    modeController, "isLaptopMode");
+            Class<?> stateManager = XposedHelpers.findClass(
+                    "com.miui.home.launcher.laptop.LaptopStateManager", classLoader);
+            XposedHelpers.findAndHookMethod(stateManager, "onLaptopModeChanged",
+                    boolean.class, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            boolean entering = (Boolean) param.args[0];
+                            if (entering) backupNormalHomeLayout();
+                            // On exit, re-enable 8x4 before Launcher reloads the normal DB.
+                            setWorkstationMode(entering);
+                        }
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            if (!((Boolean) param.args[0])) scheduleNormalLayoutRestore();
+                            HomeGridHook.scheduleAllPageRefresh();
+                        }
+                    });
+            detected = true;
+            XposedBridge.log("[DC] workstation guard uses LauncherModeController; active="
+                    + workstationMode);
+        } catch (Throwable currentApiError) {
+            XposedBridge.log("[DC] current workstation API unavailable: " + currentApiError);
+        }
+        // Older Mingou builds used a DeviceConfig preference directly.
+        if (!detected) try {
+            Class<?> deviceConfig = XposedHelpers.findClass(
+                    "com.miui.home.launcher.DeviceConfig", classLoader);
+            workstationMode = (Boolean) XposedHelpers.callStaticMethod(
+                    deviceConfig, "isMingouLaptopPcModeEnabled");
+            XposedHelpers.findAndHookMethod(deviceConfig,
+                    "setMingouLaptopPcModeEnabled", boolean.class, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            setWorkstationMode((Boolean) param.args[0]);
+                        }
+                    });
+            detected = true;
+            XposedBridge.log("[DC] workstation guard uses legacy DeviceConfig; active="
+                    + workstationMode);
+        } catch (Throwable legacyApiError) {
+            XposedBridge.log("[DC] legacy workstation API unavailable: " + legacyApiError);
+        }
+        if (!detected) {
+            // Keep normal mode usable, but report loudly instead of the old silent fallback.
+            workstationMode = false;
+            XposedBridge.log("[DC] ERROR: no supported workstation state API found");
+        }
+    }
+
+    private static void setWorkstationMode(boolean enabled) {
+        workstationMode = enabled;
+        HomeGridHook.setWorkstationMode(enabled);
+        XposedBridge.log("[DC] Mingou workstation mode changed=" + enabled);
+        if (!enabled) {
+            if (oldBg != null) oldBg.post(() -> {
+                if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
+                if (overlay != null) overlay.setVisibility(View.VISIBLE);
+                if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
+                syncAll(oldBg);
+            });
+            return;
+        }
+        // Restore the native Dock immediately. Modified views remain hidden until the
+        // launcher rebuilds its normal-mode hierarchy, avoiding workstation rendering bugs.
+        if (oldBg != null) oldBg.post(() -> {
+            if (oldBg != null) oldBg.setAlpha(1f);
+            if (overlay != null) overlay.setVisibility(View.GONE);
+            if (shadowView != null) shadowView.setVisibility(View.GONE);
+            if (liquidGlassView != null) {
+                liquidGlassView.setVisibility(View.VISIBLE);
+                liquidGlassView.setWorkstationMode(true);
+            }
+        });
+    }
+
+    private static void backupNormalHomeLayout() {
+        normalLayoutBackup.clear();
+        View root = oldBg == null ? null : oldBg.getRootView();
+        if (root != null) collectHomeItemPositions(root, false);
+        XposedBridge.log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
+    }
+
+    private static void scheduleNormalLayoutRestore() {
+        View root = oldBg == null ? null : oldBg.getRootView();
+        if (root == null || normalLayoutBackup.isEmpty()) return;
+        root.post(() -> restoreNormalHomeLayout(root));
+        root.postDelayed(() -> restoreNormalHomeLayout(root), 250L);
+        root.postDelayed(() -> restoreNormalHomeLayout(root), 700L);
+    }
+
+    private static void collectHomeItemPositions(View view, boolean restore) {
+        Object tag = view.getTag();
+        if (tag != null) try {
+            long id = XposedHelpers.getLongField(tag, "id");
+            if (id >= 0) {
+                if (!restore) {
+                    normalLayoutBackup.put(id, new HomeItemPosition(
+                            XposedHelpers.getLongField(tag, "screenId"),
+                            XposedHelpers.getIntField(tag, "cellX"),
+                            XposedHelpers.getIntField(tag, "cellY"),
+                            XposedHelpers.getIntField(tag, "spanX"),
+                            XposedHelpers.getIntField(tag, "spanY")));
+                } else {
+                    HomeItemPosition saved = normalLayoutBackup.get(id);
+                    if (saved != null) {
+                        XposedHelpers.setLongField(tag, "screenId", saved.screenId);
+                        XposedHelpers.setIntField(tag, "cellX", saved.cellX);
+                        XposedHelpers.setIntField(tag, "cellY", saved.cellY);
+                        XposedHelpers.setIntField(tag, "spanX", saved.spanX);
+                        XposedHelpers.setIntField(tag, "spanY", saved.spanY);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                collectHomeItemPositions(group.getChildAt(i), restore);
+        }
+    }
+
+    private static void restoreNormalHomeLayout(View root) {
+        if (workstationMode) return;
+        collectHomeItemPositions(root, true);
+        root.requestLayout();
+        root.invalidate();
+        XposedBridge.log("[DC] normal 8x4 layout restored from backup items="
+                + normalLayoutBackup.size());
+    }
+
+    private static final class HomeItemPosition {
+        final long screenId;
+        final int cellX, cellY, spanX, spanY;
+        HomeItemPosition(long screenId, int cellX, int cellY, int spanX, int spanY) {
+            this.screenId = screenId;
+            this.cellX = cellX;
+            this.cellY = cellY;
+            this.spanX = spanX;
+            this.spanY = spanY;
+        }
+    }
 
 }
