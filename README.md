@@ -42,7 +42,8 @@ Compose Miuix 类通过 `src/main/keepRules/liquiddock.keep` 保持不混淆；
 - **HyperCeiler** — 模块工程实践参考（模块结构、设置组织）
 - **Prismal** — 液态玻璃光学模型与 Shader 参数设计参考
 - **LSPosed** — 模块 Hook API 与加载框架
-- **HyperLight** — 降采样与屏幕捕获思路启发
+
+降采样与屏幕捕获的设计思路则受 HyperLight 启发。
 
 ## 开源许可
 

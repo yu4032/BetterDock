@@ -10,6 +10,7 @@ Implementation and interaction references:
 
 - **HyperCeiler** — module engineering practice reference (module structure, settings organization); GPL-3.0 — <https://github.com/ReChronoRain/HyperCeiler>
 - **Prismal** — liquid-glass optical model and shader parameter design reference; MIT License — <https://github.com/styropyr0/Prismal>
-- **HyperLight** — its downsampling and screen-capture ideas served as inspiration.
+
+The downsampling and screen-capture ideas that shaped the capture pipeline were inspired by HyperLight.
 
 The names and trademarks of referenced projects belong to their respective owners.
