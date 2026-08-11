@@ -1123,14 +1123,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // glass should refract).  Animations, interruptions, and all
                     // home-screen states stay in wallpaper mode.
                     boolean appFront = !(launcherResumed && launcherLifecycleKnown);
-                    long nowNanos = System.nanoTime();
-                    boolean dockSettled = nowNanos > dockMovingUntilNanos;
-                    if (settledLogCount++ < 6) {
-                        Log.i(TAG, "settled: now=" + nowNanos + " movingUntil=" + dockMovingUntilNanos
-                                + " diffMs=" + ((dockMovingUntilNanos - nowNanos) / 1_000_000L)
-                                + " appFront=" + appFront + " obsValid=" + observationValid);
-                    }
-                    boolean wallpaperMode = !(appFront && dockSettled);
+                    // Wallpaper-only capture (mode=2) is used on the home screen / recents /
+                    // return animations.  When a non-home app is in front, capture the
+                    // screen (mode=1): the Dock's own blur pass makes the BBQ-wallpaper
+                    // layer unreliable while pulling the Dock out over an app (black
+                    // frames), whereas mode 1 with the Dock layer excluded works in all
+                    // Dock states (verified 01:49 path).
+                    boolean wallpaperMode = !appFront;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
@@ -1141,7 +1140,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
                             + " crop=" + req.stripRect + " scale=" + captureScale
-                            + " appFront=" + appFront + " settled=" + dockSettled);
+                            + " appFront=" + appFront);
                     // Wallpaper mode still passes the Dock exclusion: during Dock expand/
                     // collapse the SF layer tree shifts and the wallpaper include can pick
                     // up the Dock's content; excluding the Dock layer is a belt-and-braces
