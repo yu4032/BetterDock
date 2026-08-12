@@ -311,10 +311,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // from a HOME-local Dock spring-back (keep live rendering).
     private boolean launcherWasAway;
     private boolean windowVisible;
-    // True when a floating/small window is covering the desktop.  In this case
-    // the Dock sits below the floating window (z: wallpaper→Dock→floating)
-    // so mode-1 would capture floating content — force mode-2 (wallpaper).
-    boolean floatingWindowOverDesktop;
     private boolean windowFocused;
     private boolean systemUiPanelExpanded;
     private android.view.SurfaceControl dockWindowSurface;
@@ -1018,13 +1014,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(this::onDockTouchEvent);
             return;
         }
-        // Floating window over desktop (launcherWasAway=false): the Dock sits
-        // below the floating window, so mode-1 would capture floating content.
-        // Force one mode-2 capture now — after this the glass shows wallpaper.
-        if (!launcherWasAway) {
-            floatingWindowOverDesktop = true;
-            updateDesiredScene();
-        }
         requestStateCapture("dock-touch");
     }
 
@@ -1066,10 +1055,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private void prearmRecentsCapture(String reason) {
         recentsPrearmed = true;
-        // Touch-to-force-wallpaper flag must be cleared when entering recents:
-        // the recents panel is above the Dock, so mode-1 (full-display with
-        // Dock excluded) is correct — mode-2 would show only the wallpaper.
-        floatingWindowOverDesktop = false;
         // This is only an early cadence/source hint. GestureToHome/App/Recent remains
         // authoritative and immediately replaces it if the gesture is interrupted.
         sceneState.prearmRecents(System.nanoTime());
@@ -1357,7 +1342,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
-        floatingWindowOverDesktop = false;
     }
 
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via
@@ -1620,15 +1604,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // thread, so this worker thread is free to service the next request
                     // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
-                    // Home screen: wallpaper-only capture (vendor captureMode 2 — fast,
-                    // inherently icon/dock-free).  Over a non-home app: full-display capture
-                    // with the Dock + drag layers excluded (mode 1) so the glass refracts
-                    // the app content.  Launcher window focus is the home-screen signal.
-                    boolean wallpaperMode = requestScene == CaptureScene.HOME
-                            || floatingWindowOverDesktop;
-                    // With a floating window over desktop, the Dock sits below it
-                    // (z: wallpaper→Dock→floating).  Mode-1 would capture the
-                    // floating content through the glass — forced mode-2 above.
+                    // Home screen: wallpaper-only capture (mode 2, fast,
+                    // inherently icon/dock-free).  APP and RECENTS use
+                    // full-display capture with Dock + drag layers excluded
+                    // (mode 1) for real-time content.
+                    boolean wallpaperMode = requestScene == CaptureScene.HOME;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
