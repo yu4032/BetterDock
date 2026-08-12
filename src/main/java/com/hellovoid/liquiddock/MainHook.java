@@ -1209,8 +1209,14 @@ public class MainHook {
     }
 
     private static Object callStatic(String className, String methodName, Object... args) {
-        try { return callThrough(Class.forName(className), methodName, args); }
-        catch (Throwable e) { return null; }
+        try {
+            Class<?> clazz = Class.forName(className);
+            for (Method m : clazz.getMethods()) {
+                if (!m.getName().equals(methodName) || m.getParameterCount() != args.length) continue;
+                try { return m.invoke(null, args); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable e) { /* best effort */ }
+        return null;
     }
 
     // ── data ─────────────────────────────────────────────────────────
