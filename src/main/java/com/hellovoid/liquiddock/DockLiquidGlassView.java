@@ -1362,18 +1362,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         floatingWindowOverDesktop = false;
     }
 
-    /** Launcher gained window focus.  If we genuinely returned from an app
-     *  (launcherWasAway), delay the first HOME capture by 1200 ms so the
-     *  icon fly-in animation settles before mode-2 reads the BBQ wrapper.
-     *  A HOME-local Dock pull (spring-back) uses the normal 500 ms cadence
-     *  to keep real-time rendering alive. */
+    /** Launcher gained window focus.  APP→HOME delay is user-configurable via
+     *  liquid_home_settle_delay (default 1200 ms).  Spring-backs use 500 ms. */
     void onLauncherFocused() {
         boolean wasAway = launcherWasAway;
         launcherWasAway = false;
+        long delay = wasAway
+                ? LiquidDockConfig.load().glass.homeSettleDelayMs
+                : 500L;
         mainHandler.postDelayed(() -> {
             if (!isCaptureAllowed()) return;
             requestStateCapture("focus-home");
-        }, wasAway ? 1200L : 500L);
+        }, delay);
     }
 
     /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation

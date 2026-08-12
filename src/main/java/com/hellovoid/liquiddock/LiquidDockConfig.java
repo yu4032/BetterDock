@@ -108,8 +108,8 @@ final class LiquidDockConfig {
                 rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
                 nativeBlurInset, recentsPrearmDistance;
         final int tintAlpha, captureFps, stopDelayMs, probeFps, motionThreshold,
-                motionBitThreshold, motionHoldMs, blackThreshold, tintR, tintG, tintB,
-                specularSharp;
+                motionBitThreshold, motionHoldMs, blackThreshold, homeSettleDelayMs,
+                tintR, tintG, tintB, specularSharp;
         final String blurMethod;
 
         Glass(ConfigReader c) {
@@ -136,6 +136,7 @@ final class LiquidDockConfig {
             motionBitThreshold = Math.max(0, c.i("liquid_dynamic_bit_threshold", 18));
             motionHoldMs = Math.max(0, c.i("liquid_dynamic_hold_ms", 900));
             blackThreshold = channel(c.i("liquid_black_threshold", 10));
+            homeSettleDelayMs = clamp(c.i("liquid_home_settle_delay", 1200), 200, 3000);
             highlightWidth = c.i("liquid_highlight_width", 100) / 100f;
             tintR = channel(c.i("liquid_tint_r", 238));
             tintG = channel(c.i("liquid_tint_g", 244));

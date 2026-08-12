@@ -211,6 +211,7 @@ private val liquidSpecs = listOf(
     IntSpec("liquid_dynamic_bit_threshold", "动态像素位变化阈值", 18, 1, 64, "", "liquid_dynamic_app_capture"),
     IntSpec("liquid_dynamic_hold_ms", "高频捕获保持时间", 900, 0, 5000, "ms", "liquid_dynamic_app_capture"),
     IntSpec("liquid_black_threshold", "黑帧亮度阈值", 10, 0, 64, ""),
+    IntSpec("liquid_home_settle_delay", "主页壁纸捕获延迟", 1200, 200, 3000, "ms"),
     IntSpec("liquid_capture_scale", "捕获分辨率", 50, 10, 100, "%"),
     IntSpec("liquid_capture_stop_delay", "捕获停止延迟", 150, 0, 10000, "ms"),
     IntSpec("liquid_recents_prearm_distance", "多任务捕获预触发距离", 8, 1, 48, "dp"),
