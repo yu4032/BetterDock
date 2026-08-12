@@ -1291,21 +1291,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> setGestureCaptureTarget(target));
             return;
         }
-        // GestureToHome is also emitted when a small Dock pull on HOME is released.
-        // sceneState.desired() cannot distinguish that case because the 8dp recents
-        // pre-arm may already have changed desired to RECENTS.  A real APP -> HOME
-        // return must have lost Launcher window focus; a real RECENTS -> HOME return
-        // has the overview actually visible.
-        boolean realHomeReturn = "HOME".equals(target)
-                && (launcherWasAway || isRecentsVisible());
+        // GestureToHome fires before Launcher focus/lifecycle catches up, and
+        // launcherWasAway may have already been cleared by onLauncherFocused()
+        // from a prior window-focus round-trip.  Arm the settle window for every
+        // HOME gesture unconditionally — a genuine return will use the mode-1
+        // fallback during icon fly-in; a HOME-local spring-back is naturally
+        // cancelled by onLauncherFocused() once the real focus state is known.
         sceneState.setGestureTarget(target, System.nanoTime());
-        if (realHomeReturn) {
+        if ("HOME".equals(target)) {
             armHomeSettle("gesture-home");
-        } else if ("HOME".equals(target)) {
-            // HOME-local spring-back: remove any stale transition timer immediately.
-            // The normal observation/capture cadence below remains untouched.
-            cancelHomeSettle("gesture-home-local");
-            logI("home settle bypass: HOME-local Dock gesture");
         } else {
             // Gesture was interrupted toward APP/RECENTS; any pending HOME tail frame
             // is now stale and must never land later as a visible flash.
