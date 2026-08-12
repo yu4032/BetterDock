@@ -55,20 +55,24 @@ final class DockDividerHook {
                         }
 
                         // --- color / alpha ---
-                        int color = cfg.dividerColor;
+                        int r = cfg.dividerColorR;
+                        int g = cfg.dividerColorG;
+                        int b = cfg.dividerColorB;
                         int alpha = cfg.dividerAlpha;
-                        if (color != -1 || alpha != -1) {
-                            View itemView = (View) chain.getThisObject();
-                            View content = (View) HookUtil.invoke(
-                                    chain.getThisObject(), "getContent");
-                            View target = content != null ? content : itemView;
-                            int actualColor = color != -1 ? color
-                                    : Color.WHITE;
-                            int actualAlpha = alpha != -1 ? alpha : 255;
-                            actualColor = Color.argb(actualAlpha,
-                                    Color.red(actualColor),
-                                    Color.green(actualColor),
-                                    Color.blue(actualColor));
+                        boolean hasColor = r != 0 || g != 0 || b != 0;
+                        boolean hasAlpha = alpha != 0;
+                        if (hasColor || hasAlpha) {
+                            View target = line;
+                            int actualColor = Color.rgb(
+                                    hasColor ? r : 255,
+                                    hasColor ? g : 255,
+                                    hasColor ? b : 255);
+                            if (hasAlpha) {
+                                actualColor = Color.argb(alpha,
+                                        Color.red(actualColor),
+                                        Color.green(actualColor),
+                                        Color.blue(actualColor));
+                            }
                             target.getBackground().setColorFilter(
                                     actualColor, PorterDuff.Mode.SRC_ATOP);
                         }
