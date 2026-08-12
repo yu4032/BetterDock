@@ -5,8 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
 }
 
-// Release signing: keystore + passwords are git-ignored locally; a backup copy
-// lives in the private yu4032/liquiddock-keys repository.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -20,8 +18,8 @@ android {
         applicationId = "com.hellovoid.liquiddock"
         minSdk = 33
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.0.2"
+        versionCode = 7
+        versionName = "1.1.0-api101"
     }
 
     signingConfigs {
@@ -36,7 +34,6 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            // AGP 9.3: R8 code shrinking + optimized resource shrinking.
             optimization.enable = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
                 "src/main/keepRules/liquiddock.keep")
@@ -45,8 +42,13 @@ android {
 
     buildFeatures { compose = true }
 
+    packaging {
+        resources {
+            merges += "META-INF/xposed/*"
+        }
+    }
+
     lint {
-        // LSPosed module: reflective access to hidden framework APIs is the whole point.
         disable += listOf("BlockedPrivateApi", "SoonBlockedPrivateApi")
     }
 
@@ -57,7 +59,11 @@ android {
 }
 
 dependencies {
-    compileOnly(files("libs/api-82.jar"))
+    // API 101 is provided by the Xposed framework inside hooked processes.
+    compileOnly("io.github.libxposed:api:101.0.1")
+    // The module app uses the companion service binder to read/write Remote Preferences.
+    implementation("io.github.libxposed:service:101.0.0")
+
     implementation("androidx.preference:preference:1.2.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-compose:1.13.0")
