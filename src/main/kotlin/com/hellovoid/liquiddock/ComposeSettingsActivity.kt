@@ -104,6 +104,7 @@ private fun optionSummary(key: String): String = when (key) {
     "dock_bottom_offset" -> "调整 Dock 与屏幕底部的距离"
     "dock_divider_width_dp" -> "调整图标分隔竖线的宽度"
     "dock_divider_height_scale" -> "调整分隔竖线占图标高度的百分比"
+    "dock_divider_y_offset" -> "上下偏移分隔竖线，正值下移负值上移"
     "dock_divider_color_r" -> "分隔竖线颜色 · 红，全为 0 使用系统默认"
     "dock_divider_color_g" -> "分隔竖线颜色 · 绿，全为 0 使用系统默认"
     "dock_divider_color_b" -> "分隔竖线颜色 · 蓝，全为 0 使用系统默认"
@@ -188,6 +189,7 @@ private val dockSpecs = listOf(
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, -30, 40, "dp"),
     IntSpec("dock_divider_width_dp", "分隔线宽度", 0, 0, 160, "dp×10"),
     IntSpec("dock_divider_height_scale", "分隔线高度比例", 0, 0, 100, "%"),
+    IntSpec("dock_divider_y_offset", "分隔线垂直偏移", 0, -80, 80, "dp×10"),
     IntSpec("dock_divider_color_r", "分隔线颜色 · 红", 0, 0, 255, ""),
     IntSpec("dock_divider_color_g", "分隔线颜色 · 绿", 0, 0, 255, ""),
     IntSpec("dock_divider_color_b", "分隔线颜色 · 蓝", 0, 0, 255, ""),

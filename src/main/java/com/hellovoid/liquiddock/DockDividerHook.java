@@ -55,6 +55,13 @@ final class DockDividerHook {
                             }
 
                             line.setLayoutParams(lp);
+
+                            // Y offset (apply after height/margin calc, independent of scale)
+                            if (cfg.dividerYOffset != 0f) {
+                                int yPx = Math.round(cfg.dividerYOffset / 10f * scale);
+                                lp.topMargin += yPx;
+                                line.setLayoutParams(lp);
+                            }
                         }
 
                         // --- color / alpha ---

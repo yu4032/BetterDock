@@ -64,7 +64,7 @@ final class LiquidDockConfig {
         final int strokeR, strokeG, strokeB, strokeAlpha;
         final float strokeShadowRadius, shadowRadius, shadowSize, shadowY;
         final int strokeShadowAlpha, shadowAlpha;
-        final float dividerWidthDp, dividerHeightScale;
+        final float dividerWidthDp, dividerHeightScale, dividerYOffset;
         final int dividerColorR, dividerColorG, dividerColorB, dividerAlpha;
 
         Dock(ConfigReader c) {
@@ -102,6 +102,7 @@ final class LiquidDockConfig {
             shadowY = c.f("dock_shadow_y", 12);
             dividerWidthDp = c.f("dock_divider_width_dp", 0);
             dividerHeightScale = c.f("dock_divider_height_scale", 0);
+            dividerYOffset = c.f("dock_divider_y_offset", 0);
             dividerColorR = c.i("dock_divider_color_r", 0);
             dividerColorG = c.i("dock_divider_color_g", 0);
             dividerColorB = c.i("dock_divider_color_b", 0);
