@@ -309,6 +309,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean attached;
     private boolean launcherResumed;
     private boolean launcherLifecycleKnown;
+    // Set only by the real Launcher window-focus hook.  This intentionally does not
+    // follow sceneState.desired(): a short HOME Dock pull can pre-arm RECENTS at 8dp
+    // even though Launcher never left the foreground.
+    private boolean launcherWasAway;
+    private boolean homeReturnTransitionArmed;
+    private long homeSettleGeneration;
     private boolean windowVisible;
     private boolean windowFocused;
     private boolean systemUiPanelExpanded;
@@ -1285,12 +1291,25 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> setGestureCaptureTarget(target));
             return;
         }
+        // GestureToHome is also emitted when a small Dock pull on HOME is released.
+        // sceneState.desired() cannot distinguish that case because the 8dp recents
+        // pre-arm may already have changed desired to RECENTS.  A real APP -> HOME
+        // return must have lost Launcher window focus; a real RECENTS -> HOME return
+        // has the overview actually visible.
+        boolean realHomeReturn = "HOME".equals(target)
+                && (launcherWasAway || isRecentsVisible());
         sceneState.setGestureTarget(target, System.nanoTime());
-        // GestureToHome is emitted before launcher focus while Dock icons are still
-        // flying into place.  Open the settle window here, but do not block the normal
-        // capture scheduler: cached HOME wallpaper crops remain fully live.
-        if ("HOME".equals(target)) {
-            beginHomeSettle("gesture-home");
+        if (realHomeReturn) {
+            armHomeSettle("gesture-home");
+        } else if ("HOME".equals(target)) {
+            // HOME-local spring-back: remove any stale transition timer immediately.
+            // The normal observation/capture cadence below remains untouched.
+            cancelHomeSettle("gesture-home-local");
+            logI("home settle bypass: HOME-local Dock gesture");
+        } else {
+            // Gesture was interrupted toward APP/RECENTS; any pending HOME tail frame
+            // is now stale and must never land later as a visible flash.
+            cancelHomeSettle("gesture-" + target.toLowerCase(java.util.Locale.ROOT));
         }
         updateDesiredScene();
         observationValid = false;
@@ -1337,14 +1356,32 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return false;
     }
 
-    /** Public entry for MainHook: launcher gained focus (returning home).  The Dock
-     *  collapse animation may paint icon ghosts into an in-flight capture; schedule one
-     *  fresh capture shortly after (once the animation settled) so the backdrop is the
-     *  clean wallpaper. */
+    /** Called only from Launcher.onWindowFocusChanged(false).  Unlike lifecycle
+     * callbacks, this is authoritative evidence that HOME really left the foreground. */
+    void onLauncherFocusLost() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onLauncherFocusLost);
+            return;
+        }
+        launcherWasAway = true;
+        // If a HOME return was interrupted back to an app, invalidate its delayed tail.
+        cancelHomeSettle("launcher-focus-lost");
+    }
+
+    /** Launcher gained real window focus.  Extend/arm the settle window only if the
+     * launcher actually was away (or GestureToHome already armed a genuine transition).
+     * A HOME-local Dock pull must never come through this path. */
     void onLauncherFocused() {
-        // Extend the window opened by GestureToHome.  This does not pause Dock motion;
-        // only a new HOME SurfaceFlinger wrapper read is deferred below.
-        beginHomeSettle("launcher-focus");
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onLauncherFocused);
+            return;
+        }
+        if (!launcherWasAway && !homeReturnTransitionArmed) {
+            cancelHomeSettle("launcher-focus-local");
+            return;
+        }
+        launcherWasAway = false;
+        armHomeSettle("launcher-focus");
     }
 
     /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation
@@ -1373,34 +1410,59 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean homeSettleCapturePending;
 
     private boolean isHomeSettleActive() {
-        return System.nanoTime() < homeSettleUntilNanos;
+        return homeReturnTransitionArmed && System.nanoTime() < homeSettleUntilNanos;
     }
 
-    private void beginHomeSettle(String reason) {
+    private void armHomeSettle(String reason) {
+        if (!homeReturnTransitionArmed) {
+            homeReturnTransitionArmed = true;
+            homeSettleGeneration++;
+        }
         long until = System.nanoTime() + HOME_SETTLE_MS * 1_000_000L;
         homeSettleUntilNanos = Math.max(homeSettleUntilNanos, until);
-        logI("home settle opened reason=" + reason);
+        logI("home settle armed reason=" + reason + " generation=" + homeSettleGeneration);
         scheduleHomeSettledCapture();
     }
 
+    private void cancelHomeSettle(String reason) {
+        if (!homeReturnTransitionArmed && homeSettleUntilNanos == 0L
+                && !homeSettleCapturePending) return;
+        homeReturnTransitionArmed = false;
+        homeSettleUntilNanos = 0L;
+        homeSettleCapturePending = false;
+        // Existing Handler callbacks cannot be removed without retaining each Runnable.
+        // Generation invalidation makes them no-ops and prevents a stale home-settled
+        // frame from landing after a HOME-local spring-back.
+        homeSettleGeneration++;
+        logI("home settle cancelled reason=" + reason + " generation=" + homeSettleGeneration);
+    }
+
     private void scheduleHomeSettledCapture() {
-        if (homeSettleCapturePending) return;
+        if (!homeReturnTransitionArmed || homeSettleCapturePending) return;
         long remaining = homeSettleUntilNanos - System.nanoTime();
         if (remaining <= 0L) {
+            homeReturnTransitionArmed = false;
+            homeSettleUntilNanos = 0L;
             requestStateCapture("home-settled");
             return;
         }
         homeSettleCapturePending = true;
+        final long generation = homeSettleGeneration;
         mainHandler.postDelayed(() -> {
+            if (generation != homeSettleGeneration) return;
             homeSettleCapturePending = false;
-            if (!attached) return;
+            if (!attached || !homeReturnTransitionArmed) return;
             if (isHomeSettleActive()) {
                 scheduleHomeSettledCapture();
                 return;
             }
             updateDesiredScene();
             if (sceneState.desired() == CaptureScene.HOME) {
+                homeReturnTransitionArmed = false;
+                homeSettleUntilNanos = 0L;
                 requestStateCapture("home-settled");
+            } else {
+                cancelHomeSettle("settled-not-home");
             }
         }, Math.max(1L, (remaining + 999_999L) / 1_000_000L));
     }
