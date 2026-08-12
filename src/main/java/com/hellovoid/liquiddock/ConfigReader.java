@@ -11,12 +11,15 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
-/** Runtime config reader. API101 Remote Preferences are the primary source. */
+/** Runtime config reader backed by API101 Remote Preferences. */
 public class ConfigReader {
     public static final String REMOTE_GROUP = "config";
 
+    // One-time upgrade sources from the pre-API101 releases. They are consulted only
+    // when the Remote Preferences group is empty, then copied into Remote Preferences.
     private static final String[] LEGACY_PATHS = {
         "/data/user/0/com.miui.home/files/liquiddock_config.json",
         "/data/data/com.miui.home/files/liquiddock_config.json",
@@ -25,25 +28,34 @@ public class ConfigReader {
     private static final int MAX_CONFIG_BYTES = 64 * 1024;
 
     private final Map<String, ?> prefs;
-    private final JSONObject legacyJson;
 
     private ConfigReader() {
-        Map<String, ?> loadedPrefs = Collections.emptyMap();
+        Map<String, ?> loaded = Collections.emptyMap();
         try {
             SharedPreferences remote = Api101Bridge.remotePreferences(REMOTE_GROUP);
             Map<String, ?> all = remote.getAll();
+            if (all == null || all.isEmpty()) {
+                JSONObject legacy = readLegacyJson();
+                if (legacy != null && legacy.length() > 0) {
+                    migrateLegacyJson(remote, legacy);
+                    all = remote.getAll();
+                    Log.i("LiquidDock", "legacy config migrated to API101 Remote Preferences");
+                }
+            }
             if (all != null && !all.isEmpty()) {
-                loadedPrefs = new HashMap<>(all);
+                loaded = new HashMap<>(all);
                 Log.i("LiquidDock", "config loaded from API101 Remote Preferences: "
-                        + loadedPrefs.size() + " keys");
+                        + loaded.size() + " keys");
             } else {
-                Log.w("LiquidDock", "API101 Remote Preferences are empty; trying legacy config");
+                Log.w("LiquidDock", "API101 Remote Preferences are empty; using defaults");
             }
         } catch (Throwable error) {
-            Log.w("LiquidDock", "API101 Remote Preferences unavailable; trying legacy config", error);
+            // There is deliberately no persistent JSON fallback here. Once API101 is in use,
+            // runtime configuration has one source of truth. Defaults keep the hook safe if
+            // the framework's remote service is temporarily unavailable.
+            Log.w("LiquidDock", "API101 Remote Preferences unavailable; using defaults", error);
         }
-        prefs = loadedPrefs;
-        legacyJson = prefs.isEmpty() ? readLegacyJson() : new JSONObject();
+        prefs = loaded;
     }
 
     private static JSONObject readLegacyJson() {
@@ -64,26 +76,42 @@ public class ConfigReader {
                 }
                 byte[] data = out.toByteArray();
                 if (data.length > 0) {
-                    Log.i("LiquidDock", "config loaded from legacy path: " + path);
+                    Log.i("LiquidDock", "legacy config found for API101 migration: " + path);
                     return new JSONObject(new String(data, StandardCharsets.UTF_8));
                 }
             } catch (Throwable error) {
-                Log.w("LiquidDock", "Failed to read legacy config: " + path, error);
+                Log.w("LiquidDock", "Failed to read legacy config for migration: " + path, error);
             }
         }
-        return new JSONObject();
+        return null;
+    }
+
+    private static void migrateLegacyJson(SharedPreferences remote, JSONObject json) {
+        SharedPreferences.Editor editor = remote.edit();
+        if (editor == null) return;
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = json.opt(key);
+            if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+            else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+            else if (value instanceof Long) editor.putLong(key, (Long) value);
+            else if (value instanceof Float) editor.putFloat(key, (Float) value);
+            else if (value instanceof Double) editor.putFloat(key, ((Double) value).floatValue());
+            else if (value instanceof Number) editor.putLong(key, ((Number) value).longValue());
+            else if (value instanceof String) editor.putString(key, (String) value);
+        }
+        // Commit here because the caller immediately re-reads the group during launcher startup.
+        editor.commit();
     }
 
     public static ConfigReader load() { return new ConfigReader(); }
 
-    public boolean has(String key) {
-        return prefs.containsKey(key) || legacyJson.has(key);
-    }
+    public boolean has(String key) { return prefs.containsKey(key); }
 
     public String s(String key, String def) {
         Object value = prefs.get(key);
-        if (value != null) return String.valueOf(value);
-        return legacyJson.optString(key, def);
+        return value != null ? String.valueOf(value) : def;
     }
 
     public int i(String key, int def) {
@@ -93,7 +121,7 @@ public class ConfigReader {
             try { return Integer.parseInt((String) value); }
             catch (NumberFormatException ignored) {}
         }
-        return legacyJson.optInt(key, def);
+        return def;
     }
 
     public float f(String key, float def) {
@@ -111,13 +139,13 @@ public class ConfigReader {
             try { return Float.parseFloat((String) value); }
             catch (NumberFormatException ignored) {}
         }
-        return (float) legacyJson.optDouble(key, def);
+        return def;
     }
 
     public boolean b(String key, boolean def) {
         Object value = prefs.get(key);
         if (value instanceof Boolean) return (Boolean) value;
         if (value instanceof String) return Boolean.parseBoolean((String) value);
-        return legacyJson.optBoolean(key, def);
+        return def;
     }
 }
