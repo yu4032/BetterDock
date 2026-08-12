@@ -492,10 +492,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
      *  glass shape instead of blurring a rectangle.  When the native/materior blur
      *  backend is active, the outline is inset by {@link #nativeBlurInsetDp} so SF
-     *  never samples edge transparency into the blur — the highlight stays crisp. */
+     *  never samples edge transparency into the blur.
+     *  <p>
+     *  {@code setClipToOutline} is deliberately left {@code false}: the inset outline
+     *  only constrains the SF blur mask; the Canvas highlight must render on the full
+     *  outer geometry. */
     private void applyRoundedOutline() {
         try {
-            setClipToOutline(true);
+            setClipToOutline(false);
             setOutlineProvider(new android.view.ViewOutlineProvider() {
                 @Override public void getOutline(android.view.View view, android.graphics.Outline outline) {
                     float r = Math.max(0f, cornerRadius);
