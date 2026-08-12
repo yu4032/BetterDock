@@ -1,5 +1,8 @@
 name: API101 migration build
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ api101-migration ]
@@ -17,7 +20,18 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Apply proven HOME settle and sync cleanup
+        run: python .github/scripts/restore_proven_home_settle.py
       - run: ./gradlew assembleDebug --stacktrace
+      - name: Persist validated source changes
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "fix: restore proven HOME settle and remove explicit sync helpers [skip ci]"
+            git push origin HEAD:api101-migration
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
