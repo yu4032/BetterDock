@@ -1,8 +1,5 @@
 name: API101 migration build
 
-permissions:
-  contents: write
-
 on:
   push:
     branches: [ api101-migration ]
@@ -20,21 +17,11 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply HOME settle false-positive fix
-        run: python .github/scripts/fix_home_settle_false_positive.py
       - run: ./gradlew assembleDebug --stacktrace
-      - name: Persist validated source changes
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java src/main/java/com/hellovoid/liquiddock/MainHook.java
-            git commit -m "fix: distinguish HOME spring-back from real HOME return [skip ci]"
-            git push origin HEAD:api101-migration
-          fi
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+      # Keep this workflow branch-local until the API101 migration is device-verified.
