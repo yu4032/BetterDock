@@ -17,7 +17,9 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         if (!"com.miui.home".equals(param.getPackageName())) return;
         try {
-            new MainHook().install(param.getClassLoader());
+            ClassLoader classLoader = param.getClassLoader();
+            new MainHook().install(classLoader);
+            WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
