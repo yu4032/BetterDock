@@ -1701,35 +1701,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // with the Dock + drag layers excluded (mode 1) so the glass refracts
                     // the app content.  Launcher window focus is the home-screen signal.
                     boolean wallpaperMode = requestScene == CaptureScene.HOME;
+                    // During icon fly-in, the Wallpaper BBQ wrapper can bake Dock icons
+                    // into the wallpaper layer (mode 2 can capture ghosts).  Fall back to
+                    // full-display mode 1 with Dock excluded — real-time updates without
+                    // icon artifacts.  Cache serve is still allowed if clean.
+                    if (wallpaperMode && isHomeSettleActive()) {
+                        wallpaperMode = false;
+                    }
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
                                 ? new String[]{dockWindowLayerName, dragLayerName}
                                 : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     }
-                    // Wallpaper is static: if a valid strip cache exists (rotation barrier
-                    // passed: current orientation produced a real installed frame, same
-                    // wallpaper, strip covers the request), serve the crop from cache
-                    // and skip the SF capture entirely — unless the HOME settle barrier
-                    // is active (Dock icon fly-in can taint the BBQ wrapper; cache may
-                    // hold a ghost frame from an earlier return).
-                    if (wallpaperMode && !isHomeSettleActive()
-                            && tryServeWallpaperFromCache(
+                    if (wallpaperMode && tryServeWallpaperFromCache(
                             req, requestScene, requestSceneRevision, attempt)) {
-                        return;
-                    }
-                    // Cache miss during the icon fly-in is the only operation we defer.
-                    // The scheduler itself stays alive and a clean HOME frame is requested
-                    // once the wrapper has settled.
-                    if (wallpaperMode && isHomeSettleActive()) {
-                        mainHandler.post(() -> {
-                            if (activeCaptureAttempt != attempt) return;
-                            retireCaptureAttempt(attempt);
-                            sourceDirty = true;
-                            scheduleHomeSettledCapture();
-                            logI("HOME SF capture deferred attempt=" + attempt
-                                    + " during Dock settle");
-                        });
                         return;
                     }
                     logI("capture mode=" + (wallpaperMode ? 2 : 1)
