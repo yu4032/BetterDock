@@ -71,46 +71,16 @@ private enum class Page(val titleRes: Int) {
     About(R.string.page_about)
 }
 
-// Debounced mirror of UI prefs to the launcher's data dir: the module (running inside
-// com.miui.home) reads liquiddock_config.json from there, so every UI write must land
-// in that file to take effect.  su is used for the write (launcher's dir is not writable
-// by the settings app directly).
-private val jsonSyncHandler = android.os.Handler(android.os.Looper.getMainLooper())
-private var jsonSyncPrefs: SharedPreferences? = null
-private var jsonSyncContext: Context? = null
+// API101 Remote Preferences are the only runtime config transport.  The settings UI
+// keeps AndroidX default preferences as its local state store; every write is mirrored
+// to LSPosed's Remote Preferences without su, chmod, or cross-UID files.
 private fun syncConfigNow(prefs: SharedPreferences, ctx: Context) {
-    try {
-        val json = org.json.JSONObject()
-        for ((k, v) in prefs.all) {
-            when (v) {
-                is Int -> json.put(k, v)
-                is Long -> json.put(k, v)
-                is Float -> json.put(k, v)
-                is Boolean -> json.put(k, v)
-                is String -> json.put(k, v)
-            }
-        }
-        val tmp = java.io.File(ctx.cacheDir, "liquiddock_config.json")
-        tmp.writeText(json.toString())
-        val target = "/data/user/0/com.miui.home/files/liquiddock_config.json"
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c",
-            "mkdir -p /data/user/0/com.miui.home/files && cp "
-                + tmp.absolutePath + " " + target + " && chmod 644 " + target))
-        p.waitFor()
-    } catch (e: Throwable) {
-        android.util.Log.w("LiquidDock", "json sync failed", e)
+    if (!LiquidDockApp.syncToRemote(prefs)) {
+        android.util.Log.w("LiquidDock", "Remote Preferences service is not connected yet")
     }
 }
-private val jsonSyncRunnable = Runnable {
-    val prefs = jsonSyncPrefs ?: return@Runnable
-    val ctx = jsonSyncContext ?: return@Runnable
-    syncConfigNow(prefs, ctx)
-}
 private fun requestJsonSync(prefs: SharedPreferences, ctx: Context) {
-    jsonSyncPrefs = prefs
-    jsonSyncContext = ctx
-    jsonSyncHandler.removeCallbacks(jsonSyncRunnable)
-    jsonSyncHandler.postDelayed(jsonSyncRunnable, 400L)
+    syncConfigNow(prefs, ctx)
 }
 
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }

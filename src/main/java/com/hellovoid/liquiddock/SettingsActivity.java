@@ -590,17 +590,14 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     void restartLauncher() {
-        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+        // Configuration is already in API101 Remote Preferences. Root is used only to
+        // restart MIUI Home so process-start-only hooks reload their settings.
+        LiquidDockApp.syncToRemote(PreferenceManager.getDefaultSharedPreferences(this));
         new Thread(() -> {
             try {
-                JSONObject j = collectParameters(sp);
-                String json = j.toString(2).replace("'","'\\''");
-
                 Process p = new ProcessBuilder("su").redirectErrorStream(true).start();
                 try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
-                    os.writeBytes("echo '"+json+"' > /data/local/tmp/liquiddock_config.json && "
-                        + "chmod 644 /data/local/tmp/liquiddock_config.json && "
-                        + "am force-stop com.miui.home && sleep 1 && "
+                    os.writeBytes("am force-stop com.miui.home && sleep 1 && "
                         + "am start -n com.miui.home/.launcher.Launcher\nexit\n");
                     os.flush();
                 }
