@@ -19,7 +19,8 @@ final class RecentsHapticHook {
         for (String name : implementations) {
             try {
                 Class<?> type = Class.forName(name, false, classLoader);
-                Method method = type.getDeclaredMethod("performEnterRecent", View.class);
+                Method method = HookUtil.findMethodExact(type, "performEnterRecent",
+                        new Class<?>[]{View.class});
                 HookUtil.hook(method, chain -> {
                     listener.onEnterRecents();
                     return chain.proceed(chain.getArgs().toArray(new Object[0]));

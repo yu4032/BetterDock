@@ -1072,6 +1072,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observationValid = false;
         // Allow the first frame at the state boundary through immediately.
         lastCaptureStartNanos = 0L;
+        // Haptic must force a capture regardless of current pipeline state:
+        // cancel in-flight work so the coalescence path doesn't drop the scene change.
+        mainHandler.removeCallbacks(captureKick);
+        kickScheduled = false;
+        cancelPendingCaptureWork();
         requestStateCapture(reason);
     }
 
@@ -1263,11 +1268,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Config hot-reload tick: re-apply GUI appearance keys every second so edits show up
-     *  without restarting the launcher, even when the Dock is static (0 captures). */
+     *  without restarting the launcher, even when the Dock is static (0 captures).
+     *  Also monitors scene transitions (e.g. recents→HOME) when the dock is idle. */
     private final Runnable configReloadTick = new Runnable() {
         @Override public void run() {
             if (!attached) return;
             reloadAppearanceFromConfig();
+            updateDesiredScene();
             mainHandler.postDelayed(this, 1000L);
         }
     };
@@ -1304,9 +1311,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private void updateDesiredScene() {
+        CaptureScene prev = sceneState.desired();
         if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed)) return;
         sourceDirty = true;
+        // Recents→HOME: the scene just flipped — capture immediately for instant
+        // wallpaper transition, don't wait for the next observation cycle.
+        if (prev == CaptureScene.RECENTS && sceneState.desired() != CaptureScene.RECENTS) {
+            lastCaptureStartNanos = 0L;
+            requestStateCapture("scene-settle-home");
+        }
         logI("Liquid capture scene=" + sceneState.desired()
                 + " revision=" + sceneState.revision());
     }
