@@ -1399,19 +1399,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // the Dock icon fly-in/collapse animation.  During this window, cache serves are
     // deliberately still allowed, so geometry changes and spring-back motion continue
     // to recrop/install at normal cadence; only a new mode-2 SF read is postponed.
-    private static final long HOME_SETTLE_MS = 800L;
+    private static final long HOME_SETTLE_MS = 1200L;
     private long homeSettleUntilNanos;
     private boolean homeSettleCapturePending;
 
     private boolean isHomeSettleActive() {
         return homeReturnTransitionArmed && System.nanoTime() < homeSettleUntilNanos;
-    }
-
-    /** True when the settle window has ≤ 500 ms remaining — icons have finished
-     *  flying in and the BBQ wrapper is safe for mode-2 capture. */
-    private boolean isHomeSettleLate() {
-        return homeReturnTransitionArmed
-                && (homeSettleUntilNanos - System.nanoTime()) <= 350_000_000L;
     }
 
     private void armHomeSettle(String reason) {
@@ -1702,22 +1695,29 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // with the Dock + drag layers excluded (mode 1) so the glass refracts
                     // the app content.  Launcher window focus is the home-screen signal.
                     boolean wallpaperMode = requestScene == CaptureScene.HOME;
-                    // During icon fly-in, mode 2 can capture Dock ghosts from the BBQ
-                    // wrapper.  In the early stage (remaining settle > 200 ms) fall back
-                    // to mode 1 with Dock excluded for real-time updates.  In the late
-                    // stage (icons have settled, BBQ wrapper is clean) switch back to
-                    // mode 2 — the final settle-triggered capture runs with wallpaper mode.
-                    if (wallpaperMode && isHomeSettleActive() && !isHomeSettleLate()) {
-                        wallpaperMode = false;
-                    }
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
                                 ? new String[]{dockWindowLayerName, dragLayerName}
                                 : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     }
+                    // Cache serves remain live during the settle window — the last
+                    // clean wallpaper is recropped/installed at the animation cadence
+                    // while Dock icons fly in.  New mode-2 SF reads are deferred until
+                    // the animation settles (measured ~967ms, window 1200ms).
                     if (wallpaperMode && tryServeWallpaperFromCache(
                             req, requestScene, requestSceneRevision, attempt)) {
+                        return;
+                    }
+                    if (wallpaperMode && isHomeSettleActive()) {
+                        mainHandler.post(() -> {
+                            if (activeCaptureAttempt != attempt) return;
+                            retireCaptureAttempt(attempt);
+                            sourceDirty = true;
+                            scheduleHomeSettledCapture();
+                            logI("HOME SF capture deferred attempt=" + attempt
+                                    + " during Dock settle");
+                        });
                         return;
                     }
                     logI("capture mode=" + (wallpaperMode ? 2 : 1)
