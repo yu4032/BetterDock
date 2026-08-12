@@ -544,11 +544,6 @@ public class MainHook implements IXposedHookLoadPackage {
                             glass.requestCapture("launcher-configuration-changed");
                             glass.postDelayed(() -> glass.requestCapture(
                                     "launcher-configuration-settled"), 220L);
-                            // The wallpaper layer hands out black buffers right after
-                            // rotation until SF recomposites it; nudge the dock
-                            // background alpha to force recomposition (the same thing a
-                            // manual dock pull-up does), then re-capture.
-                            glass.nudgeSurfaceRefresh();
                         }
                     });
         } catch (Throwable e) {

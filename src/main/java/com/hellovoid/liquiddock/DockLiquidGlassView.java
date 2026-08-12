@@ -295,6 +295,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private HandlerThread captureThread;
     private Handler captureHandler;
+    private int captureWorkerId;
+    // Per-attempt identity: distinguishes "this one Binder request timed out / was
+    // superseded" (attempt) from "the whole capture context is stale" (generation).
+    // A wedged captureDisplay() call only invalidates its own attempt, never the
+    // rotation/scene generation.
+    private long captureAttemptSeq;
+    private volatile long activeCaptureAttempt;
+    private Runnable captureTimeout;
     private LiveScreenCapture liveCapture;
     private ViewTreeObserver observedTree;
 
@@ -1292,27 +1300,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture(reason);
     }
 
-    /** Rotation workaround: right after an orientation change the wallpaper layer
-     *  can hand out black buffers (mean=0) until SurfaceFlinger recomposites it —
-     *  a manual dock pull-up performs exactly this recomposition.  Nudge the dock
-     *  background alpha a few times over ~2 s to force recomposition, re-requesting
-     *  capture shortly after each nudge. */
-    void nudgeSurfaceRefresh() {
-        for (int i = 1; i <= 5; i++) {
-            final int idx = i;
-            postDelayed(() -> {
-                View src = geometrySource;
-                if (src == null) return;
-                src.setAlpha(idx % 2 == 0 ? 1f : 0.92f);
-                src.invalidate();
-                postDelayed(() -> {
-                    if (geometrySource != null) geometrySource.setAlpha(1f);
-                    requestStateCapture("rotation-nudge-" + idx);
-                }, 60L);
-            }, i * 400L);
-        }
-    }
-
     /** Workstation Dock is stationary: capture only the wallpaper layer and reuse the
      * mode-2 cache. Geometry changes are served by recropping that cached strip. */
     void setWorkstationMode(boolean enabled) {
@@ -1392,6 +1379,30 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         capturing = false;
         Handler worker = captureHandler;
         if (worker != null) worker.removeCallbacksAndMessages(null);
+        if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
+        activeCaptureAttempt = ++captureAttemptSeq;
+    }
+
+    /** Abandon a wedged capture worker: a captureDisplay() Binder call can block its
+     *  HandlerThread forever (no callback, no exception) — that thread must not be
+     *  waited on, it is treated as a zombie and dropped.  A fresh thread + handler +
+     *  SF client take over; the next capture runs on the new worker. */
+    private void rebuildCaptureWorker(String reason) {
+        HandlerThread oldThread = captureThread;
+        HandlerThread newThread = new HandlerThread(
+                "LiquidDock-WallpaperCapture-" + (++captureWorkerId));
+        newThread.start();
+        captureThread = newThread;
+        captureHandler = new Handler(newThread.getLooper());
+        liveCapture = null;
+        if (oldThread != null) {
+            try {
+                oldThread.quitSafely();
+            } catch (Throwable ignored) {
+            }
+        }
+        logW("capture worker rebuilt reason=" + reason
+                + " worker=" + captureWorkerId);
     }
 
     private void startCapture() {
@@ -1417,6 +1428,26 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         final long requestSceneRevision = sceneState.revision();
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
+        final long attempt = ++captureAttemptSeq;
+        activeCaptureAttempt = attempt;
+        // Per-attempt watchdog: a captureDisplay() Binder call on the worker thread can
+        // wedge forever after rotation (no callback, no exception) — the old worker
+        // thread then blocks every later capture.  Timeout abandons the attempt AND the
+        // whole worker thread (zombie), then rebuilds a fresh one; it never touches
+        // captureGeneration (rotation/scene context stays valid).
+        if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
+        captureTimeout = () -> {
+            if (!capturing || activeCaptureAttempt != attempt) return;
+            logW("capture timeout attempt=" + attempt + "; rebuilding capture worker");
+            activeCaptureAttempt = ++captureAttemptSeq;
+            capturing = false;
+            kickScheduled = false;
+            sourceDirty = true;
+            lastCaptureStartNanos = 0L;
+            rebuildCaptureWorker("capture-timeout");
+            requestStateCapture("capture-timeout-new-worker");
+        };
+        mainHandler.postDelayed(captureTimeout, 600L);
         // The Dock window's SF layer handle changes every time the window is recreated
         // (dock show/hide, launcher restart).  Re-resolve the current handle before each
         // capture so the exclusion never goes stale.
@@ -1474,13 +1505,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // guard in both modes.
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
-                            handleCaptureResult(bmp, req, generation,
+                            handleCaptureResult(bmp, req, generation, attempt,
                                     requestScene, requestSceneRevision);
                         }
                         @Override public void onError(Throwable error) {
                             liveCapture = null;
                             mainHandler.post(() -> {
-                                if (generation != captureGeneration) return;
+                                if (generation != captureGeneration
+                                        || activeCaptureAttempt != attempt) return;
+                                if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
                                 capturing = false;
                                 Log.e(TAG, "async fullscreen capture failed", error);
                                 if (sourceDirty) requestStateCapture();
@@ -1542,8 +1575,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Shared completion path for async captures: crop on the SF callback thread, install
      *  on the main thread. */
     private void handleCaptureResult(Bitmap strip, CaptureRequest request, long generation,
-                                     CaptureScene requestScene, long requestSceneRevision) {
+                                     long attempt, CaptureScene requestScene,
+                                     long requestSceneRevision) {
         try {
+            // A wedged worker may deliver a very late callback for a superseded
+            // attempt; drop it without touching the current capture state.
+            if (activeCaptureAttempt != attempt) {
+                if (strip != null && !strip.isRecycled()) strip.recycle();
+                return;
+            }
             // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
             // returns status=0 with a PURE BLACK buffer while a non-home app is in front
             // (verified: Dock pull-up over an app).  Installing such a frame freezes a
@@ -1558,12 +1598,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 mainHandler.post(() -> {
                     updateDesiredScene();
                     if (generation != captureGeneration
+                            || activeCaptureAttempt != attempt
                             || !sceneState.matches(requestScene, requestSceneRevision)
                             || !isRequestOrientationCurrent(request)) {
                         capturing = false;
                         requestStateCapture("stale-black-frame");
                         return;
                     }
+                    if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
                     capturing = false;
                     if (blackFrameLogCount++ < 5) {
                         logW("black frame discarded (status=0 but content black), "
@@ -1608,6 +1650,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> {
                 updateDesiredScene();
                 if (generation != captureGeneration
+                        || activeCaptureAttempt != attempt
                         || !sceneState.matches(requestScene, requestSceneRevision)
                         || !isRequestOrientationCurrent(request)
                         || !isCaptureAllowed()) {
@@ -1620,6 +1663,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     if (isCaptureAllowed()) requestStateCapture("stale-scene-result");
                     return;
                 }
+                if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
                 capturing = false;
                 blackFrameRetryCount = 0;
                 blackFrameRetryRotation = request.rotation;

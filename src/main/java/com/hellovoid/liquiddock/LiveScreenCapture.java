@@ -275,14 +275,12 @@ final class LiveScreenCapture {
             java.util.ArrayList<String> names = new java.util.ArrayList<>();
             if (captureMode == 2) {
                 // MIUI vendor wallpaper mode: setExcludeOrIncludeLayerNames is INCLUDE
-                // semantics — SF captures ONLY the listed layers.  The launcher's wallpaper
-                // selector passes ["Wallpaper BBQ wrapper"] (Launcher.Utilities.
-                // EXCLUDE_OR_INCLUDE_LAYER_NAMES).  We ALSO include the wallpaper service
-                // layer: while the Dock animates (icon fly-in/out) its blur pass reuses
-                // the BBQ wrapper, whose captured content then contains Dock icons.
-                // The service layer is pure wallpaper in every state.
+                // semantics — SF captures ONLY the listed layers.  The launcher's own
+                // selector is just ["Wallpaper BBQ wrapper"]; including the wallpaper
+                // service layer additionally risks sampling a stale/black buffer of that
+                // layer right after display rotation (rotation black-frame issue), so
+                // stick to the wrapper alone.
                 names.add("Wallpaper BBQ wrapper");
-                names.add("com.miui.miwallpaper.wallpaperservice.ImageWallpaper");
             } else {
                 // Mode 1: exclusion by layer NAME (the historical working path).
                 names.add("Floating Dock");
