@@ -1,8 +1,5 @@
 name: API101 migration build
 
-permissions:
-  contents: write
-
 on:
   push:
     branches: [ api101-migration ]
@@ -13,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: api101-migration
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -22,18 +17,7 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply Remote Preferences cleanup
-        run: python .github/scripts/migrate_remote_config.py
       - run: ./gradlew assembleDebug --stacktrace
-      - name: Persist validated source cleanup
-        run: |
-          if ! git diff --quiet -- src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt src/main/java/com/hellovoid/liquiddock/SettingsActivity.java; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt src/main/java/com/hellovoid/liquiddock/SettingsActivity.java
-            git commit -m "migrate settings transport to API101 Remote Preferences [skip ci]"
-            git push origin HEAD:api101-migration
-          fi
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
