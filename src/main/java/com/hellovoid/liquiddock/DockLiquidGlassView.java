@@ -1413,6 +1413,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return homeReturnTransitionArmed && System.nanoTime() < homeSettleUntilNanos;
     }
 
+    /** True when the settle window has ≤ 200 ms remaining — icons have finished
+     *  flying in and the BBQ wrapper is safe for mode-2 capture. */
+    private boolean isHomeSettleLate() {
+        return homeReturnTransitionArmed
+                && (homeSettleUntilNanos - System.nanoTime()) <= 200_000_000L;
+    }
+
     private void armHomeSettle(String reason) {
         if (!homeReturnTransitionArmed) {
             homeReturnTransitionArmed = true;
@@ -1701,11 +1708,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // with the Dock + drag layers excluded (mode 1) so the glass refracts
                     // the app content.  Launcher window focus is the home-screen signal.
                     boolean wallpaperMode = requestScene == CaptureScene.HOME;
-                    // During icon fly-in, the Wallpaper BBQ wrapper can bake Dock icons
-                    // into the wallpaper layer (mode 2 can capture ghosts).  Fall back to
-                    // full-display mode 1 with Dock excluded — real-time updates without
-                    // icon artifacts.  Cache serve is still allowed if clean.
-                    if (wallpaperMode && isHomeSettleActive()) {
+                    // During icon fly-in, mode 2 can capture Dock ghosts from the BBQ
+                    // wrapper.  In the early stage (remaining settle > 200 ms) fall back
+                    // to mode 1 with Dock excluded for real-time updates.  In the late
+                    // stage (icons have settled, BBQ wrapper is clean) switch back to
+                    // mode 2 — the final settle-triggered capture runs with wallpaper mode.
+                    if (wallpaperMode && isHomeSettleActive() && !isHomeSettleLate()) {
                         wallpaperMode = false;
                     }
                     String[] excludeNames = null;
