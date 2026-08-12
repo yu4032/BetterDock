@@ -490,7 +490,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
-     *  glass shape instead of blurring a rectangle (blur-behind honours the outline). */
+     *  glass shape instead of blurring a rectangle.  When the native/materior blur
+     *  backend is active, the outline is inset by {@link #nativeBlurInsetDp} so SF
+     *  never samples edge transparency into the blur — the highlight stays crisp. */
     private void applyRoundedOutline() {
         try {
             setClipToOutline(true);
@@ -502,9 +504,22 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         outline.setRect(0, 0, 1, 1);
                         return;
                     }
-                    // Squircle and rounded-rect both approximate as a rounded rect for the
-                    // blur region (the outline only drives the SurfaceFlinger blur mask).
-                    outline.setRoundRect(0, 0, w, h, r);
+                    boolean nativeBackend = "native".equals(blurMethod)
+                            || "material".equals(blurMethod);
+                    float inset = nativeBackend ? nativeBlurInsetDp
+                            * view.getResources().getDisplayMetrics().density : 0f;
+                    float safeInset = Math.max(0f, Math.min(inset,
+                            Math.min(w, h) * .5f - .5f));
+                    int l = (int) safeInset;
+                    int t = (int) safeInset;
+                    int rw = w - 2 * l;
+                    int rh = h - 2 * t;
+                    if (rw <= 0 || rh <= 0) {
+                        outline.setRoundRect(0, 0, w, h, r);
+                    } else {
+                        outline.setRoundRect(l, t, l + rw, t + rh,
+                                Math.max(0f, r - safeInset));
+                    }
                 }
             });
         } catch (Throwable e) {
@@ -1228,6 +1243,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         float next = Math.max(0f, Math.min(16f, insetDp));
         if (next == nativeBlurInsetDp) return;
         nativeBlurInsetDp = next;
+        applyRoundedOutline();
         invalidate();
     }
 
