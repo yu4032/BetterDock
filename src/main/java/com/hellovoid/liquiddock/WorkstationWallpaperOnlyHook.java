@@ -60,27 +60,40 @@ final class WorkstationWallpaperOnlyHook {
     private static void installNativeSnapshotLock(ClassLoader classLoader) {
         try {
             Class<?> hotSeats = Class.forName(HOTSEATS, false, classLoader);
+            boolean anyInstalled = false;
 
-            HookUtil.hookMethod(hotSeats, "setMingouStaticDockLiveBlurVisible",
-                    new Class<?>[]{boolean.class}, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        if (MainHook.isWorkstationMode() && Boolean.TRUE.equals(args[0])) {
-                            args[0] = false;
-                            MainHook.log("[DC] workstation live Dock blur blocked");
-                        }
-                        return chain.proceed(args);
-                    });
+            try {
+                HookUtil.hookMethod(hotSeats, "setMingouStaticDockLiveBlurVisible",
+                        new Class<?>[]{boolean.class}, chain -> {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            if (MainHook.isWorkstationMode() && Boolean.TRUE.equals(args[0])) {
+                                args[0] = false;
+                                MainHook.log("[DC] workstation live Dock blur blocked");
+                            }
+                            return chain.proceed(args);
+                        });
+                anyInstalled = true;
+            } catch (Throwable t) {
+                MainHook.log("[DC] workstation live-blur lock unavailable: " + t.getMessage());
+            }
 
-            HookUtil.hookMethod(hotSeats, "setMingouStaticDockSnapshotMode",
-                    new Class<?>[]{boolean.class}, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        if (MainHook.isWorkstationMode()) args[0] = true;
-                        return chain.proceed(args);
-                    });
+            try {
+                HookUtil.hookMethod(hotSeats, "setMingouStaticDockSnapshotMode",
+                        new Class<?>[]{boolean.class}, chain -> {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            if (MainHook.isWorkstationMode()) args[0] = true;
+                            return chain.proceed(args);
+                        });
+                anyInstalled = true;
+            } catch (Throwable t) {
+                MainHook.log("[DC] workstation snapshot-mode lock unavailable: " + t.getMessage());
+            }
 
-            MainHook.log("[DC] workstation native wallpaper-snapshot lock installed");
+            if (anyInstalled) {
+                MainHook.log("[DC] workstation native wallpaper-snapshot lock installed");
+            }
         } catch (Throwable error) {
-            MainHook.log("[DC] workstation native snapshot lock unavailable: " + error);
+            MainHook.log("[DC] workstation native snapshot lock class unavailable: " + error.getMessage());
         }
     }
 

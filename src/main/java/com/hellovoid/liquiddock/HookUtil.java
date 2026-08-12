@@ -39,7 +39,7 @@ public final class HookUtil {
                                    Class<?>[] paramTypes,
                                    XposedInterface.Hooker callback) {
         try {
-            hook(clazz.getDeclaredMethod(methodName, paramTypes), callback);
+            hook(findMethodExact(clazz, methodName, paramTypes), callback);
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(methodName + " on " + clazz.getName(), e);
         }
