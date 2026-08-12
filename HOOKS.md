@@ -54,6 +54,7 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 | `DockContainer` | `startDrag` / `endDrag` | 拖拽会话跟踪——Dock 几何运动期间激活高频动态采样。通过 `installDockDragHooks` 进程级一次性安装，回调内动态读取 `liquidGlassView` 避免 View 泄漏 |
 | 设备状态类 | `onLaptopModeChanged` | 笔记本/平板模式切换（工作站场景） |
 | `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为。通过 `HookUtil.findMethodExact` 沿父类查找，兼容 HyperOS 继承链 |
+| `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | 工作台 Dock 图标分隔竖线的属性调整（宽度、高度、颜色、透明度、偏移） |
 
 ## 桌面网格
 
@@ -86,7 +87,7 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 
 - **捕获管线**：`LiveScreenCapture` 负责屏幕/壁纸层捕获（桌面壁纸条带缓存复用；应用/多任务前台时全屏捕获），`CaptureCadence` 控制采样节奏（高频动态采样与静态低频探针），`CaptureSceneState` 维护场景状态机（桌面 / 应用 / 最近任务）。捕获模式由 `CaptureScene` 单一判定：HOME → mode 2（壁纸），APP/RECENTS → mode 1（全屏+Dock 排除）
 - **场景检测**：`onPreDraw` 每帧触发 `updateDesiredScene()`（不轮循），RECENTS→HOME 立即 `scene-settle-home` 捕获。进入多任务时 `prearmRecentsCapture` 强制取消进行中的捕获以确保场景切换不被管线合并丢失
-- **渲染**：`DockLiquidGlassView` 用 RuntimeShader 实现液态玻璃光学（折射、高光、色散、穹顶），叠加在 Dock 原生模糊之上
+- **渲染**：`DockLiquidGlassView` 用 RuntimeShader 实现液态玻璃光学（折射、高光、色散、穹顶），Shader 内高斯模糊叠加在捕获壁纸上
 - **配置**：设置界面通过 LSPosed Remote Preferences (Binder IPC) 同步，模块侧 `LiquidDockConfig` 读取。不再使用 `su`/JSON 文件方案
 
-各 hook 的触发时机与参数细节请直接阅读 `MainHook`、`HomeGridHook`、`RecentsHapticHook`、`HookUtil`、`Api101Bridge` 文件。
+各 hook 的触发时机与参数细节请直接阅读 `MainHook`、`HomeGridHook`、`RecentsHapticHook`、`DockDividerHook`、`WorkstationWallpaperOnlyHook`、`HookUtil`、`Api101Bridge` 文件。
