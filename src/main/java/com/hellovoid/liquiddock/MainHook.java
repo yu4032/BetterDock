@@ -83,6 +83,7 @@ public class MainHook {
             portTop -= portYBase; portBottom -= portYBase;
             landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
         }
+        DockDividerHook.install(classLoader);
         HomeGridHook.install(classLoader, grid8x4,
             Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
             Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
