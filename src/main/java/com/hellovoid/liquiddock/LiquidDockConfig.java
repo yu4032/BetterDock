@@ -115,7 +115,7 @@ final class LiquidDockConfig {
         final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
                 lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
                 rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
-                nativeBlurInset, recentsPrearmDistance;
+                recentsPrearmDistance;
         final int tintAlpha, captureFps, stopDelayMs, probeFps, motionThreshold,
                 motionBitThreshold, motionHoldMs, blackThreshold, homeSettleDelayMs,
                 tintR, tintG, tintB, specularSharp;
@@ -156,7 +156,6 @@ final class LiquidDockConfig {
             caustics = c.i("liquid_caustics", 28) / 100f;
             edgeBand = c.i("liquid_edge_band", 32) / 1000f;
             highlightAlpha = c.i("liquid_highlight_alpha", 100) / 100f;
-            nativeBlurInset = c.f("liquid_native_blur_inset", 1);
             recentsPrearmDistance = c.f("liquid_recents_prearm_distance", 8);
         }
     }

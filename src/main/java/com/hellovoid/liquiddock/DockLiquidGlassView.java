@@ -239,7 +239,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
     private boolean fullscreenCapture = true;
-    private float nativeBlurInsetDp = 1f;
     private final float chromaticAberration;
     // Prismal liquid-glass parameters (GUI-configurable)
     private float glassThickness = 18f;      // liquid_thickness (dp -> px at render)
@@ -498,9 +497,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
-     *  glass shape instead of blurring a rectangle.  The outline is always the full outer
-     *  geometry — it clips any rectangular overflow from the View's RenderNode.  The
-     *  blur-body inset is handled by {@link #onDraw}'s {@code canvas.clipPath(blurShape)}. */
+     *  glass shape instead of blurring a rectangle. */
     private void applyRoundedOutline() {
         try {
             setClipToOutline(true);
@@ -1223,13 +1220,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
-    void setNativeBlurInsetDp(float insetDp) {
-        float next = Math.max(0f, Math.min(16f, insetDp));
-        if (next == nativeBlurInsetDp) return;
-        nativeBlurInsetDp = next;
-        invalidate();
-    }
-
     void setRecentsPrearmDistanceDp(float distanceDp) {
         recentsPrearmDistancePx = Math.max(1f,
                 distanceDp * getResources().getDisplayMetrics().density);
@@ -1248,7 +1238,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);
             setHighlightAlpha(cfg.highlightAlpha);
-            setNativeBlurInsetDp(cfg.nativeBlurInset);
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
                     cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
             setCaptureScale(cfg.captureScale);
@@ -2295,15 +2284,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);
         Path shape = shapePath(getWidth(), getHeight(), cornerRadius);
-        float blurInsetPx = nativeBlurInsetDp * getResources().getDisplayMetrics().density;
-        Path blurShape = blurInsetPx > 0f
-                ? shapePathInset(getWidth(), getHeight(), cornerRadius, blurInsetPx) : shape;
         canvas.save();
-        canvas.clipPath(blurShape);
+        canvas.clipPath(shape);
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
         tintPaint.setColor(Color.argb(tintPaint.getAlpha(),
                 glassTintR, glassTintG, glassTintB));
-        canvas.drawPath(blurShape, tintPaint);
+        canvas.drawPath(shape, tintPaint);
         canvas.restore();
         // Draw the highlight on the unchanged outer geometry.  Keeping this outside
         // the blur body's clip creates the requested clear separation at the edge.

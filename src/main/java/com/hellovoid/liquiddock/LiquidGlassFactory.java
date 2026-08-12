@@ -29,7 +29,6 @@ final class LiquidGlassFactory {
         view.setAppearance(config.depthEffect, config.brightness, config.specularSharp,
                 config.specularStrength, config.rimLight, config.caustics, config.edgeBand);
         view.setHighlightAlpha(config.highlightAlpha);
-        view.setNativeBlurInsetDp(config.nativeBlurInset);
         view.setRecentsPrearmDistanceDp(config.recentsPrearmDistance);
         view.setFullscreenCapture(config.fullscreenCapture);
         return view;

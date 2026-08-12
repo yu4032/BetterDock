@@ -345,8 +345,6 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
         j.put("liquid_dimensions_dp", true);
         j.put("liquid_blur", sp.getInt("liquid_blur", 6));
-        j.put("liquid_native_blur_inset", readDpPreference(sp,
-                "liquid_native_blur_inset"));
         j.put("liquid_thickness", sp.getInt("liquid_thickness", 18));
         j.put("liquid_ior", sp.getInt("liquid_ior", 155));
         j.put("liquid_normal_strength", sp.getInt("liquid_normal_strength", 115));
@@ -425,7 +423,6 @@ public class SettingsActivity extends AppCompatActivity {
             "workstation_all_apps_portrait_vertical_offset",
             "workstation_dock_icon_top_offset", "workstation_dock_icon_bottom_offset",
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
-            "liquid_native_blur_inset",
             "liquid_lens_refraction", "liquid_capture_bleed_top",
             "liquid_recents_prearm_distance", "liquid_home_settle_delay",
             "liquid_capture_bleed_bottom", "sq_stroke_w", "sq_stroke_off",
@@ -481,7 +478,6 @@ public class SettingsActivity extends AppCompatActivity {
         }
         putInt(j, e, "blur_radius", 0, 400);
         putInt(j, e, "liquid_blur", 0, 60);
-        putInt(j, e, "liquid_native_blur_inset", 0, 16);
         putInt(j, e, "liquid_thickness", 1, 60);
         putInt(j, e, "liquid_ior", 100, 200);
         putInt(j, e, "liquid_normal_strength", 0, 300);
@@ -557,7 +553,6 @@ public class SettingsActivity extends AppCompatActivity {
             "workstation_all_apps_horizontal_offset", "workstation_all_apps_vertical_offset",
             "workstation_dock_icon_top_offset", "workstation_dock_icon_bottom_offset",
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
-            "liquid_native_blur_inset",
             "liquid_lens_refraction", "liquid_capture_bleed_top",
             "liquid_recents_prearm_distance", "liquid_home_settle_delay",
             "liquid_capture_bleed_bottom", "sq_stroke_w", "sq_stroke_off",

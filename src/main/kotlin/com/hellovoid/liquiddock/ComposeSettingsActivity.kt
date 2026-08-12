@@ -118,7 +118,6 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
     "liquid_blur" -> "液态玻璃对捕获背景的模糊范围"
-    "liquid_native_blur_inset" -> "仅用于原生模糊与高级材质；让模糊区域向内收缩，为外圈高光留出清晰间距"
     "liquid_thickness" -> "影响折射路径的虚拟玻璃厚度"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
     "liquid_normal_strength" -> "表面法线起伏对折射的影响"
@@ -207,7 +206,6 @@ private val workstationSpecs = listOf(
 )
 private val liquidSpecs = listOf(
     IntSpec("liquid_blur", "玻璃模糊", 6, 0, 60, "dp"),
-    IntSpec("liquid_native_blur_inset", "原生模糊内缩", 1, 0, 16, "dp"),
     IntSpec("liquid_thickness", "玻璃厚度", 18, 1, 60, "dp"),
     IntSpec("liquid_ior", "折射率 IOR", 155, 100, 200, "%"),
     IntSpec("liquid_normal_strength", "法线强度", 115, 0, 300, "%"),
@@ -681,7 +679,7 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
     dp("grid_portrait_top_distance", 10.3f); dp("grid_portrait_bottom_distance", 0f)
     dp("grid_landscape_row_gap", 0f); dp("grid_portrait_row_gap", -16f)
     dp("indicator_landscape_y", -8.8f); dp("indicator_portrait_y", 11.8f)
-    dp("liquid_blur", 0f); dp("liquid_native_blur_inset", 0f)
+    dp("liquid_blur", 0f)
     dp("liquid_thickness", 18f)
     dp("liquid_lens_refraction", 12f); dp("liquid_capture_bleed_top", 17f)
     dp("liquid_capture_bleed_bottom", 16f)
