@@ -1413,11 +1413,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return homeReturnTransitionArmed && System.nanoTime() < homeSettleUntilNanos;
     }
 
-    /** True when the settle window has ≤ 200 ms remaining — icons have finished
+    /** True when the settle window has ≤ 500 ms remaining — icons have finished
      *  flying in and the BBQ wrapper is safe for mode-2 capture. */
     private boolean isHomeSettleLate() {
         return homeReturnTransitionArmed
-                && (homeSettleUntilNanos - System.nanoTime()) <= 200_000_000L;
+                && (homeSettleUntilNanos - System.nanoTime()) <= 500_000_000L;
     }
 
     private void armHomeSettle(String reason) {
