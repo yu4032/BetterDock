@@ -179,7 +179,9 @@ private val dockSpecs = listOf(
 )
 private val workstationSpecs = listOf(
     IntSpec("workstation_dock_width_offset", "工作台 Dock 长度偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_grid_horizontal_offset", "工作台布局水平偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_grid_horizontal_offset", "工作台桌面水平偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_horizontal_offset", "工作台所有应用水平偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_vertical_offset", "工作台所有应用垂直偏移", 0, -240, 240, "dp"),
     IntSpec("workstation_dock_icon_top_offset", "工作台图标上间距", 0, -48, 48, "dp"),
     IntSpec("workstation_dock_icon_bottom_offset", "工作台图标下间距", 0, -48, 48, "dp"),
 )

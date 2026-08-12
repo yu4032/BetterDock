@@ -6,11 +6,11 @@ final class CaptureSceneState {
     private CaptureScene gestureTarget;
     private long gestureTargetUntilNanos;
     private long revision;
-    private boolean workstationWallpaperOnly;
+    private boolean workstationSuspended;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
-    boolean workstationWallpaperOnly() { return workstationWallpaperOnly; }
+    boolean workstationSuspended() { return workstationSuspended; }
     boolean matches(CaptureScene scene, long expectedRevision) {
         return desired == scene && revision == expectedRevision;
     }
@@ -36,7 +36,6 @@ final class CaptureSceneState {
 
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
-        if (workstationWallpaperOnly) return CaptureScene.HOME;
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (recentsVisible) return CaptureScene.RECENTS;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
@@ -49,10 +48,10 @@ final class CaptureSceneState {
         return setDesired(next);
     }
 
-    void setWorkstationWallpaperOnly(boolean enabled, long nowNanos,
+    void setWorkstationSuspended(boolean enabled, long nowNanos,
                                      boolean recentsVisible, boolean lifecycleKnown,
                                      boolean launcherResumed) {
-        workstationWallpaperOnly = enabled;
+        workstationSuspended = enabled;
         gestureTarget = null;
         revision++;
         desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);

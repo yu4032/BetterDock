@@ -156,13 +156,17 @@ final class LiquidDockConfig {
 
     static final class Workstation {
         final boolean dockEnabled, dimensionsDp;
-        final float dockWidthOffset, gridHorizontalOffset, iconTopOffset, iconBottomOffset;
+        final float dockWidthOffset, gridHorizontalOffset;
+        final float allAppsHorizontalOffset, allAppsVerticalOffset;
+        final float iconTopOffset, iconBottomOffset;
 
         Workstation(ConfigReader c) {
             dockEnabled = c.b("workstation_dock_customization", false);
             dimensionsDp = c.b("dock_dimensions_dp", true);
             dockWidthOffset = c.f("workstation_dock_width_offset", 0);
             gridHorizontalOffset = c.f("workstation_grid_horizontal_offset", 0);
+            allAppsHorizontalOffset = c.f("workstation_all_apps_horizontal_offset", 0);
+            allAppsVerticalOffset = c.f("workstation_all_apps_vertical_offset", 0);
             iconTopOffset = c.f("workstation_dock_icon_top_offset", 0);
             iconBottomOffset = c.f("workstation_dock_icon_bottom_offset", 0);
         }

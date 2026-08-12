@@ -91,6 +91,9 @@ public class MainHook {
             Math.round(grid.portraitIndicatorY * gridScale));
         HomeGridHook.setWorkstationHorizontalOffset(Math.round(
                 config.workstation.gridHorizontalOffset * gridScale));
+        HomeGridHook.setWorkstationAllAppsOffsets(
+                Math.round(config.workstation.allAppsHorizontalOffset * gridScale),
+                Math.round(config.workstation.allAppsVerticalOffset * gridScale));
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
@@ -406,10 +409,12 @@ public class MainHook {
                                         new FrameLayout.LayoutParams(1, 1, gv));
                             }
                             if (workstationMode) {
-                                if (liquidGlassView != null) {
+                                // Laptop/workstation Dock has its own DockContainerView
+                                // background. Never leave the normal HotSeats background or
+                                // LiquidDock glass visible underneath it.
+                                oldBg.setAlpha(0f);
+                                if (liquidGlassView != null)
                                     liquidGlassView.setWorkstationMode(true);
-                                    syncAll(oldBg);
-                                }
                                 return r;
                             }
                             if (dockShadow) {
@@ -908,6 +913,7 @@ public class MainHook {
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
                 if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
+                else oldBg.setAlpha(1f);
                 if (overlay != null) overlay.setVisibility(View.VISIBLE);
                 if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
                 syncAll(oldBg);
@@ -915,13 +921,12 @@ public class MainHook {
             return;
         }
         if (oldBg != null) oldBg.post(() -> {
-            if (oldBg != null) oldBg.setAlpha(1f);
+            // The workstation Dock background is rendered by its independent laptop
+            // DockContainerView. Suppress every normal-mode background layer here.
+            oldBg.setAlpha(0f);
             if (overlay != null) overlay.setVisibility(View.GONE);
             if (shadowView != null) shadowView.setVisibility(View.GONE);
-            if (liquidGlassView != null) {
-                liquidGlassView.setVisibility(View.VISIBLE);
-                liquidGlassView.setWorkstationMode(true);
-            }
+            if (liquidGlassView != null) liquidGlassView.setWorkstationMode(true);
         });
     }
 

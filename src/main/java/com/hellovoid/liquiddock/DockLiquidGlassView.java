@@ -1313,6 +1313,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private boolean isCaptureAllowed() {
+        // Workstation/laptop Dock has an independent background. The normal Dock glass
+        // must not capture or render while that container is active.
+        if (sceneState.workstationSuspended()) return false;
         // DeviceConfig mirrors notification shade and control-center expansion from SystemUI.
         // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
         // while it is expanded only wastes GPU/binder work and risks sampling its animation.
@@ -1401,34 +1404,46 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }, ROTATION_STABILIZE_INTERVAL_MS);
     }
 
-    /** Workstation Dock is stationary: capture only the wallpaper layer and reuse the
-     * mode-2 cache. Geometry changes are served by recropping that cached strip. */
+    /** Workstation/laptop mode owns a separate DockContainerView background. Suspend
+     *  LiquidDock completely instead of treating workstation as another wallpaper scene. */
     void setWorkstationMode(boolean enabled) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(() -> setWorkstationMode(enabled));
             return;
         }
-        if (sceneState.workstationWallpaperOnly() == enabled) return;
+        if (sceneState.workstationSuspended() == enabled) return;
         cancelPendingCaptureWork();
         captureGeneration++;
         appVisualSignatureValid = false;
         dynamicAppActiveUntilNanos = 0L;
-        sceneState.setWorkstationWallpaperOnly(enabled, System.nanoTime(), isRecentsVisible(),
+        sceneState.setWorkstationSuspended(enabled, System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed);
+
+        Bitmap old = capture;
+        capture = null;
+        captureShader = null;
+        if (old != null && !old.isRecycled()) old.recycle();
+        clearSystemMaterial();
+
         if (enabled) {
-            Bitmap old = capture;
-            capture = null;
-            captureShader = null;
-            if (old != null && !old.isRecycled()) old.recycle();
-            if (nativeBackgroundHiddenByGlass) {
-                geometrySource.setAlpha(1f);
-                nativeBackgroundHiddenByGlass = false;
-                clearSystemMaterial();
-            }
+            // Hide both normal-mode layers: the stock HotSeats background and this glass.
+            // The laptop DockContainerView remains visible and renders its own background.
+            geometrySource.setAlpha(0f);
+            nativeBackgroundHiddenByGlass = true;
+            setVisibility(INVISIBLE);
+            sourceDirty = false;
             invalidate();
+            return;
         }
+
+        // Return to normal mode safely: show the stock background until the first fresh
+        // LiquidDock frame is installed, then installCapture() will hide it again.
+        setVisibility(VISIBLE);
+        geometrySource.setAlpha(1f);
+        nativeBackgroundHiddenByGlass = false;
         sourceDirty = true;
-        requestStateCapture(enabled ? "workstation-wallpaper-once" : "workstation-exit");
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("workstation-exit");
     }
 
     private void requestStateCapture() {

@@ -17,6 +17,8 @@ final class HomeGridHook {
     private static boolean grid8x4Enabled;
     private static volatile boolean workstationMode;
     private static int workstationHorizontalOffset;
+    private static int workstationAllAppsHorizontalOffset;
+    private static int workstationAllAppsVerticalOffset;
     private static java.lang.ref.WeakReference<android.view.View> workspaceRef =
             new java.lang.ref.WeakReference<>(null);
     private static float density;
@@ -38,6 +40,11 @@ final class HomeGridHook {
 
     static void setWorkstationHorizontalOffset(int offset) {
         workstationHorizontalOffset = offset;
+    }
+
+    static void setWorkstationAllAppsOffsets(int horizontal, int vertical) {
+        workstationAllAppsHorizontalOffset = horizontal;
+        workstationAllAppsVerticalOffset = vertical;
     }
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
@@ -285,11 +292,23 @@ final class HomeGridHook {
             int height = layout.getHeight();
             if (width <= 0 || height <= 0) return;
 
-            // With the 8x4 count hooks MIUI can retain the opposite orientation's
-            // GridConfig after rotation. Use the established Pad defaults as the
-            // orientation-specific baseline; native 6x4 continues using MIUI's
-            // live GridConfig values.
-            if (grid8x4Enabled) {
+            boolean workstation = workstationMode || MainHook.isWorkstationMode();
+            boolean workstationAllApps = workstation && isLaptopAllApps(cellLayout);
+
+            // Laptop All Apps has its own GridType/GridConfig.  The system DEX identifies
+            // it through CellLayout.isInLapTopAllApps() and
+            // GRID_TYPE_IN_ALL_APPS_WORKSPACE. Preserve that dedicated geometry instead
+            // of replacing it with the normal Workspace centering formula. The 8x4 count
+            // still applies; cellSize below shrinks as needed to stay inside this layout.
+            if (workstationAllApps) {
+                baseLeft = Math.max(0, configLeft);
+                baseTop = Math.max(0, baseTop);
+                baseWidthGap = Math.max(0, HookUtil.getIntField(cellLayout, "mWidthGap"));
+                baseHeightGap = Math.max(0, HookUtil.getIntField(cellLayout, "mHeightGap"));
+            } else if (grid8x4Enabled) {
+                // With the 8x4 count hooks MIUI can retain the opposite orientation's
+                // GridConfig after rotation. Use the established Pad defaults as the
+                // orientation-specific baseline for normal Workspace pages.
                 int dockBarHeight = 0;
                 try {
                     dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
@@ -308,13 +327,31 @@ final class HomeGridHook {
                 + baseWidthGap * Math.max(0, countX - 1));
             int baseBottom = height - (baseTop + baseCell * countY
                 + baseHeightGap * Math.max(0, countY - 1));
-            boolean workstation = workstationMode || MainHook.isWorkstationMode();
-            int left = baseLeft + (workstation ? workstationHorizontalOffset
+            if (workstationAllApps) {
+                // The stock All Apps config is sized for its own icon/search/indicator
+                // stack.  With 8 columns the old cell size can make the derived far
+                // margins negative; keep the native near margins and let cellSize shrink.
+                baseRight = Math.max(0, baseRight);
+                baseBottom = Math.max(0, baseBottom);
+            }
+
+            int workstationX = workstationAllApps
+                    ? workstationAllAppsHorizontalOffset : workstationHorizontalOffset;
+            int workstationY = workstationAllApps ? workstationAllAppsVerticalOffset : 0;
+            if (workstation) {
+                // Offsets are translations, not symmetric insets. Clamp them against the
+                // native margins so the adjusted grid can never be pushed off-screen.
+                workstationX = Math.max(-baseLeft, Math.min(baseRight, workstationX));
+                workstationY = Math.max(-baseTop, Math.min(baseBottom, workstationY));
+            }
+            int left = baseLeft + (workstation ? workstationX
                     : (portrait ? portraitLeft : landscapeLeft));
-            int right = baseRight + (workstation ? workstationHorizontalOffset
+            int right = baseRight + (workstation ? -workstationX
                     : (portrait ? portraitRight : landscapeRight));
-            int top = baseTop + (workstation ? 0 : (portrait ? portraitTop : landscapeTop));
-            int bottom = baseBottom + (workstation ? 0 : (portrait ? portraitBottom : landscapeBottom));
+            int top = baseTop + (workstation ? workstationY
+                    : (portrait ? portraitTop : landscapeTop));
+            int bottom = baseBottom + (workstation ? -workstationY
+                    : (portrait ? portraitBottom : landscapeBottom));
             int rowGap = baseHeightGap + (workstation ? 0
                     : (portrait ? portraitRowGap : landscapeRowGap));
 
@@ -334,6 +371,15 @@ final class HomeGridHook {
             HookUtil.setIntField(cellLayout, "mHeightGap", rowGap);
         } catch (Throwable e) {
             MainHook.log("[DC] CellLayout offset apply failed: " + e);
+        }
+    }
+
+    private static boolean isLaptopAllApps(Object cellLayout) {
+        try {
+            Object result = HookUtil.invoke(cellLayout, "isInLapTopAllApps");
+            return Boolean.TRUE.equals(result);
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 

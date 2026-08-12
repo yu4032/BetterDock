@@ -328,6 +328,10 @@ public class SettingsActivity extends AppCompatActivity {
                 "workstation_dock_width_offset"));
         j.put("workstation_grid_horizontal_offset", readDpPreference(sp,
                 "workstation_grid_horizontal_offset"));
+        j.put("workstation_all_apps_horizontal_offset", readDpPreference(sp,
+                "workstation_all_apps_horizontal_offset"));
+        j.put("workstation_all_apps_vertical_offset", readDpPreference(sp,
+                "workstation_all_apps_vertical_offset"));
         j.put("workstation_dock_icon_top_offset", readDpPreference(sp,
                 "workstation_dock_icon_top_offset"));
         j.put("workstation_dock_icon_bottom_offset", readDpPreference(sp,
@@ -412,6 +416,7 @@ public class SettingsActivity extends AppCompatActivity {
             "indicator_landscape_y", "indicator_portrait_y",
             "height_offset", "width_offset", "corner_offset", "blur_corner_offset",
             "workstation_dock_width_offset", "workstation_grid_horizontal_offset",
+            "workstation_all_apps_horizontal_offset", "workstation_all_apps_vertical_offset",
             "workstation_dock_icon_top_offset", "workstation_dock_icon_bottom_offset",
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
             "liquid_native_blur_inset",
@@ -542,6 +547,7 @@ public class SettingsActivity extends AppCompatActivity {
             "indicator_landscape_y", "indicator_portrait_y",
             "height_offset", "width_offset", "corner_offset", "blur_corner_offset",
             "workstation_dock_width_offset", "workstation_grid_horizontal_offset",
+            "workstation_all_apps_horizontal_offset", "workstation_all_apps_vertical_offset",
             "workstation_dock_icon_top_offset", "workstation_dock_icon_bottom_offset",
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
             "liquid_native_blur_inset",
