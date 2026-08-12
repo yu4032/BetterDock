@@ -707,15 +707,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     @Override public boolean onPreDraw() {
         if (!isCaptureAllowed()) return true;
-        // Guard the hidden native background: dock animations may reset the background's
-        // alpha back to 1, which would show the default background through/over the glass.
-        // Re-hide it every frame while the glass owns the background.
         if (nativeBackgroundHiddenByGlass && geometrySource.getAlpha() != 0f) {
             geometrySource.setAlpha(0f);
         }
         if (updateObservation()) {
             requestStateCapture("observation");
         }
+        // Frame-driven scene check: recents visibility may change without
+        // dock geometry movement.  resolve() is O(1) — just a few comparisons.
+        updateDesiredScene();
         return true;
     }
 
@@ -1268,13 +1268,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Config hot-reload tick: re-apply GUI appearance keys every second so edits show up
-     *  without restarting the launcher, even when the Dock is static (0 captures).
-     *  Also monitors scene transitions (e.g. recents→HOME) when the dock is idle. */
+     *  without restarting the launcher, even when the Dock is static (0 captures). */
     private final Runnable configReloadTick = new Runnable() {
         @Override public void run() {
             if (!attached) return;
             reloadAppearanceFromConfig();
-            updateDesiredScene();
             mainHandler.postDelayed(this, 1000L);
         }
     };
