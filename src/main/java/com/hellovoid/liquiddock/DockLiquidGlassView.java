@@ -1707,7 +1707,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // inherently icon/dock-free).  APP and RECENTS use
                     // full-display capture with Dock + drag layers excluded
                     // (mode 1) for real-time content.
-                    boolean wallpaperMode = requestScene == CaptureScene.HOME;
+                    // Workstation mode: all scenes use wallpaper-only (mode 2).
+                    // The stock Dock has its own snapshot pipeline; LiquidDock
+                    // must not enter mode-1 and risk sampling its own overlay.
+                    boolean wallpaperMode = requestScene == CaptureScene.HOME
+                            || workstationMode;
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
