@@ -1,7 +1,6 @@
 package com.hellovoid.liquiddock;
 
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -15,6 +14,8 @@ import android.view.ViewGroup;
 final class DockDividerHook {
 
     private DockDividerHook() {}
+
+    private static int channel(int v) { return Math.max(0, Math.min(v, 255)); }
 
     static void install(ClassLoader classLoader) {
         try {
@@ -36,7 +37,8 @@ final class DockDividerHook {
                             float scale = line.getResources().getDisplayMetrics().density;
 
                             if (cfg.dividerWidthDp != 0) {
-                                lp.width = Math.round(cfg.dividerWidthDp * scale);
+                                // GUI stores tenths of dp (range 0-160 → 0-16 dp)
+                                lp.width = Math.round(cfg.dividerWidthDp / 10f * scale);
                             }
 
                             if (cfg.dividerHeightScale != 0f) {
@@ -45,7 +47,8 @@ final class DockDividerHook {
                                     parentH = lp.height > 0 ? lp.height : line.getHeight();
                                 }
                                 if (parentH > 0) {
-                                    int targetH = Math.round(parentH * cfg.dividerHeightScale);
+                                    float frac = cfg.dividerHeightScale / 100f;
+                                    int targetH = Math.round(parentH * frac);
                                     lp.topMargin = (parentH - targetH) / 2;
                                     lp.height = targetH;
                                 }
@@ -62,19 +65,20 @@ final class DockDividerHook {
                         boolean hasColor = r != 0 || g != 0 || b != 0;
                         boolean hasAlpha = alpha != 0;
                         if (hasColor || hasAlpha) {
-                            View target = line;
                             int actualColor = Color.rgb(
-                                    hasColor ? r : 255,
-                                    hasColor ? g : 255,
-                                    hasColor ? b : 255);
+                                    hasColor ? channel(r) : 255,
+                                    hasColor ? channel(g) : 255,
+                                    hasColor ? channel(b) : 255);
                             if (hasAlpha) {
-                                actualColor = Color.argb(alpha,
+                                actualColor = Color.argb(
+                                        channel(alpha),
                                         Color.red(actualColor),
                                         Color.green(actualColor),
                                         Color.blue(actualColor));
                             }
-                            target.getBackground().setColorFilter(
-                                    actualColor, PorterDuff.Mode.SRC_ATOP);
+                            // Prefer setBackgroundColor (works on any View with
+                            // any drawable), fall back to tinting the background.
+                            line.setBackgroundColor(actualColor);
                         }
 
                         return result;
