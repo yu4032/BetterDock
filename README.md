@@ -6,7 +6,7 @@ LiquidDock 是一个 LSPosed 模块，为 HyperOS 3 Pad 的启动器 Dock 带来
 
 ## 特性
 
-- **液态玻璃 Dock 背景**：原生 blur 叠加深度折射、高光、描边与色散边缘（Prismal 光学模型）
+- **液态玻璃 Dock 背景**：Shader 内高斯模糊叠加深度折射、高光、描边与色散边缘（Prismal 光学模型）
 - Dock 模糊强度、宽度、高度、底部偏移、独立模糊/描边圆角
 - 圆角矩形与连续方圆形轮廓
 - 可调描边厚度、基础 RGBA 颜色、Fill-Diff 渲染与描边开关
