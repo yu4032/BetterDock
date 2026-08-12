@@ -1027,6 +1027,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(this::onDockTouchEvent);
             return;
         }
+        // Floating window over desktop: the Dock sits below the floating window
+        // (z: wallpaper→Dock→floating).  Mode-1 would capture floating content.
+        // When user touches the Dock, they've come back to the desktop — force
+        // mode-2 so wallpaper is captured.
+        if (!launcherWasAway) floatingWindowOverDesktop = true;
         requestStateCapture("dock-touch");
     }
 
@@ -1343,6 +1348,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
+        floatingWindowOverDesktop = false;
     }
 
     /** Launcher gained window focus.  If we genuinely returned from an app
