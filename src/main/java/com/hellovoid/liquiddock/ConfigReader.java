@@ -1,60 +1,123 @@
 package com.hellovoid.liquiddock;
 
-import org.json.JSONObject;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
+import android.content.SharedPreferences;
 import android.util.Log;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+/** Runtime config reader. API101 Remote Preferences are the primary source. */
 public class ConfigReader {
-    // Primary location: the launcher's real data dir.  /data/data/com.miui.home is a
-    // symlink that ksu's mkdir -p refuses to create, which silently broke the GUI
-    // JSON sync; /data/user/0/... is the canonical path and works under su.
-    // Fallback: the historical /data/local/tmp path so pre-existing configs keep working.
-    private static final String[] PATHS = {
+    public static final String REMOTE_GROUP = "config";
+
+    private static final String[] LEGACY_PATHS = {
         "/data/user/0/com.miui.home/files/liquiddock_config.json",
         "/data/data/com.miui.home/files/liquiddock_config.json",
         "/data/local/tmp/liquiddock_config.json",
     };
     private static final int MAX_CONFIG_BYTES = 64 * 1024;
-    private JSONObject json;
+
+    private final Map<String, ?> prefs;
+    private final JSONObject legacyJson;
 
     private ConfigReader() {
+        Map<String, ?> loadedPrefs = Collections.emptyMap();
         try {
-            JSONObject loaded = null;
-            for (String path : PATHS) {
-                File f = new File(path);
-                if (!f.exists()) continue;
-                try (FileInputStream fis = new FileInputStream(f);
-                     ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-                    byte[] buf = new byte[4096];
-                    int n;
-                    int total = 0;
-                    while ((n = fis.read(buf)) != -1) {
-                        total += n;
-                        if (total > MAX_CONFIG_BYTES)
-                            throw new IllegalArgumentException("Config exceeds 64 KiB");
-                        out.write(buf, 0, n);
-                    }
-                    byte[] data = out.toByteArray();
-                    if (data.length > 0) {
-                        loaded = new JSONObject(new String(data, StandardCharsets.UTF_8));
-                        break;
-                    }
-                }
+            SharedPreferences remote = Api101Bridge.remotePreferences(REMOTE_GROUP);
+            Map<String, ?> all = remote.getAll();
+            if (all != null && !all.isEmpty()) {
+                loadedPrefs = new HashMap<>(all);
+                Log.i("LiquidDock", "config loaded from API101 Remote Preferences: "
+                        + loadedPrefs.size() + " keys");
+            } else {
+                Log.w("LiquidDock", "API101 Remote Preferences are empty; trying legacy config");
             }
-            json = loaded != null ? loaded : new JSONObject();
-        } catch (Throwable e) {
-            Log.e("LiquidDock", "Failed to read config", e);
-            json = new JSONObject();
+        } catch (Throwable error) {
+            Log.w("LiquidDock", "API101 Remote Preferences unavailable; trying legacy config", error);
         }
+        prefs = loadedPrefs;
+        legacyJson = prefs.isEmpty() ? readLegacyJson() : new JSONObject();
+    }
+
+    private static JSONObject readLegacyJson() {
+        for (String path : LEGACY_PATHS) {
+            File file = new File(path);
+            if (!file.exists()) continue;
+            try (FileInputStream fis = new FileInputStream(file);
+                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[4096];
+                int n;
+                int total = 0;
+                while ((n = fis.read(buf)) != -1) {
+                    total += n;
+                    if (total > MAX_CONFIG_BYTES) {
+                        throw new IllegalArgumentException("Config exceeds 64 KiB");
+                    }
+                    out.write(buf, 0, n);
+                }
+                byte[] data = out.toByteArray();
+                if (data.length > 0) {
+                    Log.i("LiquidDock", "config loaded from legacy path: " + path);
+                    return new JSONObject(new String(data, StandardCharsets.UTF_8));
+                }
+            } catch (Throwable error) {
+                Log.w("LiquidDock", "Failed to read legacy config: " + path, error);
+            }
+        }
+        return new JSONObject();
     }
 
     public static ConfigReader load() { return new ConfigReader(); }
-    public boolean has(String k)              { return json.has(k); }
-    public String  s(String k, String d)  { return json.optString(k, d); }
-    public int     i(String k, int d)     { return json.optInt(k, d); }
-    public float   f(String k, float d)   { return (float) json.optDouble(k, d); }
-    public boolean b(String k, boolean d) { return json.optBoolean(k, d); }
+
+    public boolean has(String key) {
+        return prefs.containsKey(key) || legacyJson.has(key);
+    }
+
+    public String s(String key, String def) {
+        Object value = prefs.get(key);
+        if (value != null) return String.valueOf(value);
+        return legacyJson.optString(key, def);
+    }
+
+    public int i(String key, int def) {
+        Object value = prefs.get(key);
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) {
+            try { return Integer.parseInt((String) value); }
+            catch (NumberFormatException ignored) {}
+        }
+        return legacyJson.optInt(key, def);
+    }
+
+    public float f(String key, float def) {
+        // Compose persists decimal-dp settings losslessly in <key>_tenths.
+        Object tenths = prefs.get(key + "_tenths");
+        if (tenths instanceof Number) return ((Number) tenths).intValue() / 10f;
+        if (tenths instanceof String) {
+            try { return Integer.parseInt((String) tenths) / 10f; }
+            catch (NumberFormatException ignored) {}
+        }
+
+        Object value = prefs.get(key);
+        if (value instanceof Number) return ((Number) value).floatValue();
+        if (value instanceof String) {
+            try { return Float.parseFloat((String) value); }
+            catch (NumberFormatException ignored) {}
+        }
+        return (float) legacyJson.optDouble(key, def);
+    }
+
+    public boolean b(String key, boolean def) {
+        Object value = prefs.get(key);
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof String) return Boolean.parseBoolean((String) value);
+        return legacyJson.optBoolean(key, def);
+    }
 }
