@@ -529,27 +529,6 @@ public class MainHook implements IXposedHookLoadPackage {
             log("[DC] onWindowFocusChanged hook failed: " + e);
         }
 
-        // Floating/small window detection: when the launcher enters multi-window
-        // mode (split-screen or freeform floating window over desktop), the Dock
-        // sits below the floating window.  Force mode-2 so wallpaper is captured
-        // instead of the floating window content.
-        try {
-            XposedHelpers.findAndHookMethod(launcherClass, "onMultiWindowModeChanged",
-                    boolean.class, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam p) {
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null) {
-                        boolean inMultiWindow = (Boolean) p.args[0];
-                        glass.floatingWindowOverDesktop = inMultiWindow;
-                        log("[DC] floating window over desktop: " + inMultiWindow);
-                    }
-                }
-            });
-        } catch (Throwable e) {
-            log("[DC] onMultiWindowModeChanged hook failed: " + e);
-        }
-
         // Dock v3 resolves the final gesture target before Launcher focus/lifecycle catches up.
         // These events are emitted again when an animation is interrupted, so they provide the
         // correct source switch for HOME, APP and RECENTS without timing guesses.
