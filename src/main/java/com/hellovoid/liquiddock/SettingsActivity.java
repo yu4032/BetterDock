@@ -343,7 +343,6 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("dock_dimensions_dp", true);
         j.put("blur_radius", sp.getInt("blur_radius", 100));
         j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
-        j.put("liquid_blur_method", sp.getString("liquid_blur_method", "shader"));
         j.put("liquid_dimensions_dp", true);
         j.put("liquid_blur", sp.getInt("liquid_blur", 6));
         j.put("liquid_native_blur_inset", readDpPreference(sp,
@@ -441,9 +440,6 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private static void applyImportedParameters(JSONObject j, SharedPreferences.Editor e) {
-        String blurMethod = j.optString("liquid_blur_method", "");
-        if ("shader".equals(blurMethod) || "native".equals(blurMethod)
-                || "material".equals(blurMethod)) e.putString("liquid_blur_method", blurMethod);
         String[] gridMargins = {
             "grid_landscape_margin_left", "grid_landscape_margin_right",
             "grid_landscape_margin_top", "grid_landscape_margin_bottom",

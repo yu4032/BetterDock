@@ -392,12 +392,6 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
     SettingsList(padding, stringResource(R.string.page_liquid)) {
         BooleanSetting(prefs, "liquid_glass", stringResource(R.string.liquid_enable), false,
             stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        StringDropdown(prefs, "liquid_blur_method", stringResource(R.string.liquid_blur_method), "shader",
-            listOf(
-                stringResource(R.string.liquid_shader_blur) to "shader",
-                stringResource(R.string.liquid_native_blur) to "native",
-                stringResource(R.string.liquid_material_blur) to "material",
-            ), masterEnabled && liquidGlass)
         BooleanSetting(prefs, "liquid_dynamic_app_capture", stringResource(R.string.liquid_dynamic_capture), true,
             stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass) { dynamicAppCapture = it }
         liquidSpecs.forEach {
@@ -655,7 +649,6 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
         .putBoolean("workstation_dock_customization", false)
         .putInt("blur_radius", 100)
         .putBoolean("liquid_glass", true).putBoolean("liquid_dimensions_dp", true)
-        .putString("liquid_blur_method", "native")
         .putInt("liquid_ior", 170).putInt("liquid_normal_strength", 115)
         .putInt("liquid_dome", 100).putInt("liquid_chromatic", 8)
         .putInt("liquid_tint_alpha", 64).putInt("liquid_tint_r", 119)

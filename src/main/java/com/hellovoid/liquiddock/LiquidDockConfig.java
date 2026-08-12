@@ -119,7 +119,6 @@ final class LiquidDockConfig {
         final int tintAlpha, captureFps, stopDelayMs, probeFps, motionThreshold,
                 motionBitThreshold, motionHoldMs, blackThreshold, homeSettleDelayMs,
                 tintR, tintG, tintB, specularSharp;
-        final String blurMethod;
 
         Glass(ConfigReader c) {
             enabled = c.b("liquid_glass", false);
@@ -137,7 +136,6 @@ final class LiquidDockConfig {
             dome = c.i("liquid_dome", 100) / 100f;
             lensRefraction = c.f("liquid_lens_refraction", 12);
             captureScale = c.i("liquid_capture_scale", 50) / 100f;
-            blurMethod = normalizeBlurMethod(c.s("liquid_blur_method", "shader"));
             dynamicAppCapture = c.b("liquid_dynamic_app_capture", true);
             fullscreenCapture = c.b("liquid_capture_fullscreen", true);
             probeFps = clamp(c.i("liquid_dynamic_app_probe_fps", 3), 1, 60);
@@ -195,8 +193,5 @@ final class LiquidDockConfig {
     private static int channel(int value) { return clamp(value, 0, 255); }
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
-    }
-    private static String normalizeBlurMethod(String value) {
-        return "native".equals(value) || "material".equals(value) ? value : "shader";
     }
 }

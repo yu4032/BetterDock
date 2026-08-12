@@ -238,10 +238,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
-    private String blurMethod = "shader";
     private boolean fullscreenCapture = true;
-    // Keep the native/material blur body away from the outer highlight.  The outer
-    // path remains unchanged, so this does not alter Dock size, corner or stroke geometry.
     private float nativeBlurInsetDp = 1f;
     private final float chromaticAberration;
     // Prismal liquid-glass parameters (GUI-configurable)
@@ -1181,15 +1178,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
-    void setBlurMethod(String method) {
-        String next = "native".equals(method) || "material".equals(method)
-                ? method : "shader";
-        if (next.equals(blurMethod)) return;
-        blurMethod = next;
-        if (nativeBackgroundHiddenByGlass) applySelectedBlurBackend();
-        invalidate();
-    }
-
     /** Glass tint RGB (GUI: liquid_tint_r/g/b, 0-255).  Alpha is liquid_tint_alpha. */
     void setTintColor(int r, int g, int b) {
         int nr = Math.max(0, Math.min(255, r));
@@ -1264,7 +1252,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
                     cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
             setCaptureScale(cfg.captureScale);
-            setBlurMethod(cfg.blurMethod);
             setDynamicAppCapture(cfg.dynamicAppCapture, cfg.captureFps, cfg.probeFps,
                     cfg.motionThreshold, cfg.motionBitThreshold, cfg.motionHoldMs,
                     cfg.blackThreshold);
@@ -1499,7 +1486,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // DockContainerView remains underneath; this glass draws only the live Recents frame.
         geometrySource.setAlpha(0f);
         nativeBackgroundHiddenByGlass = true;
-        applySelectedBlurBackend();
         sourceDirty = true;
         observationValid = false;
         lastCaptureStartNanos = 0L;
@@ -1532,7 +1518,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         capture = null;
         captureShader = null;
         if (old != null && !old.isRecycled()) old.recycle();
-        clearSystemMaterial();
         geometrySource.setAlpha(0f);
         nativeBackgroundHiddenByGlass = true;
         setVisibility(INVISIBLE);
@@ -2241,78 +2226,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  or {@code "material"} blur methods for crisp-edged frosted glass.
      *  This method is kept for backward compatibility but no longer called
      *  from the default blur pipeline. */
+    @SuppressWarnings("unused")
     private void applySystemSelfBlur(int radius) {
-        try {
-            if (radius <= 0) return;
-            // View.setMiSelfBlur(int radius, ArrayList<Display.ColorMode> colorModes) — hidden
-            // MIUI API (TEST-API in framework).  Called reflectively like the rest of the
-            // module's hidden-surface usage.
-            Class<?> viewClass = View.class;
-            java.lang.reflect.Method m;
-            try {
-                m = viewClass.getDeclaredMethod("setMiSelfBlur",
-                        int.class, java.util.ArrayList.class);
-            } catch (NoSuchMethodException e) {
-                m = viewClass.getDeclaredMethod("setMiSelfBlur", int.class);
-            }
-            m.setAccessible(true);
-            if (m.getParameterTypes().length == 2) {
-                m.invoke(this, radius, null);
-            } else {
-                m.invoke(this, radius);
-            }
-            // Enhance flag 0x200 = "blur this view's own drawn content".  Without it the
-            // self-blur radius is set on the RenderNode but SurfaceFlinger never honors it.
-            try {
-                java.lang.reflect.Method flagMethod =
-                        viewClass.getDeclaredMethod("setMiSelfBlurEnhanceFlag", int.class, int.class);
-                flagMethod.setAccessible(true);
-                flagMethod.invoke(this, 0x200, 0x200);
-            } catch (NoSuchMethodException e) {
-                logW("setMiSelfBlurEnhanceFlag not available");
-            }
-            logI("Liquid glass: system self-blur applied radius=" + radius);
-        } catch (Throwable e) {
-            logW("system self-blur failed: " + e);
-        }
-    }
-
-    private void clearSystemMaterial() {
-        HookUtil.invoke(this, "setMiSelfBlur", 0);
-        HookUtil.invoke(this, "setMiSelfBlurEnhanceFlag", 0x200, 0);
-        HookUtil.invoke(this, "clearMiBackgroundBlendColor");
-        HookUtil.invoke(this, "setMiViewBlurMode", 0);
-    }
-
-    private void applyHyperMaterialColors() {
-        try {
-            boolean dark = (getResources().getConfiguration().uiMode
-                    & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-            java.util.ArrayList<android.graphics.Point> colors = new java.util.ArrayList<>();
-            if (dark) {
-                colors.add(new android.graphics.Point(1719105399, 19));
-                colors.add(new android.graphics.Point(863270004, 15));
-                colors.add(new android.graphics.Point(855638016, 3));
-            } else {
-                colors.add(new android.graphics.Point(-428575628, 15));
-                colors.add(new android.graphics.Point(-1722658222, 18));
-                colors.add(new android.graphics.Point(869388753, 3));
-            }
-            HookUtil.invoke(this, "setMiViewBlurMode", 1);
-            HookUtil.invoke(this, "setMiBackgroundBlendColors", colors);
-            logI("Liquid glass: HyperOS material colors applied dark=" + dark);
-        } catch (Throwable e) {
-            logW("HyperOS material colors unavailable; native blur retained", e);
-        }
-    }
-
-    private void applySelectedBlurBackend() {
-        clearSystemMaterial();
-        if ("material".equals(blurMethod)) applyHyperMaterialColors();
-        // All blur methods (shader, native, material) use the in-shader
-        // Gaussian blur on the captured wallpaper.  setMiSelfBlur is
-        // deliberately excluded — it blurs the view's own output including
-        // edges and highlights, incompatible with crisp frosted glass.
+        // Deprecated: self-blur softens edges.
+        // Kept for potential future use with setMiViewBlurMode background blur.
     }
 
     private void installCapture(CroppedFrame frame, String from) {
@@ -2321,10 +2238,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(0f);
             nativeBackgroundHiddenByGlass = true;
-            // Blur is now done in-shader (Prismal-style Gaussian in blurred()); the MIUI
-            // system self-blur pass is disabled because it double-blurs and its quality
-            // was reported poor.
-            applySelectedBlurBackend();
         }
 
         Bitmap old = capture;

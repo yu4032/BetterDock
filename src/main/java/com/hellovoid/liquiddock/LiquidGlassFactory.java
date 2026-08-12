@@ -20,7 +20,6 @@ final class LiquidGlassFactory {
         view.setPrismalParams(config.thickness * scale, config.ior, config.normalStrength,
                 config.dome, config.lensRefraction * scale);
         view.setCaptureScale(config.captureScale);
-        view.setBlurMethod(config.blurMethod);
         view.setDynamicAppCapture(config.dynamicAppCapture, config.captureFps, config.probeFps,
                 config.motionThreshold, config.motionBitThreshold, config.motionHoldMs,
                 config.blackThreshold);
