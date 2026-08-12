@@ -17,11 +17,21 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Apply Remote Preferences cleanup
+        run: python .github/scripts/migrate_remote_config.py
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-api101-patched-sources
+          path: |
+            src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+            src/main/java/com/hellovoid/liquiddock/SettingsActivity.java
           if-no-files-found: error
           retention-days: 7
       # Keep this workflow branch-local until the API101 migration is device-verified.
