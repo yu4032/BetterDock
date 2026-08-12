@@ -490,16 +490,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
-     *  glass shape instead of blurring a rectangle.  When the native/materior blur
-     *  backend is active, the outline is inset by {@link #nativeBlurInsetDp} so SF
-     *  never samples edge transparency into the blur.
-     *  <p>
-     *  {@code setClipToOutline} is deliberately left {@code false}: the inset outline
-     *  only constrains the SF blur mask; the Canvas highlight must render on the full
-     *  outer geometry. */
+     *  glass shape instead of blurring a rectangle.  The outline is always the full outer
+     *  geometry — it clips any rectangular overflow from the View's RenderNode.  The
+     *  blur-body inset is handled by {@link #onDraw}'s {@code canvas.clipPath(blurShape)}. */
     private void applyRoundedOutline() {
         try {
-            setClipToOutline(false);
+            setClipToOutline(true);
             setOutlineProvider(new android.view.ViewOutlineProvider() {
                 @Override public void getOutline(android.view.View view, android.graphics.Outline outline) {
                     float r = Math.max(0f, cornerRadius);
@@ -508,22 +504,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         outline.setRect(0, 0, 1, 1);
                         return;
                     }
-                    boolean nativeBackend = "native".equals(blurMethod)
-                            || "material".equals(blurMethod);
-                    float inset = nativeBackend ? nativeBlurInsetDp
-                            * view.getResources().getDisplayMetrics().density : 0f;
-                    float safeInset = Math.max(0f, Math.min(inset,
-                            Math.min(w, h) * .5f - .5f));
-                    int l = (int) safeInset;
-                    int t = (int) safeInset;
-                    int rw = w - 2 * l;
-                    int rh = h - 2 * t;
-                    if (rw <= 0 || rh <= 0) {
-                        outline.setRoundRect(0, 0, w, h, r);
-                    } else {
-                        outline.setRoundRect(l, t, l + rw, t + rh,
-                                Math.max(0f, r - safeInset));
-                    }
+                    outline.setRoundRect(0, 0, w, h, r);
                 }
             });
         } catch (Throwable e) {
@@ -1247,7 +1228,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         float next = Math.max(0f, Math.min(16f, insetDp));
         if (next == nativeBlurInsetDp) return;
         nativeBlurInsetDp = next;
-        applyRoundedOutline();
         invalidate();
     }
 
