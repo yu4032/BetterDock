@@ -21,10 +21,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
       - name: Apply workstation / All Apps fix
-        run: python3 .github/scripts/apply_workstation_layout_fix.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/scripts/apply_workstation_layout_fix.py')
+          s = p.read_text()
+          old = '    "workstationSuspended",\n    6,\n)'
+          new = '    "workstationSuspended",\n    5,\n)'
+          if s.count(old) != 1:
+              raise SystemExit('helper count marker not found exactly once')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          python3 .github/scripts/apply_workstation_layout_fix.py
       - name: Commit source patch
         run: |
-          if ! git diff --quiet; then
+          if ! git diff --quiet -- src/main; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add src/main/java/com/hellovoid/liquiddock src/main/kotlin/com/hellovoid/liquiddock
