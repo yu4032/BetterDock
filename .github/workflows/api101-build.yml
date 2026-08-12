@@ -26,11 +26,17 @@ jobs:
           from pathlib import Path
           p = Path('.github/scripts/apply_workstation_layout_fix.py')
           s = p.read_text()
-          old = '    "workstationSuspended",\n    6,\n)'
-          new = '    "workstationSuspended",\n    5,\n)'
-          if s.count(old) != 1:
-              raise SystemExit('helper count marker not found exactly once')
-          p.write_text(s.replace(old, new, 1))
+          fixes = [
+              ('    "workstationSuspended",\n    6,\n)',
+               '    "workstationSuspended",\n    5,\n)'),
+              ('"""    void setWorkstationSuspended(boolean enabled, long nowNanos,\n                                     boolean recentsVisible, boolean lifecycleKnown,\n                                     boolean launcherResumed) {\n        workstationSuspended = enabled;\n""",\n    """    void setWorkstationSuspended(boolean enabled, long nowNanos,',
+               '"""    void setWorkstationWallpaperOnly(boolean enabled, long nowNanos,\n                                     boolean recentsVisible, boolean lifecycleKnown,\n                                     boolean launcherResumed) {\n        workstationSuspended = enabled;\n""",\n    """    void setWorkstationSuspended(boolean enabled, long nowNanos,'),
+          ]
+          for old, new in fixes:
+              if s.count(old) != 1:
+                  raise SystemExit(f'helper marker not found exactly once: {old[:60]!r}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
           PY
           python3 .github/scripts/apply_workstation_layout_fix.py
       - name: Commit source patch
