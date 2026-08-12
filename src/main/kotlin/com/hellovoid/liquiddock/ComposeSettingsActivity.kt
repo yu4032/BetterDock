@@ -102,6 +102,9 @@ private fun optionSummary(key: String): String = when (key) {
     "blur_corner_offset" -> "单独调整内部模糊背景圆角"
     "dock_spacing" -> "增减相邻 Dock 图标之间的距离"
     "dock_bottom_offset" -> "调整 Dock 与屏幕底部的距离"
+    "dock_divider_width_dp" -> "调整图标分隔竖线的宽度"
+    "dock_divider_height_scale" -> "调整分隔竖线占图标高度的百分比"
+    "dock_divider_alpha" -> "调整分隔竖线的不透明度，0 表示使用系统默认"
     "workstation_dock_width_offset" -> "相对系统工作台 Dock 的原始长度增减；不会改变位置或普通 Dock"
     "workstation_grid_horizontal_offset" -> "单独调整工作台 8 列图标区域的左右距离，不继承普通桌面偏移"
     "workstation_all_apps_landscape_horizontal_offset" -> "仅调整工作台所有应用横屏图标区的水平位置"
@@ -180,6 +183,9 @@ private val dockSpecs = listOf(
     IntSpec("blur_corner_offset", "内部模糊圆角偏移", 0, -50, 100, "dp"),
     IntSpec("dock_spacing", "Dock 图标间距", 0, -8, 12, "dp"),
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, -30, 40, "dp"),
+    IntSpec("dock_divider_width_dp", "分隔线宽度", 0, 0, 160, "dp×10"),
+    IntSpec("dock_divider_height_scale", "分隔线高度比例", 0, 0, 100, "%"),
+    IntSpec("dock_divider_alpha", "分隔线透明度", 0, 0, 255, ""),
 )
 private val workstationSpecs = listOf(
     IntSpec("workstation_dock_width_offset", "工作台 Dock 长度偏移", 0, -240, 240, "dp"),
