@@ -1092,7 +1092,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dynamicMotionDifferenceThreshold = Math.max(1, Math.min(240, differenceThreshold));
         dynamicMotionBitThreshold = Math.max(1, Math.min(64, bitThreshold));
         dynamicMotionHoldNanos = Math.max(0, Math.min(5000, holdMillis)) * 1_000_000L;
-        blackFrameThreshold = Math.max(0, Math.min(64, blackThreshold));
+        // Threshold 0 would disable the guard entirely (sum/count < 0 is never true),
+        // and the device config once carried exactly that — pure-black rotation frames
+        // sailed through to installCapture.  Clamp to >= 1 so the guard always works;
+        // a config of 0 now means "very strict" instead of "off".
+        blackFrameThreshold = Math.max(1, Math.min(64, blackThreshold));
         if (!enabled) {
             dynamicAppActiveUntilNanos = 0L;
             appVisualSignatureValid = false;
@@ -1517,7 +1521,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // Wallpaper is static: if a valid strip cache exists (same wallpaper,
                     // same rotation, strip covers the request), serve the crop from cache
                     // and skip the SF capture entirely.
-                    if (wallpaperMode && tryServeWallpaperFromCache(
+                    // TEMP DIAGNOSTIC (rotation black-frame): wallpaper cache fully
+                    // disabled to verify the cache-short-circuit hypothesis — attempt
+                    // 28/29 were silently retired by cache hits (no capture mode=
+                    // line, watchdog cancelled by retire).  If rotation recovers with
+                    // cache off, the cache ownership/barrier fix goes back in.
+                    if (false && wallpaperMode && tryServeWallpaperFromCache(
                             req, requestScene, requestSceneRevision, attempt)) {
                         return;
                     }
@@ -1593,7 +1602,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     Log.e(TAG, "HyperOS wallpaper-only capture failed", captureFailure);
                 } else if (frame != null) {
                     nullFrameLogged = false;
-                    installCapture(frame);
+                    installCapture(frame, "sync");
                 } else if (!nullFrameLogged) {
                     nullFrameLogged = true;
                     logW("HyperOS captureMode(2) wallpaper path returned no buffer");
@@ -1626,7 +1635,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             logI("frame " + strip.getWidth() + "x" + strip.getHeight()
                     + " stripRect=" + request.stripRect
                     + " tileRect=" + request.tileRect
-                    + " mean=" + visualProbe.meanChannel);
+                    + " mean=" + visualProbe.meanChannel
+                    + " bands=" + horizontalBands(strip));
             if (visualProbe.nearBlack) {
                 if (!strip.isRecycled()) strip.recycle();
                 mainHandler.post(() -> {
@@ -1713,7 +1723,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (requestScene == CaptureScene.APP && dynamicAppCapture) {
                     updateDynamicAppActivity(visualProbe.signature);
                 }
-                installCapture(frame);
+                installCapture(frame, "async");
                 // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
                 // apply without a launcher restart.
                 if (++configReloadCounter >= 30) {
@@ -1866,7 +1876,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 return;
             }
             retireCaptureAttempt(attempt);
-            installCapture(frame);
+            installCapture(frame, "cache");
             if (sourceDirty) requestStateCapture();
             if (isRecentsVisible()) requestStateCapture("recents-continue");
         });
@@ -1949,6 +1959,39 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             this.nearBlack = nearBlack;
             this.signature = signature;
             this.meanChannel = meanChannel;
+        }
+    }
+
+    /** Mean brightness of 4 equal horizontal bands (left→right), as "m0,m1,m2,m3".
+     *  Localised black regions (e.g. the left edge of a wallpaper crop window) are
+     *  invisible to the single mean; bands reveal where the black sits. */
+    private static String horizontalBands(Bitmap bmp) {
+        if (bmp == null || bmp.isRecycled()) return "?";
+        Bitmap readable = bmp;
+        if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
+            readable = bmp.copy(Bitmap.Config.ARGB_8888, false);
+            if (readable == null) return "?";
+        }
+        try {
+            int w = readable.getWidth(), h = readable.getHeight();
+            int[] sums = new int[4];
+            int[] counts = new int[4];
+            for (int j = 0; j < 4; j++) {
+                int y = Math.min(h - 1, h * j / 4);
+                for (int i = 0; i < 24; i++) {
+                    int x = Math.min(w - 1, w * i / 24);
+                    int c = readable.getPixel(x, y);
+                    int band = Math.min(3, x * 4 / Math.max(1, w));
+                    sums[band] += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
+                    counts[band]++;
+                }
+            }
+            return sums[0] / Math.max(1, counts[0]) / 3 + ","
+                    + sums[1] / Math.max(1, counts[1]) / 3 + ","
+                    + sums[2] / Math.max(1, counts[2]) / 3 + ","
+                    + sums[3] / Math.max(1, counts[3]) / 3;
+        } finally {
+            if (readable != bmp) readable.recycle();
         }
     }
 
@@ -2082,7 +2125,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    private void installCapture(CroppedFrame frame) {
+    private void installCapture(CroppedFrame frame, String from) {
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
         if (!nativeBackgroundHiddenByGlass) {
@@ -2101,6 +2144,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureSourceWidth = Math.max(1f, frame.sourceWidth);
         captureSourceHeight = Math.max(1f, frame.sourceHeight);
         captureShader = new BitmapShader(capture, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        logI("install[" + from + "] frame " + frame.bitmap.getWidth() + "x" + frame.bitmap.getHeight()
+                + " src=" + frame.sourceWidth + "x" + frame.sourceHeight
+                + " off=" + frame.sampleOffsetX + "," + frame.sampleOffsetY);
         invalidate();
         if (old != null && old != capture && !old.isRecycled()) old.recycle();
     }
