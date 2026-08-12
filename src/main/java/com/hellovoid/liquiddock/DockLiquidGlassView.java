@@ -1112,8 +1112,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Configurable by the GUI (liquid_capture_bleed_top / _bottom): extra capture height
      *  above and below the glass.  -1 (or unset) = half the horizontal bleed. */
     void setBleedVerticalPx(int topPx, int bottomPx) {
-        bleedTopPx = Math.max(0, Math.min(512, topPx));
-        bleedBottomPx = Math.max(0, Math.min(512, bottomPx));
+        bleedTopPx = topPx < 0 ? -1 : Math.min(512, topPx);
+        bleedBottomPx = bottomPx < 0 ? -1 : Math.min(512, bottomPx);
     }
 
     /** Prismal liquid-glass parameters (GUI-configurable; values are dp where noted,

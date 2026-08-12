@@ -46,7 +46,7 @@ public final class LiquidDockApp extends Application
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (reconciling) return;
         try {
-            syncToRemote(sharedPreferences);
+            syncKeyToRemote(key, sharedPreferences);
         } catch (Throwable error) {
             Log.w("LiquidDock", "Remote Preferences sync failed for " + key, error);
         }
@@ -84,13 +84,41 @@ public final class LiquidDockApp extends Application
         return value != null ? value.getRemotePreferences(group) : null;
     }
 
-    /** Mirror the settings UI store into API101 Remote Preferences. */
+    /** Full-seed only — used on initial bind.  Incremental updates use syncKeyToRemote. */
     public static boolean syncToRemote(SharedPreferences local) {
         if (local == null) return false;
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
         if (remote == null) return false;
         copyAll(local, remote);
         return true;
+    }
+
+    /** Incremental: sync a single key change to the Remote Preferences store. */
+    private static void syncKeyToRemote(String key, SharedPreferences source) {
+        SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
+        if (remote == null) return;
+        SharedPreferences.Editor editor = remote.edit();
+        if (editor == null) return;
+        Map<String, ?> all = source.getAll();
+        Object value = all.get(key);
+        if (value == null) {
+            editor.remove(key);
+        } else if (value instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) value);
+        } else if (value instanceof Integer) {
+            editor.putInt(key, (Integer) value);
+        } else if (value instanceof Long) {
+            editor.putLong(key, (Long) value);
+        } else if (value instanceof Float) {
+            editor.putFloat(key, (Float) value);
+        } else if (value instanceof String) {
+            editor.putString(key, (String) value);
+        } else if (value instanceof java.util.Set) {
+            @SuppressWarnings("unchecked")
+            java.util.Set<String> strings = (java.util.Set<String>) value;
+            editor.putStringSet(key, strings);
+        }
+        editor.apply();
     }
 
     private static void copyAll(SharedPreferences source, SharedPreferences destination) {

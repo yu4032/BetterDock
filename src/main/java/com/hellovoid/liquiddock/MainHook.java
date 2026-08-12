@@ -586,7 +586,7 @@ public class MainHook implements IXposedHookLoadPackage {
         XC_MethodHook visibilityHook = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 if (!launcherClass.isInstance(p.thisObject)) return;
-                boolean visible = (((Integer) p.args[0]) & View.VISIBLE) != 0;
+                boolean visible = (Integer) p.args[0] == View.VISIBLE;
                 log("[DC] liquid window visibility: " + p.args[0]);
                 DockLiquidGlassView glass = liquidGlassView;
                 // Visibility changes during both Dock pull-up and return-home animations;
