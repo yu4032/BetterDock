@@ -1027,11 +1027,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(this::onDockTouchEvent);
             return;
         }
-        // Floating window over desktop: the Dock sits below the floating window
-        // (z: wallpaper→Dock→floating).  Mode-1 would capture floating content.
-        // When user touches the Dock, they've come back to the desktop — force
-        // mode-2 so wallpaper is captured.
-        if (!launcherWasAway) floatingWindowOverDesktop = true;
+        // Floating window over desktop (launcherWasAway=false): the Dock sits
+        // below the floating window, so mode-1 would capture floating content.
+        // Force one mode-2 capture now — after this the glass shows wallpaper.
+        if (!launcherWasAway) {
+            floatingWindowOverDesktop = true;
+            updateDesiredScene();
+        }
         requestStateCapture("dock-touch");
     }
 
@@ -1334,6 +1336,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return true;
         }
         boolean baseAllowed = attached && windowVisible && isShown();
+        // Floating window over desktop: launcher didn't lose focus (launcherWasAway
+        // is still false) but something is on top — don't capture the floating
+        // content through the Dock.  Wait until the user touches the Dock.
+        // Exception: floatingWindowOverDesktop was just armed by onDockTouchEvent.
+        if (baseAllowed && !launcherWasAway
+                && sceneState.desired() != CaptureScene.HOME
+                && !floatingWindowOverDesktop) {
+            return false;
+        }
         if (baseAllowed) {
             lastAllowedNanos = System.nanoTime();
             return true;
