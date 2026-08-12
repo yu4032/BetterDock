@@ -18,6 +18,10 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         if (!"com.miui.home".equals(param.getPackageName())) return;
         try {
+            // Install the module-internal HOME capture guard before MainHook registers the
+            // Launcher gesture hooks that can trigger the first HOME capture.
+            HomeCaptureBarrier.install();
+
             ClassLoader classLoader = param.getClassLoader();
             new MainHook().handleLoadPackage(new XC_LoadPackage.LoadPackageParam(
                     param.getPackageName(), classLoader));

@@ -508,9 +508,6 @@ public class MainHook implements IXposedHookLoadPackage {
                 if (glass != null) {
                     glass.setLauncherState(true, hasFocus);
                     if (!hasFocus) {
-                        // Real Launcher window focus loss is the authoritative marker for
-                        // APP -> HOME detection later.  Do this before resolving the app.
-                        glass.onLauncherFocusLost();
                         // An app came to the front: resolve its SF layer name so mode-1
                         // captures can include exactly that layer.
                         glass.refreshForegroundAppLayer();
@@ -1056,13 +1053,10 @@ public class MainHook implements IXposedHookLoadPackage {
             if (liquidGlassView != null) {
                 ViewGroup.LayoutParams glassLp = liquidGlassView.getLayoutParams();
                 if (glassLp != null) {
-                    // Match the stroke overlay exactly, but only request a parent layout
-                    // when size really changed.  Re-applying identical LayoutParams at the
-                    // animation tail causes a visible scheduling/layout hitch on HyperOS.
-                    if (glassLp.width != bgW || glassLp.height != bgH) {
-                        glassLp.width = bgW; glassLp.height = bgH;
-                        liquidGlassView.setLayoutParams(glassLp);
-                    }
+                    // Match the stroke overlay exactly (bgW/bgH already include the
+                    // updateBackgroundView spacing/offset adjustments).
+                    glassLp.width = bgW; glassLp.height = bgH;
+                    liquidGlassView.setLayoutParams(glassLp);
                 }
                 liquidGlassView.setGlassRadius(bgR);
                 liquidGlassView.invalidate();
