@@ -5,9 +5,6 @@ on:
     branches: [ api101-migration ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,33 +17,6 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply workstation / All Apps fix
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('.github/scripts/apply_workstation_layout_fix.py')
-          s = p.read_text()
-          count_old = '    "workstationSuspended",\n    6,\n)'
-          if s.count(count_old) != 1:
-              raise SystemExit('workstation count marker not found exactly once')
-          s = s.replace(count_old, '    "workstationSuspended",\n    5,\n)', 1)
-          setter_marker = '    """    void setWorkstationSuspended(boolean enabled'
-          if s.count(setter_marker) != 2:
-              raise SystemExit(f'unexpected setter marker count: {s.count(setter_marker)}')
-          s = s.replace(setter_marker,
-                        '    """    void setWorkstationWallpaperOnly(boolean enabled', 1)
-          p.write_text(s)
-          PY
-          python3 .github/scripts/apply_workstation_layout_fix.py
-      - name: Commit source patch
-        run: |
-          if ! git diff --quiet -- src/main; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/main/java/com/hellovoid/liquiddock src/main/kotlin/com/hellovoid/liquiddock
-            git commit -m "fix: isolate workstation dock and scope all-apps offsets [skip ci]"
-            git push origin HEAD:api101-migration
-          fi
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
@@ -54,4 +24,4 @@ jobs:
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      # Temporary branch-local source patch workflow; restore after the generated source commit lands.
+      # Keep this workflow branch-local until the API101 migration is device-verified.
