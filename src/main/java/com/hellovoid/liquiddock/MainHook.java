@@ -33,6 +33,7 @@ public class MainHook {
     private static float bgR = 30f;
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
+    private static boolean dockDragHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
@@ -158,7 +159,6 @@ public class MainHook {
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                             liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                             bindRecentsView(liquidGlassView, chain.getThisObject());
-                            bindDockDragController(liquidGlassView, classLoader);
                             installDockTouchListener(liquidGlassView, vBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, vBg.getRootView()));
                             try {
@@ -246,7 +246,7 @@ public class MainHook {
                             new Class<?>[]{FrameLayout.class, int.class, int.class, float.class},
                             chain -> {
                                 if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                                int itemCount = (Integer) callThrough(chain.getThisObject(), "getItemCount");
+                                int itemCount = (Integer) HookUtil.invoke(chain.getThisObject(), "getItemCount");
                                 if (itemCount > 0) {
                                     Object[] args = chain.getArgs().toArray(new Object[0]);
                                     args[1] = (Integer) args[1] + spacing * 2 * itemCount;
@@ -348,10 +348,10 @@ public class MainHook {
                             Object hs = HookUtil.getField(chain.getThisObject(), "mHotSeats");
                             if (hs == null) return r;
                             if (!workstationMode) try {
-                                Object target = callThrough(hs, "getMingouStaticDockBlurShadowTarget");
+                                Object target = HookUtil.invoke(hs, "getMingouStaticDockBlurShadowTarget");
                                 if (target instanceof View) {
                                     nativeShadowTarget = (View) target;
-                                    callStatic("com.miui.home.launcher.common.MiShadowUtils",
+                                    HookUtil.invokeStatic("com.miui.home.launcher.common.MiShadowUtils",
                                             "applyViewShadow", nativeShadowTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
                                 }
                             } catch (Throwable e) { log("[DC] native Dock shadow clear failed: " + e); }
@@ -393,7 +393,6 @@ public class MainHook {
                                 liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                                 liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                                 bindRecentsView(liquidGlassView, chain.getThisObject());
-                                bindDockDragController(liquidGlassView, cl);
                                 installDockTouchListener(liquidGlassView, oldBg.getRootView());
                                 liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, oldBg.getRootView()));
                                 try {
@@ -441,9 +440,9 @@ public class MainHook {
     private static void seedLauncherLifecycleState(Object launcher) {
         if (launcher == null) return;
         try {
-            Object paused = callThrough(launcher, "isPause");
-            Object visible = callThrough(launcher, "isVisible");
-            Object focused = callThrough(launcher, "isWindowFocus");
+            Object paused = HookUtil.invoke(launcher, "isPause");
+            Object visible = HookUtil.invoke(launcher, "isVisible");
+            Object focused = HookUtil.invoke(launcher, "isWindowFocus");
             if (paused instanceof Boolean && !((Boolean) paused)) {
                 launcherLifecycleKnown = true;
                 launcherResumed = true;
@@ -620,6 +619,7 @@ public class MainHook {
                         return r;
                     });
         } catch (Throwable e) { log("[DC] Wallpaper zoom hook unavailable: " + e); }
+        installDockDragHooks(cl);
     }
 
     // ── helpers ──────────────────────────────────────────────────────
@@ -646,7 +646,10 @@ public class MainHook {
         } catch (Throwable e) { log("[DC] recents bind failed: " + e); }
     }
 
-    private static void bindDockDragController(DockLiquidGlassView glass, ClassLoader cl) {
+    /** Install DragController hooks once; callback reads liquidGlassView each time. */
+    private static void installDockDragHooks(ClassLoader cl) {
+        if (dockDragHooksInstalled) return;
+        dockDragHooksInstalled = true;
         try {
             Class<?> dc = Class.forName("com.miui.home.launcher.DragController", false, cl);
             HookUtil.hookMethod(dc, "startDrag",
@@ -659,14 +662,15 @@ public class MainHook {
                     },
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        String dragName = resolveDragSurfaceLayerName(chain.getThisObject());
-                        glass.setDockDragging(true, dragName);
+                        DockLiquidGlassView g = liquidGlassView;
+                        if (g != null) g.setDockDragging(true, resolveDragSurfaceLayerName(chain.getThisObject()));
                         return r;
                     });
             HookUtil.hookMethod(dc, "endDrag", new Class<?>[0],
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass.setDockDragging(false, null);
+                        DockLiquidGlassView g = liquidGlassView;
+                        if (g != null) g.setDockDragging(false, null);
                         return r;
                     });
             log("[DC] dock drag controller hooked");
@@ -802,7 +806,7 @@ public class MainHook {
                     HookUtil.setIntField(view, "mWidth", Math.round(fromW + (targetW - fromW) * t));
                     HookUtil.setIntField(view, "mHeight", Math.round(fromH + (targetH - fromH) * t));
                     HookUtil.setField(view, "mCornerRadius", fromR + (targetR - fromR) * t);
-                    try { callThrough(view, "triggerMeasure"); } catch (Throwable ignored) {}
+                    try { HookUtil.invoke(view, "triggerMeasure"); } catch (Throwable ignored) {}
                     view.requestLayout();
                     syncAll(view);
                 });
@@ -861,7 +865,7 @@ public class MainHook {
         boolean detected = false;
         try {
             Class<?> mc = Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
-            workstationMode = (Boolean) callStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+            workstationMode = (Boolean) HookUtil.invokeStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
             Class<?> sm = Class.forName("com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
             HookUtil.hookMethod(sm, "onLaptopModeChanged", new Class<?>[]{boolean.class},
                     chain -> {
@@ -880,7 +884,7 @@ public class MainHook {
         }
         if (!detected) try {
             Class<?> dc = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
-            workstationMode = (Boolean) callStatic("com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
+            workstationMode = (Boolean) HookUtil.invokeStatic("com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
             HookUtil.hookMethod(dc, "setMingouLaptopPcModeEnabled", new Class<?>[]{boolean.class},
                     chain -> {
                         setWorkstationMode((Boolean) chain.getArgs().get(0));
@@ -1155,7 +1159,8 @@ public class MainHook {
             }
             if (liquidGlassView != null) {
                 ViewGroup.LayoutParams glp = liquidGlassView.getLayoutParams();
-                if (glp != null) { glp.width = bgW; glp.height = bgH; liquidGlassView.setLayoutParams(glp); }
+                if (glp != null) { if (glp.width != bgW || glp.height != bgH) {
+                    glp.width = bgW; glp.height = bgH; liquidGlassView.setLayoutParams(glp); } }
                 liquidGlassView.setGlassRadius(bgR);
                 liquidGlassView.invalidate();
             }
@@ -1192,31 +1197,8 @@ public class MainHook {
     }
 
     private static boolean animating(View v) {
-        try { return Boolean.TRUE.equals(callThrough(v, "isAnimating")); }
+        try { return Boolean.TRUE.equals(HookUtil.invoke(v, "isAnimating")); }
         catch (Throwable e) { return false; }
-    }
-
-    // ── reflection helpers ───────────────────────────────────────────
-
-    private static Object callThrough(Object target, String methodName, Object... args) {
-        try {
-            for (Method m : target.getClass().getMethods()) {
-                if (!m.getName().equals(methodName) || m.getParameterCount() != args.length) continue;
-                try { return m.invoke(target, args); } catch (Throwable ignored) {}
-            }
-        } catch (Throwable e) { /* best-effort */ }
-        return null;
-    }
-
-    private static Object callStatic(String className, String methodName, Object... args) {
-        try {
-            Class<?> clazz = Class.forName(className);
-            for (Method m : clazz.getMethods()) {
-                if (!m.getName().equals(methodName) || m.getParameterCount() != args.length) continue;
-                try { return m.invoke(null, args); } catch (Throwable ignored) {}
-            }
-        } catch (Throwable e) { /* best effort */ }
-        return null;
     }
 
     // ── data ─────────────────────────────────────────────────────────

@@ -2161,21 +2161,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    private Object invokeSelf(String method, Object... args) {
-        try {
-            for (java.lang.reflect.Method m : getClass().getMethods()) {
-                if (!m.getName().equals(method) || m.getParameterCount() != args.length) continue;
-                try { return m.invoke(this, args); } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
     private void clearSystemMaterial() {
-        invokeSelf("setMiSelfBlur", 0);
-        invokeSelf("setMiSelfBlurEnhanceFlag", 0x200, 0);
-        invokeSelf("clearMiBackgroundBlendColor");
-        invokeSelf("setMiViewBlurMode", 0);
+        HookUtil.invoke(this, "setMiSelfBlur", 0);
+        HookUtil.invoke(this, "setMiSelfBlurEnhanceFlag", 0x200, 0);
+        HookUtil.invoke(this, "clearMiBackgroundBlendColor");
+        HookUtil.invoke(this, "setMiViewBlurMode", 0);
     }
 
     private void applyHyperMaterialColors() {
@@ -2192,8 +2182,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 colors.add(new android.graphics.Point(-1722658222, 18));
                 colors.add(new android.graphics.Point(869388753, 3));
             }
-            invokeSelf("setMiViewBlurMode", 1);
-            invokeSelf("setMiBackgroundBlendColors", colors);
+            HookUtil.invoke(this, "setMiViewBlurMode", 1);
+            HookUtil.invoke(this, "setMiBackgroundBlendColors", colors);
             logI("Liquid glass: HyperOS material colors applied dark=" + dark);
         } catch (Throwable e) {
             logW("HyperOS material colors unavailable; native blur retained", e);

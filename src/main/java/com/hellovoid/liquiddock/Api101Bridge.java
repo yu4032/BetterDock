@@ -3,11 +3,9 @@ package com.hellovoid.liquiddock;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import java.lang.reflect.Executable;
-
 import io.github.libxposed.api.XposedModule;
 
-/** Process-local bridge from the compatibility facade to libxposed API 101. */
+/** Process-local bridge to libxposed API101. */
 public final class Api101Bridge {
     private static volatile XposedModule module;
 
@@ -41,9 +39,5 @@ public final class Api101Bridge {
         } catch (Throwable ignored) {
             Log.e("LiquidDock", message, error);
         }
-    }
-
-    public static io.github.libxposed.api.XposedInterface.HookBuilder hook(Executable executable) {
-        return module().hook(executable);
     }
 }

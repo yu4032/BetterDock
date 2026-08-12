@@ -248,8 +248,8 @@ final class HomeGridHook {
             android.view.View layout = (android.view.View) cellLayout;
             boolean portrait = layout.getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_PORTRAIT;
-            int countX = (Integer) callMethod(config, "getCountX");
-            int countY = (Integer) callMethod(config, "getCountY");
+            int countX = (Integer) HookUtil.invoke(config, "getCountX");
+            int countY = (Integer) HookUtil.invoke(config, "getCountY");
             if (countX <= 0 || countY <= 0) return;
             Object gridCells = HookUtil.getField(cellLayout, "mGridCell");
             if (gridCells != null) {
@@ -272,9 +272,9 @@ final class HomeGridHook {
                 HookUtil.setField(cellLayout, "mYs", new int[countY]);
             HookUtil.setIntField(cellLayout, "mHCells", countX);
             HookUtil.setIntField(cellLayout, "mVCells", countY);
-            int baseCell = (Integer) callMethod(config, "getCellSize");
-            int configLeft = (Integer) callMethod(config, "getLeft");
-            int baseTop = (Integer) callMethod(config, "getTop");
+            int baseCell = (Integer) HookUtil.invoke(config, "getCellSize");
+            int configLeft = (Integer) HookUtil.invoke(config, "getLeft");
+            int baseTop = (Integer) HookUtil.invoke(config, "getTop");
             int baseWidthGap = HookUtil.getIntField(cellLayout, "mWidthGap");
             int baseLeft = configLeft
                 - Math.max(0, countX - 1) * (baseWidthGap / 2);
@@ -292,7 +292,7 @@ final class HomeGridHook {
             if (grid8x4Enabled) {
                 int dockBarHeight = 0;
                 try {
-                    dockBarHeight = Math.max(0, (Integer) callMethod(
+                    dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
                             config, "getDockBarHeight"));
                 } catch (Throwable ignored) {}
                 int contentHeight = Math.max(baseCell * countY,
@@ -405,12 +405,12 @@ final class HomeGridHook {
 
     private static void refreshWorkspaceGrid(android.view.View workspace) {
         try {
-            int count = (Integer) callMethod(workspace, "getScreenCount");
+            int count = (Integer) HookUtil.invoke(workspace, "getScreenCount");
             for (int i = 0; i < count; i++) {
-                Object cell = callMethod(workspace, "getCellLayout",
+                Object cell = HookUtil.invoke(workspace, "getCellLayout",
                         new Class[]{int.class}, i);
                 if (!(cell instanceof android.view.View)) continue;
-                callMethod(cell, "calculateXsAndYs");
+                HookUtil.invoke(cell, "calculateXsAndYs");
                 android.view.View page = (android.view.View) cell;
                 page.forceLayout();
                 page.requestLayout();
@@ -442,7 +442,7 @@ final class HomeGridHook {
                 Object thisObj = chain.getThisObject();
                 if (wsClass.isInstance(thisObj)) {
                     try {
-                        Object indicator = callMethod(thisObj, "getScreenIndicator");
+                        Object indicator = HookUtil.invoke(thisObj, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
                             restoreIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
@@ -452,7 +452,7 @@ final class HomeGridHook {
                 Object result = chain.proceed(args);
                 if (wsClass.isInstance(thisObj)) {
                     try {
-                        Object indicator = callMethod(thisObj, "getScreenIndicator");
+                        Object indicator = HookUtil.invoke(thisObj, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
                             captureAndApplyIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
@@ -544,15 +544,15 @@ final class HomeGridHook {
         HookUtil.hookMethod(helper, "transformToHVArray", new Class[]{},
             chain -> {
                 Object thisObj = chain.getThisObject();
-                int width = (Integer) callMethod(thisObj, "getMHCells");
-                int height = (Integer) callMethod(thisObj, "getMVCells");
-                Object matrix = callMethod(thisObj, "getMDstOccupied");
+                int width = (Integer) HookUtil.invoke(thisObj, "getMHCells");
+                int height = (Integer) HookUtil.invoke(thisObj, "getMVCells");
+                Object matrix = HookUtil.invoke(thisObj, "getMDstOccupied");
                 android.view.View[][] result = new android.view.View[width][height];
                 for (int x = 0; x < width; x++) {
                     for (int y = 0; y < height; y++) {
                         Object info = getTransformCell(matrix, x, y, width, height);
                         if (info == null) continue;
-                        Object data = callMethod(info, "getMData");
+                        Object data = HookUtil.invoke(info, "getMData");
                         if (data instanceof android.view.View)
                             result[x][y] = (android.view.View) data;
                     }
@@ -591,8 +591,8 @@ final class HomeGridHook {
         HookUtil.hookMethod(rule, "checkCellCount", new Class[]{},
             chain -> {
                 Object thisObj = chain.getThisObject();
-                int h = (Integer) callMethod(thisObj, "getMHCells");
-                int v = (Integer) callMethod(thisObj, "getMVCells");
+                int h = (Integer) HookUtil.invoke(thisObj, "getMHCells");
+                int v = (Integer) HookUtil.invoke(thisObj, "getMVCells");
                 if ((h == 8 && v == 4) || (h == 4 && v == 8)) return null;
                 return chain.proceed(chain.getArgs().toArray(new Object[0]));
             });
@@ -661,26 +661,4 @@ final class HomeGridHook {
             });
     }
 
-    // ── Reflection helpers (replaces XposedHelpers.callMethod) ──────
-
-    private static Object callMethod(Object target, String methodName) {
-        try {
-            Method m = target.getClass().getDeclaredMethod(methodName);
-            m.setAccessible(true);
-            return m.invoke(target);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static Object callMethod(Object target, String methodName,
-                                      Class<?>[] paramTypes, Object... args) {
-        try {
-            Method m = target.getClass().getDeclaredMethod(methodName, paramTypes);
-            m.setAccessible(true);
-            return m.invoke(target, args);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
 }

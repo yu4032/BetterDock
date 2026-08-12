@@ -3,7 +3,6 @@
 
 # Source-compatibility facade used by the existing hook implementation. These classes
 # are implemented by LiquidDock itself and delegate to libxposed API101.
--keep class de.robv.android.xposed.** { *; }
 
 # Compose Miuix KMP: ThemeController / MiuixTheme are reached reflectively and
 # the KMP runtime relies on stable class names — keep the whole tree.

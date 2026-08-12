@@ -368,6 +368,7 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_black_threshold", sp.getInt("liquid_black_threshold", 10));
         j.put("liquid_capture_scale", sp.getInt("liquid_capture_scale", 50));
         j.put("liquid_capture_stop_delay", sp.getInt("liquid_capture_stop_delay", 150));
+        j.put("liquid_home_settle_delay", sp.getInt("liquid_home_settle_delay", 1200));
         j.put("liquid_recents_prearm_distance", readDpPreference(sp,
                 "liquid_recents_prearm_distance"));
         j.put("liquid_capture_bleed_top", sp.getInt("liquid_capture_bleed_top", 48));
@@ -415,7 +416,7 @@ public class SettingsActivity extends AppCompatActivity {
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
             "liquid_native_blur_inset",
             "liquid_lens_refraction", "liquid_capture_bleed_top",
-            "liquid_recents_prearm_distance",
+            "liquid_recents_prearm_distance", "liquid_home_settle_delay",
             "liquid_capture_bleed_bottom", "sq_stroke_w", "sq_stroke_off",
             "stroke_w", "std_stroke_w", "dock_shadow_radius", "dock_shadow_size",
             "dock_shadow_y", "shadow_radius"
@@ -545,7 +546,7 @@ public class SettingsActivity extends AppCompatActivity {
             "dock_spacing", "dock_bottom_offset", "liquid_blur", "liquid_thickness",
             "liquid_native_blur_inset",
             "liquid_lens_refraction", "liquid_capture_bleed_top",
-            "liquid_recents_prearm_distance",
+            "liquid_recents_prearm_distance", "liquid_home_settle_delay",
             "liquid_capture_bleed_bottom", "sq_stroke_w", "sq_stroke_off",
             "stroke_w", "std_stroke_w", "dock_shadow_radius", "dock_shadow_size",
             "dock_shadow_y", "shadow_radius"
