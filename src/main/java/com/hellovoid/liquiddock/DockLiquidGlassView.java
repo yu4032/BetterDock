@@ -1066,6 +1066,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private void prearmRecentsCapture(String reason) {
         recentsPrearmed = true;
+        // Touch-to-force-wallpaper flag must be cleared when entering recents:
+        // the recents panel is above the Dock, so mode-1 (full-display with
+        // Dock excluded) is correct — mode-2 would show only the wallpaper.
+        floatingWindowOverDesktop = false;
         // This is only an early cadence/source hint. GestureToHome/App/Recent remains
         // authoritative and immediately replaces it if the gesture is interrupted.
         sceneState.prearmRecents(System.nanoTime());
