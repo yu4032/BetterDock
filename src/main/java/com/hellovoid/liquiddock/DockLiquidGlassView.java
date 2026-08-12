@@ -1343,7 +1343,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             logCaptureGate(reason);
             return;
         }
-        if (capturing || kickScheduled) return;
+        if (capturing || kickScheduled) {
+            logI("Liquid capture coalesced reason=" + reason
+                    + " capturing=" + capturing
+                    + " kickScheduled=" + kickScheduled
+                    + " activeAttempt=" + activeCaptureAttempt
+                    + " dirty=" + sourceDirty);
+            return;
+        }
         kickScheduled = true;
         logI("Liquid capture scheduled reason=" + reason);
         mainHandler.post(captureKick);
@@ -1405,6 +1412,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 + " worker=" + captureWorkerId);
     }
 
+    /** Single owner of capture state: only the callback whose attempt matches
+     *  activeCaptureAttempt may retire it.  A stale callback (from a wedged worker
+     *  or a superseded attempt) must never touch capturing/watchdog — it owns
+     *  nothing and can only recycle its own result. */
+    private boolean retireCaptureAttempt(long attempt) {
+        if (activeCaptureAttempt != attempt) {
+            return false;
+        }
+        activeCaptureAttempt = 0L;
+        capturing = false;
+        if (captureTimeout != null) {
+            mainHandler.removeCallbacks(captureTimeout);
+            captureTimeout = null;
+        }
+        return true;
+    }
+
     private void startCapture() {
         final Handler worker = captureHandler;
         if (worker == null || !isCaptureAllowed() || capturing) return;
@@ -1437,7 +1461,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // captureGeneration (rotation/scene context stays valid).
         if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
         captureTimeout = () -> {
-            if (!capturing || activeCaptureAttempt != attempt) return;
+            // The attempt ID is the only truth: capturing is a derived convenience
+            // state that other paths may legitimately clear; it must never decide
+            // whether this watchdog still owns the attempt.
+            if (activeCaptureAttempt != attempt) return;
             logW("capture timeout attempt=" + attempt + "; rebuilding capture worker");
             activeCaptureAttempt = ++captureAttemptSeq;
             capturing = false;
@@ -1491,7 +1518,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // same rotation, strip covers the request), serve the crop from cache
                     // and skip the SF capture entirely.
                     if (wallpaperMode && tryServeWallpaperFromCache(
-                            req, requestScene, requestSceneRevision)) {
+                            req, requestScene, requestSceneRevision, attempt)) {
                         return;
                     }
                     logI("capture mode=" + (wallpaperMode ? 2 : 1)
@@ -1509,12 +1536,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                     requestScene, requestSceneRevision);
                         }
                         @Override public void onError(Throwable error) {
-                            liveCapture = null;
                             mainHandler.post(() -> {
                                 if (generation != captureGeneration
                                         || activeCaptureAttempt != attempt) return;
-                                if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
-                                capturing = false;
+                                // Only the current attempt may drop the SF client:
+                                // a stale zombie worker's late error must not clear
+                                // the live client the new worker is using.
+                                liveCapture = null;
+                                retireCaptureAttempt(attempt);
                                 Log.e(TAG, "async fullscreen capture failed", error);
                                 if (sourceDirty) requestStateCapture();
                             });
@@ -1543,10 +1572,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             final CroppedFrame frame = cropped;
             final Throwable captureFailure = failure;
             mainHandler.post(() -> {
+                // Stale callback: owns nothing.
+                if (activeCaptureAttempt != attempt) {
+                    if (frame != null) frame.recycle();
+                    return;
+                }
                 if (generation != captureGeneration || !isRequestOrientationCurrent(request)
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
-                    capturing = false;
+                    retireCaptureAttempt(attempt);
                     logI("Liquid capture result discarded: generation="
                             + (generation == captureGeneration)
                             + " allowed=" + isCaptureAllowed());
@@ -1554,7 +1588,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     return;
                 }
 
-                capturing = false;
+                retireCaptureAttempt(attempt);
                 if (captureFailure != null) {
                     Log.e(TAG, "HyperOS wallpaper-only capture failed", captureFailure);
                 } else if (frame != null) {
@@ -1597,19 +1631,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (!strip.isRecycled()) strip.recycle();
                 mainHandler.post(() -> {
                     updateDesiredScene();
+                    // Stale callback: owns nothing, must not touch capture state.
+                    if (activeCaptureAttempt != attempt) {
+                        logI("black frame from stale attempt=" + attempt
+                                + " active=" + activeCaptureAttempt);
+                        return;
+                    }
                     if (generation != captureGeneration
-                            || activeCaptureAttempt != attempt
                             || !sceneState.matches(requestScene, requestSceneRevision)
                             || !isRequestOrientationCurrent(request)) {
-                        capturing = false;
+                        retireCaptureAttempt(attempt);
                         requestStateCapture("stale-black-frame");
                         return;
                     }
-                    if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
-                    capturing = false;
+                    retireCaptureAttempt(attempt);
                     if (blackFrameLogCount++ < 5) {
-                        logW("black frame discarded (status=0 but content black), "
-                                + "keeping previous backdrop");
+                        logW("black frame discarded attempt=" + attempt
+                                + ", keeping previous backdrop");
                     }
                     // Rotation is special on HyperOS: SurfaceFlinger's wallpaper wrapper can
                     // expose the new geometry before its first non-black buffer is latched.
@@ -1627,6 +1665,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             // Rebuild the SF client each retry: after rotation the old
                             // client's captureScreenAsync can wedge until the dock window
                             // layer is rebuilt (what a manual pull-up does).
+                            if (generation != captureGeneration || !isCaptureAllowed()) return;
                             liveCapture = null;
                             requestStateCapture("black-frame-retry");
                         }, delay);
@@ -1649,13 +1688,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             final CroppedFrame frame = cropped;
             mainHandler.post(() -> {
                 updateDesiredScene();
+                // Stale callback: owns nothing, recycle its result and leave.
+                if (activeCaptureAttempt != attempt) {
+                    if (frame != null) frame.recycle();
+                    return;
+                }
                 if (generation != captureGeneration
-                        || activeCaptureAttempt != attempt
                         || !sceneState.matches(requestScene, requestSceneRevision)
                         || !isRequestOrientationCurrent(request)
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
-                    capturing = false;
+                    retireCaptureAttempt(attempt);
                     logI("Liquid async capture result discarded: generation="
                             + (generation == captureGeneration)
                             + " scene=" + requestScene + "->" + sceneState.desired()
@@ -1663,8 +1706,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     if (isCaptureAllowed()) requestStateCapture("stale-scene-result");
                     return;
                 }
-                if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
-                capturing = false;
+                retireCaptureAttempt(attempt);
                 blackFrameRetryCount = 0;
                 blackFrameRetryRotation = request.rotation;
                 nullFrameLogged = false;
@@ -1691,8 +1733,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } catch (Throwable e) {
             if (strip != null && !strip.isRecycled()) strip.recycle();
             mainHandler.post(() -> {
-                if (generation != captureGeneration) return;
-                capturing = false;
+                if (generation != captureGeneration
+                        || activeCaptureAttempt != attempt) return;
+                retireCaptureAttempt(attempt);
                 Log.e(TAG, "async capture crop failed", e);
                 if (sourceDirty) requestStateCapture();
             });
@@ -1786,7 +1829,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  when the request was fully served (no SF capture needed). */
     private boolean tryServeWallpaperFromCache(CaptureRequest req,
                                                 CaptureScene requestScene,
-                                                long requestSceneRevision) {
+                                                long requestSceneRevision,
+                                                long attempt) {
         if (wallpaperStripCache == null || wallpaperStripCache.isRecycled()
                 || cacheStripRect == null) return false;
         Display display = geometrySource.getDisplay();
@@ -1807,16 +1851,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         final long generation = captureGeneration;
         mainHandler.post(() -> {
             updateDesiredScene();
+            // Stale callback: owns nothing.
+            if (activeCaptureAttempt != attempt) {
+                frame.recycle();
+                return;
+            }
             if (generation != captureGeneration
                     || !sceneState.matches(requestScene, requestSceneRevision)
                     || !isRequestOrientationCurrent(req)
                     || !isCaptureAllowed()) {
                 frame.recycle();
-                capturing = false;
+                retireCaptureAttempt(attempt);
                 if (isCaptureAllowed()) requestStateCapture("stale-cache-result");
                 return;
             }
-            capturing = false;
+            retireCaptureAttempt(attempt);
             installCapture(frame);
             if (sourceDirty) requestStateCapture();
             if (isRecentsVisible()) requestStateCapture("recents-continue");

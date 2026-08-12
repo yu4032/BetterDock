@@ -8,9 +8,12 @@ import java.nio.charset.StandardCharsets;
 import android.util.Log;
 
 public class ConfigReader {
-    // Primary location: the launcher's data dir (persistent, not wiped like /data/local/tmp).
+    // Primary location: the launcher's real data dir.  /data/data/com.miui.home is a
+    // symlink that ksu's mkdir -p refuses to create, which silently broke the GUI
+    // JSON sync; /data/user/0/... is the canonical path and works under su.
     // Fallback: the historical /data/local/tmp path so pre-existing configs keep working.
     private static final String[] PATHS = {
+        "/data/user/0/com.miui.home/files/liquiddock_config.json",
         "/data/data/com.miui.home/files/liquiddock_config.json",
         "/data/local/tmp/liquiddock_config.json",
     };

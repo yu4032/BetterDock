@@ -92,9 +92,9 @@ private fun syncConfigNow(prefs: SharedPreferences, ctx: Context) {
         }
         val tmp = java.io.File(ctx.cacheDir, "liquiddock_config.json")
         tmp.writeText(json.toString())
-        val target = "/data/data/com.miui.home/files/liquiddock_config.json"
+        val target = "/data/user/0/com.miui.home/files/liquiddock_config.json"
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c",
-            "mkdir -p /data/data/com.miui.home/files && cp "
+            "mkdir -p /data/user/0/com.miui.home/files && cp "
                 + tmp.absolutePath + " " + target + " && chmod 644 " + target))
         p.waitFor()
     } catch (e: Throwable) {
