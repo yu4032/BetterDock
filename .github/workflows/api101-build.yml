@@ -18,3 +18,4 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
       - run: ./gradlew assembleDebug --stacktrace
+      # Keep this workflow branch-local until the API101 migration is device-verified.
