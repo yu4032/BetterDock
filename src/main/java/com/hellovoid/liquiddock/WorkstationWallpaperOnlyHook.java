@@ -60,6 +60,21 @@ final class WorkstationWallpaperOnlyHook {
     private static void installNativeSnapshotLock(ClassLoader classLoader) {
         try {
             Class<?> hotSeats = Class.forName(HOTSEATS, false, classLoader);
+            // One-time dump of all declared methods to find the correct hook points on this device.
+            try { Api101Bridge.log("[DC] HotSeats superclass=" + hotSeats.getSuperclass().getName()); } catch (Throwable ignored) {}
+            try {
+                StringBuilder sb = new StringBuilder("[DC] HotSeats methods: ");
+                for (java.lang.reflect.Method m : hotSeats.getMethods()) {
+                    sb.append(m.getName()).append('(');
+                    Class<?>[] pts = m.getParameterTypes();
+                    for (int i = 0; i < pts.length; i++) {
+                        if (i > 0) sb.append(',');
+                        sb.append(pts[i].getSimpleName());
+                    }
+                    sb.append(") ");
+                }
+                Api101Bridge.log(sb.toString());
+            } catch (Throwable ignored) {}
             boolean anyInstalled = false;
 
             try {
@@ -101,6 +116,13 @@ final class WorkstationWallpaperOnlyHook {
     private static void installAllAppsSnapshotTriggers(ClassLoader classLoader) {
         try {
             Class<?> controller = Class.forName(ALL_APPS_CONTROLLER, false, classLoader);
+            try {
+                StringBuilder sb = new StringBuilder("[DC] AllAppsController methods: ");
+                for (java.lang.reflect.Method m : controller.getMethods()) {
+                    if (m.getDeclaringClass() != Object.class) sb.append(m.getName()).append(" ");
+                }
+                Api101Bridge.log(sb.toString());
+            } catch (Throwable ignored) {}
             hookAllAppsTransition(controller, "showAllApps");
             hookAllAppsTransition(controller, "showWindow");
             MainHook.log("[DC] workstation All Apps wallpaper triggers installed");
@@ -131,6 +153,15 @@ final class WorkstationWallpaperOnlyHook {
     private static void installRecentsSnapshotTrigger(ClassLoader classLoader) {
         try {
             Class<?> launcher = Class.forName(LAUNCHER, false, classLoader);
+            try {
+                StringBuilder sb = new StringBuilder("[DC] Launcher methods: ");
+                for (java.lang.reflect.Method m : launcher.getMethods()) {
+                    String name = m.getName();
+                    if (name.contains("Recent") || name.contains("App") || name.contains("Snap") || name.contains("Blur"))
+                        sb.append(name).append(" ");
+                }
+                Api101Bridge.log(sb.toString());
+            } catch (Throwable ignored) {}
             HookUtil.hookMethod(launcher, "showOrHideRecent", new Class<?>[0], chain -> {
                 Object thisLauncher = chain.getThisObject();
                 if (MainHook.isWorkstationMode())
@@ -177,9 +208,9 @@ final class WorkstationWallpaperOnlyHook {
             HookUtil.invoke(hotSeats, "showMingouStaticDockBlurOverlayIfPossible");
             HookUtil.invoke(hotSeats, "setMingouStaticDockSnapshotMode", true);
             HookUtil.invoke(hotSeats, "setMingouStaticDockLiveBlurVisible", false);
-            MainHook.log("[DC] workstation wallpaper snapshot forced reason=" + reason);
+            Api101Bridge.log("[DC] workstation wallpaper snapshot forced reason=" + reason);
         } catch (Throwable error) {
-            MainHook.log("[DC] workstation wallpaper snapshot force failed: " + error);
+            Api101Bridge.log("[DC] workstation wallpaper snapshot force FAILED: " + error);
         }
     }
 
