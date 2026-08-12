@@ -26,16 +26,15 @@ jobs:
           from pathlib import Path
           p = Path('.github/scripts/apply_workstation_layout_fix.py')
           s = p.read_text()
-          fixes = [
-              ('    "workstationSuspended",\n    6,\n)',
-               '    "workstationSuspended",\n    5,\n)'),
-              ('"""    void setWorkstationSuspended(boolean enabled, long nowNanos,\n                                     boolean recentsVisible, boolean lifecycleKnown,\n                                     boolean launcherResumed) {\n        workstationSuspended = enabled;\n""",\n    """    void setWorkstationSuspended(boolean enabled, long nowNanos,',
-               '"""    void setWorkstationWallpaperOnly(boolean enabled, long nowNanos,\n                                     boolean recentsVisible, boolean lifecycleKnown,\n                                     boolean launcherResumed) {\n        workstationSuspended = enabled;\n""",\n    """    void setWorkstationSuspended(boolean enabled, long nowNanos,'),
-          ]
-          for old, new in fixes:
-              if s.count(old) != 1:
-                  raise SystemExit(f'helper marker not found exactly once: {old[:60]!r}')
-              s = s.replace(old, new, 1)
+          count_old = '    "workstationSuspended",\n    6,\n)'
+          if s.count(count_old) != 1:
+              raise SystemExit('workstation count marker not found exactly once')
+          s = s.replace(count_old, '    "workstationSuspended",\n    5,\n)', 1)
+          setter_marker = '    """    void setWorkstationSuspended(boolean enabled'
+          if s.count(setter_marker) != 2:
+              raise SystemExit(f'unexpected setter marker count: {s.count(setter_marker)}')
+          s = s.replace(setter_marker,
+                        '    """    void setWorkstationWallpaperOnly(boolean enabled', 1)
           p.write_text(s)
           PY
           python3 .github/scripts/apply_workstation_layout_fix.py
