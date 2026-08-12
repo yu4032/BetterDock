@@ -1431,13 +1431,24 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         logI("home settle cancelled reason=" + reason + " generation=" + homeSettleGeneration);
     }
 
+    // Post-settle grace: after the window expires, wait an extra frame for the
+    // BBQ wrapper to refresh before the first real mode-2 capture.  The 200 ms
+    // padding avoids capturing the last split-second of the icon animation.
+    private static final long HOME_SETTLE_GRACE_MS = 200L;
+
     private void scheduleHomeSettledCapture() {
         if (!homeReturnTransitionArmed || homeSettleCapturePending) return;
         long remaining = homeSettleUntilNanos - System.nanoTime();
         if (remaining <= 0L) {
             homeReturnTransitionArmed = false;
             homeSettleUntilNanos = 0L;
-            requestStateCapture("home-settled");
+            // Grace delay — BBQ wrapper needs one more frame after icons settle
+            mainHandler.postDelayed(() -> {
+                updateDesiredScene();
+                if (sceneState.desired() == CaptureScene.HOME) {
+                    requestStateCapture("home-settled");
+                }
+            }, HOME_SETTLE_GRACE_MS);
             return;
         }
         homeSettleCapturePending = true;
