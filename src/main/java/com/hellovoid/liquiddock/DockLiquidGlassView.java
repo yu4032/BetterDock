@@ -314,6 +314,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // from a HOME-local Dock spring-back (keep live rendering).
     private boolean launcherWasAway;
     private boolean windowVisible;
+    // True when a floating/small window is covering the desktop.  In this case
+    // the Dock sits below the floating window (z: wallpaper→Dock→floating)
+    // so mode-1 would capture floating content — force mode-2 (wallpaper).
+    boolean floatingWindowOverDesktop;
     private boolean windowFocused;
     private boolean systemUiPanelExpanded;
     private android.view.SurfaceControl dockWindowSurface;
@@ -1605,7 +1609,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // inherently icon/dock-free).  Over a non-home app: full-display capture
                     // with the Dock + drag layers excluded (mode 1) so the glass refracts
                     // the app content.  Launcher window focus is the home-screen signal.
-                    boolean wallpaperMode = requestScene == CaptureScene.HOME;
+                    boolean wallpaperMode = requestScene == CaptureScene.HOME
+                            || floatingWindowOverDesktop;
+                    // With a floating window over desktop, the Dock sits below it
+                    // (z: wallpaper→Dock→floating).  Mode-1 would capture the
+                    // floating content through the glass — forced mode-2 above.
                     String[] excludeNames = null;
                     if (!wallpaperMode) {
                         excludeNames = dockWindowLayerName != null
