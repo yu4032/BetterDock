@@ -334,7 +334,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private Bitmap wallpaperStripCache;
     private Rect cacheStripRect;
     private int cacheRotation = -1;
+    private int cacheDisplayWidth = -1;
+    private int cacheDisplayHeight = -1;
     private int cacheWallpaperId = -1;
+    // Rotation barrier: cache is only served after the CURRENT orientation produced a
+    // real, non-black SF frame that passed the stale checks and was installed.  Cleared
+    // on every configuration change — a stale strip from the previous orientation must
+    // never be served for the new one.
+    private boolean wallpaperCacheReady;
     // HyperOS can return status=0 + a valid-sized but pure-black wallpaper buffer for a
     // short period after display rotation.  Retry those transient frames autonomously
     // instead of waiting for another Dock/layout event to dirty the capture state.
@@ -715,12 +722,36 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         observationValid = false;
         appVisualSignatureValid = false;
         dynamicAppActiveUntilNanos = 0L;
+        // Rotation barrier: the strip from the previous orientation is stale by
+        // definition; never serve it for the new one.  Also reset the black-frame log
+        // gate (it accumulates to 5 per process and silently stops logging).
+        wallpaperCacheReady = false;
+        clearWallpaperCacheSafely();
+        blackFrameLogCount = 0;
+        blackFrameRetryCount = 0;
         requestStateCapture("configuration-changed");
         mainHandler.postDelayed(() -> {
             if (!attached) return;
             observationValid = false;
             requestStateCapture("configuration-settled");
         }, 180L);
+    }
+
+    /** Drop the wallpaper strip cache without touching the frame currently displayed:
+     *  the old implementation could alias cache == capture (Bitmap.createBitmap may
+     *  return the source itself), so recycling the cache could recycle the live
+     *  backdrop. */
+    private void clearWallpaperCacheSafely() {
+        Bitmap old = wallpaperStripCache;
+        wallpaperStripCache = null;
+        cacheStripRect = null;
+        cacheRotation = -1;
+        cacheDisplayWidth = -1;
+        cacheDisplayHeight = -1;
+        cacheWallpaperId = -1;
+        if (old != null && old != capture && !old.isRecycled()) {
+            old.recycle();
+        }
     }
 
     /**
@@ -1568,15 +1599,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 ? new String[]{dockWindowLayerName, dragLayerName}
                                 : (dragLayerName != null ? new String[]{dragLayerName} : null);
                     }
-                    // Wallpaper is static: if a valid strip cache exists (same wallpaper,
-                    // same rotation, strip covers the request), serve the crop from cache
+                    // Wallpaper is static: if a valid strip cache exists (rotation barrier
+                    // passed: current orientation produced a real installed frame, same
+                    // wallpaper, strip covers the request), serve the crop from cache
                     // and skip the SF capture entirely.
-                    // TEMP DIAGNOSTIC (rotation black-frame): wallpaper cache fully
-                    // disabled to verify the cache-short-circuit hypothesis — attempt
-                    // 28/29 were silently retired by cache hits (no capture mode=
-                    // line, watchdog cancelled by retire).  If rotation recovers with
-                    // cache off, the cache ownership/barrier fix goes back in.
-                    if (false && wallpaperMode && tryServeWallpaperFromCache(
+                    if (wallpaperMode && tryServeWallpaperFromCache(
                             req, requestScene, requestSceneRevision, attempt)) {
                         return;
                     }
@@ -1684,9 +1711,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             VisualProbe visualProbe = probeBitmap(strip, blackFrameThreshold);
             logI("frame " + strip.getWidth() + "x" + strip.getHeight()
                     + " stripRect=" + request.stripRect
-                    + " tileRect=" + request.tileRect
-                    + " mean=" + visualProbe.meanChannel
-                    + " bands=" + horizontalBands(strip));
+                    + " mean=" + visualProbe.meanChannel);
             if (visualProbe.nearBlack) {
                 if (!strip.isRecycled()) strip.recycle();
                 mainHandler.post(() -> {
@@ -1775,6 +1800,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     updateDynamicAppActivity(visualProbe.signature);
                 }
                 installCapture(frame, "async");
+                // The rotation barrier lifts only after the CURRENT orientation's real
+                // SF frame is installed — never on a cache-hit or a transitional frame.
+                if (requestScene == CaptureScene.HOME) {
+                    wallpaperCacheReady = true;
+                }
                 rotationStabilizeTick(visualProbe.signature);
                 // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
                 // apply without a launcher restart.
@@ -1893,22 +1923,31 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                                 CaptureScene requestScene,
                                                 long requestSceneRevision,
                                                 long attempt) {
-        if (wallpaperStripCache == null || wallpaperStripCache.isRecycled()
-                || cacheStripRect == null) return false;
-        Display display = geometrySource.getDisplay();
-        int rotation = display != null ? display.getRotation() : -1;
-        if (rotation != cacheRotation) return false;
-        if (req.stripRect.top < cacheStripRect.top) return false;   // need more above
-        if (req.stripRect.width() != cacheStripRect.width()) return false;
+        if (!wallpaperCacheReady || wallpaperStripCache == null
+                || wallpaperStripCache.isRecycled() || cacheStripRect == null) return false;
+        // While rotation stabilization is active the wallpaper content is still
+        // transitional; the cache would serve a black-edge intermediate frame.
+        if (rotationStabilizeUntilNanos != 0) return false;
+        // Orientation identity comes from the request that produced the strip, not from
+        // the display at callback time (the display may already have rotated when the
+        // SF callback arrives — the old code could tag a landscape strip as portrait).
+        if (req.rotation != cacheRotation
+                || req.displayWidth != cacheDisplayWidth
+                || req.displayHeight != cacheDisplayHeight) return false;
+        if (!cacheStripRect.contains(req.stripRect)) return false;
         try {
             int id = WallpaperManager.getInstance(getContext())
                     .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
             if (id != cacheWallpaperId) return false;
         } catch (Throwable ignored) {
         }
-        // Crop the cached strip (do NOT recycle it) and install on the main thread.
-        CroppedFrame frame = cropWallpaperTile(wallpaperStripCache, cacheStripRect,
-                req.tileRect, req.dockRect, false);
+        // Independent copy: Bitmap.createBitmap() may return the source itself, which
+        // would alias capture == wallpaperStripCache and let a later cache recycle kill
+        // the live backdrop.  Crop from a private ARGB copy instead.
+        Bitmap copy = wallpaperStripCache.copy(Bitmap.Config.ARGB_8888, false);
+        if (copy == null) return false;
+        CroppedFrame frame = cropWallpaperTile(copy, cacheStripRect,
+                req.tileRect, req.dockRect, true);
         if (frame == null) return false;
         final long generation = captureGeneration;
         mainHandler.post(() -> {
@@ -1945,8 +1984,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             Bitmap old = wallpaperStripCache;
             wallpaperStripCache = copy;
             cacheStripRect = new Rect(req.stripRect);
-            Display display = geometrySource.getDisplay();
-            cacheRotation = display != null ? display.getRotation() : -1;
+            // Orientation identity from the request, never from the display at callback
+            // time (the display may already have rotated while SF was capturing).
+            cacheRotation = req.rotation;
+            cacheDisplayWidth = req.displayWidth;
+            cacheDisplayHeight = req.displayHeight;
             try {
                 cacheWallpaperId = WallpaperManager.getInstance(getContext())
                         .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
@@ -2011,39 +2053,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             this.nearBlack = nearBlack;
             this.signature = signature;
             this.meanChannel = meanChannel;
-        }
-    }
-
-    /** Mean brightness of 4 equal horizontal bands (left→right), as "m0,m1,m2,m3".
-     *  Localised black regions (e.g. the left edge of a wallpaper crop window) are
-     *  invisible to the single mean; bands reveal where the black sits. */
-    private static String horizontalBands(Bitmap bmp) {
-        if (bmp == null || bmp.isRecycled()) return "?";
-        Bitmap readable = bmp;
-        if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
-            readable = bmp.copy(Bitmap.Config.ARGB_8888, false);
-            if (readable == null) return "?";
-        }
-        try {
-            int w = readable.getWidth(), h = readable.getHeight();
-            int[] sums = new int[4];
-            int[] counts = new int[4];
-            for (int j = 0; j < 4; j++) {
-                int y = Math.min(h - 1, h * j / 4);
-                for (int i = 0; i < 24; i++) {
-                    int x = Math.min(w - 1, w * i / 24);
-                    int c = readable.getPixel(x, y);
-                    int band = Math.min(3, x * 4 / Math.max(1, w));
-                    sums[band] += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
-                    counts[band]++;
-                }
-            }
-            return sums[0] / Math.max(1, counts[0]) / 3 + ","
-                    + sums[1] / Math.max(1, counts[1]) / 3 + ","
-                    + sums[2] / Math.max(1, counts[2]) / 3 + ","
-                    + sums[3] / Math.max(1, counts[3]) / 3;
-        } finally {
-            if (readable != bmp) readable.recycle();
         }
     }
 
