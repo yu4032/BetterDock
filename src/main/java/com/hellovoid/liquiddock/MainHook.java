@@ -13,13 +13,14 @@ import android.os.IBinder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import de.robv.android.xposed.IXposedHookLoadPackage;
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
-import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-public class MainHook implements IXposedHookLoadPackage {
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+
+import io.github.libxposed.api.XposedInterface;
+
+/** Core Launcher hooks for LiquidDock — glass, stroke, dock geometry, workstation. */
+public class MainHook {
 
     private static View overlay, shadowView, oldBg, nativeShadowTarget;
     private static int lastShadowW;
@@ -37,6 +38,943 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
             dockResizeAnimators = new java.util.WeakHashMap<>();
 
+    // ── entry point ──────────────────────────────────────────────────
+
+    public void install(ClassLoader classLoader) {
+        installWorkstationModeGuard(classLoader);
+        LiquidDockConfig config = LiquidDockConfig.load();
+        debugLogging = config.debugLog;
+        log("[DC] LiquidDock " + (debugLogging ? "debug logging ON" : "loaded"));
+        if (!config.enabled) {
+            log("[DC] LiquidDock master switch disabled");
+            return;
+        }
+        RecentsHapticHook.install(classLoader, () -> {
+            DockLiquidGlassView glass = liquidGlassView;
+            if (glass != null) glass.onRecentsHapticTrigger();
+        });
+        installWorkstationDockHooks(classLoader, config.workstation);
+        if (!config.dock.resizeAnimation)
+            installDockResizeAnimationBypass(classLoader, config.dock.smoothResizeAnimation);
+        if (workstationMode)
+            log("[DC] workstation active; using isolated workstation parameters");
+
+        LiquidDockConfig.Grid grid = config.grid;
+        boolean grid8x4 = grid.enabled, dp = grid.dp, offsets = grid.offsets;
+        float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int landXBase = dp ? 57 : 160, landYBase = dp ? 28 : 80;
+        int portXBase = dp ? 28 : 80, portYBase = dp ? 57 : 160;
+        float landLeft = offsets ? grid.landscapeHorizontal : landXBase + grid.landscapeHorizontal;
+        float landRight = offsets ? grid.landscapeHorizontal : landXBase + grid.landscapeHorizontal;
+        float landTop = offsets ? grid.landscapeTop : landYBase + grid.landscapeTop;
+        float landBottom = offsets ? grid.landscapeBottom : landYBase + grid.landscapeBottom;
+        float portLeft = offsets ? grid.portraitHorizontal : portXBase + grid.portraitHorizontal;
+        float portRight = offsets ? grid.portraitHorizontal : portXBase + grid.portraitHorizontal;
+        float portTop = offsets ? grid.portraitTop : portYBase + grid.portraitTop;
+        float portBottom = offsets ? grid.portraitBottom : portYBase + grid.portraitBottom;
+        float landGap = grid.landscapeRowGap, portGap = grid.portraitRowGap;
+        if (!offsets) {
+            landLeft -= landXBase; landRight -= landXBase;
+            landTop -= landYBase; landBottom -= landYBase;
+            portLeft -= portXBase; portRight -= portXBase;
+            portTop -= portYBase; portBottom -= portYBase;
+            landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
+        }
+        HomeGridHook.install(classLoader, grid8x4,
+            Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
+            Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
+            Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
+            Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
+            Math.round(landGap * gridScale), Math.round(portGap * gridScale),
+            Math.round(grid.landscapeIndicatorY * gridScale),
+            Math.round(grid.portraitIndicatorY * gridScale));
+        HomeGridHook.setWorkstationHorizontalOffset(Math.round(
+                config.workstation.gridHorizontalOffset * gridScale));
+
+        boolean dockCustomization = config.dock.enabled;
+        boolean liquidGlass = config.glass.enabled;
+        if (!dockCustomization && !liquidGlass) {
+            log("[DC] Dock customization and liquid glass both disabled");
+            return;
+        }
+
+        // ── liquid-glass-only path (no dock geometry customization) ──
+        if (!dockCustomization) {
+            log("[DC] Dock customization disabled (liquid glass only)");
+            installLiquidGlassCaptureHooks(classLoader);
+            final LiquidDockConfig.Dock strokeCfg = config.dock;
+            try {
+                HookUtil.hookMethod(classLoader,
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    "setBackgroundRadius",
+                    chain -> {
+                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        strokeR = Math.max(0f, (Float) chain.getArgs().get(0));
+                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    }, float.class);
+            } catch (Throwable e) { log("[DC] stroke corner hook failed: " + e); }
+
+            try {
+                HookUtil.hookMethod(classLoader,
+                    "com.miui.home.launcher.Launcher", "setupViews",
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (workstationMode) return result;
+                        try {
+                            Object hs = HookUtil.getField(chain.getThisObject(), "mHotSeats");
+                            if (hs == null) return result;
+                            View vBg = (View) HookUtil.getField(hs, "mBlurBackground2");
+                            if (vBg == null) return result;
+                            ViewGroup parent = (ViewGroup) vBg.getParent();
+                            if (parent == null) return result;
+                            int gv = ((FrameLayout.LayoutParams) vBg.getLayoutParams()).gravity;
+                            View workspace = null;
+                            try {
+                                Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
+                                if (w instanceof View) workspace = (View) w;
+                            } catch (Throwable ignored) {}
+                            if (liquidGlassView != null && liquidGlassView.getParent() != null)
+                                return result;
+                            if (overlay == null || overlay.getParent() == null) {
+                                float ds = vBg.getResources().getDisplayMetrics().density;
+                                int sqW = Math.max(1, Math.round(strokeCfg.squircleStrokeWidth * ds));
+                                int sqOff = Math.round(strokeCfg.squircleStrokeOffset * ds);
+                                int sw = Math.max(1, Math.round(strokeCfg.strokeWidth * ds));
+                                int stdSw = Math.max(1, Math.round(strokeCfg.standardStrokeWidth * ds));
+                                overlay = makeOverlay(vBg, strokeCfg.strokeEnabled, strokeCfg.squircle,
+                                        sqOff, sqW, strokeCfg.squircleCp, strokeCfg.fillDiff, sw, stdSw,
+                                        strokeCfg.strokeShadow,
+                                        Math.max(1, Math.round(strokeCfg.strokeShadowRadius * ds)),
+                                        strokeCfg.strokeShadowAlpha);
+                                overlay.setId(View.generateViewId());
+                                parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
+                            }
+                            if (liquidGlassView != null)
+                                log("[DC] re-creating glass view (previous detached)");
+                            liquidGlassView = LiquidGlassFactory.create(vBg, workspace,
+                                    config.glass, false, 0.58f);
+                            liquidGlassView.setId(View.generateViewId());
+                            seedLauncherLifecycleState(chain.getThisObject());
+                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
+                            bindRecentsView(liquidGlassView, chain.getThisObject());
+                            bindDockDragController(liquidGlassView, classLoader);
+                            installDockTouchListener(liquidGlassView, vBg.getRootView());
+                            liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, vBg.getRootView()));
+                            try {
+                                View decor = ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView();
+                                installDockAreaTouchDetector(liquidGlassView, decor);
+                                liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
+                                        ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
+                            } catch (Throwable ignored) {}
+                            int bgIndex = parent.indexOfChild(vBg);
+                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
+                                    new FrameLayout.LayoutParams(1, 1, gv));
+                            syncAll(vBg);
+                            liquidGlassView.post(() -> syncAll(vBg));
+                        } catch (Throwable e) { log("[DC] liquid-only init err: " + e); }
+                        return result;
+                    });
+                // Sync-only hooks for glass tracking
+                Class<?> hsc2 = Class.forName(
+                        "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                        false, classLoader);
+                HookUtil.hookMethod(hsc2, "setBackgroundWidth", new Class<?>[]{int.class},
+                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
+                HookUtil.hookMethod(hsc2, "setBackgroundHeight", new Class<?>[]{int.class},
+                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
+                HookUtil.hookMethod(hsc2, "setBackgroundRadius", new Class<?>[]{float.class},
+                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
+            } catch (Throwable e) { log("[DC] liquid-only hooks err: " + e); }
+            return;
+        }
+
+        // ── full dock-customization + liquid-glass path ──
+        LiquidDockConfig.Dock dock = config.dock;
+        log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
+        boolean sq = dock.squircle, fd = dock.fillDiff;
+        float dockScale = dock.dimensionsDp
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int wo = Math.round(dock.widthOffset * dockScale);
+        int ho = Math.round(dock.heightOffset * dockScale);
+        int br = dock.blurRadius;
+        float cornerScale = dock.cornersDp
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int co = Math.round(dock.cornerOffset * cornerScale);
+        int blurCo = Math.round(dock.blurCornerOffset * cornerScale);
+        int spacing = Math.round(dock.spacing * dockScale);
+        int bottomOffset = Math.round(dock.bottomOffset * dockScale);
+        ClassLoader cl = classLoader;
+        installLiquidGlassCaptureHooks(cl);
+
+        try {
+            String hsc = "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
+
+            // bottom offset
+            if (bottomOffset != 0) {
+                try {
+                    Class<?> deviceConfig = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
+                    HookUtil.hookMethod(deviceConfig, "getHotSeatsMarginBottom", new Class<?>[0],
+                            chain -> {
+                                Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                                if (workstationMode) return r;
+                                return (Integer) r + bottomOffset;
+                            });
+                } catch (Throwable e) { log("[DC] bottom offset hook unavailable: " + e); }
+            }
+
+            // spacing
+            if (spacing != 0) {
+                try {
+                    Class<?> recyclerView = Class.forName("androidx.recyclerview.widget.RecyclerView", false, cl);
+                    Class<?> recyclerState = Class.forName("androidx.recyclerview.widget.RecyclerView$State", false, cl);
+                    HookUtil.hookMethod(cl,
+                        "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
+                        "getItemOffsets",
+                        chain -> {
+                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            if (workstationMode) return r;
+                            Rect out = (Rect) chain.getArgs().get(0);
+                            out.left += spacing;
+                            out.right += spacing;
+                            return r;
+                        }, Rect.class, View.class, recyclerView, recyclerState);
+
+                    Class<?> layoutManager = Class.forName(
+                            "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager", false, cl);
+                    HookUtil.hookMethod(layoutManager, "updateBackgroundView",
+                            new Class<?>[]{FrameLayout.class, int.class, int.class, float.class},
+                            chain -> {
+                                if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                                int itemCount = (Integer) callThrough(chain.getThisObject(), "getItemCount");
+                                if (itemCount > 0) {
+                                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                                    args[1] = (Integer) args[1] + spacing * 2 * itemCount;
+                                    return chain.proceed(args);
+                                }
+                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            });
+                } catch (Throwable e) { log("[DC] spacing hook unavailable: " + e); }
+            }
+
+            // setBackgroundWidth: before (width offset) + after (syncAll)
+            HookUtil.hookMethod(cl, hsc, "setBackgroundWidth",
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (!workstationMode && wo != 0) args[0] = (int) args[0] + wo;
+                        Object r = chain.proceed(args);
+                        syncAll((View) chain.getThisObject());
+                        return r;
+                    }, int.class);
+
+            // setBackgroundHeight: before (height offset) + after (syncAll)
+            HookUtil.hookMethod(cl, hsc, "setBackgroundHeight",
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (!workstationMode && ho != 0) args[0] = (int) args[0] + ho;
+                        Object r = chain.proceed(args);
+                        syncAll((View) chain.getThisObject());
+                        return r;
+                    }, int.class);
+
+            // setBackgroundRadius: complex before + after with squircle
+            HookUtil.hookMethod(cl, hsc, "setBackgroundRadius",
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (!workstationMode) {
+                            View v = (View) chain.getThisObject();
+                            if (animating(v)) return chain.proceed(args);
+                            float systemRadius = (Float) args[0];
+                            strokeR = Math.max(0f, systemRadius + co);
+                            args[0] = Math.max(0f, systemRadius + blurCo);
+                        }
+                        Object r = chain.proceed(args);
+                        View v = (View) chain.getThisObject();
+                        syncAll(v);
+                        if (sq) {
+                            if (animating(v)) return r;
+                            float radius = (Float) HookUtil.getField(v, "mCornerRadius");
+                            if (radius > 0) v.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                                @Override public void getOutline(View vv, android.graphics.Outline o) {
+                                    o.setPath(squirclePath(new RectF(0, 0, v.getWidth(), v.getHeight()), radius));
+                                }});
+                        }
+                        return r;
+                    }, float.class);
+
+            // BlurUtilities
+            try {
+                Class<?> bu = Class.forName("com.miui.home.launcher.common.BlurUtilities", false, cl);
+                HookUtil.hookMethod(bu, "setBackgroundBlur",
+                        new Class<?>[]{View.class, int.class, float[].class, int[][].class},
+                        chain -> {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            if (!workstationMode && br != 100) args[1] = br;
+                            return chain.proceed(args);
+                        });
+            } catch (Throwable ignored) {}
+
+            // native shadow
+            try {
+                HookUtil.hookMethod(cl,
+                    "com.miui.home.launcher.hotseats.HotSeats", "getMingouStaticDockBlurShadowTarget",
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (r instanceof View) nativeShadowTarget = (View) r;
+                        return r;
+                    });
+                Class<?> ms = Class.forName("com.miui.home.launcher.common.MiShadowUtils", false, cl);
+                HookUtil.hookMethod(ms, "applyViewShadow",
+                        new Class<?>[]{View.class, int.class, float.class, float.class, float.class, float.class},
+                        chain -> {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            if (workstationMode) return chain.proceed(args);
+                            if (args[0] != nativeShadowTarget) return chain.proceed(args);
+                            args[1] = Color.TRANSPARENT;
+                            args[2] = 0f;
+                            args[3] = 0f;
+                            args[4] = 0f;
+                            return chain.proceed(args);
+                        });
+            } catch (Throwable e) { log("[DC] native Dock shadow hook unavailable: " + e); }
+
+            // setupViews: the big glass+overlay init
+            HookUtil.hookMethod(cl, "com.miui.home.launcher.Launcher", "setupViews",
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        try {
+                            LiquidDockConfig current = LiquidDockConfig.load();
+                            LiquidDockConfig.Dock c2 = current.dock;
+                            Object hs = HookUtil.getField(chain.getThisObject(), "mHotSeats");
+                            if (hs == null) return r;
+                            if (!workstationMode) try {
+                                Object target = callThrough(hs, "getMingouStaticDockBlurShadowTarget");
+                                if (target instanceof View) {
+                                    nativeShadowTarget = (View) target;
+                                    callStatic("com.miui.home.launcher.common.MiShadowUtils",
+                                            "applyViewShadow", nativeShadowTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
+                                }
+                            } catch (Throwable e) { log("[DC] native Dock shadow clear failed: " + e); }
+                            oldBg = (View) HookUtil.getField(hs, "mBlurBackground2");
+                            if (oldBg == null) return r;
+                            ViewGroup parent = (ViewGroup) oldBg.getParent();
+                            if (parent == null) return r;
+                            int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
+                            strokeBaseR = c2.strokeR; strokeBaseG = c2.strokeG;
+                            strokeBaseB = c2.strokeB; strokeBaseAlpha = c2.strokeAlpha;
+                            float ds2 = c2.dimensionsDp ? oldBg.getResources().getDisplayMetrics().density : 1f;
+                            int sqW = Math.max(1, Math.round(c2.squircleStrokeWidth * ds2));
+                            int sqOff = Math.round(c2.squircleStrokeOffset * ds2);
+                            float sqCp = c2.squircleCp;
+                            int sw = Math.max(1, Math.round(c2.strokeWidth * ds2));
+                            int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * ds2));
+                            boolean shadow = c2.strokeShadow;
+                            int shadowRadius = Math.max(1, Math.round(c2.strokeShadowRadius * ds2));
+                            int shadowAlpha = c2.strokeShadowAlpha;
+                            boolean dockShadow = c2.shadowEnabled;
+                            boolean liquid = current.glass.enabled;
+                            int dsR = Math.max(1, Math.round(c2.shadowRadius * ds2));
+                            int dsS = Math.max(1, Math.round(c2.shadowSize * ds2));
+                            int dsA = c2.shadowAlpha;
+                            int dsY = Math.round(c2.shadowY * ds2);
+                            if (overlay != null && overlay.getParent() != null) return r;
+                            if (overlay != null) log("[DC] re-creating dock overlay (previous detached)");
+                            if (liquidGlassView != null && liquidGlassView.getParent() != null) return r;
+                            if (liquidGlassView != null) log("[DC] re-creating glass view (previous detached)");
+                            if (liquid) {
+                                View workspace = null;
+                                try {
+                                    Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
+                                    if (w instanceof View) workspace = (View) w;
+                                } catch (Throwable ignored) {}
+                                liquidGlassView = LiquidGlassFactory.create(oldBg, workspace, current.glass, c2.squircle, sqCp);
+                                liquidGlassView.setId(View.generateViewId());
+                                seedLauncherLifecycleState(chain.getThisObject());
+                                liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                                liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
+                                bindRecentsView(liquidGlassView, chain.getThisObject());
+                                bindDockDragController(liquidGlassView, cl);
+                                installDockTouchListener(liquidGlassView, oldBg.getRootView());
+                                liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, oldBg.getRootView()));
+                                try {
+                                    View decor = ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView();
+                                    installDockAreaTouchDetector(liquidGlassView, decor);
+                                    liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
+                                            ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
+                                } catch (Throwable ignored) {}
+                                int bgIdx = parent.indexOfChild(oldBg);
+                                parent.addView(liquidGlassView, Math.max(0, bgIdx),
+                                        new FrameLayout.LayoutParams(1, 1, gv));
+                            }
+                            if (workstationMode) {
+                                if (liquidGlassView != null) {
+                                    liquidGlassView.setWorkstationMode(true);
+                                    syncAll(oldBg);
+                                }
+                                return r;
+                            }
+                            if (dockShadow) {
+                                shadowView = makeDockShadow(c2.squircle, sqOff, sqCp, dsR, dsS, dsA, dsY);
+                                shadowView.setId(View.generateViewId());
+                                int bgIdx = parent.indexOfChild(oldBg);
+                                parent.addView(shadowView, Math.max(0, bgIdx), new FrameLayout.LayoutParams(1, 1));
+                                ViewGroup unc = parent;
+                                for (int lvl = 0; lvl < 4 && unc != null; lvl++) {
+                                    unc.setClipChildren(false); unc.setClipToPadding(false);
+                                    android.view.ViewParent nxt = unc.getParent();
+                                    unc = nxt instanceof ViewGroup ? (ViewGroup) nxt : null;
+                                }
+                            }
+                            overlay = makeOverlay(oldBg, c2.strokeEnabled, c2.squircle, sqOff, sqW, sqCp,
+                                    c2.fillDiff, sw, stdSw, shadow, shadowRadius, shadowAlpha);
+                            overlay.setId(View.generateViewId());
+                            parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
+                            syncAll(oldBg);
+                        } catch (Throwable e) { log("[DC] err: " + e); }
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] init err: " + e); }
+    }
+
+    // ── lifecycle / capture hooks ────────────────────────────────────
+
+    private static void seedLauncherLifecycleState(Object launcher) {
+        if (launcher == null) return;
+        try {
+            Object paused = callThrough(launcher, "isPause");
+            Object visible = callThrough(launcher, "isVisible");
+            Object focused = callThrough(launcher, "isWindowFocus");
+            if (paused instanceof Boolean && !((Boolean) paused)) {
+                launcherLifecycleKnown = true;
+                launcherResumed = true;
+            }
+            log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
+                + " resumed=" + launcherResumed + " paused=" + paused
+                + " visible=" + visible + " focus=" + focused);
+        } catch (Throwable e) {
+            log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+        }
+    }
+
+    private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
+        Class<?> launcherClass;
+        try {
+            launcherClass = Class.forName("com.miui.home.launcher.Launcher", false, cl);
+        } catch (Throwable e) {
+            log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
+            return;
+        }
+
+        // SystemUI panel expansion → toggle capture gate
+        try {
+            Class<?> deviceConfig = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
+            HookUtil.hookMethod(deviceConfig, "setControlPanelExpanded", new Class<?>[]{boolean.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        boolean expanded = Boolean.TRUE.equals(chain.getArgs().get(0));
+                        systemUiPanelExpanded = expanded;
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setSystemUiPanelExpanded(expanded);
+                        log("[DC] liquid SystemUI panel expanded=" + expanded);
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] SystemUI panel capture gate unavailable: " + e); }
+
+        // Window focus: the authoritative HOME/APP signal
+        try {
+            HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
+                        launcherLifecycleKnown = true;
+                        launcherResumed = hasFocus;
+                        log("[DC] liquid focus: " + hasFocus);
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) {
+                            glass.setLauncherState(true, hasFocus);
+                            if (!hasFocus) {
+                                glass.onLauncherFocusLost();
+                                glass.refreshForegroundAppLayer();
+                            }
+                            if (hasFocus) glass.onLauncherFocused();
+                        }
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] onWindowFocusChanged hook failed: " + e); }
+
+        // Dock gesture target events (resolve before focus/lifecycle catches up)
+        hookDockGestureTarget(cl, "GestureToHome", "HOME");
+        hookDockGestureTarget(cl, "GestureToApp", "APP");
+        hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
+
+        // Configuration changes (rotation)
+        try {
+            HookUtil.hookMethod(launcherClass, "onConfigurationChanged", new Class<?>[]{Configuration.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) {
+                            glass.requestCapture("launcher-configuration-changed");
+                            glass.beginRotationStabilize();
+                            glass.postDelayed(() -> glass.requestCapture("launcher-configuration-settled"), 220L);
+                        }
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] liquid configuration hook unavailable: " + e); }
+
+        // Window visibility (capture trigger, not HOME/APP signal)
+        XposedInterface.Hooker visibilityHook = chain -> {
+            if (!launcherClass.isInstance(chain.getThisObject()))
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+            boolean visible = (Integer) chain.getArgs().get(0) == View.VISIBLE;
+            log("[DC] liquid window visibility: " + chain.getArgs().get(0));
+            DockLiquidGlassView glass = liquidGlassView;
+            if (glass != null)
+                glass.requestCapture(visible ? "launcher-window-visible" : "launcher-window-hidden");
+            return r;
+        };
+        try {
+            HookUtil.hookMethod(Activity.class, "onWindowVisibilityChanged", new Class<?>[]{int.class}, visibilityHook);
+        } catch (Throwable e) { log("[DC] onWindowVisibilityChanged hook failed: " + e); }
+
+        // Direct lifecycle hooks (log only; focus/visibility drive decisions)
+        boolean directLifecycleHooked = false;
+        try {
+            HookUtil.hookMethod(launcherClass, "onResume", new Class<?>[0],
+                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onResume (focus decides)"); return r; });
+            HookUtil.hookMethod(launcherClass, "onPause", new Class<?>[0],
+                    chain -> { log("[DC] liquid lifecycle: onPause (focus decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
+            HookUtil.hookMethod(launcherClass, "onStart", new Class<?>[0],
+                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onStart (visibility decides)"); return r; });
+            HookUtil.hookMethod(launcherClass, "onStop", new Class<?>[0],
+                    chain -> { log("[DC] liquid lifecycle: onStop (visibility decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
+            directLifecycleHooked = true;
+        } catch (Throwable directError) {
+            log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
+        }
+
+        // Fallback lifecycle if Launcher doesn't declare onResume/onPause/onStart/onStop
+        if (!directLifecycleHooked) {
+            try {
+                HookUtil.hookMethod(Activity.class, "onResume", new Class<?>[0],
+                        chain -> {
+                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            if (launcherClass.isInstance(chain.getThisObject())) {
+                                launcherLifecycleKnown = true;
+                                launcherResumed = true;
+                                log("[DC] liquid lifecycle fallback: onResume");
+                                DockLiquidGlassView g = liquidGlassView;
+                                if (g != null) g.setLauncherState(true, true);
+                            }
+                            return r;
+                        });
+                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0],
+                        chain -> {
+                            if (launcherClass.isInstance(chain.getThisObject())) {
+                                launcherLifecycleKnown = true;
+                                launcherResumed = false;
+                                log("[DC] liquid lifecycle fallback: onPause");
+                                DockLiquidGlassView g = liquidGlassView;
+                                if (g != null) g.setLauncherState(true, false);
+                            }
+                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        });
+            } catch (Throwable fallbackError) {
+                log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
+            }
+        }
+
+        // Wallpaper offsets / zoom → notify glass
+        try {
+            HookUtil.hookMethod(WallpaperManager.class, "setWallpaperOffsets",
+                    new Class<?>[]{IBinder.class, float.class, float.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView g = liquidGlassView;
+                        if (g != null) g.onWallpaperOffsetChanged(
+                                (Float) chain.getArgs().get(1), (Float) chain.getArgs().get(2));
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] Wallpaper normalized-offset hook unavailable: " + e); }
+
+        try {
+            HookUtil.hookMethod(WallpaperManager.class, "setDisplayOffset",
+                    new Class<?>[]{IBinder.class, int.class, int.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView g = liquidGlassView;
+                        if (g != null) g.onWallpaperDisplayOffsetChanged(
+                                (Integer) chain.getArgs().get(1), (Integer) chain.getArgs().get(2));
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] Wallpaper raw-offset hook unavailable: " + e); }
+
+        try {
+            HookUtil.hookMethod(WallpaperManager.class, "setWallpaperZoomOut",
+                    new Class<?>[]{IBinder.class, float.class},
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView g = liquidGlassView;
+                        if (g != null) g.onWallpaperZoomChanged((Float) chain.getArgs().get(1));
+                        return r;
+                    });
+        } catch (Throwable e) { log("[DC] Wallpaper zoom hook unavailable: " + e); }
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────
+
+    private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
+        try {
+            Class<?> eventClass = Class.forName("com.miui.home.launcher.dock.v3." + eventName, false, cl);
+            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
+                HookUtil.hook(ctor, chain -> {
+                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    DockLiquidGlassView glass = liquidGlassView;
+                    if (glass != null) glass.setGestureCaptureTarget(target);
+                    log("[DC] liquid gesture target=" + target);
+                    return r;
+                });
+            }
+        } catch (Throwable e) { log("[DC] " + eventName + " capture hook unavailable: " + e); }
+    }
+
+    private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
+        try {
+            Object panel = HookUtil.getField(launcher, "mOverviewPanel");
+            if (panel instanceof View) glass.setRecentsView((View) panel);
+        } catch (Throwable e) { log("[DC] recents bind failed: " + e); }
+    }
+
+    private static void bindDockDragController(DockLiquidGlassView glass, ClassLoader cl) {
+        try {
+            Class<?> dc = Class.forName("com.miui.home.launcher.DragController", false, cl);
+            HookUtil.hookMethod(dc, "startDrag",
+                    new Class<?>[]{
+                        android.graphics.drawable.Drawable.class, boolean.class,
+                        Class.forName("com.miui.home.launcher.ItemInfo", false, cl),
+                        int.class, int.class, float.class,
+                        Class.forName("com.miui.home.launcher.DragSource", false, cl),
+                        int.class
+                    },
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        String dragName = resolveDragSurfaceLayerName(chain.getThisObject());
+                        glass.setDockDragging(true, dragName);
+                        return r;
+                    });
+            HookUtil.hookMethod(dc, "endDrag", new Class<?>[0],
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        glass.setDockDragging(false, null);
+                        return r;
+                    });
+            log("[DC] dock drag controller hooked");
+        } catch (Throwable e) { log("[DC] drag controller hook failed: " + e); }
+    }
+
+    private static String resolveDragSurfaceLayerName(Object dragController) {
+        try {
+            Object dragObject = HookUtil.getField(dragController, "mDragObject");
+            if (dragObject == null) return null;
+            Object views = HookUtil.getField(dragObject, "mDragViews");
+            if (!(views instanceof java.util.List) || ((java.util.List<?>) views).isEmpty()) return null;
+            Object dragView = ((java.util.List<?>) views).get(0);
+            if (dragView instanceof View) {
+                Method getSc = View.class.getDeclaredMethod("getSurfaceControl");
+                getSc.setAccessible(true);
+                Object sc = getSc.invoke(dragView);
+                if (sc != null) {
+                    String s = sc.toString();
+                    int i = s.indexOf("name="), j = s.indexOf(')', i);
+                    if (i >= 0 && j > i) {
+                        String name = s.substring(i + 5, j);
+                        log("[DC] drag surface layer: " + name);
+                        return name;
+                    }
+                }
+            }
+        } catch (Throwable e) { log("[DC] drag surface resolve failed: " + e); }
+        return null;
+    }
+
+    private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
+        try {
+            if (dockRoot == null || dockRoot.getWidth() <= 0 || dockRoot.getHeight() <= 0) return;
+            dockRoot.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        glass.onDockTouchEvent();
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
+                        break;
+                }
+                return false;
+            });
+        } catch (Throwable e) { log("[DC] dock touch listener failed: " + e); }
+    }
+
+    private static void installDockAreaTouchDetector(DockLiquidGlassView glass, View launcherRoot) {
+        try {
+            if (launcherRoot == null || launcherRoot.getWidth() <= 0 || launcherRoot.getHeight() <= 0) return;
+            launcherRoot.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
+                            glass.onDockTouchEvent();
+                            glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
+                        }
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
+                        break;
+                }
+                return false;
+            });
+        } catch (Throwable e) { log("[DC] dock area touch detector failed: " + e); }
+    }
+
+    private static void installDockResizeAnimationBypass(ClassLoader cl, boolean smoothAnimation) {
+        try {
+            HookUtil.hookMethod(cl,
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    "updateBackgroundSize",
+                    chain -> {
+                        int oldW = 0, oldH = 0; float oldR = 0f;
+                        try {
+                            oldW = HookUtil.getIntField(chain.getThisObject(), "mWidth");
+                            oldH = HookUtil.getIntField(chain.getThisObject(), "mHeight");
+                            Object r = HookUtil.getField(chain.getThisObject(), "mCornerRadius");
+                            if (r instanceof Float) oldR = (Float) r;
+                        } catch (Throwable ignored) {}
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        Object r = chain.proceed(args);
+                        try {
+                            Object set = HookUtil.getField(chain.getThisObject(), "animatorSet");
+                            if (set instanceof android.animation.Animator)
+                                ((android.animation.Animator) set).end();
+                            Object radius = HookUtil.getField(chain.getThisObject(), "mViewRadiusAnimator");
+                            if (radius instanceof android.animation.Animator)
+                                ((android.animation.Animator) radius).end();
+                        } catch (Throwable ignored) {}
+                        View view = (View) chain.getThisObject();
+                        if (smoothAnimation)
+                            animateDockGeometryFromPrevious(view, oldW, oldH, oldR);
+                        else syncAll(view);
+                        return r;
+                    }, int.class, int.class, float.class);
+            log("[DC] Dock resize animation disabled");
+        } catch (Throwable e) { log("[DC] Dock resize animation bypass unavailable: " + e); }
+    }
+
+    private static void animateDockGeometryFromPrevious(View view, int startW, int startH, float startR) {
+        try {
+            int targetW = HookUtil.getIntField(view, "mWidth");
+            int targetH = HookUtil.getIntField(view, "mHeight");
+            float targetR = ((Number) HookUtil.getField(view, "mCornerRadius")).floatValue();
+            synchronized (dockResizeAnimators) {
+                android.animation.ValueAnimator previous = dockResizeAnimators.remove(view);
+                if (previous != null) {
+                    startW = HookUtil.getIntField(view, "mWidth");
+                    startH = HookUtil.getIntField(view, "mHeight");
+                    startR = ((Number) HookUtil.getField(view, "mCornerRadius")).floatValue();
+                    previous.cancel();
+                }
+                if (startW == targetW && startH == targetH && Math.abs(startR - targetR) < .01f) {
+                    syncAll(view); return;
+                }
+                final int fromW = startW, fromH = startH;
+                final float fromR = startR;
+                HookUtil.setIntField(view, "mWidth", fromW);
+                HookUtil.setIntField(view, "mHeight", fromH);
+                HookUtil.setField(view, "mCornerRadius", fromR);
+                android.animation.ValueAnimator a = android.animation.ValueAnimator.ofFloat(0f, 1f);
+                a.setDuration(180L);
+                a.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0f, 0f, 1f));
+                a.addUpdateListener(anim -> {
+                    float t = (Float) anim.getAnimatedValue();
+                    HookUtil.setIntField(view, "mWidth", Math.round(fromW + (targetW - fromW) * t));
+                    HookUtil.setIntField(view, "mHeight", Math.round(fromH + (targetH - fromH) * t));
+                    HookUtil.setField(view, "mCornerRadius", fromR + (targetR - fromR) * t);
+                    try { callThrough(view, "triggerMeasure"); } catch (Throwable ignored) {}
+                    view.requestLayout();
+                    syncAll(view);
+                });
+                a.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) {
+                        synchronized (dockResizeAnimators) { dockResizeAnimators.remove(view); }
+                    }
+                });
+                dockResizeAnimators.put(view, a);
+                a.start();
+            }
+        } catch (Throwable e) {
+            syncAll(view);
+            log("[DC] smooth Dock resize failed: " + e);
+        }
+    }
+
+    private static void installWorkstationDockHooks(ClassLoader cl, LiquidDockConfig.Workstation config) {
+        if (!config.dockEnabled) return;
+        float scale = config.dimensionsDp
+                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+        int widthOffset = Math.round(config.dockWidthOffset * scale);
+        int iconTopOffset = Math.round(config.iconTopOffset * scale);
+        int iconBottomOffset = Math.round(config.iconBottomOffset * scale);
+        try {
+            HookUtil.hookMethod(cl,
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
+                    "setBackgroundWidth",
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (workstationMode && widthOffset != 0) args[0] = (Integer) args[0] + widthOffset;
+                        return chain.proceed(args);
+                    }, int.class);
+            log("[DC] workstation Dock width hook offset=" + widthOffset);
+        } catch (Throwable e) { log("[DC] workstation Dock hook unavailable: " + e); }
+        try {
+            Class<?> recyclerView = Class.forName("androidx.recyclerview.widget.RecyclerView", false, cl);
+            Class<?> recyclerState = Class.forName("androidx.recyclerview.widget.RecyclerView$State", false, cl);
+            HookUtil.hookMethod(cl,
+                    "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
+                    "getItemOffsets",
+                    chain -> {
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (workstationMode) {
+                            Rect out = (Rect) chain.getArgs().get(0);
+                            out.top += iconTopOffset;
+                            out.bottom += iconBottomOffset;
+                        }
+                        return r;
+                    }, Rect.class, View.class, recyclerView, recyclerState);
+            log("[DC] workstation Dock icon vertical offsets top=" + iconTopOffset + " bottom=" + iconBottomOffset);
+        } catch (Throwable e) { log("[DC] workstation Dock icon offset hook unavailable: " + e); }
+    }
+
+    private static void installWorkstationModeGuard(ClassLoader cl) {
+        boolean detected = false;
+        try {
+            Class<?> mc = Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
+            workstationMode = (Boolean) callStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+            Class<?> sm = Class.forName("com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
+            HookUtil.hookMethod(sm, "onLaptopModeChanged", new Class<?>[]{boolean.class},
+                    chain -> {
+                        boolean entering = (Boolean) chain.getArgs().get(0);
+                        if (entering) backupNormalHomeLayout();
+                        setWorkstationMode(entering);
+                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (!entering) scheduleNormalLayoutRestore();
+                        HomeGridHook.scheduleAllPageRefresh();
+                        return r;
+                    });
+            detected = true;
+            log("[DC] workstation guard uses LauncherModeController; active=" + workstationMode);
+        } catch (Throwable currentApiError) {
+            log("[DC] current workstation API unavailable: " + currentApiError);
+        }
+        if (!detected) try {
+            Class<?> dc = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
+            workstationMode = (Boolean) callStatic("com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
+            HookUtil.hookMethod(dc, "setMingouLaptopPcModeEnabled", new Class<?>[]{boolean.class},
+                    chain -> {
+                        setWorkstationMode((Boolean) chain.getArgs().get(0));
+                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    });
+            detected = true;
+            log("[DC] workstation guard uses legacy DeviceConfig; active=" + workstationMode);
+        } catch (Throwable legacyApiError) {
+            log("[DC] legacy workstation API unavailable: " + legacyApiError);
+        }
+        if (!detected) {
+            workstationMode = false;
+            log("[DC] ERROR: no supported workstation state API found");
+        }
+    }
+
+    private static void setWorkstationMode(boolean enabled) {
+        workstationMode = enabled;
+        HomeGridHook.setWorkstationMode(enabled);
+        log("[DC] Mingou workstation mode changed=" + enabled);
+        if (!enabled) {
+            if (oldBg != null) oldBg.post(() -> {
+                if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
+                if (overlay != null) overlay.setVisibility(View.VISIBLE);
+                if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
+                syncAll(oldBg);
+            });
+            return;
+        }
+        if (oldBg != null) oldBg.post(() -> {
+            if (oldBg != null) oldBg.setAlpha(1f);
+            if (overlay != null) overlay.setVisibility(View.GONE);
+            if (shadowView != null) shadowView.setVisibility(View.GONE);
+            if (liquidGlassView != null) {
+                liquidGlassView.setVisibility(View.VISIBLE);
+                liquidGlassView.setWorkstationMode(true);
+            }
+        });
+    }
+
+    private static void backupNormalHomeLayout() {
+        normalLayoutBackup.clear();
+        View root = oldBg == null ? null : oldBg.getRootView();
+        if (root != null) collectHomeItemPositions(root, false);
+        log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
+    }
+
+    private static void scheduleNormalLayoutRestore() {
+        View root = oldBg == null ? null : oldBg.getRootView();
+        if (root == null || normalLayoutBackup.isEmpty()) return;
+        root.post(() -> restoreNormalHomeLayout(root));
+        root.postDelayed(() -> restoreNormalHomeLayout(root), 250L);
+        root.postDelayed(() -> restoreNormalHomeLayout(root), 700L);
+    }
+
+    private static void collectHomeItemPositions(View view, boolean restore) {
+        Object tag = view.getTag();
+        if (tag != null) try {
+            long id = HookUtil.getLongField(tag, "id");
+            if (id >= 0) {
+                if (!restore) {
+                    normalLayoutBackup.put(id, new HomeItemPosition(
+                            HookUtil.getLongField(tag, "screenId"),
+                            HookUtil.getIntField(tag, "cellX"), HookUtil.getIntField(tag, "cellY"),
+                            HookUtil.getIntField(tag, "spanX"), HookUtil.getIntField(tag, "spanY")));
+                } else {
+                    HomeItemPosition saved = normalLayoutBackup.get(id);
+                    if (saved != null) {
+                        HookUtil.setLongField(tag, "screenId", saved.screenId);
+                        HookUtil.setIntField(tag, "cellX", saved.cellX);
+                        HookUtil.setIntField(tag, "cellY", saved.cellY);
+                        HookUtil.setIntField(tag, "spanX", saved.spanX);
+                        HookUtil.setIntField(tag, "spanY", saved.spanY);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                collectHomeItemPositions(group.getChildAt(i), restore);
+        }
+    }
+
+    private static void restoreNormalHomeLayout(View root) {
+        if (workstationMode) return;
+        collectHomeItemPositions(root, true);
+        root.requestLayout();
+        root.invalidate();
+        log("[DC] normal 8x4 layout restored from backup items=" + normalLayoutBackup.size());
+    }
+
+    // ── drawing / sync ───────────────────────────────────────────────
+
     private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }
     private static Path squirclePath(RectF r, float rad) { return squirclePath(r, rad, 0.65f); }
     private static Path squirclePath(RectF r, float rad, float cp) {
@@ -48,670 +986,17 @@ public class MainHook implements IXposedHookLoadPackage {
         p.cubicTo(l + a - c, b, l, b - a + c, l, b - a); p.close(); return p;
     }
 
-    @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        if (!lpparam.packageName.equals("com.miui.home")) return;
-
-        installWorkstationModeGuard(lpparam.classLoader);
-        LiquidDockConfig config = LiquidDockConfig.load();
-        debugLogging = config.debugLog;
-        log("[DC] LiquidDock " + (debugLogging ? "debug logging ON" : "loaded"));
-        if (!config.enabled) {
-            log("[DC] LiquidDock master switch disabled");
-            return;
-        }
-        RecentsHapticHook.install(lpparam.classLoader, () -> {
-            DockLiquidGlassView glass = liquidGlassView;
-            if (glass != null) glass.onRecentsHapticTrigger();
-        });
-        installWorkstationDockHooks(lpparam.classLoader, config.workstation);
-        if (!config.dock.resizeAnimation)
-            installDockResizeAnimationBypass(lpparam.classLoader,
-                    config.dock.smoothResizeAnimation);
-        if (workstationMode) {
-            log("[DC] workstation active; using isolated workstation parameters");
-        }
-        LiquidDockConfig.Grid grid = config.grid;
-        boolean grid8x4 = grid.enabled;
-        boolean dp = grid.dp;
-        boolean offsets = grid.offsets;
-        float gridScale = dp
-            ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int landXBase = dp ? 57 : 160;
-        int landYBase = dp ? 28 : 80;
-        int portXBase = dp ? 28 : 80;
-        int portYBase = dp ? 57 : 160;
-        float landHorizontal = grid.landscapeHorizontal;
-        float landTopDistance = grid.landscapeTop;
-        float landBottomDistance = grid.landscapeBottom;
-        float portraitHorizontal = grid.portraitHorizontal;
-        float portraitTopDistance = grid.portraitTop;
-        float portraitBottomDistance = grid.portraitBottom;
-        float landLeft = offsets ? landHorizontal : landXBase + landHorizontal;
-        float landRight = offsets ? landHorizontal : landXBase + landHorizontal;
-        float landTop = offsets ? landTopDistance : landYBase + landTopDistance;
-        float landBottom = offsets ? landBottomDistance : landYBase + landBottomDistance;
-        float portLeft = offsets ? portraitHorizontal : portXBase + portraitHorizontal;
-        float portRight = offsets ? portraitHorizontal : portXBase + portraitHorizontal;
-        float portTop = offsets ? portraitTopDistance : portYBase + portraitTopDistance;
-        float portBottom = offsets ? portraitBottomDistance : portYBase + portraitBottomDistance;
-        float landGap = grid.landscapeRowGap;
-        float portGap = grid.portraitRowGap;
-        if (!offsets) {
-            landLeft -= landXBase; landRight -= landXBase;
-            landTop -= landYBase; landBottom -= landYBase;
-            portLeft -= portXBase; portRight -= portXBase;
-            portTop -= portYBase; portBottom -= portYBase;
-            landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
-        }
-        HomeGridHook.install(lpparam.classLoader, grid8x4,
-            Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
-            Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
-            Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
-            Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
-            Math.round(landGap * gridScale), Math.round(portGap * gridScale),
-            Math.round(grid.landscapeIndicatorY * gridScale),
-            Math.round(grid.portraitIndicatorY * gridScale));
-        HomeGridHook.setWorkstationHorizontalOffset(Math.round(
-                config.workstation.gridHorizontalOffset * gridScale));
-        boolean dockCustomization = config.dock.enabled;
-        boolean liquidGlass = config.glass.enabled;
-        if (!dockCustomization && !liquidGlass) {
-            log("[DC] Dock customization and liquid glass both disabled");
-            return;
-        }
-        if (!dockCustomization) {
-            log("[DC] Dock customization disabled (liquid glass only)");
-            // Liquid glass runs standalone: install its capture lifecycle hooks and the
-            // setupViews initializer, then skip all non-glass dock modification hooks below.
-            installLiquidGlassCaptureHooks(lpparam.classLoader);
-            // The stroke is independent of dock customization — keep it alive on the
-            // native background even when dock geometry customization is off.
-            final LiquidDockConfig.Dock strokeCfg = config.dock;
-            try {
-                XposedHelpers.findAndHookMethod("com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    lpparam.classLoader, "setBackgroundRadius", float.class,
-                    new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
-                        if (workstationMode) return;
-                        strokeR = Math.max(0f, (Float) p.args[0]);
-                    }});
-            } catch (Throwable e) {
-                log("[DC] stroke corner hook failed: " + e);
-            }
-            try {
-                XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", lpparam.classLoader, "setupViews",
-                    new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
-                        if (workstationMode) return;
-                        try {
-                            Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats");
-                            if (hs == null) return;
-                            View oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2");
-                            if (oldBg == null) return;
-                            ViewGroup parent = (ViewGroup) oldBg.getParent();
-                            if (parent == null) return;
-                            int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
-                            View workspace = null;
-                            try {
-                                Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
-                                if (candidate instanceof View) workspace = (View) candidate;
-                            } catch (Throwable ignored) {}
-                            if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
-                            // Stroke overlay independent of dock customization.
-                            if (overlay == null || overlay.getParent() == null) {
-                                float ds = oldBg.getResources().getDisplayMetrics().density;
-                                int sqW = Math.max(1, Math.round(strokeCfg.squircleStrokeWidth * ds));
-                                int sqOff = Math.round(strokeCfg.squircleStrokeOffset * ds);
-                                int sw = Math.max(1, Math.round(strokeCfg.strokeWidth * ds));
-                                int stdSw = Math.max(1, Math.round(strokeCfg.standardStrokeWidth * ds));
-                                overlay = makeOverlay(oldBg, strokeCfg.strokeEnabled, strokeCfg.squircle,
-                                        sqOff, sqW, strokeCfg.squircleCp, strokeCfg.fillDiff, sw, stdSw,
-                                        strokeCfg.strokeShadow,
-                                        Math.max(1, Math.round(strokeCfg.strokeShadowRadius * ds)),
-                                        strokeCfg.strokeShadowAlpha);
-                                overlay.setId(View.generateViewId());
-                                parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
-                            }
-                            // The Dock window's view tree can be rebuilt (dock hide/show,
-                            // scene switches); if the previous glass view was destroyed with
-                            // its parent, recreate it so the glass does not silently revert
-                            // to the default background.
-                            if (liquidGlassView != null) {
-                                log("[DC] re-creating glass view (previous detached)");
-                            }
-                            liquidGlassView = LiquidGlassFactory.create(oldBg, workspace,
-                                    config.glass, false, 0.58f);
-                            liquidGlassView.setId(View.generateViewId());
-                            seedLauncherLifecycleState(param.thisObject);
-                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                            bindRecentsView(liquidGlassView, param.thisObject);
-                            bindDockDragController(liquidGlassView, lpparam.classLoader);
-                            installDockTouchListener(liquidGlassView, oldBg.getRootView());
-                            liquidGlassView.post(() -> installDockTouchListener(
-                                    liquidGlassView, oldBg.getRootView()));
-                            try {
-                                View launcherDecor = ((android.app.Activity) param.thisObject)
-                                        .getWindow().getDecorView();
-                                installDockAreaTouchDetector(liquidGlassView, launcherDecor);
-                                liquidGlassView.post(() -> installDockAreaTouchDetector(
-                                        liquidGlassView, ((android.app.Activity) param.thisObject)
-                                                .getWindow().getDecorView()));
-                            } catch (Throwable ignored) {}
-                            int bgIndex = parent.indexOfChild(oldBg);
-                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
-                                new FrameLayout.LayoutParams(1, 1, gv));
-                            // Standalone mode has no overlay to drive syncAll; size the glass
-                            // view from the dock background immediately so it is not 1x1.
-                            syncAll(oldBg);
-                            liquidGlassView.post(() -> syncAll(oldBg));
-                        } catch (Throwable e) { log("[DC] liquid-only init err: " + e); }
-                    }});
-                // The launcher calls setBackgroundWidth/Height/Radius when it lays out the
-                // dock background; hook them (sync-only, no offset modification) so the
-                // standalone glass view tracks the real default background size.
-                Class<?> hsc2 = XposedHelpers.findClass(
-                        "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                        lpparam.classLoader);
-                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundWidth", int.class,
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundHeight", int.class,
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-                XposedHelpers.findAndHookMethod(hsc2, "setBackgroundRadius", float.class,
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-            } catch (Throwable e) { log("[DC] liquid-only hooks err: " + e); }
-            return;
-        }
-        LiquidDockConfig.Dock dock = config.dock;
-        log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
-        boolean sq = dock.squircle, fd = dock.fillDiff;
-        float dockScale = dock.dimensionsDp
-                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int wo = Math.round(dock.widthOffset * dockScale);
-        int ho = Math.round(dock.heightOffset * dockScale);
-        int br = dock.blurRadius;
-        float cornerScale = dock.cornersDp
-            ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int co = Math.round(dock.cornerOffset * cornerScale);
-        int blurCo = Math.round(dock.blurCornerOffset * cornerScale);
-        int spacing = Math.round(dock.spacing * dockScale);
-        int bottomOffset = Math.round(dock.bottomOffset * dockScale);
-        ClassLoader cl = lpparam.classLoader;
-        // Install the lightweight lifecycle/wallpaper observers unconditionally once Dock
-        // customization is active.  The previous conditional install could leave a glass View
-        // permanently gated if the process-start config and setupViews config differed.
-        installLiquidGlassCaptureHooks(cl);
-
-        try {
-            String hsc = "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
-
-            if (bottomOffset != 0) { try {
-                Class<?> deviceConfig = XposedHelpers.findClass("com.miui.home.launcher.DeviceConfig", cl);
-                XposedHelpers.findAndHookMethod(deviceConfig, "getHotSeatsMarginBottom",
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            if (workstationMode) return;
-                            p.setResult((Integer) p.getResult() + bottomOffset);
-                        }
-                    });
-            } catch (Throwable e) { log("[DC] bottom offset hook unavailable: " + e); } }
-
-            if (spacing != 0) { try {
-                Class<?> recyclerView = XposedHelpers.findClass("androidx.recyclerview.widget.RecyclerView", cl);
-                Class<?> recyclerState = XposedHelpers.findClass("androidx.recyclerview.widget.RecyclerView$State", cl);
-                Class<?> layoutManager = XposedHelpers.findClass(
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager", cl);
-                XposedHelpers.findAndHookMethod(
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
-                    cl, "getItemOffsets", Rect.class, View.class, recyclerView, recyclerState,
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            if (workstationMode) return;
-                            Rect out = (Rect) p.args[0];
-                            out.left += spacing;
-                            out.right += spacing;
-                        }
-                    });
-                XposedHelpers.findAndHookMethod(layoutManager, "updateBackgroundView",
-                    FrameLayout.class, int.class, int.class, float.class,
-                    new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam p) {
-                            if (workstationMode) return;
-                            int itemCount = (Integer) XposedHelpers.callMethod(p.thisObject, "getItemCount");
-                            if (itemCount > 0)
-                                p.args[1] = (Integer) p.args[1] + spacing * 2 * itemCount;
-                        }
-                    });
-            } catch (Throwable e) { log("[DC] spacing hook unavailable: " + e); } }
-
-            XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundWidth", int.class,
-                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && wo != 0) p.args[0] = (int) p.args[0] + wo; }
-                    @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-            XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundHeight", int.class,
-                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && ho != 0) p.args[0] = (int) p.args[0] + ho; }
-                    @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject); }});
-            XposedHelpers.findAndHookMethod(hsc, cl, "setBackgroundRadius", float.class,
-                new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) {
-                        if (workstationMode) return;
-                        // Skip mid-animation so the stroke radius does not flicker with
-                        // the icon-drop background animation (see syncAll).
-                        View v = (View) p.thisObject;
-                        if (animating(v)) return;
-                        float systemRadius = (Float) p.args[0];
-                        strokeR = Math.max(0f, systemRadius + co);
-                        p.args[0] = Math.max(0f, systemRadius + blurCo);
-                    }
-                    @Override protected void afterHookedMethod(MethodHookParam p) { syncAll((View) p.thisObject);
-                        if (sq) { View v = (View) p.thisObject; if (animating(v)) return;
-                            float r = (Float) XposedHelpers.getObjectField(v, "mCornerRadius");
-                            if (r > 0) v.setOutlineProvider(new android.view.ViewOutlineProvider() {
-                                @Override public void getOutline(View vv, android.graphics.Outline o) { o.setPath(squirclePath(new RectF(0, 0, v.getWidth(), v.getHeight()), r)); }}); } }});
-
-            try { Class<?> bu = XposedHelpers.findClass("com.miui.home.launcher.common.BlurUtilities", cl);
-                XposedHelpers.findAndHookMethod(bu, "setBackgroundBlur", View.class, int.class, float[].class, int[][].class,
-                    new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam p) { if (!workstationMode && br != 100) p.args[1] = br; }});
-            } catch (Throwable ignored) {}
-            try {
-                XposedHelpers.findAndHookMethod("com.miui.home.launcher.hotseats.HotSeats", cl,
-                    "getMingouStaticDockBlurShadowTarget", new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            Object target = p.getResult();
-                            if (target instanceof View) nativeShadowTarget = (View) target;
-                        }
-                    });
-                Class<?> ms = XposedHelpers.findClass("com.miui.home.launcher.common.MiShadowUtils", cl);
-                XposedHelpers.findAndHookMethod(ms, "applyViewShadow", View.class, int.class,
-                    float.class, float.class, float.class, float.class, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam p) {
-                            if (workstationMode) return;
-                            if (p.args[0] != nativeShadowTarget) return;
-                            p.args[1] = Color.TRANSPARENT;
-                            p.args[2] = 0f;
-                            p.args[3] = 0f;
-                            p.args[4] = 0f;
-                        }
-                    });
-            } catch (Throwable e) {
-                log("[DC] native Dock shadow hook unavailable: " + e);
-            }
-
-            XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", cl, "setupViews",
-                new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) {
-                    try { LiquidDockConfig current = LiquidDockConfig.load();
-                        LiquidDockConfig.Dock c2 = current.dock;
-                        Object hs = XposedHelpers.getObjectField(param.thisObject, "mHotSeats"); if (hs == null) return;
-                        if (!workstationMode) try {
-                            Object target = XposedHelpers.callMethod(hs, "getMingouStaticDockBlurShadowTarget");
-                            if (target instanceof View) {
-                                nativeShadowTarget = (View) target;
-                                Class<?> ms = XposedHelpers.findClass(
-                                    "com.miui.home.launcher.common.MiShadowUtils", cl);
-                                XposedHelpers.callStaticMethod(ms, "applyViewShadow",
-                                    nativeShadowTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
-                            }
-                        } catch (Throwable e) {
-                            log("[DC] native Dock shadow clear failed: " + e);
-                        }
-                        oldBg = (View) XposedHelpers.getObjectField(hs, "mBlurBackground2"); if (oldBg == null) return;
-                        ViewGroup parent = (ViewGroup) oldBg.getParent(); if (parent == null) return;
-                        int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
-                        boolean strokeEnabled = c2.strokeEnabled, sq2 = c2.squircle, fd2 = c2.fillDiff;
-                        strokeBaseR = c2.strokeR;
-                        strokeBaseG = c2.strokeG;
-                        strokeBaseB = c2.strokeB;
-                        strokeBaseAlpha = c2.strokeAlpha;
-                        float dockScale2 = c2.dimensionsDp
-                                ? oldBg.getResources().getDisplayMetrics().density : 1f;
-                        int sqW = Math.max(1, Math.round(c2.squircleStrokeWidth * dockScale2));
-                        int sqOff = Math.round(c2.squircleStrokeOffset * dockScale2);
-                        float sqCp = c2.squircleCp;
-                        int sw = Math.max(1, Math.round(c2.strokeWidth * dockScale2));
-                        int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * dockScale2));
-                        boolean shadow = c2.strokeShadow;
-                        int shadowRadius = Math.max(1, Math.round(c2.strokeShadowRadius * dockScale2));
-                        int shadowAlpha = c2.strokeShadowAlpha;
-                        boolean dockShadow = c2.shadowEnabled;
-                        boolean liquidGlass = current.glass.enabled;
-                        int dockShadowRadius = Math.max(1, Math.round(c2.shadowRadius * dockScale2));
-                        int dockShadowSize = Math.max(1, Math.round(c2.shadowSize * dockScale2));
-                        int dockShadowAlpha = c2.shadowAlpha;
-                        int dockShadowY = Math.round(c2.shadowY * dockScale2);
-                        if (overlay != null && overlay.getParent() != null) return;
-                        if (overlay != null) {
-                            log("[DC] re-creating dock overlay (previous detached)");
-                        }
-                        if (liquidGlassView != null && liquidGlassView.getParent() != null) return;
-                        if (liquidGlassView != null) {
-                            log("[DC] re-creating glass view (previous detached)");
-                        }
-                        if (liquidGlass) {
-                            View workspace = null;
-                            try {
-                                Object candidate = XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
-                                if (candidate instanceof View) workspace = (View) candidate;
-                            } catch (Throwable ignored) {}
-                            liquidGlassView = LiquidGlassFactory.create(oldBg, workspace,
-                                    current.glass, sq2, sqCp);
-                            liquidGlassView.setId(View.generateViewId());
-                            seedLauncherLifecycleState(param.thisObject);
-                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                            bindRecentsView(liquidGlassView, param.thisObject);
-                            bindDockDragController(liquidGlassView, cl);
-                            installDockTouchListener(liquidGlassView, oldBg.getRootView());
-                            liquidGlassView.post(() -> installDockTouchListener(
-                                    liquidGlassView, oldBg.getRootView()));
-                            try {
-                                View launcherDecor = ((android.app.Activity) param.thisObject)
-                                        .getWindow().getDecorView();
-                                installDockAreaTouchDetector(liquidGlassView, launcherDecor);
-                                liquidGlassView.post(() -> installDockAreaTouchDetector(
-                                        liquidGlassView, ((android.app.Activity) param.thisObject)
-                                                .getWindow().getDecorView()));
-                            } catch (Throwable ignored) {}
-                            int bgIndex = parent.indexOfChild(oldBg);
-                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
-                                new FrameLayout.LayoutParams(1, 1, gv));
-                        }
-                        if (workstationMode) {
-                            if (liquidGlassView != null) {
-                                liquidGlassView.setWorkstationMode(true);
-                                syncAll(oldBg);
-                            }
-                            return;
-                        }
-                        if (dockShadow) {
-                            shadowView = makeDockShadow(sq2, sqOff, sqCp, dockShadowRadius, dockShadowSize,
-                                dockShadowAlpha, dockShadowY);
-                            shadowView.setId(View.generateViewId());
-                            int bgIndex = parent.indexOfChild(oldBg);
-                            parent.addView(shadowView, Math.max(0, bgIndex),
-                                new FrameLayout.LayoutParams(1, 1));
-                            ViewGroup unclipped = parent;
-                            for (int level = 0; level < 4 && unclipped != null; level++) {
-                                unclipped.setClipChildren(false);
-                                unclipped.setClipToPadding(false);
-                                android.view.ViewParent next = unclipped.getParent();
-                                unclipped = next instanceof ViewGroup ? (ViewGroup) next : null;
-                            }
-                        }
-                        overlay = makeOverlay(oldBg, strokeEnabled, sq2, sqOff, sqW, sqCp, fd2, sw, stdSw,
-                            shadow, shadowRadius, shadowAlpha);
-                        overlay.setId(View.generateViewId()); parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
-                        syncAll(oldBg);
-                    } catch (Throwable e) { log("[DC] err: " + e); }
-                }});
-        } catch (Throwable e) { log("[DC] init err: " + e); }
-    }
-
-    private static void seedLauncherLifecycleState(Object launcher) {
-        if (launcher == null) return;
-        try {
-            Object paused = XposedHelpers.callMethod(launcher, "isPause");
-            Object visible = XposedHelpers.callMethod(launcher, "isVisible");
-            Object focused = XposedHelpers.callMethod(launcher, "isWindowFocus");
-            if (paused instanceof Boolean && !((Boolean) paused)) {
-                // A positive "not paused" answer is useful.  A paused value during setupViews is
-                // ambiguous because setupViews normally runs from onCreate before the first
-                // onResume; keep UNKNOWN in that case so window focus can bootstrap capture.
-                launcherLifecycleKnown = true;
-                launcherResumed = true;
-            }
-            log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
-                + " resumed=" + launcherResumed + " paused=" + paused
-                + " visible=" + visible + " focus=" + focused);
-        } catch (Throwable e) {
-            // UNKNOWN is intentional: the View's actual window visibility/focus will bootstrap
-            // capture until an explicit onResume/onPause callback is observed.
-            log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
-        }
-    }
-
-    private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
-        Class<?> launcherClass;
-        try {
-            launcherClass = XposedHelpers.findClass("com.miui.home.launcher.Launcher", cl);
-        } catch (Throwable e) {
-            log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
-            return;
-        }
-
-        // HyperOS Launcher already mirrors SystemUI's notification/control-center expansion
-        // into DeviceConfig.  This is more precise than treating every focus loss as SystemUI:
-        // the floating Dock also legitimately loses focus while it is shown above an app.
-        try {
-            Class<?> deviceConfig = XposedHelpers.findClass(
-                    "com.miui.home.launcher.DeviceConfig", cl);
-            XposedHelpers.findAndHookMethod(deviceConfig, "setControlPanelExpanded",
-                    boolean.class, new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            boolean expanded = Boolean.TRUE.equals(p.args[0]);
-                            systemUiPanelExpanded = expanded;
-                            DockLiquidGlassView glass = liquidGlassView;
-                            if (glass != null) glass.setSystemUiPanelExpanded(expanded);
-                            log("[DC] liquid SystemUI panel expanded=" + expanded);
-                        }
-                    });
-        } catch (Throwable e) {
-            log("[DC] SystemUI panel capture gate unavailable: " + e);
-        }
-
-        XC_MethodHook focusHook = new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam p) {
-                boolean hasFocus = Boolean.TRUE.equals(p.args[0]);
-                launcherLifecycleKnown = true;
-                launcherResumed = hasFocus; // window focus is the reliable home-screen signal
-                log("[DC] liquid focus: " + hasFocus);
-                DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) {
-                    glass.setLauncherState(true, hasFocus);
-                    if (!hasFocus) {
-                        glass.onLauncherFocusLost();
-                        // An app came to the front: resolve its SF layer name so mode-1
-                        // captures can include exactly that layer.
-                        glass.refreshForegroundAppLayer();
-                    }
-                    // Focus returning to the launcher = the way-home transition starts
-                    // (Dock collapses with the icon fly-in animation).  Record the
-                    // timestamp (render logs correlate with the animation window) and
-                    // arm the capture-skip grace so the collapse is never painted into
-                    // the backdrop.
-                    if (hasFocus) glass.onLauncherFocused();
-                }
-            }
-        };
-        try {
-            XposedHelpers.findAndHookMethod(launcherClass, "onWindowFocusChanged",
-                    boolean.class, focusHook);
-        } catch (Throwable e) {
-            log("[DC] onWindowFocusChanged hook failed: " + e);
-        }
-
-        // Dock v3 resolves the final gesture target before Launcher focus/lifecycle catches up.
-        // These events are emitted again when an animation is interrupted, so they provide the
-        // correct source switch for HOME, APP and RECENTS without timing guesses.
-        hookDockGestureTarget(cl, "GestureToHome", "HOME");
-        hookDockGestureTarget(cl, "GestureToApp", "APP");
-        hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
-
-        try {
-            XposedHelpers.findAndHookMethod(launcherClass, "onConfigurationChanged",
-                    Configuration.class, new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            DockLiquidGlassView glass = liquidGlassView;
-                            if (glass == null) return;
-                            glass.requestCapture("launcher-configuration-changed");
-                            glass.beginRotationStabilize();
-                            glass.postDelayed(() -> glass.requestCapture(
-                                    "launcher-configuration-settled"), 220L);
-                        }
-                    });
-        } catch (Throwable e) {
-            log("[DC] liquid configuration hook unavailable: " + e);
-        }
-
-        XC_MethodHook resumeHook = new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam p) {
-                // onResume is NOT authoritative: pulling the Dock out over an app can
-                // trigger launcher onResume while the launcher window is NOT focused.
-                // Window focus (onWindowFocusChanged) decides launcherResumed.
-                log("[DC] liquid lifecycle: onResume (focus decides)");
-            }
-        };
-        XC_MethodHook pauseHook = new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam p) {
-                // onPause is likewise overridden by the window-focus signal.
-                log("[DC] liquid lifecycle: onPause (focus decides)");
-            }
-        };
-
-        XC_MethodHook startHook = new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam p) {
-                // onStart fires for BOTH returning home AND pulling the Dock out over an
-                // app (MIUI restores the launcher activity during the gesture), so it can
-                // NOT decide capture mode.  Window visibility (onWindowVisibilityChanged)
-                // is the discriminating signal: returning home makes the launcher WINDOW
-                // visible at the start of the animation; a Dock pull leaves it GONE.
-                log("[DC] liquid lifecycle: onStart (visibility decides)");
-            }
-        };
-        XC_MethodHook stopHook = new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam p) {
-                log("[DC] liquid lifecycle: onStop (visibility decides)");
-            }
-        };
-
-        XC_MethodHook visibilityHook = new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam p) {
-                if (!launcherClass.isInstance(p.thisObject)) return;
-                boolean visible = (Integer) p.args[0] == View.VISIBLE;
-                log("[DC] liquid window visibility: " + p.args[0]);
-                DockLiquidGlassView glass = liquidGlassView;
-                // Visibility changes during both Dock pull-up and return-home animations;
-                // they are not a HOME/APP signal. Window focus owns that decision.
-                if (glass != null) glass.requestCapture(
-                        visible ? "launcher-window-visible" : "launcher-window-hidden");
-            }
-        };
-        try {
-            XposedHelpers.findAndHookMethod(Activity.class, "onWindowVisibilityChanged",
-                    int.class, visibilityHook);
-        } catch (Throwable e) {
-            log("[DC] onWindowVisibilityChanged hook failed: " + e);
-        }
-
-        boolean directLifecycleHooked = false;
-        try {
-            XposedHelpers.findAndHookMethod(launcherClass, "onResume", resumeHook);
-            XposedHelpers.findAndHookMethod(launcherClass, "onPause", pauseHook);
-            XposedHelpers.findAndHookMethod(launcherClass, "onStart", startHook);
-            XposedHelpers.findAndHookMethod(launcherClass, "onStop", stopHook);
-            directLifecycleHooked = true;
-        } catch (Throwable directError) {
-            log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
-        }
-
-        if (!directLifecycleHooked) {
-            // Fallback for builds where Launcher inherits the lifecycle methods without
-            // declaring them. This hook is installed only in the com.miui.home process.
-            try {
-                XposedHelpers.findAndHookMethod(Activity.class, "onResume",
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam p) {
-                            if (!launcherClass.isInstance(p.thisObject)) return;
-                            launcherLifecycleKnown = true;
-                            launcherResumed = true;
-                            log("[DC] liquid lifecycle fallback: onResume");
-                            DockLiquidGlassView glass = liquidGlassView;
-                            if (glass != null) glass.setLauncherState(true, true);
-                        }
-                    });
-                XposedHelpers.findAndHookMethod(Activity.class, "onPause",
-                    new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam p) {
-                            if (!launcherClass.isInstance(p.thisObject)) return;
-                            launcherLifecycleKnown = true;
-                            launcherResumed = false;
-                            log("[DC] liquid lifecycle fallback: onPause");
-                            DockLiquidGlassView glass = liquidGlassView;
-                            if (glass != null) glass.setLauncherState(true, false);
-                        }
-                    });
-            } catch (Throwable fallbackError) {
-                log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
-            }
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setWallpaperOffsets",
-                IBinder.class, float.class, float.class, new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam p) {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass == null) return;
-                        glass.onWallpaperOffsetChanged((Float) p.args[1], (Float) p.args[2]);
-                    }
-                });
-        } catch (Throwable e) {
-            log("[DC] Wallpaper normalized-offset hook unavailable: " + e);
-        }
-        try {
-            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setDisplayOffset",
-                IBinder.class, int.class, int.class, new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam p) {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass == null) return;
-                        glass.onWallpaperDisplayOffsetChanged((Integer) p.args[1], (Integer) p.args[2]);
-                    }
-                });
-        } catch (Throwable e) {
-            // Hidden/SystemApi on AOSP, but some Launcher builds use it directly.
-            log("[DC] Wallpaper raw-offset hook unavailable: " + e);
-        }
-        try {
-            XposedHelpers.findAndHookMethod(WallpaperManager.class, "setWallpaperZoomOut",
-                IBinder.class, float.class, new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam p) {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass == null) return;
-                        glass.onWallpaperZoomChanged((Float) p.args[1]);
-                    }
-                });
-        } catch (Throwable e) {
-            log("[DC] Wallpaper zoom hook unavailable: " + e);
-        }
-    }
-
-    private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
-        try {
-            Class<?> eventClass = XposedHelpers.findClass(
-                    "com.miui.home.launcher.dock.v3." + eventName, cl);
-            XposedBridge.hookAllConstructors(eventClass, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam p) {
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null) glass.setGestureCaptureTarget(target);
-                    log("[DC] liquid gesture target=" + target);
-                }
-            });
-        } catch (Throwable e) {
-            log("[DC] " + eventName + " capture hook unavailable: " + e);
-        }
-    }
-
     private static View makeDockShadow(boolean sq, int sqOff, float sqCp,
                                        int radius, int size, int alpha, int offsetY) {
         final int maxDistance = Math.max(1, size);
         final int blurRadius = Math.min(Math.max(1, radius), maxDistance);
         final int spread = Math.max(0, maxDistance - blurRadius);
         shadowPad = Math.max(4, maxDistance + Math.abs(offsetY) + 4);
-        View view = new View(oldBg.getContext()) {
+        return new View(oldBg.getContext()) {
             @Override protected void onDraw(Canvas canvas) {
                 if (bgW <= 0 || bgH <= 0) return;
-                float left = shadowPad;
-                float top = shadowPad;
-                RectF bounds;
-                float corner;
+                float left = shadowPad, top = shadowPad;
+                RectF bounds; float corner;
                 if (sq) {
                     bounds = new RectF(left - sqOff - spread, top - sqOff - spread,
                         left + bgW + sqOff + spread, top + bgH + sqOff + spread);
@@ -733,8 +1018,6 @@ public class MainHook implements IXposedHookLoadPackage {
                 super.onDetachedFromWindow();
             }
         };
-        view.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        return view;
     }
 
     private static View makeOverlay(View bg, boolean strokeEnabled, boolean sq, int sqOff, int sqW, float sqCp,
@@ -743,9 +1026,6 @@ public class MainHook implements IXposedHookLoadPackage {
         return new View(bg.getContext()) {
             @Override protected void onDraw(Canvas c) {
                 if (!strokeEnabled || getWidth() < 1 || getHeight() < 1) return;
-                // Size from the overlay's own layout (match_parent on the dock background)
-                // so the stroke also works when dock customization is disabled and the
-                // syncAll-driven static bgW/bgH are never updated.
                 float w = getWidth(), h = getHeight(), r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f);
                 if (sq) {
                     if (shadow) drawSqShadow(c, w, h, r, sqOff, sqCp, shadowRadius, shadowAlpha);
@@ -772,8 +1052,7 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static Path roundRectRing(float w, float h, float r, float inset) {
         Path outer = new Path(); outer.addRoundRect(new RectF(0, 0, w, h), r, r, Path.Direction.CW);
-        Path inner = new Path();
-        float ir = Math.max(0, r - inset);
+        Path inner = new Path(); float ir = Math.max(0, r - inset);
         inner.addRoundRect(new RectF(inset, inset, w - inset, h - inset), ir, ir, Path.Direction.CW);
         outer.op(inner, Path.Op.DIFFERENCE);
         return outer;
@@ -782,14 +1061,12 @@ public class MainHook implements IXposedHookLoadPackage {
     private static void drawRoundShadow(Canvas c, float w, float h, float r, int radius, int alpha) {
         int steps = Math.max(1, Math.min(radius, 40));
         for (int i = steps; i >= 1; i--) {
-            float outerInset = i - 1f, innerInset = i;
+            float oi = i - 1f, ii = i;
             Path band = new Path();
-            float outerR = Math.max(0, r - outerInset), innerR = Math.max(0, r - innerInset);
-            band.addRoundRect(new RectF(outerInset, outerInset, w - outerInset, h - outerInset),
-                outerR, outerR, Path.Direction.CW);
+            float or = Math.max(0, r - oi), ir = Math.max(0, r - ii);
+            band.addRoundRect(new RectF(oi, oi, w - oi, h - oi), or, or, Path.Direction.CW);
             Path inner = new Path();
-            inner.addRoundRect(new RectF(innerInset, innerInset, w - innerInset, h - innerInset),
-                innerR, innerR, Path.Direction.CW);
+            inner.addRoundRect(new RectF(ii, ii, w - ii, h - ii), ir, ir, Path.Direction.CW);
             band.op(inner, Path.Op.DIFFERENCE);
             float strength = 1f - (i - 1f) / steps;
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -830,200 +1107,29 @@ public class MainHook implements IXposedHookLoadPackage {
             Math.max(0, Math.min(255, strokeBaseG)), Math.max(0, Math.min(255, strokeBaseB))));
         return p;
     }
-    private static void clear(Paint p) { p.setColor(0); p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)); }
+
     private static void syncShadowGeometry() {
-        View shadow = shadowView, stroke = overlay, dockBg = oldBg;
-        if (shadow == null || stroke == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
+        View shadow = shadowView, dockBg = oldBg;
+        if (shadow == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
         ViewGroup.LayoutParams lp = shadow.getLayoutParams();
         if (lp != null) {
-            lp.width = bgW + shadowPad * 2;
-            lp.height = bgH + shadowPad * 2;
+            lp.width = bgW + shadowPad * 2; lp.height = bgH + shadowPad * 2;
             shadow.setLayoutParams(lp);
         }
-        // Anchor to the dock background's actual position.  The stroke overlay is
-        // match_parent (its getX/getY are meaningless), so using it here put the
-        // shadow at the wrong spot.
         shadow.setX(dockBg.getX() - shadowPad);
         shadow.setY(dockBg.getY() - shadowPad);
         shadow.invalidate();
     }
 
-    /** Bind the launcher's recents view to the glass so its motion (multitasking cards)
-     *  keeps captures alive even when the Dock is static. */
-    private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
-        try {
-            // getRecentsView() pulls in a phone-only class (NewHomeView) on HyperOS Pad and
-            // throws NoClassDefFoundError; read the overview panel field directly instead.
-            Object panel = XposedHelpers.getObjectField(launcher, "mOverviewPanel");
-            if (panel instanceof View) glass.setRecentsView((View) panel);
-        } catch (Throwable e) {
-            log("[DC] recents bind failed: " + e);
-        }
-    }
-
-    /** Watch touches on the DOCK window root: any touch on the Dock area triggers a glass
-     *  refresh (tap, hover before an up-swipe, drag).  Listener never consumes events. */
-    private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
-        try {
-            if (dockRoot == null || dockRoot.getWidth() <= 0 || dockRoot.getHeight() <= 0) return;
-            dockRoot.setOnTouchListener((View v, android.view.MotionEvent ev) -> {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        glass.onDockTouchEvent();
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                    default:
-                        break;
-                }
-                return false; // never consume; the Dock's own handlers stay untouched
-            });
-        } catch (Throwable e) {
-            log("[DC] dock touch listener failed: " + e);
-        }
-    }
-
-    /** Coordinate-based detector on the LAUNCHER window root: any touch point that lands
-     *  inside (or near) the Dock area counts as Dock interaction and triggers a glass
-     *  refresh.  Unlike the Dock-window listener, this also catches touches the system
-     *  dispatches elsewhere during an icon drag (drag surface), as long as the finger
-     *  stays near the Dock.  Never consumes events. */
-    private static void installDockAreaTouchDetector(DockLiquidGlassView glass, View launcherRoot) {
-        try {
-            if (launcherRoot == null || launcherRoot.getWidth() <= 0
-                    || launcherRoot.getHeight() <= 0) return;
-            launcherRoot.setOnTouchListener((View v, android.view.MotionEvent ev) -> {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
-                            glass.onDockTouchEvent();
-                            glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        }
-                        break;
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                    default:
-                        break;
-                }
-                return false; // never consume
-            });
-        } catch (Throwable e) {
-            log("[DC] dock area touch detector failed: " + e);
-        }
-    }
-
-    /** Hook the launcher's drag controller: while a Dock icon drag is in flight the glass
-     *  keeps capturing (so the background follows the rearrangement) and the drag surface
-     *  layer name is resolved and excluded from captures (so the floating icon never
-     *  freezes into the glass background). */
-    private static void bindDockDragController(DockLiquidGlassView glass, ClassLoader cl) {
-        try {
-            Class<?> dc = XposedHelpers.findClass("com.miui.home.launcher.DragController", cl);
-            XposedHelpers.findAndHookMethod(dc, "startDrag",
-                android.graphics.drawable.Drawable.class, boolean.class,
-                XposedHelpers.findClass("com.miui.home.launcher.ItemInfo", cl),
-                int.class, int.class, float.class,
-                XposedHelpers.findClass("com.miui.home.launcher.DragSource", cl),
-                int.class,
-                new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam p) {
-                        String dragName = resolveDragSurfaceLayerName(p.thisObject);
-                        glass.setDockDragging(true, dragName);
-                    }
-                });
-            XposedHelpers.findAndHookMethod(dc, "endDrag", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam p) {
-                    glass.setDockDragging(false, null);
-                }
-            });
-            log("[DC] dock drag controller hooked");
-        } catch (Throwable e) {
-            log("[DC] drag controller hook failed: " + e);
-        }
-    }
-
-    /** Extract the SF layer name of the drag surface ("drag surface#NNNN") from the
-     *  DragController's DragObject.mDragViews[0] view's SurfaceControl. */
-    private static String resolveDragSurfaceLayerName(Object dragController) {
-        try {
-            Object dragObject = XposedHelpers.getObjectField(dragController, "mDragObject");
-            if (dragObject == null) return null;
-            Object views = XposedHelpers.getObjectField(dragObject, "mDragViews");
-            if (!(views instanceof java.util.List) || ((java.util.List<?>) views).isEmpty()) {
-                return null;
-            }
-            Object dragView = ((java.util.List<?>) views).get(0);
-            if (dragView instanceof View) {
-                java.lang.reflect.Method getSc = View.class.getDeclaredMethod("getSurfaceControl");
-                getSc.setAccessible(true);
-                Object sc = getSc.invoke(dragView);
-                if (sc != null) {
-                    String s = sc.toString(); // Surface(name=drag surface#16904)/@0x...
-                    int i = s.indexOf("name=");
-                    int j = s.indexOf(')', i);
-                    if (i >= 0 && j > i) {
-                        String name = s.substring(i + 5, j);
-                        log("[DC] drag surface layer: " + name);
-                        return name;
-                    }
-                }
-            }
-        } catch (Throwable e) {
-            log("[DC] drag surface resolve failed: " + e);
-        }
-        return null;
-    }
-
-    /** Master debug-log switch (about page → liquiddock_debug_log).  All [DC] logs
-     *  are gated behind it; kept off in normal use. */
-    static boolean debugLogging;
-
-    static void log(String s) { if (!debugLogging) return; XposedBridge.log(s); fileLog(s); }
-
-    /** Append a diagnostic line to /sdcard/Download/liquiddock.log (fallback:
-     *  /data/local/tmp/liquiddock.log) so the user can pull logs without root. */
-    private static void fileLog(String s) {
-        try {
-            String line = new java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.ROOT)
-                .format(new java.util.Date()) + " " + s + "\n";
-            java.io.File dir = new java.io.File("/sdcard/Download");
-            if (!dir.canWrite()) dir = new java.io.File("/data/local/tmp");
-            java.io.FileOutputStream out = new java.io.FileOutputStream(
-                new java.io.File(dir, "liquiddock.log"), true);
-            out.write(line.getBytes("UTF-8"));
-            out.close();
-        } catch (Throwable ignored) { }
-    }
-
-    /** True while the view has an active animation (ViewPropertyAnimator/Animation).
-     *  View.isAnimating() is not resolvable against the compile SDK stub, so call it
-     *  reflectively. */
-    private static boolean animating(View v) {
-        try { return Boolean.TRUE.equals(XposedHelpers.callMethod(v, "isAnimating")); }
-        catch (Throwable e) { return false; }
-    }
-
-    private static void syncAll(View bg) { if (bg == null) return;
+    private static void syncAll(View bg) {
+        if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
         if (overlay == null && liquidGlassView == null && shadowView == null) return;
-        // Icon-drop relayouts animate the dock background: forcing our overlay/glass
-        // LayoutParams every animation frame competes with the launcher's own layout
-        // pass and makes the stroke flash.  Skip mid-animation; the final frame lands
-        // with the last setBackground* call after the animation ends.
         boolean anim = animating(bg);
-        if (anim) {
-            log("[DC] syncAll skip (animating)");
-            return;
-        }
-        try { bgW = XposedHelpers.getIntField(bg, "mWidth"); bgH = XposedHelpers.getIntField(bg, "mHeight");
-            Object r = XposedHelpers.getObjectField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
+        if (anim) { log("[DC] syncAll skip (animating)"); return; }
+        try {
+            bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
+            Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
             if (overlay != null) {
                 if (workstationMode) overlay.setVisibility(View.GONE);
@@ -1031,9 +1137,6 @@ public class MainHook implements IXposedHookLoadPackage {
                 if (lp != null) {
                     boolean sizeChanged = lp.width != bgW || lp.height != bgH;
                     if (sizeChanged) {
-                        // Interrupted dock animations leave the overlay at the old size
-                        // while the background snaps to the final one; animating the
-                        // overlay size removes the one-frame jump (the flash).
                         final int fromW = lp.width, fromH = lp.height;
                         overlay.animate().cancel();
                         overlay.animate().setDuration(160)
@@ -1045,323 +1148,79 @@ public class MainHook implements IXposedHookLoadPackage {
                                 overlay.setLayoutParams(l);
                                 overlay.invalidate();
                             }).start();
-                        log("[DC] syncAll overlay animate " + fromW + "x" + fromH
-                            + " -> " + bgW + "x" + bgH);
+                        log("[DC] syncAll overlay animate " + fromW + "x" + fromH + " -> " + bgW + "x" + bgH);
                     }
                 }
                 overlay.invalidate();
             }
             if (liquidGlassView != null) {
-                ViewGroup.LayoutParams glassLp = liquidGlassView.getLayoutParams();
-                if (glassLp != null) {
-                    // Match the stroke overlay exactly (bgW/bgH already include the
-                    // updateBackgroundView spacing/offset adjustments).
-                    glassLp.width = bgW; glassLp.height = bgH;
-                    liquidGlassView.setLayoutParams(glassLp);
-                }
+                ViewGroup.LayoutParams glp = liquidGlassView.getLayoutParams();
+                if (glp != null) { glp.width = bgW; glp.height = bgH; liquidGlassView.setLayoutParams(glp); }
                 liquidGlassView.setGlassRadius(bgR);
                 liquidGlassView.invalidate();
             }
             if (shadowView != null) {
-                if (workstationMode) {
-                    shadowView.setVisibility(View.GONE);
-                    return;
-                }
-                // The shadow follows the dock *length*: only re-sync when the dock
-                // width actually changed (icon add/remove), not on every height/radius
-                // callback.  The posted pass re-aligns it after the stroke settles.
+                if (workstationMode) { shadowView.setVisibility(View.GONE); return; }
                 if (bgW != lastShadowW) {
                     lastShadowW = bgW;
                     syncShadowGeometry();
                     overlay.post(MainHook::syncShadowGeometry);
                 }
             }
-        } catch (Throwable ignored) {} }
+        } catch (Throwable ignored) {}
+    }
 
     static boolean isWorkstationMode() { return workstationMode; }
 
-    private static void installDockResizeAnimationBypass(ClassLoader classLoader,
-                                                          boolean smoothAnimation) {
+    // ── logging ──────────────────────────────────────────────────────
+
+    static boolean debugLogging;
+
+    static void log(String s) { if (!debugLogging) return; Api101Bridge.log(s); fileLog(s); }
+
+    private static void fileLog(String s) {
         try {
-            XposedHelpers.findAndHookMethod(
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    classLoader, "updateBackgroundSize", int.class, int.class, float.class,
-                    new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) {
-                            try {
-                                param.setObjectExtra("bd_old_w", XposedHelpers.getIntField(param.thisObject, "mWidth"));
-                                param.setObjectExtra("bd_old_h", XposedHelpers.getIntField(param.thisObject, "mHeight"));
-                                param.setObjectExtra("bd_old_r", XposedHelpers.getObjectField(param.thisObject, "mCornerRadius"));
-                            } catch (Throwable ignored) {}
-                        }
-                        @Override protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                Object set = XposedHelpers.getObjectField(
-                                        param.thisObject, "animatorSet");
-                                if (set instanceof android.animation.Animator)
-                                    ((android.animation.Animator) set).end();
-                                Object radius = XposedHelpers.getObjectField(
-                                        param.thisObject, "mViewRadiusAnimator");
-                                if (radius instanceof android.animation.Animator)
-                                    ((android.animation.Animator) radius).end();
-                            } catch (Throwable ignored) {}
-                            View view = (View) param.thisObject;
-                            if (smoothAnimation) animateDockGeometryFromPrevious(view,
-                                    param.getObjectExtra("bd_old_w"),
-                                    param.getObjectExtra("bd_old_h"),
-                                    param.getObjectExtra("bd_old_r"));
-                            else syncAll(view);
-                        }
-                    });
-            log("[DC] Dock resize animation disabled");
-        } catch (Throwable e) {
-            log("[DC] Dock resize animation bypass unavailable: " + e);
-        }
-    }
-
-    private static void animateDockGeometryFromPrevious(View view, Object oldWObject,
-                                                         Object oldHObject, Object oldRObject) {
-        try {
-            int targetW = XposedHelpers.getIntField(view, "mWidth");
-            int targetH = XposedHelpers.getIntField(view, "mHeight");
-            float targetR = ((Number) XposedHelpers.getObjectField(view, "mCornerRadius")).floatValue();
-            int startW = oldWObject instanceof Number ? ((Number) oldWObject).intValue() : targetW;
-            int startH = oldHObject instanceof Number ? ((Number) oldHObject).intValue() : targetH;
-            float startR = oldRObject instanceof Number ? ((Number) oldRObject).floatValue() : targetR;
-            synchronized (dockResizeAnimators) {
-                android.animation.ValueAnimator previous = dockResizeAnimators.remove(view);
-                if (previous != null) {
-                    startW = XposedHelpers.getIntField(view, "mWidth");
-                    startH = XposedHelpers.getIntField(view, "mHeight");
-                    startR = ((Number) XposedHelpers.getObjectField(view, "mCornerRadius")).floatValue();
-                    previous.cancel();
-                }
-                if (startW == targetW && startH == targetH && Math.abs(startR - targetR) < .01f) {
-                    syncAll(view);
-                    return;
-                }
-                final int fromW = startW, fromH = startH;
-                final float fromR = startR;
-                XposedHelpers.setIntField(view, "mWidth", fromW);
-                XposedHelpers.setIntField(view, "mHeight", fromH);
-                XposedHelpers.setObjectField(view, "mCornerRadius", fromR);
-                android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
-                animator.setDuration(180L);
-                animator.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0f, 0f, 1f));
-                animator.addUpdateListener(a -> {
-                    float t = (Float) a.getAnimatedValue();
-                    XposedHelpers.setIntField(view, "mWidth", Math.round(fromW + (targetW - fromW) * t));
-                    XposedHelpers.setIntField(view, "mHeight", Math.round(fromH + (targetH - fromH) * t));
-                    XposedHelpers.setObjectField(view, "mCornerRadius", fromR + (targetR - fromR) * t);
-                    try { XposedHelpers.callMethod(view, "triggerMeasure"); } catch (Throwable ignored) {}
-                    view.requestLayout();
-                    syncAll(view);
-                });
-                animator.addListener(new android.animation.AnimatorListenerAdapter() {
-                    @Override public void onAnimationEnd(android.animation.Animator animation) {
-                        synchronized (dockResizeAnimators) { dockResizeAnimators.remove(view); }
-                    }
-                });
-                dockResizeAnimators.put(view, animator);
-                animator.start();
-            }
-        } catch (Throwable e) {
-            syncAll(view);
-            log("[DC] smooth Dock resize failed: " + e);
-        }
-    }
-
-    private static void installWorkstationDockHooks(ClassLoader classLoader,
-                                                    LiquidDockConfig.Workstation config) {
-        if (!config.dockEnabled) return;
-        float scale = config.dimensionsDp
-                ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int widthOffset = Math.round(config.dockWidthOffset * scale);
-        int iconTopOffset = Math.round(config.iconTopOffset * scale);
-        int iconBottomOffset = Math.round(config.iconBottomOffset * scale);
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    classLoader, "setBackgroundWidth", int.class, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) {
-                            if (workstationMode && widthOffset != 0)
-                                param.args[0] = (Integer) param.args[0] + widthOffset;
-                        }
-                    });
-            log("[DC] workstation Dock width hook offset=" + widthOffset);
-        } catch (Throwable e) {
-            log("[DC] workstation Dock hook unavailable: " + e);
-        }
-        try {
-            Class<?> recyclerView = XposedHelpers.findClass(
-                    "androidx.recyclerview.widget.RecyclerView", classLoader);
-            Class<?> recyclerState = XposedHelpers.findClass(
-                    "androidx.recyclerview.widget.RecyclerView$State", classLoader);
-            XposedHelpers.findAndHookMethod(
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
-                    classLoader, "getItemOffsets", Rect.class, View.class,
-                    recyclerView, recyclerState, new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam param) {
-                            if (!workstationMode) return;
-                            Rect out = (Rect) param.args[0];
-                            out.top += iconTopOffset;
-                            out.bottom += iconBottomOffset;
-                        }
-                    });
-            log("[DC] workstation Dock icon vertical offsets top="
-                    + iconTopOffset + " bottom=" + iconBottomOffset);
-        } catch (Throwable e) {
-            log("[DC] workstation Dock icon offset hook unavailable: " + e);
-        }
-    }
-
-    private static void installWorkstationModeGuard(ClassLoader classLoader) {
-        boolean detected = false;
-        // Current HyperOS build: this is the actual active LauncherMode, not merely a
-        // preference. LaptopStateManager receives the transition before the hierarchy is
-        // rebuilt, which lets every LiquidDock hook stand down during that rebuild.
-        try {
-            Class<?> modeController = XposedHelpers.findClass(
-                    "com.miui.home.launcher.allapps.LauncherModeController", classLoader);
-            workstationMode = (Boolean) XposedHelpers.callStaticMethod(
-                    modeController, "isLaptopMode");
-            Class<?> stateManager = XposedHelpers.findClass(
-                    "com.miui.home.launcher.laptop.LaptopStateManager", classLoader);
-            XposedHelpers.findAndHookMethod(stateManager, "onLaptopModeChanged",
-                    boolean.class, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) {
-                            boolean entering = (Boolean) param.args[0];
-                            if (entering) backupNormalHomeLayout();
-                            // On exit, re-enable 8x4 before Launcher reloads the normal DB.
-                            setWorkstationMode(entering);
-                        }
-                        @Override protected void afterHookedMethod(MethodHookParam param) {
-                            if (!((Boolean) param.args[0])) scheduleNormalLayoutRestore();
-                            HomeGridHook.scheduleAllPageRefresh();
-                        }
-                    });
-            detected = true;
-            log("[DC] workstation guard uses LauncherModeController; active="
-                    + workstationMode);
-        } catch (Throwable currentApiError) {
-            log("[DC] current workstation API unavailable: " + currentApiError);
-        }
-        // Older Mingou builds used a DeviceConfig preference directly.
-        if (!detected) try {
-            Class<?> deviceConfig = XposedHelpers.findClass(
-                    "com.miui.home.launcher.DeviceConfig", classLoader);
-            workstationMode = (Boolean) XposedHelpers.callStaticMethod(
-                    deviceConfig, "isMingouLaptopPcModeEnabled");
-            XposedHelpers.findAndHookMethod(deviceConfig,
-                    "setMingouLaptopPcModeEnabled", boolean.class, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) {
-                            setWorkstationMode((Boolean) param.args[0]);
-                        }
-                    });
-            detected = true;
-            log("[DC] workstation guard uses legacy DeviceConfig; active="
-                    + workstationMode);
-        } catch (Throwable legacyApiError) {
-            log("[DC] legacy workstation API unavailable: " + legacyApiError);
-        }
-        if (!detected) {
-            // Keep normal mode usable, but report loudly instead of the old silent fallback.
-            workstationMode = false;
-            log("[DC] ERROR: no supported workstation state API found");
-        }
-    }
-
-    private static void setWorkstationMode(boolean enabled) {
-        workstationMode = enabled;
-        HomeGridHook.setWorkstationMode(enabled);
-        log("[DC] Mingou workstation mode changed=" + enabled);
-        if (!enabled) {
-            if (oldBg != null) oldBg.post(() -> {
-                if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
-                if (overlay != null) overlay.setVisibility(View.VISIBLE);
-                if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
-                syncAll(oldBg);
-            });
-            return;
-        }
-        // Restore the native Dock immediately. Modified views remain hidden until the
-        // launcher rebuilds its normal-mode hierarchy, avoiding workstation rendering bugs.
-        if (oldBg != null) oldBg.post(() -> {
-            if (oldBg != null) oldBg.setAlpha(1f);
-            if (overlay != null) overlay.setVisibility(View.GONE);
-            if (shadowView != null) shadowView.setVisibility(View.GONE);
-            if (liquidGlassView != null) {
-                liquidGlassView.setVisibility(View.VISIBLE);
-                liquidGlassView.setWorkstationMode(true);
-            }
-        });
-    }
-
-    private static void backupNormalHomeLayout() {
-        normalLayoutBackup.clear();
-        View root = oldBg == null ? null : oldBg.getRootView();
-        if (root != null) collectHomeItemPositions(root, false);
-        log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
-    }
-
-    private static void scheduleNormalLayoutRestore() {
-        View root = oldBg == null ? null : oldBg.getRootView();
-        if (root == null || normalLayoutBackup.isEmpty()) return;
-        root.post(() -> restoreNormalHomeLayout(root));
-        root.postDelayed(() -> restoreNormalHomeLayout(root), 250L);
-        root.postDelayed(() -> restoreNormalHomeLayout(root), 700L);
-    }
-
-    private static void collectHomeItemPositions(View view, boolean restore) {
-        Object tag = view.getTag();
-        if (tag != null) try {
-            long id = XposedHelpers.getLongField(tag, "id");
-            if (id >= 0) {
-                if (!restore) {
-                    normalLayoutBackup.put(id, new HomeItemPosition(
-                            XposedHelpers.getLongField(tag, "screenId"),
-                            XposedHelpers.getIntField(tag, "cellX"),
-                            XposedHelpers.getIntField(tag, "cellY"),
-                            XposedHelpers.getIntField(tag, "spanX"),
-                            XposedHelpers.getIntField(tag, "spanY")));
-                } else {
-                    HomeItemPosition saved = normalLayoutBackup.get(id);
-                    if (saved != null) {
-                        XposedHelpers.setLongField(tag, "screenId", saved.screenId);
-                        XposedHelpers.setIntField(tag, "cellX", saved.cellX);
-                        XposedHelpers.setIntField(tag, "cellY", saved.cellY);
-                        XposedHelpers.setIntField(tag, "spanX", saved.spanX);
-                        XposedHelpers.setIntField(tag, "spanY", saved.spanY);
-                    }
-                }
-            }
+            String line = new java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.ROOT)
+                .format(new java.util.Date()) + " " + s + "\n";
+            java.io.File dir = new java.io.File("/sdcard/Download");
+            if (!dir.canWrite()) dir = new java.io.File("/data/local/tmp");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(
+                new java.io.File(dir, "liquiddock.log"), true);
+            out.write(line.getBytes("UTF-8"));
+            out.close();
         } catch (Throwable ignored) {}
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++)
-                collectHomeItemPositions(group.getChildAt(i), restore);
-        }
     }
 
-    private static void restoreNormalHomeLayout(View root) {
-        if (workstationMode) return;
-        collectHomeItemPositions(root, true);
-        root.requestLayout();
-        root.invalidate();
-        log("[DC] normal 8x4 layout restored from backup items="
-                + normalLayoutBackup.size());
+    private static boolean animating(View v) {
+        try { return Boolean.TRUE.equals(callThrough(v, "isAnimating")); }
+        catch (Throwable e) { return false; }
     }
+
+    // ── reflection helpers ───────────────────────────────────────────
+
+    private static Object callThrough(Object target, String methodName, Object... args) {
+        try {
+            for (Method m : target.getClass().getMethods()) {
+                if (!m.getName().equals(methodName) || m.getParameterCount() != args.length) continue;
+                try { return m.invoke(target, args); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable e) { /* best-effort */ }
+        return null;
+    }
+
+    private static Object callStatic(String className, String methodName, Object... args) {
+        try { return callThrough(Class.forName(className), methodName, args); }
+        catch (Throwable e) { return null; }
+    }
+
+    // ── data ─────────────────────────────────────────────────────────
 
     private static final class HomeItemPosition {
         final long screenId;
         final int cellX, cellY, spanX, spanY;
         HomeItemPosition(long screenId, int cellX, int cellY, int spanX, int spanY) {
-            this.screenId = screenId;
-            this.cellX = cellX;
-            this.cellY = cellY;
-            this.spanX = spanX;
-            this.spanY = spanY;
+            this.screenId = screenId; this.cellX = cellX; this.cellY = cellY;
+            this.spanX = spanX; this.spanY = spanY;
         }
     }
-
 }

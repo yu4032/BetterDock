@@ -2,9 +2,10 @@ package com.hellovoid.liquiddock;
 
 import android.content.Context;
 import android.content.res.Configuration;
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
+import io.github.libxposed.api.XposedInterface;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 
 final class HomeGridHook {
     private static final String PAD_CELL_COUNT =
@@ -65,13 +66,13 @@ final class HomeGridHook {
             return;
         }
         try {
-            Class<?> compat = XposedHelpers.findClass(PAD_CELL_COUNT, classLoader);
+            Class<?> compat = Class.forName(PAD_CELL_COUNT, false, classLoader);
             hookAxis(compat, "getCellCountXMin", true);
             hookAxis(compat, "getCellCountXDef", true);
             hookAxis(compat, "getCellCountYMin", false);
             hookAxis(compat, "getCellCountYDef", false);
-            Class<?> gridConfig = XposedHelpers.findClass(
-                "com.miui.home.launcher.grid.GridConfig", classLoader);
+            Class<?> gridConfig = Class.forName(
+                "com.miui.home.launcher.grid.GridConfig", false, classLoader);
             hookGridCountSetter(gridConfig, "setCountX");
             hookGridCountSetter(gridConfig, "setCountY");
             hookGridCountGetter(gridConfig, "getCountX");
@@ -98,83 +99,103 @@ final class HomeGridHook {
      * so folders are pushed lower than normal ItemIcons. Rebase only its vertical padding
      * on the parent CellLayout's real cell width; large folders/widgets are untouched. */
     private static void installSmallFolderAlignment(ClassLoader classLoader) {
-        Class<?> folder = XposedHelpers.findClass(
-                "com.miui.home.launcher.folder.FolderIcon1x1", classLoader);
-        XposedHelpers.findAndHookMethod(folder, "onMeasure", int.class, int.class,
-                new XC_MethodHook() {
-                    @Override protected void beforeHookedMethod(MethodHookParam param) {
-                        android.view.View view = (android.view.View) param.thisObject;
-                        Object parent = view.getParent();
-                        if (parent == null || !parent.getClass().getName().endsWith("CellLayout")) return;
+        Class<?> folder;
+        try {
+            folder = Class.forName(
+                    "com.miui.home.launcher.folder.FolderIcon1x1", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        HookUtil.hookMethod(folder, "onMeasure", new Class[]{int.class, int.class},
+                chain -> {
+                    android.view.View view = (android.view.View) chain.getThisObject();
+                    Object parent = view.getParent();
+                    Object config = null;
+                    Integer original = null;
+                    if (parent != null && parent.getClass().getName().endsWith("CellLayout")) {
                         try {
-                            int cell = XposedHelpers.getIntField(parent, "mCellHeight");
-                            Object config = XposedHelpers.getObjectField(parent, "mGridConfig");
-                            if (cell <= 0 || config == null) return;
-                            int original = XposedHelpers.getIntField(config, "cellSize");
-                            param.setObjectExtra("bd_grid_config", config);
-                            param.setObjectExtra("bd_cell_size", original);
-                            XposedHelpers.setIntField(config, "cellSize", cell);
+                            int cell = HookUtil.getIntField(parent, "mCellHeight");
+                            config = HookUtil.getField(parent, "mGridConfig");
+                            if (cell > 0 && config != null) {
+                                original = HookUtil.getIntField(config, "cellSize");
+                                HookUtil.setIntField(config, "cellSize", cell);
+                            }
                         } catch (Throwable e) {
                             MainHook.log("[DC] small folder alignment failed: " + e);
                         }
                     }
-                    @Override protected void afterHookedMethod(MethodHookParam param) {
-                        Object config = param.getObjectExtra("bd_grid_config");
-                        Object original = param.getObjectExtra("bd_cell_size");
-                        if (config == null || !(original instanceof Integer)) return;
-                        try { XposedHelpers.setIntField(config, "cellSize", (Integer) original); }
+                    Object result;
+                    try {
+                        result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    } catch (Throwable e) {
+                        // Restore before rethrow
+                        if (config != null && original != null) {
+                            try { HookUtil.setIntField(config, "cellSize", original); }
+                            catch (Throwable t) {
+                                MainHook.log("[DC] small folder grid restore failed: " + t);
+                            }
+                        }
+                        throw e;
+                    }
+                    if (config != null && original != null) {
+                        try { HookUtil.setIntField(config, "cellSize", original); }
                         catch (Throwable e) {
                             MainHook.log("[DC] small folder grid restore failed: " + e);
                         }
                     }
+                    return result;
                 });
     }
 
     private static void installCellLayoutMargins(ClassLoader classLoader) {
-        Class<?> cellLayout = XposedHelpers.findClass(
-            "com.miui.home.launcher.CellLayout", classLoader);
-        XposedHelpers.findAndHookMethod(cellLayout, "calculateXsAndYs",
-            new XC_MethodHook() {
-                @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    applyCellLayoutOffsets(param.thisObject);
-                }
-
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    // Portrait GridConfig recalculates mHeightGap/mYs inside the original
-                    // method, undoing our pre-hook values. Re-apply the geometry and build
-                    // the final coordinate arrays after MIUI has finished.
-                    applyCellLayoutOffsets(param.thisObject);
-                    rebuildCellCoordinates(param.thisObject);
-                }
+        Class<?> cellLayout;
+        try {
+            cellLayout = Class.forName(
+                "com.miui.home.launcher.CellLayout", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        HookUtil.hookMethod(cellLayout, "calculateXsAndYs", new Class[]{},
+            chain -> {
+                Object thisObj = chain.getThisObject();
+                applyCellLayoutOffsets(thisObj);
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                // Portrait GridConfig recalculates mHeightGap/mYs inside the original
+                // method, undoing our pre-hook values. Re-apply the geometry and build
+                // the final coordinate arrays after MIUI has finished.
+                applyCellLayoutOffsets(thisObj);
+                rebuildCellCoordinates(thisObj);
+                return result;
             });
-        XposedHelpers.findAndHookMethod(cellLayout, "onLayout",
-            boolean.class, int.class, int.class, int.class, int.class,
-            new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    android.view.ViewGroup layout = (android.view.ViewGroup) param.thisObject;
-                    for (int i = 0; i < layout.getChildCount(); i++)
-                        adaptTwoByOneWidget(layout, layout.getChildAt(i));
-                }
+        HookUtil.hookMethod(cellLayout, "onLayout",
+            new Class[]{boolean.class, int.class, int.class, int.class, int.class},
+            chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Object result = chain.proceed(args);
+                android.view.ViewGroup layout = (android.view.ViewGroup) chain.getThisObject();
+                for (int i = 0; i < layout.getChildCount(); i++)
+                    adaptTwoByOneWidget(layout, layout.getChildAt(i));
+                return result;
             });
     }
 
     private static void rebuildCellCoordinates(Object cellLayout) {
         try {
-            int countX = XposedHelpers.getIntField(cellLayout, "mHCells");
-            int countY = XposedHelpers.getIntField(cellLayout, "mVCells");
-            int cellWidth = XposedHelpers.getIntField(cellLayout, "mCellWidth");
-            int cellHeight = XposedHelpers.getIntField(cellLayout, "mCellHeight");
-            int widthGap = XposedHelpers.getIntField(cellLayout, "mWidthGap");
-            int heightGap = XposedHelpers.getIntField(cellLayout, "mHeightGap");
-            int left = XposedHelpers.getIntField(cellLayout, "mCellPaddingLeft");
-            int top = XposedHelpers.getIntField(cellLayout, "mCellPaddingTop");
+            int countX = HookUtil.getIntField(cellLayout, "mHCells");
+            int countY = HookUtil.getIntField(cellLayout, "mVCells");
+            int cellWidth = HookUtil.getIntField(cellLayout, "mCellWidth");
+            int cellHeight = HookUtil.getIntField(cellLayout, "mCellHeight");
+            int widthGap = HookUtil.getIntField(cellLayout, "mWidthGap");
+            int heightGap = HookUtil.getIntField(cellLayout, "mHeightGap");
+            int left = HookUtil.getIntField(cellLayout, "mCellPaddingLeft");
+            int top = HookUtil.getIntField(cellLayout, "mCellPaddingTop");
             if (countX <= 0 || countY <= 0 || cellWidth <= 0 || cellHeight <= 0) return;
             int[] xs = new int[countX];
             int[] ys = new int[countY];
             for (int x = 0; x < countX; x++) xs[x] = left + x * (cellWidth + widthGap);
             for (int y = 0; y < countY; y++) ys[y] = top + y * (cellHeight + heightGap);
-            XposedHelpers.setObjectField(cellLayout, "mXs", xs);
-            XposedHelpers.setObjectField(cellLayout, "mYs", ys);
+            HookUtil.setField(cellLayout, "mXs", xs);
+            HookUtil.setField(cellLayout, "mYs", ys);
         } catch (Throwable e) {
             MainHook.log("[DC] final cell coordinate rebuild failed: " + e);
         }
@@ -185,9 +206,9 @@ final class HomeGridHook {
         try {
             Object info = child.getTag();
             if (info == null) return;
-            int itemType = XposedHelpers.getIntField(info, "itemType");
-            int spanX = XposedHelpers.getIntField(info, "spanX");
-            int spanY = XposedHelpers.getIntField(info, "spanY");
+            int itemType = HookUtil.getIntField(info, "itemType");
+            int spanX = HookUtil.getIntField(info, "spanX");
+            int spanY = HookUtil.getIntField(info, "spanY");
             if (spanX != 2 || spanY != 1) return;
             synchronized (loggedWidgetViews) {
                 if (!loggedWidgetViews.containsKey(child)) {
@@ -200,7 +221,7 @@ final class HomeGridHook {
                 }
             }
             if (itemType != 19) return;
-            int widthGap = Math.max(0, XposedHelpers.getIntField(parent, "mWidthGap"));
+            int widthGap = Math.max(0, HookUtil.getIntField(parent, "mWidthGap"));
             int visualCompensation = Math.round(
                 child.getResources().getDisplayMetrics().density * 16f);
             int shrink = Math.max(widthGap, visualCompensation);
@@ -222,15 +243,15 @@ final class HomeGridHook {
 
     private static void applyCellLayoutOffsets(Object cellLayout) {
         try {
-            Object config = XposedHelpers.getObjectField(cellLayout, "mGridConfig");
+            Object config = HookUtil.getField(cellLayout, "mGridConfig");
             if (config == null) return;
             android.view.View layout = (android.view.View) cellLayout;
             boolean portrait = layout.getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_PORTRAIT;
-            int countX = (Integer) XposedHelpers.callMethod(config, "getCountX");
-            int countY = (Integer) XposedHelpers.callMethod(config, "getCountY");
+            int countX = (Integer) callMethod(config, "getCountX");
+            int countY = (Integer) callMethod(config, "getCountY");
             if (countX <= 0 || countY <= 0) return;
-            Object gridCells = XposedHelpers.getObjectField(cellLayout, "mGridCell");
+            Object gridCells = HookUtil.getField(cellLayout, "mGridCell");
             if (gridCells != null) {
                 int matrixX = java.lang.reflect.Array.getLength(gridCells);
                 int matrixY = matrixX == 0 ? 0
@@ -243,18 +264,18 @@ final class HomeGridHook {
                 }
             }
             if (countX <= 0 || countY <= 0) return;
-            int[] xs = (int[]) XposedHelpers.getObjectField(cellLayout, "mXs");
-            int[] ys = (int[]) XposedHelpers.getObjectField(cellLayout, "mYs");
+            int[] xs = (int[]) HookUtil.getField(cellLayout, "mXs");
+            int[] ys = (int[]) HookUtil.getField(cellLayout, "mYs");
             if (xs == null || xs.length != countX)
-                XposedHelpers.setObjectField(cellLayout, "mXs", new int[countX]);
+                HookUtil.setField(cellLayout, "mXs", new int[countX]);
             if (ys == null || ys.length != countY)
-                XposedHelpers.setObjectField(cellLayout, "mYs", new int[countY]);
-            XposedHelpers.setIntField(cellLayout, "mHCells", countX);
-            XposedHelpers.setIntField(cellLayout, "mVCells", countY);
-            int baseCell = (Integer) XposedHelpers.callMethod(config, "getCellSize");
-            int configLeft = (Integer) XposedHelpers.callMethod(config, "getLeft");
-            int baseTop = (Integer) XposedHelpers.callMethod(config, "getTop");
-            int baseWidthGap = XposedHelpers.getIntField(cellLayout, "mWidthGap");
+                HookUtil.setField(cellLayout, "mYs", new int[countY]);
+            HookUtil.setIntField(cellLayout, "mHCells", countX);
+            HookUtil.setIntField(cellLayout, "mVCells", countY);
+            int baseCell = (Integer) callMethod(config, "getCellSize");
+            int configLeft = (Integer) callMethod(config, "getLeft");
+            int baseTop = (Integer) callMethod(config, "getTop");
+            int baseWidthGap = HookUtil.getIntField(cellLayout, "mWidthGap");
             int baseLeft = configLeft
                 - Math.max(0, countX - 1) * (baseWidthGap / 2);
             int baseHeightGap = 1;
@@ -271,7 +292,7 @@ final class HomeGridHook {
             if (grid8x4Enabled) {
                 int dockBarHeight = 0;
                 try {
-                    dockBarHeight = Math.max(0, (Integer) XposedHelpers.callMethod(
+                    dockBarHeight = Math.max(0, (Integer) callMethod(
                             config, "getDockBarHeight"));
                 } catch (Throwable ignored) {}
                 int contentHeight = Math.max(baseCell * countY,
@@ -305,66 +326,72 @@ final class HomeGridHook {
                 Math.max(1, availableHeight / countY)));
             int widthGap = countX > 1
                 ? Math.max(0, availableWidth - cellSize * countX) / (countX - 1) : 0;
-            XposedHelpers.setIntField(cellLayout, "mCellPaddingLeft", left);
-            XposedHelpers.setIntField(cellLayout, "mCellPaddingTop", top);
-            XposedHelpers.setIntField(cellLayout, "mCellWidth", cellSize);
-            XposedHelpers.setIntField(cellLayout, "mCellHeight", cellSize);
-            XposedHelpers.setIntField(cellLayout, "mWidthGap", widthGap);
-            XposedHelpers.setIntField(cellLayout, "mHeightGap", rowGap);
+            HookUtil.setIntField(cellLayout, "mCellPaddingLeft", left);
+            HookUtil.setIntField(cellLayout, "mCellPaddingTop", top);
+            HookUtil.setIntField(cellLayout, "mCellWidth", cellSize);
+            HookUtil.setIntField(cellLayout, "mCellHeight", cellSize);
+            HookUtil.setIntField(cellLayout, "mWidthGap", widthGap);
+            HookUtil.setIntField(cellLayout, "mHeightGap", rowGap);
         } catch (Throwable e) {
             MainHook.log("[DC] CellLayout offset apply failed: " + e);
         }
     }
 
     private static void installRotationRefresh(ClassLoader classLoader) {
-        Class<?> launcher = XposedHelpers.findClass(
-            "com.miui.home.launcher.Launcher", classLoader);
-        XposedHelpers.findAndHookMethod(launcher, "onConfigurationChanged",
-            Configuration.class, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    try {
-                        final android.view.View workspace = (android.view.View)
-                            XposedHelpers.getObjectField(param.thisObject, "mWorkspace");
-                        if (workspace == null) return;
-                        workspaceRef = new java.lang.ref.WeakReference<>(workspace);
-                        android.view.View.OnLayoutChangeListener listener =
-                            new android.view.View.OnLayoutChangeListener() {
-                                @Override public void onLayoutChange(android.view.View v,
-                                        int left, int top, int right, int bottom,
-                                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                                    if (right <= left || bottom <= top) return;
-                                    v.removeOnLayoutChangeListener(this);
-                                    v.post(new Runnable() {
-                                        @Override public void run() {
-                                            refreshWorkspaceGrid(workspace);
-                                        }
-                                    });
-                                }
-                            };
-                        workspace.addOnLayoutChangeListener(listener);
-                        workspace.requestLayout();
-                    } catch (Throwable e) {
-                        MainHook.log("[DC] rotation refresh hook failed: " + e);
-                    }
+        Class<?> launcher;
+        try {
+            launcher = Class.forName(
+                "com.miui.home.launcher.Launcher", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        HookUtil.hookMethod(launcher, "onConfigurationChanged",
+            new Class[]{Configuration.class}, chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Object result = chain.proceed(args);
+                try {
+                    final android.view.View workspace = (android.view.View)
+                        HookUtil.getField(chain.getThisObject(), "mWorkspace");
+                    if (workspace == null) return result;
+                    workspaceRef = new java.lang.ref.WeakReference<>(workspace);
+                    android.view.View.OnLayoutChangeListener listener =
+                        new android.view.View.OnLayoutChangeListener() {
+                            @Override public void onLayoutChange(android.view.View v,
+                                    int left, int top, int right, int bottom,
+                                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                                if (right <= left || bottom <= top) return;
+                                v.removeOnLayoutChangeListener(this);
+                                v.post(new Runnable() {
+                                    @Override public void run() {
+                                        refreshWorkspaceGrid(workspace);
+                                    }
+                                });
+                            }
+                        };
+                    workspace.addOnLayoutChangeListener(listener);
+                    workspace.requestLayout();
+                } catch (Throwable e) {
+                    MainHook.log("[DC] rotation refresh hook failed: " + e);
                 }
+                return result;
             });
     }
 
     private static void installWorkspaceRefresh(ClassLoader classLoader) {
-        XposedHelpers.findAndHookMethod("com.miui.home.launcher.Launcher", classLoader,
-                "setupViews", new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam param) {
-                        try {
-                            Object candidate = XposedHelpers.getObjectField(
-                                    param.thisObject, "mWorkspace");
-                            if (!(candidate instanceof android.view.View)) return;
-                            android.view.View workspace = (android.view.View) candidate;
-                            workspaceRef = new java.lang.ref.WeakReference<>(workspace);
-                            scheduleAllPageRefresh();
-                        } catch (Throwable e) {
-                            MainHook.log("[DC] workspace refresh bind failed: " + e);
-                        }
+        HookUtil.hookMethod(classLoader, "com.miui.home.launcher.Launcher",
+                "setupViews", chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    try {
+                        Object candidate = HookUtil.getField(
+                                chain.getThisObject(), "mWorkspace");
+                        if (!(candidate instanceof android.view.View)) return result;
+                        android.view.View workspace = (android.view.View) candidate;
+                        workspaceRef = new java.lang.ref.WeakReference<>(workspace);
+                        scheduleAllPageRefresh();
+                    } catch (Throwable e) {
+                        MainHook.log("[DC] workspace refresh bind failed: " + e);
                     }
+                    return result;
                 });
     }
 
@@ -378,11 +405,12 @@ final class HomeGridHook {
 
     private static void refreshWorkspaceGrid(android.view.View workspace) {
         try {
-            int count = (Integer) XposedHelpers.callMethod(workspace, "getScreenCount");
+            int count = (Integer) callMethod(workspace, "getScreenCount");
             for (int i = 0; i < count; i++) {
-                Object cell = XposedHelpers.callMethod(workspace, "getCellLayout", i);
+                Object cell = callMethod(workspace, "getCellLayout",
+                        new Class[]{int.class}, i);
                 if (!(cell instanceof android.view.View)) continue;
-                XposedHelpers.callMethod(cell, "calculateXsAndYs");
+                callMethod(cell, "calculateXsAndYs");
                 android.view.View page = (android.view.View) cell;
                 page.forceLayout();
                 page.requestLayout();
@@ -397,34 +425,41 @@ final class HomeGridHook {
     }
 
     private static void installIndicatorPosition(ClassLoader classLoader) {
-        Class<?> screenView = XposedHelpers.findClass(
-            "com.miui.home.launcher.ScreenView", classLoader);
-        Class<?> workspace = XposedHelpers.findClass(
-            "com.miui.home.launcher.Workspace", classLoader);
-        XposedHelpers.findAndHookMethod(screenView, "updateIndicatorPositions",
-            int.class, boolean.class, new XC_MethodHook() {
-                @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    if (!workspace.isInstance(param.thisObject)) return;
+        Class<?> screenView;
+        Class<?> workspace;
+        try {
+            screenView = Class.forName(
+                "com.miui.home.launcher.ScreenView", false, classLoader);
+            workspace = Class.forName(
+                "com.miui.home.launcher.Workspace", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        final Class<?> wsClass = workspace;
+        HookUtil.hookMethod(screenView, "updateIndicatorPositions",
+            new Class[]{int.class, boolean.class}, chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Object thisObj = chain.getThisObject();
+                if (wsClass.isInstance(thisObj)) {
                     try {
-                        Object indicator = XposedHelpers.callMethod(
-                            param.thisObject, "getScreenIndicator");
+                        Object indicator = callMethod(thisObj, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
                             restoreIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
                         MainHook.log("[DC] indicator offset failed: " + e);
                     }
                 }
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    if (!workspace.isInstance(param.thisObject)) return;
+                Object result = chain.proceed(args);
+                if (wsClass.isInstance(thisObj)) {
                     try {
-                        Object indicator = XposedHelpers.callMethod(
-                            param.thisObject, "getScreenIndicator");
+                        Object indicator = callMethod(thisObj, "getScreenIndicator");
                         if (indicator instanceof android.view.View)
                             captureAndApplyIndicatorTranslation((android.view.View) indicator);
                     } catch (Throwable e) {
                         MainHook.log("[DC] indicator offset failed: " + e);
                     }
                 }
+                return result;
             });
     }
 
@@ -482,54 +517,62 @@ final class HomeGridHook {
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {
-        Class<?> helper = XposedHelpers.findClass(
-            "com.miui.home.launcher.compat.LayoutTransformHelperGridChanged", classLoader);
-        Class<?> transformInfo = XposedHelpers.findClass(
-            "com.miui.home.launcher.bean.LayoutTransformInfo", classLoader);
-        XposedHelpers.findAndHookMethod(helper, "addOccupied",
-            java.lang.reflect.Array.newInstance(transformInfo, 0, 0).getClass(),
-            transformInfo, int.class, int.class, int.class, int.class,
-            new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    Object matrix = param.args[0];
-                    int cellX = (Integer) param.args[2];
-                    int cellY = (Integer) param.args[3];
-                    int spanX = (Integer) param.args[4];
-                    int spanY = (Integer) param.args[5];
-                    fillTransformMatrix(matrix, param.args[1],
-                        cellX, cellY, spanX, spanY);
-                    param.setResult(null);
-                }
+        Class<?> helper;
+        Class<?> transformInfo;
+        try {
+            helper = Class.forName(
+                "com.miui.home.launcher.compat.LayoutTransformHelperGridChanged", false, classLoader);
+            transformInfo = Class.forName(
+                "com.miui.home.launcher.bean.LayoutTransformInfo", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        Class<?> arrayType = java.lang.reflect.Array.newInstance(transformInfo, 0, 0).getClass();
+        HookUtil.hookMethod(helper, "addOccupied",
+            new Class[]{arrayType, transformInfo, int.class, int.class, int.class, int.class},
+            chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Object matrix = args[0];
+                int cellX = (Integer) args[2];
+                int cellY = (Integer) args[3];
+                int spanX = (Integer) args[4];
+                int spanY = (Integer) args[5];
+                fillTransformMatrix(matrix, args[1],
+                    cellX, cellY, spanX, spanY);
+                return null;
             });
-        XposedHelpers.findAndHookMethod(helper, "transformToHVArray",
-            new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    int width = (Integer) XposedHelpers.callMethod(
-                        param.thisObject, "getMHCells");
-                    int height = (Integer) XposedHelpers.callMethod(
-                        param.thisObject, "getMVCells");
-                    Object matrix = XposedHelpers.callMethod(
-                        param.thisObject, "getMDstOccupied");
-                    android.view.View[][] result = new android.view.View[width][height];
-                    for (int x = 0; x < width; x++) {
-                        for (int y = 0; y < height; y++) {
-                            Object info = getTransformCell(matrix, x, y, width, height);
-                            if (info == null) continue;
-                            Object data = XposedHelpers.callMethod(info, "getMData");
-                            if (data instanceof android.view.View)
-                                result[x][y] = (android.view.View) data;
-                        }
+        HookUtil.hookMethod(helper, "transformToHVArray", new Class[]{},
+            chain -> {
+                Object thisObj = chain.getThisObject();
+                int width = (Integer) callMethod(thisObj, "getMHCells");
+                int height = (Integer) callMethod(thisObj, "getMVCells");
+                Object matrix = callMethod(thisObj, "getMDstOccupied");
+                android.view.View[][] result = new android.view.View[width][height];
+                for (int x = 0; x < width; x++) {
+                    for (int y = 0; y < height; y++) {
+                        Object info = getTransformCell(matrix, x, y, width, height);
+                        if (info == null) continue;
+                        Object data = callMethod(info, "getMData");
+                        if (data instanceof android.view.View)
+                            result[x][y] = (android.view.View) data;
                     }
-                    param.setResult(result);
                 }
+                return result;
             });
-        Class<?> rule = XposedHelpers.findClass(
-            "com.miui.home.launcher.compat.LayoutTransformRuleGridChanged", classLoader);
-        XposedBridge.hookAllConstructors(rule, new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                int h = (Integer) param.args[0];
-                int v = (Integer) param.args[1];
-                if (!((h == 8 && v == 4) || (h == 4 && v == 8))) return;
+        Class<?> rule;
+        try {
+            rule = Class.forName(
+                "com.miui.home.launcher.compat.LayoutTransformRuleGridChanged", false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        for (Constructor<?> ctor : rule.getDeclaredConstructors()) {
+            HookUtil.hook(ctor, chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Object result = chain.proceed(args);
+                int h = (Integer) args[0];
+                int v = (Integer) args[1];
+                if (!((h == 8 && v == 4) || (h == 4 && v == 8))) return result;
                 int[][] portrait = new int[][] {
                     {0, 0}, {2, 0}, {0, 2}, {2, 2},
                     {0, 4}, {2, 4}, {0, 6}, {2, 6}
@@ -538,20 +581,21 @@ final class HomeGridHook {
                     {0, 0}, {2, 0}, {4, 0}, {6, 0},
                     {0, 2}, {2, 2}, {4, 2}, {6, 2}
                 };
-                XposedHelpers.setObjectField(param.thisObject,
-                    "vScreenCoordinate", portrait);
-                XposedHelpers.setObjectField(param.thisObject,
-                    "hScreenCoordinate", landscape);
-                XposedHelpers.setIntField(param.thisObject, "totalBlocks", 8);
-            }
-        });
-        XposedHelpers.findAndHookMethod(rule, "checkCellCount", new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam param) {
-                int h = (Integer) XposedHelpers.callMethod(param.thisObject, "getMHCells");
-                int v = (Integer) XposedHelpers.callMethod(param.thisObject, "getMVCells");
-                if ((h == 8 && v == 4) || (h == 4 && v == 8)) param.setResult(null);
-            }
-        });
+                Object thisObj = chain.getThisObject();
+                HookUtil.setField(thisObj, "vScreenCoordinate", portrait);
+                HookUtil.setField(thisObj, "hScreenCoordinate", landscape);
+                HookUtil.setIntField(thisObj, "totalBlocks", 8);
+                return result;
+            });
+        }
+        HookUtil.hookMethod(rule, "checkCellCount", new Class[]{},
+            chain -> {
+                Object thisObj = chain.getThisObject();
+                int h = (Integer) callMethod(thisObj, "getMHCells");
+                int v = (Integer) callMethod(thisObj, "getMVCells");
+                if ((h == 8 && v == 4) || (h == 4 && v == 8)) return null;
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            });
     }
 
     private static void fillTransformMatrix(Object matrix, Object value,
@@ -588,30 +632,55 @@ final class HomeGridHook {
     }
 
     private static void hookGridCountSetter(Class<?> gridConfig, String method) {
-        XposedHelpers.findAndHookMethod(gridConfig, method, int.class, new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam param) {
-                if ((Integer) param.args[0] == 6) param.args[0] = 8;
-            }
-        });
+        HookUtil.hookMethod(gridConfig, method, new Class[]{int.class},
+            chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                if ((Integer) args[0] == 6) args[0] = 8;
+                return chain.proceed(args);
+            });
     }
 
     private static void hookGridCountGetter(Class<?> gridConfig, String method) {
-        XposedHelpers.findAndHookMethod(gridConfig, method, new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                if ((Integer) param.getResult() == 6) param.setResult(8);
-            }
-        });
+        HookUtil.hookMethod(gridConfig, method, new Class[]{},
+            chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                if ((Integer) result == 6) result = 8;
+                return result;
+            });
     }
 
     private static void hookAxis(Class<?> compat, String method, boolean xAxis) {
-        XposedHelpers.findAndHookMethod(compat, method, Context.class, new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                Context context = (Context) param.args[0];
+        HookUtil.hookMethod(compat, method, new Class[]{Context.class},
+            chain -> {
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                Context context = (Context) args[0];
                 boolean portrait = context.getResources().getConfiguration().orientation
                     == Configuration.ORIENTATION_PORTRAIT;
                 // Rotation mapping: portrait X/Y=4/8, landscape X/Y=8/4.
-                param.setResult(xAxis ? (portrait ? 4 : 8) : (portrait ? 8 : 4));
-            }
-        });
+                return xAxis ? (portrait ? 4 : 8) : (portrait ? 8 : 4);
+            });
+    }
+
+    // ── Reflection helpers (replaces XposedHelpers.callMethod) ──────
+
+    private static Object callMethod(Object target, String methodName) {
+        try {
+            Method m = target.getClass().getDeclaredMethod(methodName);
+            m.setAccessible(true);
+            return m.invoke(target);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Object callMethod(Object target, String methodName,
+                                      Class<?>[] paramTypes, Object... args) {
+        try {
+            Method m = target.getClass().getDeclaredMethod(methodName, paramTypes);
+            m.setAccessible(true);
+            return m.invoke(target, args);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }

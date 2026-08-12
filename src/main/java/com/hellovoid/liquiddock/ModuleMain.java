@@ -2,7 +2,6 @@ package com.hellovoid.liquiddock;
 
 import androidx.annotation.NonNull;
 
-import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import io.github.libxposed.api.XposedModule;
 
 /** libxposed API 101 entry point. */
@@ -18,9 +17,7 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         if (!"com.miui.home".equals(param.getPackageName())) return;
         try {
-            ClassLoader classLoader = param.getClassLoader();
-            new MainHook().handleLoadPackage(new XC_LoadPackage.LoadPackageParam(
-                    param.getPackageName(), classLoader));
+            new MainHook().install(param.getClassLoader());
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }

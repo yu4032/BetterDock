@@ -1,9 +1,8 @@
 package com.hellovoid.liquiddock;
 
 import android.view.View;
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
+
+import java.lang.reflect.Method;
 
 /** Version-tolerant adapter for the launcher's semantic enter-recents haptic event. */
 final class RecentsHapticHook {
@@ -19,13 +18,12 @@ final class RecentsHapticHook {
         int hooked = 0;
         for (String name : implementations) {
             try {
-                Class<?> type = XposedHelpers.findClass(name, classLoader);
-                XposedHelpers.findAndHookMethod(type, "performEnterRecent", View.class,
-                        new XC_MethodHook() {
-                            @Override protected void beforeHookedMethod(MethodHookParam param) {
-                                listener.onEnterRecents();
-                            }
-                        });
+                Class<?> type = Class.forName(name, false, classLoader);
+                Method method = type.getDeclaredMethod("performEnterRecent", View.class);
+                HookUtil.hook(method, chain -> {
+                    listener.onEnterRecents();
+                    return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                });
                 hooked++;
             } catch (Throwable error) {
                 MainHook.log("[DC] recents haptic hook unavailable for " + name

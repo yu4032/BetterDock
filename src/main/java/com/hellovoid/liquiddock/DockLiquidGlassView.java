@@ -22,7 +22,6 @@ import android.util.Log;
 import android.view.Display;
 import android.view.View;
 import android.view.ViewTreeObserver;
-import de.robv.android.xposed.XposedHelpers;
 
 /**
  * Event-driven liquid-glass renderer for the Launcher Dock.
@@ -2162,14 +2161,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
+    private Object invokeSelf(String method, Object... args) {
+        try {
+            for (java.lang.reflect.Method m : getClass().getMethods()) {
+                if (!m.getName().equals(method) || m.getParameterCount() != args.length) continue;
+                try { return m.invoke(this, args); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     private void clearSystemMaterial() {
-        try { XposedHelpers.callMethod(this, "setMiSelfBlur", 0); } catch (Throwable ignored) {}
-        try { XposedHelpers.callMethod(this, "setMiSelfBlurEnhanceFlag", 0x200, 0); }
-        catch (Throwable ignored) {}
-        try { XposedHelpers.callMethod(this, "clearMiBackgroundBlendColor"); }
-        catch (Throwable ignored) {}
-        try { XposedHelpers.callMethod(this, "setMiViewBlurMode", 0); }
-        catch (Throwable ignored) {}
+        invokeSelf("setMiSelfBlur", 0);
+        invokeSelf("setMiSelfBlurEnhanceFlag", 0x200, 0);
+        invokeSelf("clearMiBackgroundBlendColor");
+        invokeSelf("setMiViewBlurMode", 0);
     }
 
     private void applyHyperMaterialColors() {
@@ -2186,8 +2192,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 colors.add(new android.graphics.Point(-1722658222, 18));
                 colors.add(new android.graphics.Point(869388753, 3));
             }
-            XposedHelpers.callMethod(this, "setMiViewBlurMode", 1);
-            XposedHelpers.callMethod(this, "setMiBackgroundBlendColors", colors);
+            invokeSelf("setMiViewBlurMode", 1);
+            invokeSelf("setMiBackgroundBlendColors", colors);
             logI("Liquid glass: HyperOS material colors applied dark=" + dark);
         } catch (Throwable e) {
             logW("HyperOS material colors unavailable; native blur retained", e);
