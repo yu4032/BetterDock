@@ -29,6 +29,10 @@ Release 构建启用了 R8 代码与资源裁剪（`optimization.enable`），�
 Compose Miuix 类通过 `src/main/keepRules/liquiddock.keep` 保持不混淆；
 产物生成于 build/outputs/apk/release/。
 
+## 已知限制
+
+- **工作台/笔记本模式**：尚未完成适配，进入工作台模式前请在 LSPosed 中禁用本模块，否则可能出现 Dock 背景异常。
+
 ## 免责声明
 
 本项目非官方社区项目，与小米公司无关。"HyperOS" 与 "MIUI" 为其所有者商标，此处仅用于兼容性描述。
