@@ -2224,6 +2224,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  Decompiled evidence (HyperOS launcher, mingou_desktop_blur_overlay path): self-blur
      *  only takes effect when the view ALSO gets setMiSelfBlurEnhanceFlag(0x200, 0x200) —
      *  without the enhance flag SurfaceFlinger ignores the RenderNode's self-blur radius. */
+    /** Apply MIUI system self-blur to the View's own rendered content.
+     *  <strong>Deprecated for frosted glass:</strong> self-blur softens edges
+     *  and highlights along with the interior.  Prefer the {@code "shader"}
+     *  or {@code "material"} blur methods for crisp-edged frosted glass.
+     *  This method is kept for backward compatibility but no longer called
+     *  from the default blur pipeline. */
     private void applySystemSelfBlur(int radius) {
         try {
             if (radius <= 0) return;
@@ -2291,10 +2297,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private void applySelectedBlurBackend() {
         clearSystemMaterial();
-        if ("native".equals(blurMethod) || "material".equals(blurMethod)) {
-            applySystemSelfBlur(blurRadius);
-            if ("material".equals(blurMethod)) applyHyperMaterialColors();
-        }
+        if ("material".equals(blurMethod)) applyHyperMaterialColors();
+        // All blur methods (shader, native, material) use the in-shader
+        // Gaussian blur on the captured wallpaper.  setMiSelfBlur is
+        // deliberately excluded — it blurs the view's own output including
+        // edges and highlights, incompatible with crisp frosted glass.
     }
 
     private void installCapture(CroppedFrame frame, String from) {
@@ -2341,7 +2348,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("refractionHeight", Math.max(1f, Math.min(getHeight() * .48f, 140f)));
         refraction.setFloatUniform("depthEffect", glassDepthEffect);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
-        refraction.setFloatUniform("blurRadius", "shader".equals(blurMethod) ? blurRadius : 0f);
+        refraction.setFloatUniform("blurRadius", blurRadius);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
         // GUI-configurable via liquid_* settings.
         float density = getResources().getDisplayMetrics().density;
@@ -2364,11 +2371,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);
         Path shape = shapePath(getWidth(), getHeight(), cornerRadius);
-        boolean nativeBackend = "native".equals(blurMethod) || "material".equals(blurMethod);
-        float blurInset = nativeBackend
-                ? nativeBlurInsetDp * getResources().getDisplayMetrics().density : 0f;
-        Path blurShape = blurInset > 0f
-                ? shapePathInset(getWidth(), getHeight(), cornerRadius, blurInset) : shape;
+        float blurInsetPx = nativeBlurInsetDp * getResources().getDisplayMetrics().density;
+        Path blurShape = blurInsetPx > 0f
+                ? shapePathInset(getWidth(), getHeight(), cornerRadius, blurInsetPx) : shape;
         canvas.save();
         canvas.clipPath(blurShape);
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
