@@ -1,12 +1,11 @@
-# LiquidDock API101 module entry points and reflective project code must keep stable names/members.
--keep class com.hellovoid.liquiddock.** { *; }
+# libxposed loads this class by the literal name stored in META-INF/xposed/java_init.list.
+# Keep the entry class and its members stable; the rest of LiquidDock is free to shrink,
+# inline, merge, and obfuscate normally.
+-keep class com.hellovoid.liquiddock.ModuleMain { *; }
 
-# Source-compatibility facade used by the existing hook implementation. These classes
-# are implemented by LiquidDock itself and delegate to libxposed API101.
-
-# Compose Miuix KMP: ThemeController / MiuixTheme are reached reflectively and
-# the KMP runtime relies on stable class names — keep the whole tree.
--keep class top.yukonga.miuix.kmp.** { *; }
+# Android components referenced from the manifest are covered by AGP's default keep rules.
+# Miuix/Compose code is referenced normally and should rely on dependency consumer rules;
+# do not keep the whole dependency tree, otherwise R8 cannot meaningfully prune it.
 
 # Hidden framework / vendor classes referenced by hooks.
 -dontwarn com.android.internal.**
