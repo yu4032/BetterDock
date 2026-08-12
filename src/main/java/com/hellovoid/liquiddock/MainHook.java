@@ -542,6 +542,7 @@ public class MainHook implements IXposedHookLoadPackage {
                             DockLiquidGlassView glass = liquidGlassView;
                             if (glass == null) return;
                             glass.requestCapture("launcher-configuration-changed");
+                            glass.beginRotationStabilize();
                             glass.postDelayed(() -> glass.requestCapture(
                                     "launcher-configuration-settled"), 220L);
                         }

@@ -343,6 +343,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int blackFrameRetryCount;
     private int blackFrameRetryRotation = -1;
 
+    // Rotation stabilization: after an orientation change the wallpaper layer settles
+    // only after the rotation animation + re-render complete.  The black-frame guard
+    // alone is insufficient — transitional frames with black edges (band0/band3 ~0)
+    // have a normal mean and get installed, freezing the transition on screen.  Keep
+    // capturing every ROTATION_STABILIZE_INTERVAL_MS until two consecutive frames
+    // have identical content signatures (the wallpaper is static, so a stable frame
+    // repeats bit-for-bit), or the window expires.
+    private static final long ROTATION_STABILIZE_WINDOW_MS = 3000L;
+    private static final long ROTATION_STABILIZE_INTERVAL_MS = 300L;
+    private long rotationStabilizeUntilNanos;
+    private long lastRotationSignature = -1;
+    private boolean rotationStabilizeTickPending;
+
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
     // mid-animation.  Keep capturing for stopGraceMillis after the first "not allowed"
@@ -1304,6 +1317,43 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture(reason);
     }
 
+    /** Open a rotation-stabilization window: keep re-capturing (with signature
+     *  convergence) after an orientation change so a transitional black-edge frame
+     *  cannot freeze the backdrop.  Called from the launcher configuration hook. */
+    void beginRotationStabilize() {
+        rotationStabilizeUntilNanos = System.nanoTime()
+                + ROTATION_STABILIZE_WINDOW_MS * 1_000_000L;
+        lastRotationSignature = -1;
+        rotationStabilizeTickPending = false;
+        logI("rotation stabilize window opened (" + ROTATION_STABILIZE_WINDOW_MS + "ms)");
+    }
+
+    /** After installing a frame, if rotation stabilization is active, compare content
+     *  signatures and schedule another capture until the wallpaper converges. */
+    private void rotationStabilizeTick(long signature) {
+        if (rotationStabilizeUntilNanos == 0) return;
+        if (System.nanoTime() >= rotationStabilizeUntilNanos) {
+            rotationStabilizeUntilNanos = 0;
+            rotationStabilizeTickPending = false;
+            logI("rotation stabilize window exhausted signature=" + signature);
+            return;
+        }
+        if (lastRotationSignature == signature) {
+            rotationStabilizeUntilNanos = 0;
+            rotationStabilizeTickPending = false;
+            logI("rotation stabilized signature=" + signature);
+            return;
+        }
+        lastRotationSignature = signature;
+        if (rotationStabilizeTickPending) return;
+        rotationStabilizeTickPending = true;
+        mainHandler.postDelayed(() -> {
+            rotationStabilizeTickPending = false;
+            if (rotationStabilizeUntilNanos == 0) return;
+            requestStateCapture("rotation-stabilize");
+        }, ROTATION_STABILIZE_INTERVAL_MS);
+    }
+
     /** Workstation Dock is stationary: capture only the wallpaper layer and reuse the
      * mode-2 cache. Geometry changes are served by recropping that cached strip. */
     void setWorkstationMode(boolean enabled) {
@@ -1655,6 +1705,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         return;
                     }
                     retireCaptureAttempt(attempt);
+                    lastRotationSignature = -1; // black frames never count as stable
                     if (blackFrameLogCount++ < 5) {
                         logW("black frame discarded attempt=" + attempt
                                 + ", keeping previous backdrop");
@@ -1724,6 +1775,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     updateDynamicAppActivity(visualProbe.signature);
                 }
                 installCapture(frame, "async");
+                rotationStabilizeTick(visualProbe.signature);
                 // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
                 // apply without a launcher restart.
                 if (++configReloadCounter >= 30) {
