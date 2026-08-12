@@ -13,12 +13,16 @@ import io.github.libxposed.service.XposedServiceHelper;
 
 /** Module-process service bridge used by the settings UI for API101 Remote Preferences. */
 public final class LiquidDockApp extends Application
-        implements XposedServiceHelper.OnServiceListener {
+        implements XposedServiceHelper.OnServiceListener,
+        SharedPreferences.OnSharedPreferenceChangeListener {
     private static volatile XposedService service;
+    private SharedPreferences localPreferences;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        localPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        localPreferences.registerOnSharedPreferenceChangeListener(this);
         XposedServiceHelper.registerListener(this);
     }
 
@@ -26,8 +30,7 @@ public final class LiquidDockApp extends Application
     public void onServiceBind(XposedService value) {
         service = value;
         try {
-            SharedPreferences local = PreferenceManager.getDefaultSharedPreferences(this);
-            syncToRemote(local);
+            syncToRemote(localPreferences);
         } catch (Throwable error) {
             Log.w("LiquidDock", "initial Remote Preferences seed failed", error);
         }
@@ -36,6 +39,15 @@ public final class LiquidDockApp extends Application
     @Override
     public void onServiceDied(XposedService value) {
         if (service == value) service = null;
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        try {
+            syncToRemote(sharedPreferences);
+        } catch (Throwable error) {
+            Log.w("LiquidDock", "Remote Preferences sync failed for " + key, error);
+        }
     }
 
     public static XposedService service() {
@@ -49,6 +61,7 @@ public final class LiquidDockApp extends Application
 
     /** Mirror the existing settings store into API101 Remote Preferences. */
     public static boolean syncToRemote(SharedPreferences local) {
+        if (local == null) return false;
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
         if (remote == null) return false;
 
