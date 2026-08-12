@@ -32,11 +32,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // CI/device-test APKs go through the same R8 code + resource optimization
+            // path as release, so shrinker regressions are caught before publishing.
+            optimization {
+                enable = true
+            }
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
-            optimization.enable = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
-                "src/main/keepRules/liquiddock.keep")
+            optimization {
+                enable = true
+            }
         }
     }
 
