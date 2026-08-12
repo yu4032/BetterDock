@@ -16,7 +16,8 @@ LiquidDock 是一个 LSPosed 模块，为 HyperOS 3 Pad 的启动器 Dock 带来
 - 匹配推荐布局与玻璃参数的默认预设
 - 参数导入与导出（LSPosed Remote Preferences）
 - 静态桌面零捕获（壁纸条带缓存复用）；app/多任务内实时屏幕捕获
-- 桌面8x4布局
+- 桌面图标 8x4 布局
+
 开发结构与扩展规则见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 构建
