@@ -1336,15 +1336,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return true;
         }
         boolean baseAllowed = attached && windowVisible && isShown();
-        // Floating window over desktop: launcher didn't lose focus (launcherWasAway
-        // is still false) but something is on top — don't capture the floating
-        // content through the Dock.  Wait until the user touches the Dock.
-        // Exception: floatingWindowOverDesktop was just armed by onDockTouchEvent.
-        if (baseAllowed && !launcherWasAway
-                && sceneState.desired() != CaptureScene.HOME
-                && !floatingWindowOverDesktop) {
-            return false;
-        }
         if (baseAllowed) {
             lastAllowedNanos = System.nanoTime();
             return true;
