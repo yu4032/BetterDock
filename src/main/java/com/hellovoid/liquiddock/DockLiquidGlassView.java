@@ -327,6 +327,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private Rect cacheStripRect;
     private int cacheRotation = -1;
     private int cacheWallpaperId = -1;
+    // HyperOS can return status=0 + a valid-sized but pure-black wallpaper buffer for a
+    // short period after display rotation.  Retry those transient frames autonomously
+    // instead of waiting for another Dock/layout event to dirty the capture state.
+    private static final long[] BLACK_FRAME_RETRY_DELAYS_MS =
+            {80L, 120L, 180L, 260L, 400L, 600L};
+    private int blackFrameRetryCount;
+    private int blackFrameRetryRotation = -1;
 
     // Grace period for capture-stop: the Dock is often mid-animation (collapse/translate)
     // when window visibility flips, and killing capture instantly freezes the last frame
@@ -1285,6 +1292,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture(reason);
     }
 
+    /** Rotation workaround: right after an orientation change the wallpaper layer
+     *  can hand out black buffers (mean=0) until SurfaceFlinger recomposites it —
+     *  a manual dock pull-up performs exactly this recomposition.  Nudge the dock
+     *  background alpha a few times over ~2 s to force recomposition, re-requesting
+     *  capture shortly after each nudge. */
+    void nudgeSurfaceRefresh() {
+        for (int i = 1; i <= 5; i++) {
+            final int idx = i;
+            postDelayed(() -> {
+                View src = geometrySource;
+                if (src == null) return;
+                src.setAlpha(idx % 2 == 0 ? 1f : 0.92f);
+                src.invalidate();
+                postDelayed(() -> {
+                    if (geometrySource != null) geometrySource.setAlpha(1f);
+                    requestStateCapture("rotation-nudge-" + idx);
+                }, 60L);
+            }, i * 400L);
+        }
+    }
+
     /** Workstation Dock is stationary: capture only the wallpaper layer and reuse the
      * mode-2 cache. Geometry changes are served by recropping that cached strip. */
     void setWorkstationMode(boolean enabled) {
@@ -1446,7 +1474,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // guard in both modes.
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
-                            if (wallpaperMode) cacheWallpaperStrip(bmp, req);
                             handleCaptureResult(bmp, req, generation,
                                     requestScene, requestSceneRevision);
                         }
@@ -1522,6 +1549,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // (verified: Dock pull-up over an app).  Installing such a frame freezes a
             // black backdrop forever; discard it and keep the previous frame.
             VisualProbe visualProbe = probeBitmap(strip, blackFrameThreshold);
+            logI("frame " + strip.getWidth() + "x" + strip.getHeight()
+                    + " stripRect=" + request.stripRect
+                    + " tileRect=" + request.tileRect
+                    + " mean=" + visualProbe.meanChannel);
             if (visualProbe.nearBlack) {
                 if (!strip.isRecycled()) strip.recycle();
                 mainHandler.post(() -> {
@@ -1538,9 +1569,37 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         logW("black frame discarded (status=0 but content black), "
                                 + "keeping previous backdrop");
                     }
-                    if (sourceDirty) requestStateCapture();
+                    // Rotation is special on HyperOS: SurfaceFlinger's wallpaper wrapper can
+                    // expose the new geometry before its first non-black buffer is latched.
+                    // captureKick cleared sourceDirty before startCapture(), so relying only
+                    // on sourceDirty here can leave capture permanently idle until the user
+                    // moves/pulls the Dock.  Retry with bounded backoff instead.
+                    if (blackFrameRetryRotation != request.rotation) {
+                        blackFrameRetryRotation = request.rotation;
+                        blackFrameRetryCount = 0;
+                    }
+                    if (blackFrameRetryCount < BLACK_FRAME_RETRY_DELAYS_MS.length) {
+                        long delay = BLACK_FRAME_RETRY_DELAYS_MS[blackFrameRetryCount++];
+                        sourceDirty = true;
+                        mainHandler.postDelayed(() -> {
+                            // Rebuild the SF client each retry: after rotation the old
+                            // client's captureScreenAsync can wedge until the dock window
+                            // layer is rebuilt (what a manual pull-up does).
+                            liveCapture = null;
+                            requestStateCapture("black-frame-retry");
+                        }, delay);
+                    } else if (sourceDirty) {
+                        requestStateCapture();
+                    }
                 });
                 return;
+            }
+
+            // Never cache before the black-frame guard.  Previously a transient black
+            // rotation frame was copied into wallpaperStripCache and later served as a
+            // supposedly valid HOME frame without another SurfaceFlinger capture.
+            if (requestScene == CaptureScene.HOME) {
+                cacheWallpaperStrip(strip, request);
             }
             CroppedFrame cropped = cropWallpaperTile(strip, request.stripRect,
                     request.tileRect, request.dockRect);
@@ -1562,6 +1621,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     return;
                 }
                 capturing = false;
+                blackFrameRetryCount = 0;
+                blackFrameRetryRotation = request.rotation;
                 nullFrameLogged = false;
                 if (requestScene == CaptureScene.APP && dynamicAppCapture) {
                     updateDynamicAppActivity(visualProbe.signature);
@@ -1746,7 +1807,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  buffer (wallpaper-layer capture while an app is in front).  Average channel value
      *  below 10 counts as black. */
     private static VisualProbe probeBitmap(Bitmap bmp, int blackThreshold) {
-        if (bmp == null || bmp.isRecycled()) return new VisualProbe(true, 0L);
+        if (bmp == null || bmp.isRecycled()) return new VisualProbe(true, 0L, 0);
         Bitmap readable = bmp;
         try {
             // ScreenshotHardwareBuffer.asBitmap() normally returns Config.HARDWARE.
@@ -1755,10 +1816,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // guard discard an otherwise valid capture frame.
             if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
                 readable = bmp.copy(Bitmap.Config.ARGB_8888, false);
-                if (readable == null) return new VisualProbe(false, 0L);
+                if (readable == null) return new VisualProbe(false, 0L, 0);
             }
             int w = readable.getWidth(), h = readable.getHeight();
-            if (w <= 0 || h <= 0) return new VisualProbe(true, 0L);
+            if (w <= 0 || h <= 0) return new VisualProbe(true, 0L, 0);
             long sum = 0;
             int count = 0;
             long signature = 0L;
@@ -1775,10 +1836,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     signature |= (long) sample << ((i * 4 + j) * 4);
                 }
             }
-            return new VisualProbe(count > 0 && sum / count < blackThreshold, signature);
+            return new VisualProbe(count > 0 && sum / count < blackThreshold, signature,
+                    count > 0 ? (int) (sum / count) : 0);
         } catch (Throwable error) {
             logW("Unable to probe capture luminance; accepting frame", error);
-            return new VisualProbe(false, 0L);
+            return new VisualProbe(false, 0L, 0);
         } finally {
             if (readable != bmp && readable != null && !readable.isRecycled()) {
                 readable.recycle();
@@ -1789,9 +1851,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private static final class VisualProbe {
         final boolean nearBlack;
         final long signature;
-        VisualProbe(boolean nearBlack, long signature) {
+        final int meanChannel;
+        VisualProbe(boolean nearBlack, long signature, int meanChannel) {
             this.nearBlack = nearBlack;
             this.signature = signature;
+            this.meanChannel = meanChannel;
         }
     }
 
