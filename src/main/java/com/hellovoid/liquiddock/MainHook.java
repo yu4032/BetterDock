@@ -508,6 +508,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 if (glass != null) {
                     glass.setLauncherState(true, hasFocus);
                     if (!hasFocus) {
+                        glass.onLauncherFocusLost();
                         // An app came to the front: resolve its SF layer name so mode-1
                         // captures can include exactly that layer.
                         glass.refreshForegroundAppLayer();

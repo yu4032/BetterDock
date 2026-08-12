@@ -309,6 +309,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean attached;
     private boolean launcherResumed;
     private boolean launcherLifecycleKnown;
+    // Set by onLauncherFocusLost() when the launcher window genuinely loses focus.
+    // Consumed by onLauncherFocused() to distinguish HOME return (delay capture)
+    // from a HOME-local Dock spring-back (keep live rendering).
+    private boolean launcherWasAway;
     private boolean windowVisible;
     private boolean windowFocused;
     private boolean systemUiPanelExpanded;
@@ -1331,15 +1335,24 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return false;
     }
 
-    /** Public entry for MainHook: launcher gained focus (returning home).  The Dock
-     *  collapse animation may paint icon ghosts into an in-flight capture; schedule one
-     *  fresh capture shortly after (once the animation settled) so the backdrop is the
-     *  clean wallpaper. */
+    /** Launcher genuinely lost window focus (an app came to the front).  This is the
+     *  authoritative marker for a real HOME return later. */
+    void onLauncherFocusLost() {
+        launcherWasAway = true;
+    }
+
+    /** Launcher gained window focus.  If we genuinely returned from an app
+     *  (launcherWasAway), delay the first HOME capture by 1200 ms so the
+     *  icon fly-in animation settles before mode-2 reads the BBQ wrapper.
+     *  A HOME-local Dock pull (spring-back) uses the normal 500 ms cadence
+     *  to keep real-time rendering alive. */
     void onLauncherFocused() {
+        boolean wasAway = launcherWasAway;
+        launcherWasAway = false;
         mainHandler.postDelayed(() -> {
             if (!isCaptureAllowed()) return;
             requestStateCapture("focus-home");
-        }, 500L);
+        }, wasAway ? 1200L : 500L);
     }
 
     /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation
