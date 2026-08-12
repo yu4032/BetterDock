@@ -1286,6 +1286,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         sceneState.setGestureTarget(target, System.nanoTime());
+        // GestureToHome is emitted before launcher focus while Dock icons are still
+        // flying into place.  Open the settle window here, but do not block the normal
+        // capture scheduler: cached HOME wallpaper crops remain fully live.
+        if ("HOME".equals(target)) {
+            beginHomeSettle("gesture-home");
+        }
         updateDesiredScene();
         observationValid = false;
         requestStateCapture("gesture-target-" + target.toLowerCase(java.util.Locale.ROOT));
@@ -1336,10 +1342,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  fresh capture shortly after (once the animation settled) so the backdrop is the
      *  clean wallpaper. */
     void onLauncherFocused() {
-        mainHandler.postDelayed(() -> {
-            if (!isCaptureAllowed()) return;
-            requestStateCapture("focus-home");
-        }, 500L);
+        // Extend the window opened by GestureToHome.  This does not pause Dock motion;
+        // only a new HOME SurfaceFlinger wrapper read is deferred below.
+        beginHomeSettle("launcher-focus");
     }
 
     /** Public entry for MainHook: request a refresh capture (e.g. Dock Folme animation
@@ -1357,6 +1362,47 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         lastRotationSignature = -1;
         rotationStabilizeTickPending = false;
         logI("rotation stabilize window opened (" + ROTATION_STABILIZE_WINDOW_MS + "ms)");
+    }
+
+    // HOME transition settle.  HyperOS' Wallpaper BBQ wrapper can temporarily contain
+    // the Dock icon fly-in/collapse animation.  During this window, cache serves are
+    // deliberately still allowed, so geometry changes and spring-back motion continue
+    // to recrop/install at normal cadence; only a new mode-2 SF read is postponed.
+    private static final long HOME_SETTLE_MS = 650L;
+    private long homeSettleUntilNanos;
+    private boolean homeSettleCapturePending;
+
+    private boolean isHomeSettleActive() {
+        return System.nanoTime() < homeSettleUntilNanos;
+    }
+
+    private void beginHomeSettle(String reason) {
+        long until = System.nanoTime() + HOME_SETTLE_MS * 1_000_000L;
+        homeSettleUntilNanos = Math.max(homeSettleUntilNanos, until);
+        logI("home settle opened reason=" + reason);
+        scheduleHomeSettledCapture();
+    }
+
+    private void scheduleHomeSettledCapture() {
+        if (homeSettleCapturePending) return;
+        long remaining = homeSettleUntilNanos - System.nanoTime();
+        if (remaining <= 0L) {
+            requestStateCapture("home-settled");
+            return;
+        }
+        homeSettleCapturePending = true;
+        mainHandler.postDelayed(() -> {
+            homeSettleCapturePending = false;
+            if (!attached) return;
+            if (isHomeSettleActive()) {
+                scheduleHomeSettledCapture();
+                return;
+            }
+            updateDesiredScene();
+            if (sceneState.desired() == CaptureScene.HOME) {
+                requestStateCapture("home-settled");
+            }
+        }, Math.max(1L, (remaining + 999_999L) / 1_000_000L));
     }
 
     /** After installing a frame, if rotation stabilization is active, compare content
@@ -1607,6 +1653,20 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             req, requestScene, requestSceneRevision, attempt)) {
                         return;
                     }
+                    // Cache miss during the icon fly-in is the only operation we defer.
+                    // The scheduler itself stays alive and a clean HOME frame is requested
+                    // once the wrapper has settled.
+                    if (wallpaperMode && isHomeSettleActive()) {
+                        mainHandler.post(() -> {
+                            if (activeCaptureAttempt != attempt) return;
+                            retireCaptureAttempt(attempt);
+                            sourceDirty = true;
+                            scheduleHomeSettledCapture();
+                            logI("HOME SF capture deferred attempt=" + attempt
+                                    + " during Dock settle");
+                        });
+                        return;
+                    }
                     logI("capture mode=" + (wallpaperMode ? 2 : 1)
                             + " names=" + java.util.Arrays.toString(
                                     wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
@@ -1635,12 +1695,28 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             });
                         }
                     };
+                    // Exclude the Floating Dock in both modes.  On HyperOS the wallpaper
+                    // wrapper can reuse Dock content during fly-in/collapse; the explicit
+                    // surface exclusion prevents that content from being composited even if
+                    // a capture happens just outside the settle window.
                     client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
-                            wallpaperMode ? null : excludes, excludeNames,
+                            excludes, excludeNames,
                             wallpaperMode ? 2 : 1,
                             captureCb);
                     return; // async path owns completion via handleCaptureResult
                 } else {
+                    final boolean syncWallpaperMode = requestScene == CaptureScene.HOME;
+                    if (syncWallpaperMode && isHomeSettleActive()) {
+                        mainHandler.post(() -> {
+                            if (activeCaptureAttempt != attempt) return;
+                            retireCaptureAttempt(attempt);
+                            sourceDirty = true;
+                            scheduleHomeSettledCapture();
+                            logI("HOME sync capture deferred attempt=" + attempt
+                                    + " during Dock settle");
+                        });
+                        return;
+                    }
                     strip = client.captureWallpaper(request.stripRect, captureScale, request.displayId);
                     if (strip != null) {
                         cropped = cropWallpaperTile(strip, request.stripRect,

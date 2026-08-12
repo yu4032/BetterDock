@@ -71,17 +71,8 @@ private enum class Page(val titleRes: Int) {
     About(R.string.page_about)
 }
 
-// API101 Remote Preferences are the only runtime config transport.  The settings UI
-// keeps AndroidX default preferences as its local state store; every write is mirrored
-// to LSPosed's Remote Preferences without su, chmod, or cross-UID files.
-private fun syncConfigNow(prefs: SharedPreferences, ctx: Context) {
-    if (!LiquidDockApp.syncToRemote(prefs)) {
-        android.util.Log.w("LiquidDock", "Remote Preferences service is not connected yet")
-    }
-}
-private fun requestJsonSync(prefs: SharedPreferences, ctx: Context) {
-    syncConfigNow(prefs, ctx)
-}
+// Ordinary UI writes are mirrored to API101 Remote Preferences by LiquidDockApp's
+// SharedPreferences listener.  No per-control JSON/file/root synchronization exists.
 
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }
 
@@ -260,7 +251,7 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
                     if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = Page.Home })
                 },
                 actions = {
-                    TextButton(text = stringResource(R.string.action_restart_launcher), onClick = { syncConfigNow(prefs, activity); activity.restartLauncher() })
+                    TextButton(text = stringResource(R.string.action_restart_launcher), onClick = { activity.restartLauncher() })
                 },
             )
         },
@@ -529,10 +520,9 @@ private fun BooleanSetting(
     enabled: Boolean = true, onChanged: (Boolean) -> Unit = {},
 ) {
     var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
-    val context = LocalContext.current
     SwitchPreference(
         checked = value,
-        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it); requestJsonSync(prefs, context) },
+        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
         title = title,
         summary = summary,
         enabled = enabled,
@@ -554,7 +544,6 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         val editor = prefs.edit().putInt(spec.key, value.roundToInt())
         if (decimalDp) editor.putInt("${spec.key}_tenths", (value * 10f).roundToInt())
         editor.apply()
-        requestJsonSync(prefs, context)
     }
     val displayValue = if (decimalDp) String.format(java.util.Locale.ROOT, "%.1f", value)
         else value.roundToInt().toString()
@@ -692,6 +681,5 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
     dp("workstation_dock_icon_top_offset", 0f); dp("workstation_dock_icon_bottom_offset", 0f)
     editor.commit()
     Toast.makeText(activity, "默认预设已应用", Toast.LENGTH_LONG).show()
-    syncConfigNow(PreferenceManager.getDefaultSharedPreferences(activity), activity)
     activity.restartLauncher()
 }
