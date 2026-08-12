@@ -1710,8 +1710,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     // Wallpaper is static: if a valid strip cache exists (rotation barrier
                     // passed: current orientation produced a real installed frame, same
                     // wallpaper, strip covers the request), serve the crop from cache
-                    // and skip the SF capture entirely.
-                    if (wallpaperMode && tryServeWallpaperFromCache(
+                    // and skip the SF capture entirely — unless the HOME settle barrier
+                    // is active (Dock icon fly-in can taint the BBQ wrapper; cache may
+                    // hold a ghost frame from an earlier return).
+                    if (wallpaperMode && !isHomeSettleActive()
+                            && tryServeWallpaperFromCache(
                             req, requestScene, requestSceneRevision, attempt)) {
                         return;
                     }
