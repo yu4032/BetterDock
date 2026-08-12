@@ -1405,7 +1405,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // the Dock icon fly-in/collapse animation.  During this window, cache serves are
     // deliberately still allowed, so geometry changes and spring-back motion continue
     // to recrop/install at normal cadence; only a new mode-2 SF read is postponed.
-    private static final long HOME_SETTLE_MS = 650L;
+    private static final long HOME_SETTLE_MS = 800L;
     private long homeSettleUntilNanos;
     private boolean homeSettleCapturePending;
 
@@ -1417,7 +1417,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  flying in and the BBQ wrapper is safe for mode-2 capture. */
     private boolean isHomeSettleLate() {
         return homeReturnTransitionArmed
-                && (homeSettleUntilNanos - System.nanoTime()) <= 500_000_000L;
+                && (homeSettleUntilNanos - System.nanoTime()) <= 350_000_000L;
     }
 
     private void armHomeSettle(String reason) {
