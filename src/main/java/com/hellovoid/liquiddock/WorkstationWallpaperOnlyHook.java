@@ -9,9 +9,9 @@ import android.view.ViewGroup;
  * wallpaper-snapshot path.
  *
  * The stock workstation implementation already captures the wallpaper bitmap,
- * crops it to the Dock and blurs that crop.  Transitions to All Apps / Recents
+ * crops it to the Dock and blurs that crop. Transitions to All Apps / Recents
  * can switch the Dock back to the live-blur path, which may feed the Floating
- * Dock itself back into the blur.  This hook pins those transitions to snapshot
+ * Dock itself back into the blur. This hook pins those transitions to snapshot
  * mode and prevents LiquidDock's normal mode-1 Recents capture from being
  * activated in workstation mode.
  */
@@ -37,7 +37,7 @@ final class WorkstationWallpaperOnlyHook {
 
     /**
      * MainHook still receives Launcher.showOrHideRecent() for compatibility with
-     * normal mode.  In workstation mode do not let that callback unsuspend the
+     * normal mode. In workstation mode do not let that callback unsuspend the
      * LiquidDock glass and enter mode-1 full-display capture.
      */
     private static void installLiquidRecentsBlock() {
@@ -148,7 +148,7 @@ final class WorkstationWallpaperOnlyHook {
     }
 
     /**
-     * Calls only the stock workstation snapshot API.  Internally HyperOS obtains the
+     * Calls only the stock workstation snapshot API. Internally HyperOS obtains the
      * wallpaper bitmap directly, crops it to the Dock and blurs that crop, so no Dock
      * SurfaceFlinger layer can be sampled into the result.
      */
@@ -157,6 +157,9 @@ final class WorkstationWallpaperOnlyHook {
         try {
             Object hotSeats = HookUtil.invoke(launcher, "getHotSeats");
             if (hotSeats == null) return;
+            // false is intentional: the decompiled method treats true as "reuse a
+            // matching cached snapshot if possible"; false forces a fresh wallpaper
+            // snapshot while the previous overlay remains visible.
             HookUtil.invoke(hotSeats, "requestMingouStaticDockBlurSnapshotIfNeeded", false);
             HookUtil.invoke(hotSeats, "showMingouStaticDockBlurOverlayIfPossible");
             HookUtil.invoke(hotSeats, "setMingouStaticDockSnapshotMode", true);
@@ -168,11 +171,12 @@ final class WorkstationWallpaperOnlyHook {
     }
 
     /**
-     * The existing grid code writes the requested All Apps Y offset into
-     * mCellPaddingTop/mYs, but the native All Apps GridConfig often has zero bottom
-     * slack, so its translation clamp reduces every positive Y to zero.  Apply the
-     * configured translation after the native CellLayout pass instead.  Because the
-     * original onLayout runs first on every pass, this never accumulates.
+     * HomeGridHook already applies as much of the requested All Apps Y translation as
+     * the native GridConfig's top/bottom slack permits. Laptop All Apps commonly has
+     * baseBottom == 0, which clamps every positive offset to zero. After native layout,
+     * add only the missing delta (requested - already-applied), so positive Y works and
+     * negative Y is not doubled. The original onLayout runs first every time, so this
+     * correction never accumulates.
      */
     private static void installAllAppsVerticalOffset(ClassLoader classLoader) {
         try {
@@ -188,21 +192,44 @@ final class WorkstationWallpaperOnlyHook {
                             return result;
 
                         ViewGroup layout = (ViewGroup) target;
-                        LiquidDockConfig.Workstation config = LiquidDockConfig.load().workstation;
+                        LiquidDockConfig fullConfig = LiquidDockConfig.load();
+                        LiquidDockConfig.Workstation config = fullConfig.workstation;
                         boolean portrait = layout.getResources().getConfiguration().orientation
                                 == Configuration.ORIENTATION_PORTRAIT;
                         float configured = portrait
                                 ? config.allAppsPortraitVerticalOffset
                                 : config.allAppsLandscapeVerticalOffset;
-                        float scale = config.dimensionsDp
+                        float scale = fullConfig.grid.dp
                                 ? layout.getResources().getDisplayMetrics().density : 1f;
-                        int offset = Math.round(configured * scale);
-                        if (offset == 0) return result;
+                        int requested = Math.round(configured * scale);
+                        if (requested == 0) return result;
 
+                        int alreadyApplied = 0;
+                        try {
+                            Object gridConfig = HookUtil.getField(target, "mGridConfig");
+                            int baseTop = Math.max(0,
+                                    ((Number) HookUtil.invoke(gridConfig, "getTop")).intValue());
+                            int baseCell = ((Number) HookUtil.invoke(
+                                    gridConfig, "getCellSize")).intValue();
+                            int countY = HookUtil.getIntField(target, "mVCells");
+                            int baseHeightGap = Math.max(0,
+                                    HookUtil.getIntField(target, "mHeightGap"));
+                            int baseBottom = Math.max(0, layout.getHeight()
+                                    - (baseTop + baseCell * countY
+                                    + baseHeightGap * Math.max(0, countY - 1)));
+                            alreadyApplied = Math.max(-baseTop,
+                                    Math.min(baseBottom, requested));
+                        } catch (Throwable ignored) {
+                            // If the vendor GridConfig shape changes, prefer applying the
+                            // requested translation rather than silently dropping it.
+                        }
+
+                        int correction = requested - alreadyApplied;
+                        if (correction == 0) return result;
                         for (int i = 0; i < layout.getChildCount(); i++) {
                             View child = layout.getChildAt(i);
-                            child.layout(child.getLeft(), child.getTop() + offset,
-                                    child.getRight(), child.getBottom() + offset);
+                            child.layout(child.getLeft(), child.getTop() + correction,
+                                    child.getRight(), child.getBottom() + correction);
                         }
                         return result;
                     });
