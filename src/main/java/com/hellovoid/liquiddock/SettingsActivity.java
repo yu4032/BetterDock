@@ -136,7 +136,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (sp.getBoolean("liquid_dimensions_dp", false)) return;
         float density = Math.max(1f, getResources().getDisplayMetrics().density);
         SharedPreferences.Editor e = sp.edit();
-        e.putInt("liquid_blur", Math.round(sp.getInt("liquid_blur", 18) / density));
+        e.putInt("liquid_blur", Math.round(sp.getInt("liquid_blur", 6) / density));
         e.putInt("liquid_capture_bleed_top",
                 Math.round(sp.getInt("liquid_capture_bleed_top", 48) / density));
         e.putInt("liquid_capture_bleed_bottom",
@@ -337,7 +337,7 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("liquid_glass", sp.getBoolean("liquid_glass", false));
         j.put("liquid_blur_method", sp.getString("liquid_blur_method", "shader"));
         j.put("liquid_dimensions_dp", true);
-        j.put("liquid_blur", sp.getInt("liquid_blur", 18));
+        j.put("liquid_blur", sp.getInt("liquid_blur", 6));
         j.put("liquid_native_blur_inset", readDpPreference(sp,
                 "liquid_native_blur_inset"));
         j.put("liquid_thickness", sp.getInt("liquid_thickness", 18));
