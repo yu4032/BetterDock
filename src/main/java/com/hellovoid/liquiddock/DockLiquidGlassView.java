@@ -255,8 +255,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
     // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
     private float glassHighlightAlpha = 1.0f;
-    // Live-reload counter: GUI config edits apply within ~1s without a launcher restart.
-    private int configReloadCounter = 0;
     // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
     // endDrag).  During a drag the glass keeps capturing so the background follows the icon
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
@@ -794,19 +792,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
 
         boolean rotationChanged = observationValid && rotation != observedRotation;
-        boolean changed = dockDragging   // icon drag: keep capturing through the rearrange
-                || !observationValid
-                || rotation != observedRotation
-                || tmpDisplaySize.x != observedDisplayWidth
-                || tmpDisplaySize.y != observedDisplayHeight
-                || tmpDockLocation[0] != observedDockX
+        boolean dockGeometryChanged = tmpDockLocation[0] != observedDockX
                 || tmpDockLocation[1] != observedDockY
                 || dockW != observedDockWidth
                 || dockH != observedDockHeight
                 || dockTx != observedDockTranslationX
                 || dockTy != observedDockTranslationY
                 || dockSx != observedDockScaleX
-                || dockSy != observedDockScaleY
+                || dockSy != observedDockScaleY;
+
+        boolean changed = dockDragging
+                || !observationValid
+                || rotation != observedRotation
+                || tmpDisplaySize.x != observedDisplayWidth
+                || tmpDisplaySize.y != observedDisplayHeight
+                || dockGeometryChanged
                 || recentsVisible != observedRecentsVisible
                 || (recentsVisible && (
                         recentsScrollX != observedRecentsScrollX
@@ -822,15 +822,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Dock geometry motion (drag-out / expand / collapse) activates the dynamic
         // app-capture rate for the animation window; static content would otherwise fall
         // back to the slow probe cadence (~3 fps) while the Dock is being pulled out.
-        if (dynamicAppCapture && changed
-                && (tmpDockLocation[0] != observedDockX
-                 || tmpDockLocation[1] != observedDockY
-                 || dockW != observedDockWidth
-                 || dockH != observedDockHeight
-                 || dockTx != observedDockTranslationX
-                 || dockTy != observedDockTranslationY
-                 || dockSx != observedDockScaleX
-                 || dockSy != observedDockScaleY)) {
+        if (dynamicAppCapture && changed && dockGeometryChanged) {
             dynamicAppActiveUntilNanos = Math.max(dynamicAppActiveUntilNanos,
                     System.nanoTime() + dynamicMotionHoldNanos);
         }
@@ -1835,12 +1827,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     wallpaperCacheReady = true;
                 }
                 rotationStabilizeTick(visualProbe.signature);
-                // Live-reload GUI appearance keys ~1x/sec so tint/highlight edits
-                // apply without a launcher restart.
-                if (++configReloadCounter >= 30) {
-                    configReloadCounter = 0;
-                    reloadAppearanceFromConfig();
-                }
+                // Config is hot-reloaded by the 1s ticker; no duplicate counter needed here.
                 if (sourceDirty) requestStateCapture();
                 if (dynamicAppCapture && requestScene == CaptureScene.APP
                         && sceneState.desired() == CaptureScene.APP && isCaptureAllowed()) {
