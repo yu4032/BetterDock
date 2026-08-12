@@ -1,6 +1,6 @@
 # Hook 点总览
 
-LiquidDock 是一个注入 `com.miui.home` 的 LSPosed 模块，通过 Xposed API 在运行时调整桌面与 Dock 的外观和行为。本文档按功能域列出模块所 hook 的全部类与方法，以及每个 hook 的作用。Hook 的具体实现以源码为准。
+LiquidDock 是一个注入 `com.miui.home` 的 LSPosed 模块，通过 libxposed API 101 原生语法在运行时调整桌面与 Dock 的外观和行为。本文档按功能域列出模块所 hook 的全部类与方法，以及每个 hook 的作用。Hook 的具体实现以源码为准。
 
 ## 场景判定与生命周期
 
@@ -16,7 +16,9 @@ LiquidDock 是一个注入 `com.miui.home` 的 LSPosed 模块，通过 Xposed AP
 | `android.app.Activity` | `onWindowVisibilityChanged(int)` | 通用窗口可见性（与 launcher 可见性交叉验证） |
 | `android.app.Activity` | `onResume` / `onPause` | 前台应用判定（非 launcher 的 Activity 生命周期） |
 
-场景判定链：`wallpaperMode = !appFront`，其中 `appFront = !(launcherResumed && launcherLifecycleKnown)`。
+场景判定通过 `CaptureSceneState` 状态机实现（HOME / APP / RECENTS），`onPreDraw` 每帧触发
+`updateDesiredScene()` 检测场景转变，不依赖轮循。进入多任务（RECENTS）通过触觉/手势预触发
+（`prearmRecentsCapture`），返回桌面（RECENTS→HOME）通过 `scene-settle-home` 立即捕获。
 
 ## Dock 外观
 
@@ -49,9 +51,9 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 
 | 目标类 | 方法 | 作用 |
 |--------|------|------|
-| `DockContainer` | `startDrag` / `endDrag` | 拖拽会话跟踪——Dock 几何运动期间激活高频动态采样 |
+| `DockContainer` | `startDrag` / `endDrag` | 拖拽会话跟踪——Dock 几何运动期间激活高频动态采样。通过 `installDockDragHooks` 进程级一次性安装，回调内动态读取 `liquidGlassView` 避免 View 泄漏 |
 | 设备状态类 | `onLaptopModeChanged` | 笔记本/平板模式切换（工作站场景） |
-| `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为 |
+| `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为。通过 `HookUtil.findMethodExact` 沿父类查找，兼容 HyperOS 继承链 |
 
 ## 桌面网格
 
@@ -67,12 +69,24 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 | 网格规则类 | `checkCellCount` | 行列数校验 |
 | 网格配置类 | 行列数 getter/setter | 读写行列数配置 |
 
+## 反射工具层
+
+所有反射调用统一收归 `HookUtil`，不再使用 `XposedHelpers`：
+
+- `HookUtil.findMethodExact(Class, String, Class...)` — 沿父类链查找方法（替代 `getDeclaredMethod` 的不完整查找），确保 HyperOS 中继承而来的方法也能被 hook
+- `HookUtil.invoke(Object, String, Object...)` — 实例方法调用
+- `HookUtil.invokeStatic(String className, String, Object...)` — 静态方法调用
+- `HookUtil.getField/setField` — 字段访问
+
+`Api101Bridge` 提供进程内 libxposed 桥接（日志、配置、资源）。
+
 ## 捕获与渲染架构（非 Hook）
 
 背景捕获与玻璃渲染不依赖 Hook，而是通过 SurfaceControl/Display 捕获与 RuntimeShader 完成：
 
-- **捕获管线**：`LiveScreenCapture` 负责屏幕/壁纸层捕获（桌面壁纸条带缓存复用；应用前台时全屏捕获），`CaptureCadence` 控制采样节奏（高频动态采样与静态低频探针），`CaptureSceneState` 维护场景状态机（桌面 / 应用 / 最近任务）
+- **捕获管线**：`LiveScreenCapture` 负责屏幕/壁纸层捕获（桌面壁纸条带缓存复用；应用/多任务前台时全屏捕获），`CaptureCadence` 控制采样节奏（高频动态采样与静态低频探针），`CaptureSceneState` 维护场景状态机（桌面 / 应用 / 最近任务）。捕获模式由 `CaptureScene` 单一判定：HOME → mode 2（壁纸），APP/RECENTS → mode 1（全屏+Dock 排除）
+- **场景检测**：`onPreDraw` 每帧触发 `updateDesiredScene()`（不轮循），RECENTS→HOME 立即 `scene-settle-home` 捕获。进入多任务时 `prearmRecentsCapture` 强制取消进行中的捕获以确保场景切换不被管线合并丢失
 - **渲染**：`DockLiquidGlassView` 用 RuntimeShader 实现液态玻璃光学（折射、高光、色散、穹顶），叠加在 Dock 原生模糊之上
-- **配置**：设置界面通过 `su` 将偏好同步为 launcher 数据目录下的 `liquiddock_config.json`，模块侧 `ConfigReader` 读取该文件
+- **配置**：设置界面通过 LSPosed Remote Preferences (Binder IPC) 同步，模块侧 `LiquidDockConfig` 读取。不再使用 `su`/JSON 文件方案
 
-各 hook 的触发时机与参数细节请直接阅读 `MainHook`、`HomeGridHook`、`RecentsHapticHook` 三个文件。
+各 hook 的触发时机与参数细节请直接阅读 `MainHook`、`HomeGridHook`、`RecentsHapticHook`、`HookUtil`、`Api101Bridge` 文件。

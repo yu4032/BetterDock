@@ -2,15 +2,18 @@
 
 LiquidDock has two processes and one configuration boundary:
 
-- The settings application owns preferences, import/export, presets, and writes the JSON file.
-- The LSPosed entry point runs inside `com.miui.home` and installs small compatibility hooks.
-- `LiquidDockConfig` is the immutable, typed boundary between JSON and runtime code.
+- The settings application owns preferences, import/export, presets, and writes to LSPosed Remote Preferences.
+- The LSPosed entry point runs inside `com.miui.home` and installs API 101 hooks (libxposed native).
+- `LiquidDockConfig` is the immutable, typed boundary between Remote Preferences and runtime code.
 
 ## Runtime modules
 
+- `ModuleMain`: libxposed API 101 entry point. Calls `MainHook.install(CL)` + `HomeGridHook.install(CL)` + `RecentsHapticHook.install(CL)`.
+- `Api101Bridge`: process-local bridge to libxposed API 101 (log, config, resource access).
+- `HookUtil`: unified reflection layer. `findMethodExact` walks superclass chain for HyperOS version tolerance. All `invoke`/`invokeStatic`/field access flows through this class.
 - `MainHook`: composition root. It decides which modules are enabled and connects them.
 - `HomeGridHook`: home-grid, rotation mapping, widget alignment, and indicator positioning.
-- `RecentsHapticHook`: version-tolerant adapter for the launcher recents haptic event.
+- `RecentsHapticHook`: version-tolerant adapter for the launcher recents haptic event (uses `HookUtil.findMethodExact` for superclass-aware hooking).
 - `LiquidGlassFactory`: the only place that assembles and configures a glass view.
 - `DockLiquidGlassView`: Android view and capture lifecycle owner.
 - `CaptureSceneState`: pure HOME/APP/RECENTS state machine and stale-frame revisioning.
@@ -21,13 +24,28 @@ Pure policy classes must not depend on Android views or Xposed. They have local 
 Compatibility hooks should translate launcher events into calls on runtime controllers; they
 must not own rendering state.
 
+## Capture mode
+
+Capture mode is driven by `CaptureScene` alone:
+
+| Scene   | Mode | Description |
+|---------|------|-------------|
+| HOME    | 2    | Wallpaper-only (`Wallpaper BBQ wrapper`), Dock/icons inherently excluded |
+| APP     | 1    | Full-display with Dock + drag layers excluded, real-time content |
+| RECENTS | 1    | Full-display with Dock excluded, real-time multitasking |
+
+Scene detection runs per-frame in `onPreDraw` (not polled). RECENTS→HOME transitions
+trigger an immediate `scene-settle-home` capture without waiting for observation cadence.
+Haptic/gesture-triggered recents entry (`prearmRecentsCapture`) force-cancels in-flight
+capture work to ensure the scene switch is not coalesced away.
+
 ## Adding a feature
 
 1. Add its key and default to the appropriate section of `LiquidDockConfig`.
 2. Add one settings specification and translated label/summary.
 3. Put launcher reflection in a dedicated `*Hook` adapter.
 4. Put deterministic policy in a small Android-free class and add a unit test.
-5. Connect the module from `MainHook`, then run `testDebugUnitTest lintRelease assembleRelease`.
+5. Connect the module from `MainHook`, then run `testDebugUnitTest assembleDebug`.
 
-Do not read JSON keys directly from hooks or rendering code. Do not add new mutable global
+Do not read config keys directly from hooks or rendering code. Do not add new mutable global
 state to `MainHook`; state belongs to the controller/view instance that owns its lifecycle.

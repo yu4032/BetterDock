@@ -14,14 +14,14 @@ LiquidDock 是一个 LSPosed 模块，为 HyperOS 3 Pad 的启动器 Dock 带来
 - 独立整体阴影：柔度、最大扩散、不透明度、Y 轴偏移
 - HyperOS 原生 Dock 阴影抑制
 - 匹配推荐布局与玻璃参数的默认预设
-- JSON 参数导入与导出
-- 静态桌面零捕获（壁纸条带缓存复用）；app 内实时屏幕捕获
+- 参数导入与导出（LSPosed Remote Preferences）
+- 静态桌面零捕获（壁纸条带缓存复用）；app/多任务内实时屏幕捕获
 
 开发结构与扩展规则见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 构建
 
-要求：Android SDK、JDK 17、LSPosed API 82（libs/api-82.jar）。
+要求：Android SDK、JDK 17、LSPosed API 101（libs/api-101.jar）。
 
     ANDROID_HOME=/path/to/Android ./gradlew assembleRelease --no-daemon
 
