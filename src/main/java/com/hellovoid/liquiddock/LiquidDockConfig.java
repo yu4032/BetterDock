@@ -157,7 +157,8 @@ final class LiquidDockConfig {
     static final class Workstation {
         final boolean dockEnabled, dimensionsDp;
         final float dockWidthOffset, gridHorizontalOffset;
-        final float allAppsHorizontalOffset, allAppsVerticalOffset;
+        final float allAppsLandscapeHorizontalOffset, allAppsLandscapeVerticalOffset;
+        final float allAppsPortraitHorizontalOffset, allAppsPortraitVerticalOffset;
         final float iconTopOffset, iconBottomOffset;
 
         Workstation(ConfigReader c) {
@@ -165,8 +166,18 @@ final class LiquidDockConfig {
             dimensionsDp = c.b("dock_dimensions_dp", true);
             dockWidthOffset = c.f("workstation_dock_width_offset", 0);
             gridHorizontalOffset = c.f("workstation_grid_horizontal_offset", 0);
-            allAppsHorizontalOffset = c.f("workstation_all_apps_horizontal_offset", 0);
-            allAppsVerticalOffset = c.f("workstation_all_apps_vertical_offset", 0);
+            // Preserve existing workstation All Apps tuning as the fallback for both
+            // orientations; new installs can tune landscape and portrait independently.
+            float legacyAllAppsX = c.f("workstation_all_apps_horizontal_offset", 0);
+            float legacyAllAppsY = c.f("workstation_all_apps_vertical_offset", 0);
+            allAppsLandscapeHorizontalOffset = c.f(
+                    "workstation_all_apps_landscape_horizontal_offset", legacyAllAppsX);
+            allAppsLandscapeVerticalOffset = c.f(
+                    "workstation_all_apps_landscape_vertical_offset", legacyAllAppsY);
+            allAppsPortraitHorizontalOffset = c.f(
+                    "workstation_all_apps_portrait_horizontal_offset", legacyAllAppsX);
+            allAppsPortraitVerticalOffset = c.f(
+                    "workstation_all_apps_portrait_vertical_offset", legacyAllAppsY);
             iconTopOffset = c.f("workstation_dock_icon_top_offset", 0);
             iconBottomOffset = c.f("workstation_dock_icon_bottom_offset", 0);
         }

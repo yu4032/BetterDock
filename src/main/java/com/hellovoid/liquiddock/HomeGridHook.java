@@ -17,8 +17,10 @@ final class HomeGridHook {
     private static boolean grid8x4Enabled;
     private static volatile boolean workstationMode;
     private static int workstationHorizontalOffset;
-    private static int workstationAllAppsHorizontalOffset;
-    private static int workstationAllAppsVerticalOffset;
+    private static int workstationAllAppsLandscapeHorizontalOffset;
+    private static int workstationAllAppsLandscapeVerticalOffset;
+    private static int workstationAllAppsPortraitHorizontalOffset;
+    private static int workstationAllAppsPortraitVerticalOffset;
     private static java.lang.ref.WeakReference<android.view.View> workspaceRef =
             new java.lang.ref.WeakReference<>(null);
     private static float density;
@@ -42,9 +44,12 @@ final class HomeGridHook {
         workstationHorizontalOffset = offset;
     }
 
-    static void setWorkstationAllAppsOffsets(int horizontal, int vertical) {
-        workstationAllAppsHorizontalOffset = horizontal;
-        workstationAllAppsVerticalOffset = vertical;
+    static void setWorkstationAllAppsOffsets(int landscapeHorizontal, int landscapeVertical,
+                                                    int portraitHorizontal, int portraitVertical) {
+        workstationAllAppsLandscapeHorizontalOffset = landscapeHorizontal;
+        workstationAllAppsLandscapeVerticalOffset = landscapeVertical;
+        workstationAllAppsPortraitHorizontalOffset = portraitHorizontal;
+        workstationAllAppsPortraitVerticalOffset = portraitVertical;
     }
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
@@ -336,8 +341,13 @@ final class HomeGridHook {
             }
 
             int workstationX = workstationAllApps
-                    ? workstationAllAppsHorizontalOffset : workstationHorizontalOffset;
-            int workstationY = workstationAllApps ? workstationAllAppsVerticalOffset : 0;
+                    ? (portrait ? workstationAllAppsPortraitHorizontalOffset
+                            : workstationAllAppsLandscapeHorizontalOffset)
+                    : workstationHorizontalOffset;
+            int workstationY = workstationAllApps
+                    ? (portrait ? workstationAllAppsPortraitVerticalOffset
+                            : workstationAllAppsLandscapeVerticalOffset)
+                    : 0;
             if (workstation) {
                 // Offsets are translations, not symmetric insets. Clamp them against the
                 // native margins so the adjusted grid can never be pushed off-screen.

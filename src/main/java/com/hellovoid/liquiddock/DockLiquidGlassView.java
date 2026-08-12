@@ -327,6 +327,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float gestureDownRawY = Float.NaN;
     private float recentsPrearmDistancePx;
     private boolean recentsPrearmed;
+    // Workstation owns a separate Dock background. It remains static/wallpaper-backed;
+    // this normal LiquidDock view is activated only for the exact Recents button path.
+    private boolean workstationMode;
+    private boolean workstationRecentsActive;
+    private boolean workstationRecentsWasVisible;
     private long lastCaptureStartNanos;
     // Wallpaper strip cache: mode-2 (wallpaper-only) capture is skipped entirely while
     // the wallpaper is unchanged — the strip is static, so one capture is enough.  The
@@ -1022,6 +1027,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> onDockGestureMotion(action, rawY));
             return;
         }
+        // Workstation has no swipe-to-Recents path; only Launcher.showOrHideRecent()
+        // may activate live capture there.
+        if (workstationMode) return;
         if (action == android.view.MotionEvent.ACTION_DOWN) {
             gestureDownRawY = rawY;
             recentsPrearmed = false;
@@ -1049,6 +1057,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(this::onRecentsHapticTrigger);
             return;
         }
+        if (workstationMode) return;
         prearmRecentsCapture("recents-prearm-haptic");
         logI("Recents capture pre-armed by launcher haptic event");
     }
@@ -1285,6 +1294,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> setGestureCaptureTarget(target));
             return;
         }
+        if (workstationMode) return;
         sceneState.setGestureTarget(target, System.nanoTime());
         updateDesiredScene();
         observationValid = false;
@@ -1298,6 +1308,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private void updateDesiredScene() {
+        // Visibility only closes a workstation Recents session; it never opens one.
+        // Opening is owned exclusively by the exact showOrHideRecent button hook.
+        if (workstationMode && workstationRecentsActive) {
+            boolean visible = isRecentsVisible();
+            if (visible) {
+                workstationRecentsWasVisible = true;
+            } else if (workstationRecentsWasVisible) {
+                suspendWorkstationGlass("workstation-recents-hidden");
+                return;
+            }
+        }
         CaptureScene prev = sceneState.desired();
         if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed)) return;
@@ -1404,19 +1425,96 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }, ROTATION_STABILIZE_INTERVAL_MS);
     }
 
-    /** Workstation/laptop mode owns a separate DockContainerView background. Suspend
-     *  LiquidDock completely instead of treating workstation as another wallpaper scene. */
+    /** Workstation/laptop mode owns a separate DockContainerView background. Keep
+     *  normal LiquidDock suspended there; only the exact Recents button temporarily
+     *  activates live mode-1 capture for the multitasking transition/view. */
     void setWorkstationMode(boolean enabled) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(() -> setWorkstationMode(enabled));
             return;
         }
-        if (sceneState.workstationSuspended() == enabled) return;
+        if (workstationMode == enabled) return;
+        workstationMode = enabled;
+        if (enabled) {
+            suspendWorkstationGlass("workstation-enter");
+            return;
+        }
+
+        workstationRecentsActive = false;
+        workstationRecentsWasVisible = false;
         cancelPendingCaptureWork();
         captureGeneration++;
         appVisualSignatureValid = false;
         dynamicAppActiveUntilNanos = 0L;
-        sceneState.setWorkstationSuspended(enabled, System.nanoTime(), isRecentsVisible(),
+        sceneState.setWorkstationSuspended(false, System.nanoTime(), isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed);
+        setVisibility(VISIBLE);
+        geometrySource.setAlpha(1f);
+        nativeBackgroundHiddenByGlass = false;
+        sourceDirty = true;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("workstation-exit");
+    }
+
+    /** Called before Launcher.showOrHideRecent() only in workstation mode. */
+    void onWorkstationRecentsButton() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onWorkstationRecentsButton);
+            return;
+        }
+        if (!workstationMode) return;
+        // A second press is the exit toggle. Keep live capture through the closing
+        // animation; recents visibility dropping will suspend the glass afterward.
+        if (workstationRecentsActive) {
+            logI("workstation Recents exit requested; waiting for panel hide");
+            return;
+        }
+
+        workstationRecentsActive = true;
+        workstationRecentsWasVisible = false;
+        cancelPendingCaptureWork();
+        captureGeneration++;
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        long now = System.nanoTime();
+        sceneState.setWorkstationSuspended(false, now, isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed);
+        // Exact button boundary is authoritative long enough for the overview animation
+        // to become visible; once visible, normal Recents visibility owns the scene.
+        sceneState.setGestureTarget("RECENTS", now);
+        setVisibility(VISIBLE);
+        // Never reveal the normal HotSeats background in workstation. The independent
+        // DockContainerView remains underneath; this glass draws only the live Recents frame.
+        geometrySource.setAlpha(0f);
+        nativeBackgroundHiddenByGlass = true;
+        applySelectedBlurBackend();
+        sourceDirty = true;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("workstation-recents-button");
+
+        // Failed/blocked transition safety: if the panel never becomes visible, do not
+        // leave the normal glass active over the workstation Dock indefinitely.
+        mainHandler.postDelayed(() -> {
+            if (!workstationMode || !workstationRecentsActive) return;
+            if (isRecentsVisible()) {
+                workstationRecentsWasVisible = true;
+                return;
+            }
+            if (!workstationRecentsWasVisible)
+                suspendWorkstationGlass("workstation-recents-timeout");
+        }, 1800L);
+    }
+
+    private void suspendWorkstationGlass(String reason) {
+        cancelPendingCaptureWork();
+        captureGeneration++;
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        workstationRecentsActive = false;
+        workstationRecentsWasVisible = false;
+        sceneState.setWorkstationSuspended(true, System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed);
 
         Bitmap old = capture;
@@ -1424,26 +1522,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         captureShader = null;
         if (old != null && !old.isRecycled()) old.recycle();
         clearSystemMaterial();
-
-        if (enabled) {
-            // Hide both normal-mode layers: the stock HotSeats background and this glass.
-            // The laptop DockContainerView remains visible and renders its own background.
-            geometrySource.setAlpha(0f);
-            nativeBackgroundHiddenByGlass = true;
-            setVisibility(INVISIBLE);
-            sourceDirty = false;
-            invalidate();
-            return;
-        }
-
-        // Return to normal mode safely: show the stock background until the first fresh
-        // LiquidDock frame is installed, then installCapture() will hide it again.
-        setVisibility(VISIBLE);
-        geometrySource.setAlpha(1f);
-        nativeBackgroundHiddenByGlass = false;
-        sourceDirty = true;
-        lastCaptureStartNanos = 0L;
-        requestStateCapture("workstation-exit");
+        geometrySource.setAlpha(0f);
+        nativeBackgroundHiddenByGlass = true;
+        setVisibility(INVISIBLE);
+        sourceDirty = false;
+        invalidate();
+        logI("workstation glass suspended reason=" + reason);
     }
 
     private void requestStateCapture() {

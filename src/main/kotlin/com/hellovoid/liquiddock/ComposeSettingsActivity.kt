@@ -104,6 +104,10 @@ private fun optionSummary(key: String): String = when (key) {
     "dock_bottom_offset" -> "调整 Dock 与屏幕底部的距离"
     "workstation_dock_width_offset" -> "相对系统工作台 Dock 的原始长度增减；不会改变位置或普通 Dock"
     "workstation_grid_horizontal_offset" -> "单独调整工作台 8 列图标区域的左右距离，不继承普通桌面偏移"
+    "workstation_all_apps_landscape_horizontal_offset" -> "仅调整工作台所有应用横屏图标区的水平位置"
+    "workstation_all_apps_landscape_vertical_offset" -> "仅调整工作台所有应用横屏图标区的垂直位置"
+    "workstation_all_apps_portrait_horizontal_offset" -> "仅调整工作台所有应用竖屏图标区的水平位置"
+    "workstation_all_apps_portrait_vertical_offset" -> "仅调整工作台所有应用竖屏图标区的垂直位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
     "liquid_blur" -> "液态玻璃对捕获背景的模糊范围"
@@ -180,8 +184,10 @@ private val dockSpecs = listOf(
 private val workstationSpecs = listOf(
     IntSpec("workstation_dock_width_offset", "工作台 Dock 长度偏移", 0, -240, 240, "dp"),
     IntSpec("workstation_grid_horizontal_offset", "工作台桌面水平偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_horizontal_offset", "工作台所有应用水平偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_vertical_offset", "工作台所有应用垂直偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_landscape_horizontal_offset", "所有应用 · 横屏水平偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_landscape_vertical_offset", "所有应用 · 横屏垂直偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_portrait_horizontal_offset", "所有应用 · 竖屏水平偏移", 0, -240, 240, "dp"),
+    IntSpec("workstation_all_apps_portrait_vertical_offset", "所有应用 · 竖屏垂直偏移", 0, -240, 240, "dp"),
     IntSpec("workstation_dock_icon_top_offset", "工作台图标上间距", 0, -48, 48, "dp"),
     IntSpec("workstation_dock_icon_bottom_offset", "工作台图标下间距", 0, -48, 48, "dp"),
 )

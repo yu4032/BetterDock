@@ -52,7 +52,9 @@ public class MainHook {
         }
         RecentsHapticHook.install(classLoader, () -> {
             DockLiquidGlassView glass = liquidGlassView;
-            if (glass != null) glass.onRecentsHapticTrigger();
+            // Laptop/workstation Recents has a dedicated button; generic gesture/haptic
+            // pre-arm must never switch its Dock to live capture.
+            if (glass != null && !workstationMode) glass.onRecentsHapticTrigger();
         });
         installWorkstationDockHooks(classLoader, config.workstation);
         if (!config.dock.resizeAnimation)
@@ -92,8 +94,10 @@ public class MainHook {
         HomeGridHook.setWorkstationHorizontalOffset(Math.round(
                 config.workstation.gridHorizontalOffset * gridScale));
         HomeGridHook.setWorkstationAllAppsOffsets(
-                Math.round(config.workstation.allAppsHorizontalOffset * gridScale),
-                Math.round(config.workstation.allAppsVerticalOffset * gridScale));
+                Math.round(config.workstation.allAppsLandscapeHorizontalOffset * gridScale),
+                Math.round(config.workstation.allAppsLandscapeVerticalOffset * gridScale),
+                Math.round(config.workstation.allAppsPortraitHorizontalOffset * gridScale),
+                Math.round(config.workstation.allAppsPortraitVerticalOffset * gridScale));
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
@@ -511,6 +515,23 @@ public class MainHook {
         hookDockGestureTarget(cl, "GestureToApp", "APP");
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
 
+        // Workstation Recents is entered from the dedicated Dock button. The system DEX
+        // routes HotSeatsListContentAdapter's laptop branch to Launcher.showOrHideRecent().
+        // Hook before the original call so the very first transition frame is mode-1 live.
+        try {
+            HookUtil.hookMethod(launcherClass, "showOrHideRecent", new Class<?>[0],
+                    chain -> {
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (workstationMode && glass != null) {
+                            glass.onWorkstationRecentsButton();
+                            log("[DC] workstation Recents button boundary");
+                        }
+                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    });
+        } catch (Throwable e) {
+            log("[DC] workstation showOrHideRecent hook unavailable: " + e);
+        }
+
         // Configuration changes (rotation)
         try {
             HookUtil.hookMethod(launcherClass, "onConfigurationChanged", new Class<?>[]{Configuration.class},
@@ -636,8 +657,9 @@ public class MainHook {
                 HookUtil.hook(ctor, chain -> {
                     Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                     DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null) glass.setGestureCaptureTarget(target);
-                    log("[DC] liquid gesture target=" + target);
+                    if (glass != null && !workstationMode)
+                        glass.setGestureCaptureTarget(target);
+                    if (!workstationMode) log("[DC] liquid gesture target=" + target);
                     return r;
                 });
             }
