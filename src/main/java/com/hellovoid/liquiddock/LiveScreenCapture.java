@@ -223,7 +223,6 @@ final class LiveScreenCapture {
             if (result != null) {
                 Log.i(TAG, "fullscreen capture frame="
                         + result.getWidth() + "x" + result.getHeight());
-                dumpFrameForDebug(result, sourceCrop, scale);
                 return result;
             }
             Log.w(TAG, "fullscreen capture returned null");
@@ -338,22 +337,6 @@ final class LiveScreenCapture {
                     + " crop=" + sourceCrop + " scale=" + scale);
         } catch (Throwable error) {
             callback.onError(error);
-        }
-    }
-
-    private int dumpCounter;
-    private void dumpFrameForDebug(Bitmap frame, Rect crop, float scale) {
-        try {
-            if (++dumpCounter > 3) return;
-            // App-private dir: com.miui.home can write here, root can read for analysis.
-            String path = "/data/data/com.miui.home/files/bd_frame_" + dumpCounter + ".png";
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(path);
-            frame.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
-            fos.close();
-            Log.i(TAG, "dump frame -> " + path + " " + frame.getWidth() + "x" + frame.getHeight()
-                    + " crop=" + crop + " scale=" + scale);
-        } catch (Throwable e) {
-            Log.w(TAG, "frame dump failed: " + e);
         }
     }
 
