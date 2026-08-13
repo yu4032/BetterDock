@@ -1737,6 +1737,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
+        // HyperOS can emit GestureToHome during an app-launch transition. That HOME target
+        // otherwise outranks lifecycle for 1.5s and keeps serving wallpaper cache even after
+        // the Launcher has definitively lost focus. Clear only HOME here. MainHook immediately
+        // follows with setLauncherState(true, false), which then resolves the scene to APP.
+        if (sceneState.clearGestureTargetIfHome()) {
+            logI("Cleared stale HOME gesture target on launcher focus loss");
+        }
     }
 
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via

@@ -34,6 +34,16 @@ final class CaptureSceneState {
 
     void clearGestureTarget() { gestureTarget = null; }
 
+    /** Launcher focus loss proves a pending HOME target is stale: an app has actually
+     * taken the foreground. Do not clear APP/RECENTS because those targets are still
+     * useful before lifecycle/focus catches up. */
+    boolean clearGestureTargetIfHome() {
+        if (gestureTarget != CaptureScene.HOME) return false;
+        gestureTarget = null;
+        gestureTargetUntilNanos = 0L;
+        return true;
+    }
+
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
