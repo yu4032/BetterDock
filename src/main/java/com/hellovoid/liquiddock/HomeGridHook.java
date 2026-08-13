@@ -32,6 +32,8 @@ final class HomeGridHook {
             new java.util.WeakHashMap<>();
     private static final java.util.WeakHashMap<android.view.View, Boolean>
         loggedWidgetViews = new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<android.view.View, Long>
+        preparedCellLayoutGeometry = new java.util.WeakHashMap<>();
 
     private HomeGridHook() {}
 
@@ -183,12 +185,43 @@ final class HomeGridHook {
             new Class[]{boolean.class, int.class, int.class, int.class, int.class},
             chain -> {
                 Object[] args = chain.getArgs().toArray(new Object[0]);
-                Object result = chain.proceed(args);
                 android.view.ViewGroup layout = (android.view.ViewGroup) chain.getThisObject();
+
+                // setupViews can create off-screen pages before they have usable bounds.
+                // The Workspace-level 0/180/500 ms refresh therefore fixes page 1 while
+                // page 2 may still keep MIUI's stock 6x4-derived mXs/mYs. Prime each
+                // CellLayout from its own first valid bounds, before MIUI positions its
+                // children, so lazy/off-screen pages cannot miss the 8x4 geometry pass.
+                prepareCellLayoutGeometryForLayout(layout);
+
+                Object result = chain.proceed(args);
                 for (int i = 0; i < layout.getChildCount(); i++)
                     adaptTwoByOneWidget(layout, layout.getChildAt(i));
                 return result;
             });
+    }
+
+    private static void prepareCellLayoutGeometryForLayout(android.view.View layout) {
+        if (!grid8x4Enabled) return;
+        int width = layout.getWidth();
+        int height = layout.getHeight();
+        if (width <= 0 || height <= 0 || !sizeMatchesOrientation(layout, width, height)) return;
+
+        int orientation = layout.getResources().getConfiguration().orientation;
+        long signature = (((long) orientation & 0xffL) << 56)
+                ^ (((long) width & 0x0fffffffL) << 28)
+                ^ ((long) height & 0x0fffffffL);
+        synchronized (preparedCellLayoutGeometry) {
+            Long previous = preparedCellLayoutGeometry.get(layout);
+            if (previous != null && previous == signature) return;
+            // Mark before applying so a nested/requested layout cannot recurse forever.
+            preparedCellLayoutGeometry.put(layout, signature);
+        }
+
+        applyCellLayoutOffsets(layout);
+        rebuildCellCoordinates(layout);
+        MainHook.log("[DC] CellLayout geometry prepared "
+                + width + "x" + height + " orientation=" + orientation);
     }
 
     private static void rebuildCellCoordinates(Object cellLayout) {

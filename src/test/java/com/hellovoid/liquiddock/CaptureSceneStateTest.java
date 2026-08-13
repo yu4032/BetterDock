@@ -24,6 +24,23 @@ public class CaptureSceneStateTest {
         assertTrue(state.gestureTargetExpired(1_500_003_000L));
     }
 
+    @Test public void focusLossClearInvalidatesOnlyHomeGestureTarget() {
+        CaptureSceneState state = new CaptureSceneState();
+
+        state.setGestureTarget("HOME", 1_000L);
+        assertTrue(state.clearGestureTargetIfHome());
+        assertTrue(state.refresh(2_000L, false, true, false));
+        assertEquals(CaptureScene.APP, state.desired());
+
+        state.setGestureTarget("RECENTS", 3_000L);
+        assertFalse(state.clearGestureTargetIfHome());
+        assertEquals(CaptureScene.RECENTS, state.resolve(4_000L, false, true, false));
+
+        state.setGestureTarget("APP", 5_000L);
+        assertFalse(state.clearGestureTargetIfHome());
+        assertEquals(CaptureScene.APP, state.resolve(6_000L, false, true, false));
+    }
+
     @Test public void workstationSuspendedTracksFlagOnly() {
         CaptureSceneState state = new CaptureSceneState();
         assertFalse(state.workstationSuspended());

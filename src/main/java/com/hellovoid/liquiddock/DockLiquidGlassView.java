@@ -310,6 +310,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean overviewActive;
     private int captureTimeoutStreak;
     private boolean captureCircuitOpen;
+    // Scene provenance of the bitmap currently installed into captureShader. Async request
+    // validation prevents stale callbacks, but without this marker an already-installed HOME
+    // wallpaper frame can survive into APP until the first mode-1 callback arrives.
+    private CaptureScene installedCaptureScene;
+    // APP focus is known before the floating Dock becomes visible. Keep a short, bounded
+    // hidden-capture window so an APP frame is already installed before the first reveal
+    // pixel; normal hidden APP capture remains forbidden outside this pre-arm window.
+    private boolean appBackdropPrearmActive;
+    private int appBackdropPrearmToken;
+    private static final long[] APP_BACKDROP_PREARM_DELAYS_MS = {0L, 120L, 320L};
+    private static final long APP_BACKDROP_PREARM_WINDOW_MS = 850L;
 
     private Bitmap capture;
     private BitmapShader captureShader;
@@ -1125,6 +1136,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             beginObservationBurst();
             gestureDownRawY = rawY;
             recentsPrearmed = false;
+            // The Dock may still be fully collapsed here. Allow exactly this gesture's
+            // first APP frame to bypass visibility so the backdrop is live before motion.
+            armAppBackdropForGestureDown();
             requestStateCapture("dock-gesture-down");
             return;
         }
@@ -1321,6 +1335,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (runtimeGlassEnabled == enabled) return;
         runtimeGlassEnabled = enabled;
         if (!enabled) {
+            appBackdropPrearmActive = false;
+            appBackdropPrearmToken++;
             cancelPendingCaptureWork();
             markGlassVisibilityDirty();
             appVisualSignatureValid = false;
@@ -1330,6 +1346,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             Bitmap old = capture;
             capture = null;
             captureShader = null;
+            installedCaptureScene = null;
             if (old != null && !old.isRecycled()) old.recycle();
 
             if (nativeBackgroundHiddenByGlass) {
@@ -1450,6 +1467,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         overviewActive = "RECENTS".equals(target);
         sceneState.setGestureTarget(target, System.nanoTime());
         updateDesiredScene();
+        if ("APP".equals(target)) {
+            invalidateInstalledBackdropForApp("gesture-target");
+            // GestureToApp is emitted while the Floating Dock is still collapsed. The
+            // focus-loss prearm window may have expired long ago, so briefly re-arm hidden
+            // APP capture here; the immediately following request can then install a fresh
+            // mode-1 frame before the Dock's first visible pixels are laid out.
+            final int token = ++appBackdropPrearmToken;
+            appBackdropPrearmActive = true;
+            lastCaptureStartNanos = 0L;
+            mainHandler.postDelayed(() -> {
+                if (token == appBackdropPrearmToken) appBackdropPrearmActive = false;
+            }, 350L);
+        }
         observationValid = false;
         requestStateCapture("gesture-target-" + target.toLowerCase(java.util.Locale.ROOT));
         mainHandler.postDelayed(() -> {
@@ -1458,6 +1488,26 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             updateDesiredScene();
             requestStateCapture("gesture-target-expired");
         }, 1550L);
+    }
+
+    /** Never render a HOME wallpaper frame after the target scene has become APP.
+     * SurfaceFlinger mode-1 is asynchronous; pre-arm can still lose a race against the
+     * first reveal frame. Fall back to MIUI's native Dock background for that tiny gap,
+     * then install Liquid Glass again as soon as the first APP frame arrives. */
+    private void invalidateInstalledBackdropForApp(String reason) {
+        if (installedCaptureScene == null || installedCaptureScene == CaptureScene.APP) return;
+        Bitmap old = capture;
+        CaptureScene oldScene = installedCaptureScene;
+        capture = null;
+        captureShader = null;
+        installedCaptureScene = null;
+        if (old != null && old != wallpaperStripCache && !old.isRecycled()) old.recycle();
+        if (nativeBackgroundHiddenByGlass) {
+            geometrySource.setAlpha(1f);
+            nativeBackgroundHiddenByGlass = false;
+        }
+        invalidate();
+        logI("APP scene barrier dropped stale " + oldScene + " backdrop reason=" + reason);
     }
 
     private void updateDesiredScene() {
@@ -1555,6 +1605,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 
+        // A real APP focus transition pre-arms only a short bounded window. This bypasses
+        // Dock visibility long enough to install one or two mode-1 frames while the Dock is
+        // still collapsed, but cannot turn into the normal hidden-APP capture loop.
+        if (appBackdropPrearmActive && sceneState.desired() == CaptureScene.APP) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
+
         // Recents is intentionally special: HyperOS hides the Floating Dock window while the
         // overview remains on screen, so Recents must keep its self-sustained capture loop alive.
         // Dock dragging likewise needs the animation tail even if normal visibility is transient.
@@ -1575,15 +1633,75 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return System.nanoTime() <= graceEndNanos;
     }
 
+    /** Prepare the APP backdrop before the collapsed Dock is visible. The requests are
+     * deliberately bounded to the focus transition; dynamic APP continuation still requires
+     * isGlassActuallyVisible(), so this cannot recreate the hidden-Dock power regression. */
+    void prearmAppBackdrop(String reason) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> prearmAppBackdrop(reason));
+            return;
+        }
+        if (!runtimeGlassEnabled || workstationMode || sceneState.workstationSuspended()
+                || systemUiPanelExpanded || !isDisplayInteractive()) return;
+        updateDesiredScene();
+        if (sceneState.desired() != CaptureScene.APP) return;
+        invalidateInstalledBackdropForApp("focus-prearm-" + reason);
+
+        final int token = ++appBackdropPrearmToken;
+        appBackdropPrearmActive = true;
+        resetCaptureCircuit("app-prearm-" + reason);
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+
+        for (long delay : APP_BACKDROP_PREARM_DELAYS_MS) {
+            mainHandler.postDelayed(() -> {
+                if (token != appBackdropPrearmToken || !attached || launcherResumed
+                        || sceneState.desired() != CaptureScene.APP
+                        || systemUiPanelExpanded || !isDisplayInteractive()) return;
+                // Bypass cadence for these few transition snapshots. A later shot replaces
+                // an early app-launch animation frame before the user can summon the Dock.
+                lastCaptureStartNanos = 0L;
+                observationValid = false;
+                requestStateCapture("app-prearm-" + reason + "-" + delay);
+            }, delay);
+        }
+        mainHandler.postDelayed(() -> {
+            if (token != appBackdropPrearmToken) return;
+            appBackdropPrearmActive = false;
+        }, APP_BACKDROP_PREARM_WINDOW_MS);
+    }
+
+    private void armAppBackdropForGestureDown() {
+        updateDesiredScene();
+        if (sceneState.desired() != CaptureScene.APP || launcherResumed
+                || workstationMode || systemUiPanelExpanded || !isDisplayInteractive()) return;
+        invalidateInstalledBackdropForApp("gesture-down");
+        final int token = ++appBackdropPrearmToken;
+        appBackdropPrearmActive = true;
+        lastCaptureStartNanos = 0L;
+        mainHandler.postDelayed(() -> {
+            if (token == appBackdropPrearmToken) appBackdropPrearmActive = false;
+        }, 350L);
+    }
+
     /** Launcher genuinely lost window focus (an app came to the front).  This is the
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
+        // HyperOS can emit GestureToHome during an app-launch transition. That HOME target
+        // otherwise outranks lifecycle for 1.5s and keeps serving wallpaper cache even after
+        // the Launcher has definitively lost focus. Clear only HOME here. MainHook immediately
+        // follows with setLauncherState(true, false), which then resolves the scene to APP.
+        if (sceneState.clearGestureTargetIfHome()) {
+            logI("Cleared stale HOME gesture target on launcher focus loss");
+        }
     }
 
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via
      *  liquid_home_settle_delay (default 1200 ms).  Spring-backs use 500 ms. */
     void onLauncherFocused() {
+        appBackdropPrearmActive = false;
+        appBackdropPrearmToken++;
         resetCaptureCircuit("launcher-focus");
         beginObservationBurst();
         boolean wasAway = launcherWasAway;
@@ -2041,7 +2159,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     Log.e(TAG, "HyperOS wallpaper-only capture failed", captureFailure);
                 } else if (frame != null) {
                     nullFrameLogged = false;
-                    installCapture(frame, "sync");
+                    installCapture(frame, "sync", requestScene);
                 } else if (!nullFrameLogged) {
                     nullFrameLogged = true;
                     logW("HyperOS captureMode(2) wallpaper path returned no buffer");
@@ -2161,7 +2279,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (requestScene == CaptureScene.APP && dynamicAppCapture) {
                     updateDynamicAppActivity(visualProbe.signature);
                 }
-                installCapture(frame, "async");
+                installCapture(frame, "async", requestScene);
                 // The rotation barrier lifts only after the CURRENT orientation's real
                 // SF frame is installed — never on a cache-hit or a transitional frame.
                 if (requestScene == CaptureScene.HOME) {
@@ -2325,7 +2443,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 return;
             }
             retireCaptureAttempt(attempt);
-            installCapture(frame, "cache");
+            installCapture(frame, "cache", requestScene);
             if (sourceDirty) requestStateCapture();
             if (isRecentsVisible()) requestStateCapture("recents-continue");
         });
@@ -2517,8 +2635,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Kept for potential future use with setMiViewBlurMode background blur.
     }
 
-    private void installCapture(CroppedFrame frame, String from) {
+    private void installCapture(CroppedFrame frame, String from, CaptureScene sourceScene) {
         markCaptureHealthy();
+        installedCaptureScene = sourceScene;
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
         if (!nativeBackgroundHiddenByGlass) {
