@@ -272,6 +272,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassHighlightAlpha = 1.0f;
     // Dock border is recorded in this same View/RenderNode.
     private boolean dockStrokeEnabled;
+    private boolean dockStrokeFillDiff;
     private float dockStrokeWidthPx;
     private int dockStrokeColor = Color.TRANSPARENT;
     // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
@@ -555,8 +556,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         float width = squircle ? config.squircleStrokeWidth
                 : (config.fillDiff ? config.strokeWidth : config.standardStrokeWidth);
         dockStrokeEnabled = config.strokeEnabled;
+        dockStrokeFillDiff = config.fillDiff;
         dockStrokeWidthPx = Math.max(0f, width * scale);
-        dockStrokeColor = Color.argb(config.strokeAlpha, config.strokeR, config.strokeG, config.strokeB);
+        // Preserve the old overlay's visual opacity. The legacy renderer multiplied
+        // user alpha by 200/255 for Squircle and 150/255 for the rounded border.
+        int legacyBaseAlpha = squircle ? 200 : 150;
+        int effectiveAlpha = Math.round(legacyBaseAlpha
+                * Math.max(0, Math.min(255, config.strokeAlpha)) / 255f);
+        dockStrokeColor = Color.argb(effectiveAlpha,
+                config.strokeR, config.strokeG, config.strokeB);
         invalidate();
     }
 
@@ -2737,7 +2745,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (dockStrokeEnabled && dockStrokeWidthPx > 0f && Color.alpha(dockStrokeColor) > 0) {
             float minDim = Math.min(getWidth(), getHeight());
             float strokeWidth = Math.min(dockStrokeWidthPx, Math.max(1f, minDim - 1f));
-            Path strokeShape = shapePathInset(getWidth(), getHeight(), cornerRadius, strokeWidth * 0.5f);
+            Path strokeShape;
+            if (squircle) {
+                // The old Squircle overlay expanded its outer path beyond the Dock and
+                // therefore kept most of the stroke out of the glass interior. Drawing on
+                // the glass's own outer path preserves that edge-hugging placement without
+                // bringing back a second View or Path.op ring.
+                strokeShape = shape;
+            } else if (dockStrokeFillDiff) {
+                // Legacy fillDiff occupied [0, strokeWidth] inside the edge.
+                float centerInset = Math.max(0f, strokeWidth * 0.5f - 0.5f);
+                strokeShape = shapePathInset(
+                        getWidth(), getHeight(), cornerRadius, centerInset);
+            } else {
+                // Legacy standard stroke was centered at x/y=1; its outer half was
+                // clipped at the View boundary instead of being moved fully inward.
+                strokeShape = shapePathInset(getWidth(), getHeight(), cornerRadius, 0.5f);
+            }
             dockStrokePaint.setShader(null);
             dockStrokePaint.setStyle(Paint.Style.STROKE);
             dockStrokePaint.setStrokeWidth(strokeWidth);
