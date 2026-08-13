@@ -314,10 +314,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // validation prevents stale callbacks, but without this marker an already-installed HOME
     // wallpaper frame can survive into APP until the first mode-1 callback arrives.
     private CaptureScene installedCaptureScene;
-    // Signature of the currently installed async frame. This is separate from scene
-    // provenance: an APP-tagged launch-transition frame can still visually be wallpaper.
-    private long installedCaptureSignature;
-    private boolean installedCaptureSignatureValid;
     // APP focus is known before the floating Dock becomes visible. Keep a short, bounded
     // hidden-capture window so an APP frame is already installed before the first reveal
     // pixel; normal hidden APP capture remains forbidden outside this pre-arm window.
@@ -325,14 +321,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int appBackdropPrearmToken;
     private static final long[] APP_BACKDROP_PREARM_DELAYS_MS = {0L, 120L, 320L};
     private static final long APP_BACKDROP_PREARM_WINDOW_MS = 850L;
-    // Gesture-time APP readiness gate. A capture is not accepted as the first Dock backdrop
-    // while it still looks like the cached HOME wallpaper. Retries are strictly bounded.
-    private boolean appReadyGateActive;
-    private int appReadyRetryCount;
-    private long appReadyGateDeadlineNanos;
-    private static final int APP_READY_MAX_RETRIES = 6;
-    private static final long APP_READY_RETRY_MS = 50L;
-    private static final long APP_READY_MAX_WINDOW_NS = 1_200_000_000L;
 
     private Bitmap capture;
     private BitmapShader captureShader;
@@ -400,11 +388,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int cacheDisplayWidth = -1;
     private int cacheDisplayHeight = -1;
     private int cacheWallpaperId = -1;
-    // 8x2/16-nibble luminance signature of the same HOME strip. It lets APP gesture-time
-    // captures prove that the app surface has actually latched instead of accepting a
-    // wallpaper-like launch-transition frame just because its scene tag says APP.
-    private long wallpaperSignature;
-    private boolean wallpaperSignatureValid;
     // Rotation barrier: cache is only served after the CURRENT orientation produced a
     // real, non-black SF frame that passed the stale checks and was installed.  Cleared
     // on every configuration change — a stale strip from the previous orientation must
@@ -810,7 +793,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // definition; never serve it for the new one.  Also reset the black-frame log
         // gate (it accumulates to 5 per process and silently stops logging).
         wallpaperCacheReady = false;
-        wallpaperSignatureValid = false;
         invalidateDockWindowSurfaceCache();
         clearWallpaperCacheSafely();
         blackFrameLogCount = 0;
@@ -1365,8 +1347,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             capture = null;
             captureShader = null;
             installedCaptureScene = null;
-            installedCaptureSignatureValid = false;
-            resetAppReadyGate();
             if (old != null && !old.isRecycled()) old.recycle();
 
             if (nativeBackgroundHiddenByGlass) {
@@ -1489,28 +1469,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         updateDesiredScene();
         if ("APP".equals(target)) {
             invalidateInstalledBackdropForApp("gesture-target");
-            // GestureToApp is emitted while the Floating Dock is still collapsed. Re-arm
-            // one short hidden-capture window, then keep the readiness gate open only while
-            // bounded wallpaper-like retries are still proving that the APP surface latched.
+            // GestureToApp is emitted while the Floating Dock is still collapsed. The
+            // focus-loss prearm window may have expired long ago, so briefly re-arm hidden
+            // APP capture here; the immediately following request can then install a fresh
+            // mode-1 frame before the Dock's first visible pixels are laid out.
             final int token = ++appBackdropPrearmToken;
             appBackdropPrearmActive = true;
-            appReadyGateActive = wallpaperCacheReady && wallpaperSignatureValid;
-            appReadyRetryCount = 0;
-            appReadyGateDeadlineNanos = System.nanoTime() + APP_READY_MAX_WINDOW_NS;
             lastCaptureStartNanos = 0L;
-            // A focus-loss prearm frame may already be tagged APP while still visually being
-            // the launch wallpaper. Drop it before the first Dock reveal if its signature says
-            // it is wallpaper-like; otherwise a rejected retry would still leave it on-screen.
-            if (appReadyGateActive && installedCaptureScene == CaptureScene.APP
-                    && installedCaptureSignatureValid
-                    && isWallpaperLikeSignature(installedCaptureSignature, wallpaperSignature)) {
-                dropInstalledBackdrop("gesture-target-wallpaper-like-app-frame");
-            }
             mainHandler.postDelayed(() -> {
                 if (token == appBackdropPrearmToken) appBackdropPrearmActive = false;
             }, 350L);
-        } else {
-            resetAppReadyGate();
         }
         observationValid = false;
         requestStateCapture("gesture-target-" + target.toLowerCase(java.util.Locale.ROOT));
@@ -1526,31 +1494,20 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      * SurfaceFlinger mode-1 is asynchronous; pre-arm can still lose a race against the
      * first reveal frame. Fall back to MIUI's native Dock background for that tiny gap,
      * then install Liquid Glass again as soon as the first APP frame arrives. */
-    private void dropInstalledBackdrop(String reason) {
+    private void invalidateInstalledBackdropForApp(String reason) {
+        if (installedCaptureScene == null || installedCaptureScene == CaptureScene.APP) return;
         Bitmap old = capture;
         CaptureScene oldScene = installedCaptureScene;
         capture = null;
         captureShader = null;
         installedCaptureScene = null;
-        installedCaptureSignatureValid = false;
         if (old != null && old != wallpaperStripCache && !old.isRecycled()) old.recycle();
         if (nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(1f);
             nativeBackgroundHiddenByGlass = false;
         }
         invalidate();
-        logI("Dropped installed backdrop scene=" + oldScene + " reason=" + reason);
-    }
-
-    private void invalidateInstalledBackdropForApp(String reason) {
-        if (installedCaptureScene == null || installedCaptureScene == CaptureScene.APP) return;
-        dropInstalledBackdrop("APP scene barrier: " + reason);
-    }
-
-    private void resetAppReadyGate() {
-        appReadyGateActive = false;
-        appReadyRetryCount = 0;
-        appReadyGateDeadlineNanos = 0L;
+        logI("APP scene barrier dropped stale " + oldScene + " backdrop reason=" + reason);
     }
 
     private void updateDesiredScene() {
@@ -1568,7 +1525,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         CaptureScene prev = sceneState.desired();
         if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed)) return;
-        if (sceneState.desired() != CaptureScene.APP) resetAppReadyGate();
         sourceDirty = true;
         // Recents→HOME: the scene just flipped — capture immediately for instant
         // wallpaper transition, don't wait for the next observation cycle.
@@ -1649,15 +1605,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 
-        // APP hidden capture is allowed only for the short focus/gesture prearm or for the
-        // bounded readiness retry loop. The readiness gate has both a retry cap and a hard
-        // deadline, so it cannot recreate the old hidden-Dock continuous capture regression.
-        if (appReadyGateActive && System.nanoTime() > appReadyGateDeadlineNanos) {
-            logI("APP readiness gate expired; accepting next valid APP frame");
-            resetAppReadyGate();
-        }
-        if ((appBackdropPrearmActive || appReadyGateActive)
-                && sceneState.desired() == CaptureScene.APP) {
+        // A real APP focus transition pre-arms only a short bounded window. This bypasses
+        // Dock visibility long enough to install one or two mode-1 frames while the Dock is
+        // still collapsed, but cannot turn into the normal hidden-APP capture loop.
+        if (appBackdropPrearmActive && sceneState.desired() == CaptureScene.APP) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
@@ -1737,13 +1688,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
-        // HyperOS can emit GestureToHome during an app-launch transition. That HOME target
-        // otherwise outranks lifecycle for 1.5s and keeps serving wallpaper cache even after
-        // the Launcher has definitively lost focus. Clear only HOME here. MainHook immediately
-        // follows with setLauncherState(true, false), which then resolves the scene to APP.
-        if (sceneState.clearGestureTargetIfHome()) {
-            logI("Cleared stale HOME gesture target on launcher focus loss");
-        }
     }
 
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via
@@ -2295,7 +2239,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // rotation frame was copied into wallpaperStripCache and later served as a
             // supposedly valid HOME frame without another SurfaceFlinger capture.
             if (requestScene == CaptureScene.HOME) {
-                cacheWallpaperStrip(strip, request, visualProbe.signature);
+                cacheWallpaperStrip(strip, request);
             }
             CroppedFrame cropped = cropWallpaperTile(strip, request.stripRect,
                     request.tileRect, request.dockRect);
@@ -2321,32 +2265,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     if (isCaptureAllowed()) requestStateCapture("stale-scene-result");
                     return;
                 }
-                if (requestScene == CaptureScene.APP && appReadyGateActive
-                        && wallpaperSignatureValid) {
-                    boolean wallpaperLike = isWallpaperLikeSignature(
-                            visualProbe.signature, wallpaperSignature);
-                    int rawDiff = signatureDifference(visualProbe.signature, wallpaperSignature);
-                    if (wallpaperLike && appReadyRetryCount < APP_READY_MAX_RETRIES
-                            && System.nanoTime() <= appReadyGateDeadlineNanos) {
-                        int retry = ++appReadyRetryCount;
-                        if (frame != null) frame.recycle();
-                        retireCaptureAttempt(attempt);
-                        final int retryToken = appBackdropPrearmToken;
-                        logI("APP readiness rejected wallpaper-like frame diff=" + rawDiff
-                                + " retry=" + retry + "/" + APP_READY_MAX_RETRIES);
-                        mainHandler.postDelayed(() -> {
-                            if (retryToken != appBackdropPrearmToken || !appReadyGateActive
-                                    || sceneState.desired() != CaptureScene.APP
-                                    || systemUiPanelExpanded || !isDisplayInteractive()) return;
-                            lastCaptureStartNanos = 0L;
-                            requestStateCapture("app-ready-retry-" + retry);
-                        }, APP_READY_RETRY_MS);
-                        return;
-                    }
-                    logI("APP readiness " + (wallpaperLike ? "fallback" : "confirmed")
-                            + " diff=" + rawDiff + " retries=" + appReadyRetryCount);
-                    resetAppReadyGate();
-                }
                 retireCaptureAttempt(attempt);
                 blackFrameRetryCount = 0;
                 blackFrameRetryRotation = request.rotation;
@@ -2355,8 +2273,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     updateDynamicAppActivity(visualProbe.signature);
                 }
                 installCapture(frame, "async", requestScene);
-                installedCaptureSignature = visualProbe.signature;
-                installedCaptureSignatureValid = true;
                 // The rotation barrier lifts only after the CURRENT orientation's real
                 // SF frame is installed — never on a cache-hit or a transitional frame.
                 if (requestScene == CaptureScene.HOME) {
@@ -2385,38 +2301,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 if (sourceDirty) requestStateCapture();
             });
         }
-    }
-
-    private static int signatureDifference(long a, long b) {
-        int difference = 0;
-        for (int i = 0; i < 16; i++) {
-            int av = (int) ((a >>> (i * 4)) & 0xF);
-            int bv = (int) ((b >>> (i * 4)) & 0xF);
-            difference += Math.abs(av - bv);
-        }
-        return difference;
-    }
-
-    /** Treat uniform launch-animation dimming as wallpaper-like as well as near-identical
-     * signatures. A real app surface normally changes the 8x2 spatial pattern, while a
-     * wallpaper dim/bright transition mostly adds one common luminance offset. */
-    private static boolean isWallpaperLikeSignature(long candidate, long wallpaper) {
-        int raw = signatureDifference(candidate, wallpaper);
-        if (raw <= 8) return true;
-        int sumDelta = 0;
-        for (int i = 0; i < 16; i++) {
-            int cv = (int) ((candidate >>> (i * 4)) & 0xF);
-            int wv = (int) ((wallpaper >>> (i * 4)) & 0xF);
-            sumDelta += cv - wv;
-        }
-        int globalDelta = Math.round(sumDelta / 16f);
-        int residual = 0;
-        for (int i = 0; i < 16; i++) {
-            int cv = (int) ((candidate >>> (i * 4)) & 0xF);
-            int wv = (int) ((wallpaper >>> (i * 4)) & 0xF);
-            residual += Math.abs((cv - wv) - globalDelta);
-        }
-        return Math.abs(globalDelta) <= 3 && residual <= 8;
     }
 
     private void updateDynamicAppActivity(long signature) {
@@ -2561,7 +2445,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /** Deep-copy a mode-2 strip into the wallpaper cache (the strip is otherwise
      *  recycled by cropWallpaperTile).  Called on the SF callback thread. */
-    private void cacheWallpaperStrip(Bitmap strip, CaptureRequest req, long signature) {
+    private void cacheWallpaperStrip(Bitmap strip, CaptureRequest req) {
         try {
             if (strip == null || strip.isRecycled()) return;
             Bitmap copy = strip.copy(Bitmap.Config.ARGB_8888, false);
@@ -2574,8 +2458,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             cacheRotation = req.rotation;
             cacheDisplayWidth = req.displayWidth;
             cacheDisplayHeight = req.displayHeight;
-            wallpaperSignature = signature;
-            wallpaperSignatureValid = true;
             try {
                 cacheWallpaperId = WallpaperManager.getInstance(getContext())
                         .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
@@ -2749,9 +2631,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private void installCapture(CroppedFrame frame, String from, CaptureScene sourceScene) {
         markCaptureHealthy();
         installedCaptureScene = sourceScene;
-        // Async callers set the matching probe signature immediately after install. Cache/sync
-        // installs have no fresh APP probe and therefore must not inherit a previous signature.
-        installedCaptureSignatureValid = false;
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
         if (!nativeBackgroundHiddenByGlass) {
