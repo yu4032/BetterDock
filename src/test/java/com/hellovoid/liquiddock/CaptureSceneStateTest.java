@@ -24,39 +24,21 @@ public class CaptureSceneStateTest {
         assertTrue(state.gestureTargetExpired(1_500_003_000L));
     }
 
-    @Test public void staleHomeTargetFromHomeClearsWhenLauncherPauses() {
+    @Test public void focusLossClearInvalidatesOnlyHomeGestureTarget() {
         CaptureSceneState state = new CaptureSceneState();
-        assertTrue(state.refresh(1_000L, false, true, true));
-        assertEquals(CaptureScene.HOME, state.desired());
-
-        state.setGestureTarget("HOME", 2_000L);
-        assertEquals(CaptureScene.HOME, state.desired());
-
-        assertTrue(state.refresh(3_000L, false, true, false));
-        assertEquals(CaptureScene.APP, state.desired());
-    }
-
-    @Test public void genuineAppToHomeTargetSurvivesPausedLifecycle() {
-        CaptureSceneState state = new CaptureSceneState();
-        assertEquals(CaptureScene.APP, state.desired());
 
         state.setGestureTarget("HOME", 1_000L);
-        assertEquals(CaptureScene.HOME, state.desired());
-
-        assertFalse(state.refresh(2_000L, false, true, false));
-        assertEquals(CaptureScene.HOME, state.desired());
-    }
-
-    @Test public void appAndRecentsTargetsAreUnaffectedByStaleHomeRule() {
-        CaptureSceneState state = new CaptureSceneState();
-
-        state.setGestureTarget("RECENTS", 1_000L);
-        assertFalse(state.refresh(2_000L, false, true, false));
-        assertEquals(CaptureScene.RECENTS, state.desired());
-
-        state.setGestureTarget("APP", 3_000L);
-        assertFalse(state.refresh(4_000L, false, true, false));
+        assertTrue(state.clearGestureTargetIfHome());
+        assertTrue(state.refresh(2_000L, false, true, false));
         assertEquals(CaptureScene.APP, state.desired());
+
+        state.setGestureTarget("RECENTS", 3_000L);
+        assertFalse(state.clearGestureTargetIfHome());
+        assertEquals(CaptureScene.RECENTS, state.resolve(4_000L, false, true, false));
+
+        state.setGestureTarget("APP", 5_000L);
+        assertFalse(state.clearGestureTargetIfHome());
+        assertEquals(CaptureScene.APP, state.resolve(6_000L, false, true, false));
     }
 
     @Test public void workstationSuspendedTracksFlagOnly() {

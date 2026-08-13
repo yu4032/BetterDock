@@ -7,10 +7,6 @@ final class CaptureSceneState {
     private long gestureTargetUntilNanos;
     private long revision;
     private boolean workstationSuspended;
-    // A HOME target emitted while HOME is already authoritative is only a transition hint.
-    // If Launcher subsequently loses focus before that target expires, the target is stale
-    // and must not outrank the now-authoritative APP lifecycle state for another 1.5 seconds.
-    private boolean homeTargetStartedFromHome;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
@@ -21,28 +17,31 @@ final class CaptureSceneState {
 
     void prearmRecents(long nowNanos) {
         gestureTarget = CaptureScene.RECENTS;
-        homeTargetStartedFromHome = false;
         gestureTargetUntilNanos = nowNanos + 700_000_000L;
         setDesired(CaptureScene.RECENTS);
     }
 
     void setGestureTarget(String target, long nowNanos) {
-        CaptureScene next = "HOME".equals(target) ? CaptureScene.HOME
+        gestureTarget = "HOME".equals(target) ? CaptureScene.HOME
                 : "RECENTS".equals(target) ? CaptureScene.RECENTS : CaptureScene.APP;
-        homeTargetStartedFromHome = next == CaptureScene.HOME && desired == CaptureScene.HOME;
-        gestureTarget = next;
         gestureTargetUntilNanos = nowNanos + 1_500_000_000L;
-        setDesired(next);
+        setDesired(gestureTarget);
     }
 
     boolean gestureTargetExpired(long nowNanos) {
         return gestureTarget != null && nowNanos >= gestureTargetUntilNanos;
     }
 
-    void clearGestureTarget() {
+    void clearGestureTarget() { gestureTarget = null; }
+
+    /** Launcher focus loss proves a pending HOME target is stale: an app has actually
+     * taken the foreground. Do not clear APP/RECENTS because those targets are still
+     * useful before lifecycle/focus catches up. */
+    boolean clearGestureTargetIfHome() {
+        if (gestureTarget != CaptureScene.HOME) return false;
         gestureTarget = null;
         gestureTargetUntilNanos = 0L;
-        homeTargetStartedFromHome = false;
+        return true;
     }
 
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
@@ -55,23 +54,15 @@ final class CaptureSceneState {
 
     boolean refresh(long nowNanos, boolean recentsVisible,
                     boolean lifecycleKnown, boolean launcherResumed) {
-        // HyperOS can emit GestureToHome while launching an app. The signal is stale only
-        // when it originated from an already-HOME state and focus/lifecycle subsequently
-        // proves Launcher is no longer resumed. A genuine APP/RECENTS -> HOME destination
-        // remains authoritative while Launcher is still paused and is therefore preserved.
-        if (gestureTarget == CaptureScene.HOME && homeTargetStartedFromHome
-                && lifecycleKnown && !launcherResumed) {
-            clearGestureTarget();
-        }
         CaptureScene next = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
         return setDesired(next);
     }
 
     void setWorkstationSuspended(boolean enabled, long nowNanos,
-                                 boolean recentsVisible, boolean lifecycleKnown,
-                                 boolean launcherResumed) {
+                                     boolean recentsVisible, boolean lifecycleKnown,
+                                     boolean launcherResumed) {
         workstationSuspended = enabled;
-        clearGestureTarget();
+        gestureTarget = null;
         revision++;
         desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
     }
