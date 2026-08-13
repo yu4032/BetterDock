@@ -406,31 +406,52 @@ final class HomeGridHook {
                 Object[] args = chain.getArgs().toArray(new Object[0]);
                 Object result = chain.proceed(args);
                 try {
-                    final android.view.View workspace = (android.view.View)
-                        HookUtil.getField(chain.getThisObject(), "mWorkspace");
-                    if (workspace == null) return result;
+                    Object candidate = HookUtil.getField(chain.getThisObject(), "mWorkspace");
+                    if (!(candidate instanceof android.view.View)) return result;
+                    android.view.View workspace = (android.view.View) candidate;
                     workspaceRef = new java.lang.ref.WeakReference<>(workspace);
-                    android.view.View.OnLayoutChangeListener listener =
-                        new android.view.View.OnLayoutChangeListener() {
-                            @Override public void onLayoutChange(android.view.View v,
-                                    int left, int top, int right, int bottom,
-                                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                                if (right <= left || bottom <= top) return;
-                                v.removeOnLayoutChangeListener(this);
-                                v.post(new Runnable() {
-                                    @Override public void run() {
-                                        refreshWorkspaceGrid(workspace);
-                                    }
-                                });
-                            }
-                        };
-                    workspace.addOnLayoutChangeListener(listener);
-                    workspace.requestLayout();
+                    scheduleStableRotationRefresh(workspace);
                 } catch (Throwable e) {
                     MainHook.log("[DC] rotation refresh hook failed: " + e);
                 }
                 return result;
             });
+    }
+
+    private static void scheduleStableRotationRefresh(final android.view.View workspace) {
+        workspace.requestLayout();
+        workspace.post(new Runnable() {
+            private int lastWidth = -1;
+            private int lastHeight = -1;
+            private int stableFrames;
+            private int frames;
+
+            @Override public void run() {
+                if (!workspace.isAttachedToWindow()) return;
+                int width = workspace.getWidth();
+                int height = workspace.getHeight();
+                if (width > 0 && height > 0) {
+                    if (width == lastWidth && height == lastHeight) {
+                        stableFrames++;
+                    } else {
+                        lastWidth = width;
+                        lastHeight = height;
+                        stableFrames = 0;
+                    }
+                }
+                frames++;
+                // Wait until the new-orientation Workspace bounds have survived two
+                // consecutive frames. A bounded fallback avoids waiting forever on OEM
+                // builds that keep animating insets during rotation.
+                if ((width > 0 && height > 0 && stableFrames >= 2) || frames >= 18) {
+                    refreshWorkspaceGrid(workspace);
+                    workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 180L);
+                    workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 500L);
+                    return;
+                }
+                workspace.postOnAnimation(this);
+            }
+        });
     }
 
     private static void installWorkspaceRefresh(ClassLoader classLoader) {
@@ -573,48 +594,10 @@ final class HomeGridHook {
     }
 
     private static void installRotationTransform(ClassLoader classLoader) {
-        Class<?> helper;
-        Class<?> transformInfo;
-        try {
-            helper = Class.forName(
-                "com.miui.home.launcher.compat.LayoutTransformHelperGridChanged", false, classLoader);
-            transformInfo = Class.forName(
-                "com.miui.home.launcher.bean.LayoutTransformInfo", false, classLoader);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        }
-        Class<?> arrayType = java.lang.reflect.Array.newInstance(transformInfo, 0, 0).getClass();
-        HookUtil.hookMethod(helper, "addOccupied",
-            new Class[]{arrayType, transformInfo, int.class, int.class, int.class, int.class},
-            chain -> {
-                Object[] args = chain.getArgs().toArray(new Object[0]);
-                Object matrix = args[0];
-                int cellX = (Integer) args[2];
-                int cellY = (Integer) args[3];
-                int spanX = (Integer) args[4];
-                int spanY = (Integer) args[5];
-                fillTransformMatrix(matrix, args[1],
-                    cellX, cellY, spanX, spanY);
-                return null;
-            });
-        HookUtil.hookMethod(helper, "transformToHVArray", new Class[]{},
-            chain -> {
-                Object thisObj = chain.getThisObject();
-                int width = (Integer) HookUtil.invoke(thisObj, "getMHCells");
-                int height = (Integer) HookUtil.invoke(thisObj, "getMVCells");
-                Object matrix = HookUtil.invoke(thisObj, "getMDstOccupied");
-                android.view.View[][] result = new android.view.View[width][height];
-                for (int x = 0; x < width; x++) {
-                    for (int y = 0; y < height; y++) {
-                        Object info = getTransformCell(matrix, x, y, width, height);
-                        if (info == null) continue;
-                        Object data = HookUtil.invoke(info, "getMData");
-                        if (data instanceof android.view.View)
-                            result[x][y] = (android.view.View) data;
-                    }
-                }
-                return result;
-            });
+        // MIUI owns the occupied-matrix storage and indexing. Replacing addOccupied()
+        // or transformToHVArray() here is unsafe because 8x4/4x8 matrices may be stored
+        // transposed; guessing the orientation per item mixes [x][y] and [y][x] writes.
+        // Only extend the rule metadata so MIUI's native transform can handle the new grid.
         Class<?> rule;
         try {
             rule = Class.forName(
@@ -628,7 +611,7 @@ final class HomeGridHook {
                 Object result = chain.proceed(args);
                 int h = (Integer) args[0];
                 int v = (Integer) args[1];
-                if (!((h == 8 && v == 4) || (h == 4 && v == 8))) return result;
+                if (!isEightByFourGrid(h, v)) return result;
                 int[][] portrait = new int[][] {
                     {0, 0}, {2, 0}, {0, 2}, {2, 2},
                     {0, 4}, {2, 4}, {0, 6}, {2, 6}
@@ -649,42 +632,13 @@ final class HomeGridHook {
                 Object thisObj = chain.getThisObject();
                 int h = (Integer) HookUtil.invoke(thisObj, "getMHCells");
                 int v = (Integer) HookUtil.invoke(thisObj, "getMVCells");
-                if ((h == 8 && v == 4) || (h == 4 && v == 8)) return null;
+                if (isEightByFourGrid(h, v)) return null;
                 return chain.proceed(chain.getArgs().toArray(new Object[0]));
             });
     }
 
-    private static void fillTransformMatrix(Object matrix, Object value,
-                                            int cellX, int cellY,
-                                            int spanX, int spanY) {
-        int outer = java.lang.reflect.Array.getLength(matrix);
-        int inner = outer == 0 ? 0
-            : java.lang.reflect.Array.getLength(java.lang.reflect.Array.get(matrix, 0));
-        boolean direct = cellX + spanX <= outer && cellY + spanY <= inner;
-        boolean transposed = cellY + spanY <= outer && cellX + spanX <= inner;
-        if (!direct && !transposed) return;
-        for (int x = cellX; x < cellX + spanX; x++) {
-            for (int y = cellY; y < cellY + spanY; y++) {
-                int first = direct ? x : y;
-                int second = direct ? y : x;
-                Object row = java.lang.reflect.Array.get(matrix, first);
-                java.lang.reflect.Array.set(row, second, value);
-            }
-        }
-    }
-
-    private static Object getTransformCell(Object matrix, int x, int y,
-                                           int width, int height) {
-        int outer = java.lang.reflect.Array.getLength(matrix);
-        if (outer == 0) return null;
-        int inner = java.lang.reflect.Array.getLength(java.lang.reflect.Array.get(matrix, 0));
-        boolean direct = outer >= width && inner >= height;
-        int first = direct ? x : y;
-        int second = direct ? y : x;
-        if (first < 0 || first >= outer) return null;
-        Object row = java.lang.reflect.Array.get(matrix, first);
-        if (second < 0 || second >= java.lang.reflect.Array.getLength(row)) return null;
-        return java.lang.reflect.Array.get(row, second);
+    private static boolean isEightByFourGrid(int h, int v) {
+        return (h == 8 && v == 4) || (h == 4 && v == 8);
     }
 
     private static void hookGridCountSetter(Class<?> gridConfig, String method) {
