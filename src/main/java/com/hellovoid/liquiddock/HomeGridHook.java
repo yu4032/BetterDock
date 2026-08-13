@@ -456,6 +456,12 @@ final class HomeGridHook {
                     workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 500L);
                     return;
                 }
+                if (frames >= 180) {
+                    MainHook.log("[DC] rotation grid wait timed out: ws="
+                            + width + "x" + height + " orientation="
+                            + workspace.getResources().getConfiguration().orientation);
+                    return;
+                }
                 workspace.postOnAnimation(this);
             }
         });
@@ -505,13 +511,15 @@ final class HomeGridHook {
 
     private static void refreshWorkspaceGrid(android.view.View workspace) {
         try {
-            int count = (Integer) HookUtil.invoke(workspace, "getScreenCount");
-            for (int i = 0; i < count; i++) {
-                Object cell = HookUtil.invoke(workspace, "getCellLayout",
-                        new Class[]{int.class}, i);
-                if (!(cell instanceof android.view.View)) continue;
-                HookUtil.invoke(cell, "calculateXsAndYs");
-                android.view.View page = (android.view.View) cell;
+            java.util.ArrayList<android.view.View> pages = new java.util.ArrayList<>();
+            collectWorkspaceCellLayouts(workspace, pages);
+            if (pages.isEmpty()) {
+                MainHook.log("[DC] rotation grid refresh: no CellLayout descendants");
+                return;
+            }
+            for (android.view.View page : pages) {
+                if (!sizeMatchesOrientation(page, page.getWidth(), page.getHeight())) continue;
+                HookUtil.invoke(page, "calculateXsAndYs");
                 page.forceLayout();
                 page.requestLayout();
                 page.invalidate();
@@ -519,8 +527,24 @@ final class HomeGridHook {
             workspace.forceLayout();
             workspace.requestLayout();
             workspace.invalidate();
+            MainHook.log("[DC] rotation grid refreshed pages=" + pages.size()
+                    + " ws=" + workspace.getWidth() + "x" + workspace.getHeight());
         } catch (Throwable e) {
             MainHook.log("[DC] rotation grid refresh failed: " + e);
+        }
+    }
+
+    private static void collectWorkspaceCellLayouts(android.view.View view,
+                                                     java.util.List<android.view.View> out) {
+        if (view == null) return;
+        if ("com.miui.home.launcher.CellLayout".equals(view.getClass().getName())) {
+            out.add(view);
+            return;
+        }
+        if (!(view instanceof android.view.ViewGroup)) return;
+        android.view.ViewGroup group = (android.view.ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            collectWorkspaceCellLayouts(group.getChildAt(i), out);
         }
     }
 
