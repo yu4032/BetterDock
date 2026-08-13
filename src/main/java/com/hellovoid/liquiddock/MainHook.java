@@ -500,12 +500,18 @@ public class MainHook {
                         log("[DC] liquid focus: " + hasFocus);
                         DockLiquidGlassView glass = liquidGlassView;
                         if (glass != null) {
-                            glass.setLauncherState(true, hasFocus);
                             if (!hasFocus) {
+                                // Resolve the APP/layer before requesting the APP scene. Previously
+                                // setLauncherState() dirtied capture first, but the collapsed Dock
+                                // visibility gate blocked it and left the HOME wallpaper installed.
                                 glass.onLauncherFocusLost();
                                 glass.refreshForegroundAppLayer();
+                                glass.setLauncherState(true, false);
+                                glass.prearmAppBackdrop("focus-loss");
+                            } else {
+                                glass.setLauncherState(true, true);
+                                glass.onLauncherFocused();
                             }
-                            if (hasFocus) glass.onLauncherFocused();
                         }
                         return r;
                     });

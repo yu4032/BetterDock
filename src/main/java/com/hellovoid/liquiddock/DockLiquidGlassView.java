@@ -310,6 +310,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean overviewActive;
     private int captureTimeoutStreak;
     private boolean captureCircuitOpen;
+    // APP focus is known before the floating Dock becomes visible. Keep a short, bounded
+    // hidden-capture window so an APP frame is already installed before the first reveal
+    // pixel; normal hidden APP capture remains forbidden outside this pre-arm window.
+    private boolean appBackdropPrearmActive;
+    private int appBackdropPrearmToken;
+    private static final long[] APP_BACKDROP_PREARM_DELAYS_MS = {0L, 120L, 320L};
+    private static final long APP_BACKDROP_PREARM_WINDOW_MS = 850L;
 
     private Bitmap capture;
     private BitmapShader captureShader;
@@ -1125,6 +1132,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             beginObservationBurst();
             gestureDownRawY = rawY;
             recentsPrearmed = false;
+            // The Dock may still be fully collapsed here. Allow exactly this gesture's
+            // first APP frame to bypass visibility so the backdrop is live before motion.
+            armAppBackdropForGestureDown();
             requestStateCapture("dock-gesture-down");
             return;
         }
@@ -1321,6 +1331,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (runtimeGlassEnabled == enabled) return;
         runtimeGlassEnabled = enabled;
         if (!enabled) {
+            appBackdropPrearmActive = false;
+            appBackdropPrearmToken++;
             cancelPendingCaptureWork();
             markGlassVisibilityDirty();
             appVisualSignatureValid = false;
@@ -1555,6 +1567,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 
+        // A real APP focus transition pre-arms only a short bounded window. This bypasses
+        // Dock visibility long enough to install one or two mode-1 frames while the Dock is
+        // still collapsed, but cannot turn into the normal hidden-APP capture loop.
+        if (appBackdropPrearmActive && sceneState.desired() == CaptureScene.APP) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
+
         // Recents is intentionally special: HyperOS hides the Floating Dock window while the
         // overview remains on screen, so Recents must keep its self-sustained capture loop alive.
         // Dock dragging likewise needs the animation tail even if normal visibility is transient.
@@ -1575,6 +1595,55 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return System.nanoTime() <= graceEndNanos;
     }
 
+    /** Prepare the APP backdrop before the collapsed Dock is visible. The requests are
+     * deliberately bounded to the focus transition; dynamic APP continuation still requires
+     * isGlassActuallyVisible(), so this cannot recreate the hidden-Dock power regression. */
+    void prearmAppBackdrop(String reason) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> prearmAppBackdrop(reason));
+            return;
+        }
+        if (!runtimeGlassEnabled || workstationMode || sceneState.workstationSuspended()
+                || systemUiPanelExpanded || !isDisplayInteractive()) return;
+        updateDesiredScene();
+        if (sceneState.desired() != CaptureScene.APP) return;
+
+        final int token = ++appBackdropPrearmToken;
+        appBackdropPrearmActive = true;
+        resetCaptureCircuit("app-prearm-" + reason);
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+
+        for (long delay : APP_BACKDROP_PREARM_DELAYS_MS) {
+            mainHandler.postDelayed(() -> {
+                if (token != appBackdropPrearmToken || !attached || launcherResumed
+                        || sceneState.desired() != CaptureScene.APP
+                        || systemUiPanelExpanded || !isDisplayInteractive()) return;
+                // Bypass cadence for these few transition snapshots. A later shot replaces
+                // an early app-launch animation frame before the user can summon the Dock.
+                lastCaptureStartNanos = 0L;
+                observationValid = false;
+                requestStateCapture("app-prearm-" + reason + "-" + delay);
+            }, delay);
+        }
+        mainHandler.postDelayed(() -> {
+            if (token != appBackdropPrearmToken) return;
+            appBackdropPrearmActive = false;
+        }, APP_BACKDROP_PREARM_WINDOW_MS);
+    }
+
+    private void armAppBackdropForGestureDown() {
+        updateDesiredScene();
+        if (sceneState.desired() != CaptureScene.APP || launcherResumed
+                || workstationMode || systemUiPanelExpanded || !isDisplayInteractive()) return;
+        final int token = ++appBackdropPrearmToken;
+        appBackdropPrearmActive = true;
+        lastCaptureStartNanos = 0L;
+        mainHandler.postDelayed(() -> {
+            if (token == appBackdropPrearmToken) appBackdropPrearmActive = false;
+        }, 350L);
+    }
+
     /** Launcher genuinely lost window focus (an app came to the front).  This is the
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
@@ -1584,6 +1653,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via
      *  liquid_home_settle_delay (default 1200 ms).  Spring-backs use 500 ms. */
     void onLauncherFocused() {
+        appBackdropPrearmActive = false;
+        appBackdropPrearmToken++;
         resetCaptureCircuit("launcher-focus");
         beginObservationBurst();
         boolean wasAway = launcherWasAway;
