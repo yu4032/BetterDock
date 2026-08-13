@@ -18,6 +18,7 @@ import android.graphics.Shader;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 import android.view.Display;
 import android.view.View;
@@ -289,6 +290,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final int[] tmpDockLocation = new int[2];
     private final int[] tmpWorkspaceLocation = new int[2];
     private final Point tmpDisplaySize = new Point();
+    private final Rect tmpGlassVisibleRect = new Rect();
+    private final PowerManager powerManager;
 
     private Bitmap capture;
     private BitmapShader captureShader;
@@ -468,6 +471,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 .getDisplayMetrics().density * 8f;
         this.chromaticAberration = chromaticAberration;
         this.captureCadence = new CaptureCadence(captureFps);
+        this.powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
 
         float density = getResources().getDisplayMetrics().density;
         float displacement = this.blurRadius * .5f * (1f + Math.abs(chromaticAberration));
@@ -1320,6 +1324,51 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 + " revision=" + sceneState.revision());
     }
 
+    /** Hard power gate shared by every scene, including Recents.  Recents is allowed to
+     * outlive the Floating Dock window by design, but there is no useful backdrop work once
+     * the display is off/dozing or the device is non-interactive. */
+    private boolean isDisplayInteractive() {
+        Display display = geometrySource.getDisplay();
+        if (display == null) return false;
+        int state = display.getState();
+        if (state == Display.STATE_OFF || state == Display.STATE_DOZE
+                || state == Display.STATE_DOZE_SUSPEND) return false;
+        return powerManager == null || powerManager.isInteractive();
+    }
+
+    /** Normal HOME/APP captures require the glass to occupy a meaningfully visible area.
+     * isShown() alone is insufficient on HyperOS because the Floating Dock can collapse via
+     * alpha/scale/translation while its View remains VISIBLE and attached. */
+    private boolean isGlassActuallyVisible() {
+        if (!attached || !windowVisible || getVisibility() != View.VISIBLE || !isShown()) return false;
+        if (getWidth() <= 1 || getHeight() <= 1) return false;
+
+        float effectiveAlpha = getAlpha();
+        float effectiveScaleX = Math.abs(getScaleX());
+        float effectiveScaleY = Math.abs(getScaleY());
+        android.view.ViewParent parent = getParent();
+        while (parent instanceof View) {
+            View pv = (View) parent;
+            effectiveAlpha *= pv.getAlpha();
+            effectiveScaleX *= Math.abs(pv.getScaleX());
+            effectiveScaleY *= Math.abs(pv.getScaleY());
+            if (effectiveAlpha <= 0.01f || effectiveScaleX <= 0.02f || effectiveScaleY <= 0.02f)
+                return false;
+            parent = pv.getParent();
+        }
+        if (effectiveAlpha <= 0.01f || effectiveScaleX <= 0.02f || effectiveScaleY <= 0.02f)
+            return false;
+
+        tmpGlassVisibleRect.setEmpty();
+        if (!getGlobalVisibleRect(tmpGlassVisibleRect) || tmpGlassVisibleRect.isEmpty()) return false;
+        long visibleArea = (long) tmpGlassVisibleRect.width() * tmpGlassVisibleRect.height();
+        long fullArea = (long) getWidth() * getHeight();
+        // Ignore a collapsed sliver/animation residue.  Five percent still keeps the final
+        // visible tail eligible for the normal stop-grace window below.
+        long minimumVisibleArea = Math.max(64L, fullArea / 20L);
+        return visibleArea >= minimumVisibleArea;
+    }
+
     private boolean isCaptureAllowed() {
         // Workstation/laptop Dock has an independent background. The normal Dock glass
         // must not capture or render while that container is active.
@@ -1328,25 +1377,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
         // while it is expanded only wastes GPU/binder work and risks sampling its animation.
         if (systemUiPanelExpanded) return false;
-        // Launcher onPause alone must not gate capture: the Dock is a floating overlay
-        // (type 2997) over other apps, and NOT_FOCUSABLE windows never get window focus.
-        // Gate on the actual floating-window state instead (windowVisible/isShown).
-        // Stop grace: a short !isShown() during collapse/hide animations is still allowed
-        // (lastAllowedNanos within stopGraceMillis) so the animation tail is captured.
-        // Keep capturing while an icon drag or the recents panel is active.
+        // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
+        if (!isDisplayInteractive()) return false;
+
+        // Recents is intentionally special: HyperOS hides the Floating Dock window while the
+        // overview remains on screen, so Recents must keep its self-sustained capture loop alive.
+        // Dock dragging likewise needs the animation tail even if normal visibility is transient.
         if (dockDragging || isRecentsVisible()) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
-        boolean baseAllowed = attached && windowVisible && isShown();
-        if (baseAllowed) {
+
+        // HOME/APP must correspond to a glass that is actually visible.  This prevents the
+        // adaptive APP loop from continuing at probe/active FPS after the Dock has collapsed
+        // off-screen while its window/View still report VISIBLE.
+        if (isGlassActuallyVisible()) {
             lastAllowedNanos = System.nanoTime();
             return true;
         }
         if (stopGraceMillis <= 0) return false;
         long graceEndNanos = lastAllowedNanos + stopGraceMillis * 1_000_000L;
-        if (System.nanoTime() <= graceEndNanos) return true;
-        return false;
+        return System.nanoTime() <= graceEndNanos;
     }
 
     /** Launcher genuinely lost window focus (an app came to the front).  This is the
@@ -1913,12 +1964,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 // Config is hot-reloaded by the 1s ticker; no duplicate counter needed here.
                 if (sourceDirty) requestStateCapture();
                 if (dynamicAppCapture && requestScene == CaptureScene.APP
-                        && sceneState.desired() == CaptureScene.APP && isCaptureAllowed()) {
+                        && sceneState.desired() == CaptureScene.APP
+                        && isCaptureAllowed() && isGlassActuallyVisible()) {
                     requestStateCapture("dynamic-app-continue");
                 }
-                // Recents still visible: keep the capture loop alive — the Dock window is
-                // hidden during multitasking so onPreDraw no longer ticks; the self-sustained
-                // loop above (capture -> result -> recents-continue) follows the task cards.
+                // Recents deliberately does not require isGlassActuallyVisible(): HyperOS hides
+                // the Dock window in overview, but the live backdrop still has to follow cards.
+                // requestStateCapture() still applies the global screen-power/SystemUI gates.
                 if (isRecentsVisible()) requestStateCapture("recents-continue");
             });
         } catch (Throwable e) {
