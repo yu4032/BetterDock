@@ -24,6 +24,8 @@ import android.view.Display;
 import android.view.View;
 import android.view.ViewTreeObserver;
 
+import androidx.core.graphics.BitmapCompat;
+
 /**
  * Event-driven liquid-glass renderer for the Launcher Dock.
  *
@@ -33,6 +35,8 @@ import android.view.ViewTreeObserver;
  */
 final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDrawListener {
     private static final String TAG = "LiquidDock";
+    private static final long CONFIG_VISIBLE_RELOAD_MS = 1000L;
+    private static final long CONFIG_DISABLED_RELOAD_MS = 5000L;
 
     /** Debug logs gated by the master switch (MainHook.debugLogging); also
      *  appended to Download/liquiddock.log by MainHook.fileLog. */
@@ -292,6 +296,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Point tmpDisplaySize = new Point();
     private final Rect tmpGlassVisibleRect = new Rect();
     private final PowerManager powerManager;
+    private boolean runtimeGlassEnabled = true;
+    private boolean configReloadScheduled;
 
     private Bitmap capture;
     private BitmapShader captureShader;
@@ -629,8 +635,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Independent config hot-reload ticker: GUI edits to tint/highlight keys
         // apply within ~1s even when the Dock is static (no captures -> no capture-loop
         // reload).  Runs for the lifetime of the glass view.
-        mainHandler.removeCallbacks(configReloadTick);
-        mainHandler.postDelayed(configReloadTick, 1000L);
+        stopConfigReloadTick();
+        ensureConfigReloadTick(false);
 
         captureThread = new HandlerThread("LiquidDock-WallpaperCapture");
         captureThread.start();
@@ -657,7 +663,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     @Override protected void onDetachedFromWindow() {
         attached = false;
         cancelPendingCaptureWork();
-        mainHandler.removeCallbacks(configReloadTick);
+        stopConfigReloadTick();
+        invalidateDockWindowSurfaceCache();
 
         if (observedTree != null && observedTree.isAlive()) {
             observedTree.removeOnPreDrawListener(this);
@@ -688,7 +695,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         windowVisible = visibility == View.VISIBLE;
         if (windowVisible) {
             mainHandler.removeCallbacks(cancelGrace);
+            invalidateDockWindowSurfaceCache();
             observationValid = false;
+            ensureConfigReloadTick(true);
             requestStateCapture("window-visible");
         } else {
             // Defer the hard cancel by the stop-grace period so a collapse/hide animation
@@ -711,11 +720,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // still a useful hint that the Home surface is in front, so keep it as a capture trigger.
         if (hasWindowFocus) {
             observationValid = false;
+            ensureConfigReloadTick(true);
             requestStateCapture("window-focus");
         }
     }
 
     @Override public boolean onPreDraw() {
+        ensureConfigReloadTick(false);
         if (!isCaptureAllowed()) return true;
         if (nativeBackgroundHiddenByGlass && geometrySource.getAlpha() != 0f) {
             geometrySource.setAlpha(0f);
@@ -741,6 +752,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // definition; never serve it for the new one.  Also reset the black-frame log
         // gate (it accumulates to 5 per process and silently stops logging).
         wallpaperCacheReady = false;
+        invalidateDockWindowSurfaceCache();
         clearWallpaperCacheSafely();
         blackFrameLogCount = 0;
         blackFrameRetryCount = 0;
@@ -952,6 +964,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             logW("resolveForegroundAppLayerName failed: " + e);
             return null;
         }
+    }
+
+    private boolean hasValidDockWindowSurface() {
+        android.view.SurfaceControl sc = dockWindowSurface;
+        if (sc == null) return false;
+        try {
+            return sc.isValid();
+        } catch (Throwable ignored) {
+            // Old vendor builds may not expose isValid reliably; keep the cached handle and
+            // invalidate it on window/rotation/capture-error events instead.
+            return true;
+        }
+    }
+
+    private void invalidateDockWindowSurfaceCache() {
+        dockWindowSurface = null;
+        dockWindowLayerName = null;
     }
 
     /** The Dock's own window layer, resolved once at attach, so full-display captures can
@@ -1231,6 +1260,63 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     void setFullscreenCapture(boolean enabled) { fullscreenCapture = enabled; }
 
+    /** Apply the live liquid_glass switch without requiring a Launcher restart. */
+    private void setRuntimeGlassEnabled(boolean enabled) {
+        if (runtimeGlassEnabled == enabled) return;
+        runtimeGlassEnabled = enabled;
+        if (!enabled) {
+            cancelPendingCaptureWork();
+            appVisualSignatureValid = false;
+            dynamicAppActiveUntilNanos = 0L;
+            clearWallpaperCacheSafely();
+
+            Bitmap old = capture;
+            capture = null;
+            captureShader = null;
+            if (old != null && !old.isRecycled()) old.recycle();
+
+            if (nativeBackgroundHiddenByGlass) {
+                geometrySource.setAlpha(1f);
+                nativeBackgroundHiddenByGlass = false;
+            }
+            setVisibility(INVISIBLE);
+            invalidate();
+            logI("Liquid glass runtime-disabled; capture pipeline suspended");
+            return;
+        }
+
+        if (!sceneState.workstationSuspended()) setVisibility(VISIBLE);
+        observationValid = false;
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        logI("Liquid glass runtime-enabled; requesting fresh backdrop");
+        requestStateCapture("runtime-glass-enabled");
+    }
+
+    /**
+     * Keep the 1 Hz hot-reload only while the glass is actually on-screen (or Recents is
+     * intentionally self-capturing).  A runtime-disabled glass polls slowly so it can be
+     * re-enabled without restarting Launcher.  Screen-off/Doze does not poll at all.
+     */
+    private void ensureConfigReloadTick(boolean immediate) {
+        if (configReloadScheduled || !attached || !isDisplayInteractive()) return;
+        long delay;
+        if (!runtimeGlassEnabled) {
+            delay = immediate ? 0L : CONFIG_DISABLED_RELOAD_MS;
+        } else if (isRecentsVisible() || isGlassActuallyVisible()) {
+            delay = immediate ? 0L : CONFIG_VISIBLE_RELOAD_MS;
+        } else {
+            return;
+        }
+        configReloadScheduled = true;
+        mainHandler.postDelayed(configReloadTick, delay);
+    }
+
+    private void stopConfigReloadTick() {
+        mainHandler.removeCallbacks(configReloadTick);
+        configReloadScheduled = false;
+    }
+
     /** Re-read GUI-adjustable appearance keys from the config file and apply them live.
      *  Called periodically from the capture loop so GUI edits take effect within ~1s
      *  without restarting the launcher (the glass view is only created once per Dock
@@ -1238,6 +1324,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private void reloadAppearanceFromConfig() {
         try {
             LiquidDockConfig.Glass cfg = LiquidDockConfig.load().glass;
+            if (!cfg.enabled) {
+                setRuntimeGlassEnabled(false);
+                return;
+            }
+
+            boolean wasEnabled = runtimeGlassEnabled;
             setTintColor(cfg.tintR, cfg.tintG, cfg.tintB);
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);
@@ -1251,18 +1343,20 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             setCapturePowerLimitFps(cfg.captureFps);
             setRecentsPrearmDistanceDp(cfg.recentsPrearmDistance);
             setFullscreenCapture(cfg.fullscreenCapture);
+            if (!wasEnabled) setRuntimeGlassEnabled(true);
         } catch (Throwable e) {
             // Config missing/corrupt: keep the current values.
         }
     }
 
-    /** Config hot-reload tick: re-apply GUI appearance keys every second so edits show up
-     *  without restarting the launcher, even when the Dock is static (0 captures). */
+    /** Adaptive config hot-reload: visible glass = 1 Hz, disabled = 0.2 Hz,
+     * hidden enabled glass = event-driven only, screen-off/Doze = fully stopped. */
     private final Runnable configReloadTick = new Runnable() {
         @Override public void run() {
-            if (!attached) return;
+            configReloadScheduled = false;
+            if (!attached || !isDisplayInteractive()) return;
             reloadAppearanceFromConfig();
-            mainHandler.postDelayed(this, 1000L);
+            ensureConfigReloadTick(false);
         }
     };
 
@@ -1370,6 +1464,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private boolean isCaptureAllowed() {
+        if (!runtimeGlassEnabled) return false;
         // Workstation/laptop Dock has an independent background. The normal Dock glass
         // must not capture or render while that container is active.
         if (sceneState.workstationSuspended()) return false;
@@ -1711,10 +1806,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             requestStateCapture("capture-timeout-new-worker");
         };
         mainHandler.postDelayed(captureTimeout, 600L);
-        // The Dock window's SF layer handle changes every time the window is recreated
-        // (dock show/hide, launcher restart).  Re-resolve the current handle before each
-        // capture so the exclusion never goes stale.
-        dockWindowSurface = resolveWindowSurfaceControl();
+        // APP/RECENTS mode-1 needs the Dock exclusion.  Cache the SurfaceControl across
+        // frames and re-resolve only after a window/rotation/error invalidates it.
+        boolean needsDockExclude = useFullscreen
+                && requestScene != CaptureScene.HOME && !workstationMode;
+        if (needsDockExclude && !hasValidDockWindowSurface()) {
+            dockWindowSurface = resolveWindowSurfaceControl();
+        }
         logI((useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
                 + " strip=" + request.stripRect + " tile=" + request.tileRect
                 + " scale=" + captureScale + " exclude=" + (dockWindowSurface != null));
@@ -1784,6 +1882,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 // a stale zombie worker's late error must not clear
                                 // the live client the new worker is using.
                                 liveCapture = null;
+                                invalidateDockWindowSurfaceCache();
                                 retireCaptureAttempt(attempt);
                                 Log.e(TAG, "async fullscreen capture failed", error);
                                 if (sourceDirty) requestStateCapture();
@@ -2151,41 +2250,77 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    /** Cheap 16-point luminance probe: HyperOS may return status=0 with a pure-black
-     *  buffer (wallpaper-layer capture while an app is in front).  Average channel value
-     *  below 10 counts as black. */
+    /**
+     * Full-Dock luminance/motion probe.  Never judge the frame from a few isolated pixels:
+     * downsample the entire captured Dock strip to at most 16x8 software pixels, then use all
+     * of them for the black-frame mean.  The 64-bit motion signature keeps the historical
+     * 16-nibble format by averaging the thumbnail into an 8x2 spatial grid, so existing motion
+     * thresholds retain their meaning while local changes anywhere in the Dock remain visible.
+     */
     private static VisualProbe probeBitmap(Bitmap bmp, int blackThreshold) {
         if (bmp == null || bmp.isRecycled()) return new VisualProbe(true, 0L, 0);
         Bitmap readable = bmp;
         try {
-            // ScreenshotHardwareBuffer.asBitmap() normally returns Config.HARDWARE.
-            // Hardware bitmaps deliberately reject getPixel()/getPixels(), so make a
-            // software-readable copy before probing them.  Never let this diagnostic
-            // guard discard an otherwise valid capture frame.
-            if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
-                readable = bmp.copy(Bitmap.Config.ARGB_8888, false);
+            int sourceW = bmp.getWidth();
+            int sourceH = bmp.getHeight();
+            if (sourceW <= 0 || sourceH <= 0) return new VisualProbe(true, 0L, 0);
+
+            int probeW = Math.max(1, Math.min(16, sourceW));
+            int probeH = Math.max(1, Math.min(8, sourceH));
+            if (bmp.getConfig() == Bitmap.Config.HARDWARE
+                    || sourceW != probeW || sourceH != probeH) {
+                try {
+                    // BitmapCompat handles HARDWARE input and returns a tiny readable bitmap;
+                    // this is an area downsample of the whole Dock, not a local crop/probe.
+                    readable = BitmapCompat.createScaledBitmap(
+                            bmp, probeW, probeH, null, false);
+                } catch (Throwable scaleError) {
+                    // Only software bitmaps can safely use the platform fallback.  For a
+                    // HARDWARE bitmap, accepting the frame is safer than allocating a full-size
+                    // ARGB copy just for diagnostics.
+                    if (bmp.getConfig() == Bitmap.Config.HARDWARE) {
+                        logW("Unable to downsample hardware capture probe; accepting frame", scaleError);
+                        return new VisualProbe(false, 0L, 0);
+                    }
+                    readable = Bitmap.createScaledBitmap(bmp, probeW, probeH, true);
+                }
                 if (readable == null) return new VisualProbe(false, 0L, 0);
             }
+
             int w = readable.getWidth(), h = readable.getHeight();
-            if (w <= 0 || h <= 0) return new VisualProbe(true, 0L, 0);
-            long sum = 0;
-            int count = 0;
-            long signature = 0L;
-            for (int i = 0; i < 4; i++) {
-                for (int j = 0; j < 4; j++) {
-                    int x = Math.min(w - 1, w * i / 4);
-                    int y = Math.min(h - 1, h * j / 4);
+            long channelSum = 0L;
+            int channelCount = 0;
+            int[] zoneLumaSum = new int[16];
+            int[] zonePixelCount = new int[16];
+
+            for (int y = 0; y < h; y++) {
+                int zoneY = Math.min(1, y * 2 / Math.max(1, h));
+                for (int x = 0; x < w; x++) {
                     int c = readable.getPixel(x, y);
-                    sum += (c >> 16 & 0xFF) + (c >> 8 & 0xFF) + (c & 0xFF);
-                    count += 3;
-                    int luminance = ((c >> 16 & 0xFF) * 3 + (c >> 8 & 0xFF) * 6
-                            + (c & 0xFF)) / 10;
-                    int sample = Math.min(15, luminance >> 4);
-                    signature |= (long) sample << ((i * 4 + j) * 4);
+                    int r = c >> 16 & 0xFF;
+                    int g = c >> 8 & 0xFF;
+                    int b = c & 0xFF;
+                    channelSum += r + g + b;
+                    channelCount += 3;
+                    int luminance = (r * 3 + g * 6 + b) / 10;
+                    int zoneX = Math.min(7, x * 8 / Math.max(1, w));
+                    int zone = zoneY * 8 + zoneX;
+                    zoneLumaSum[zone] += luminance;
+                    zonePixelCount[zone]++;
                 }
             }
-            return new VisualProbe(count > 0 && sum / count < blackThreshold, signature,
-                    count > 0 ? (int) (sum / count) : 0);
+
+            long signature = 0L;
+            for (int zone = 0; zone < 16; zone++) {
+                int n = zonePixelCount[zone];
+                int meanLuma = n > 0 ? zoneLumaSum[zone] / n : 0;
+                int sample = Math.min(15, meanLuma >> 4);
+                signature |= (long) sample << (zone * 4);
+            }
+
+            int meanChannel = channelCount > 0 ? (int) (channelSum / channelCount) : 0;
+            return new VisualProbe(channelCount > 0 && meanChannel < blackThreshold,
+                    signature, meanChannel);
         } catch (Throwable error) {
             logW("Unable to probe capture luminance; accepting frame", error);
             return new VisualProbe(false, 0L, 0);

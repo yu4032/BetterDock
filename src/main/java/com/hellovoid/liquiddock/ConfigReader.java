@@ -44,8 +44,10 @@ public class ConfigReader {
             }
             if (all != null && !all.isEmpty()) {
                 loaded = new HashMap<>(all);
-                Log.i("LiquidDock", "config loaded from API101 Remote Preferences: "
-                        + loaded.size() + " keys");
+                if (MainHook.debugLogging) {
+                    Log.i("LiquidDock", "config loaded from API101 Remote Preferences: "
+                            + loaded.size() + " keys");
+                }
             } else {
                 Log.w("LiquidDock", "API101 Remote Preferences are empty; using defaults");
             }

@@ -20,6 +20,9 @@ import java.lang.reflect.Method;
  */
 final class LiveScreenCapture {
     private static final String TAG = "LiquidDock";
+    private static void logI(String message) {
+        if (MainHook.debugLogging) Log.i(TAG, message);
+    }
     private static final String[] DEFAULT_WALLPAPER_LAYER_NAMES = {
             "Wallpaper BBQ wrapper"
     };
@@ -150,11 +153,11 @@ final class LiveScreenCapture {
 
         Throwable optimizedFailure = null;
         try {
-            Log.i(TAG, "captureMode(2) vendor wallpaper call: display=" + displayId
+            logI("captureMode(2) vendor wallpaper call: display=" + displayId
                     + " crop=" + sourceCrop + " scale=" + scale);
             Bitmap result = captureVendorWallpaperStrip(sourceCrop, scale, displayId);
             if (result != null) {
-                Log.i(TAG, "captureMode(2) vendor wallpaper frame="
+                logI("captureMode(2) vendor wallpaper frame="
                         + result.getWidth() + "x" + result.getHeight());
                 return result;
             }
@@ -169,10 +172,10 @@ final class LiveScreenCapture {
         }
 
         try {
-            Log.i(TAG, "Utilities.captureWallpaperBitmap() fallback attempt");
+            logI("Utilities.captureWallpaperBitmap() fallback attempt");
             Bitmap result = captureViaLauncherUtilities(sourceCrop, scale);
             if (result != null) {
-                Log.i(TAG, "Utilities wallpaper fallback frame="
+                logI("Utilities wallpaper fallback frame="
                         + result.getWidth() + "x" + result.getHeight());
                 return result;
             }
@@ -214,14 +217,14 @@ final class LiveScreenCapture {
 
         Throwable fullFailure = null;
         try {
-            Log.i(TAG, "fullscreen capture call: display=" + displayId
+            logI("fullscreen capture call: display=" + displayId
                     + " crop=" + sourceCrop + " scale=" + scale
                     + " excludeLayers=" + (excludeLayers == null ? 0 : excludeLayers.length)
                     + " excludeName=" + excludeLayerName);
             Bitmap result = captureFullDisplayStrip(sourceCrop, scale, displayId,
                     excludeLayers, excludeLayerName);
             if (result != null) {
-                Log.i(TAG, "fullscreen capture frame="
+                logI("fullscreen capture frame="
                         + result.getWidth() + "x" + result.getHeight());
                 return result;
             }
@@ -307,7 +310,7 @@ final class LiveScreenCapture {
             }
             Object listener = asyncListenerConstructor.newInstance(
                     (java.util.function.ObjIntConsumer<Object>) (buffer, status) -> {
-                        Log.i(TAG, "async capture callback: buffer=" + buffer + " status=" + status);
+                        logI("async capture callback: buffer=" + buffer + " status=" + status);
                         Object hardwareBuffer = null;
                         try {
                             if (buffer == null) {
@@ -333,7 +336,7 @@ final class LiveScreenCapture {
                         }
                     });
             captureDisplay.invoke(windowManager, displayId, args, listener);
-            Log.i(TAG, "async fullscreen capture submitted: display=" + displayId
+            logI("async fullscreen capture submitted: display=" + displayId
                     + " crop=" + sourceCrop + " scale=" + scale);
         } catch (Throwable error) {
             callback.onError(error);
