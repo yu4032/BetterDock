@@ -291,7 +291,6 @@ public class MainHook {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         if (!workstationMode) {
                             View v = (View) chain.getThisObject();
-                            if (animating(v)) return chain.proceed(args);
                             float systemRadius = (Float) args[0];
                             strokeR = Math.max(0f, systemRadius + co);
                             args[0] = Math.max(0f, systemRadius + blurCo);
@@ -1184,31 +1183,20 @@ public class MainHook {
         if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
         if (overlay == null && liquidGlassView == null && shadowView == null) return;
-        boolean anim = animating(bg);
-        if (anim) { log("[DC] syncAll skip (animating)"); return; }
         try {
             bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
             Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
             if (overlay != null) {
                 if (workstationMode) overlay.setVisibility(View.GONE);
+                // Keep stroke geometry on the exact Dock frame. The old independent
+                // 160 ms animator acted as a low-pass filter and visibly trailed the glass.
+                overlay.animate().cancel();
                 ViewGroup.LayoutParams lp = overlay.getLayoutParams();
-                if (lp != null) {
-                    boolean sizeChanged = lp.width != bgW || lp.height != bgH;
-                    if (sizeChanged) {
-                        final int fromW = lp.width, fromH = lp.height;
-                        overlay.animate().cancel();
-                        overlay.animate().setDuration(160)
-                            .setUpdateListener(a -> {
-                                float t = a.getAnimatedFraction();
-                                ViewGroup.LayoutParams l = overlay.getLayoutParams();
-                                l.width = fromW + (int) ((bgW - fromW) * t);
-                                l.height = fromH + (int) ((bgH - fromH) * t);
-                                overlay.setLayoutParams(l);
-                                overlay.invalidate();
-                            }).start();
-                        log("[DC] syncAll overlay animate " + fromW + "x" + fromH + " -> " + bgW + "x" + bgH);
-                    }
+                if (lp != null && (lp.width != bgW || lp.height != bgH)) {
+                    lp.width = bgW;
+                    lp.height = bgH;
+                    overlay.setLayoutParams(lp);
                 }
                 overlay.invalidate();
             }
