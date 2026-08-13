@@ -56,19 +56,40 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 | `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为。通过 `HookUtil.findMethodExact` 沿父类查找，兼容 HyperOS 继承链 |
 | `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | 工作台 Dock 图标分隔竖线的属性调整（宽度、高度、颜色、透明度、偏移） |
 
+## 工作台模式
+
+工作台（笔记本）模式下，HyperOS 3 无 Mingou snapshot 方法且 `showOrHideRecent` 不触发实时捕获，
+模块强制壁纸快照（mode-2），禁止进入 mode-1 全屏实时捕获。相关 hook 集中在
+`WorkstationWallpaperOnlyHook` 与 `MainHook` 的工作台分支：
+
+| 目标类 | 方法 | 作用 |
+|--------|------|------|
+| `DockLiquidGlassView` | `onWorkstationRecentsButton()` | 工作台 Recents 时阻止 mode-1 实时捕获，改用壁纸快照 |
+| `HotSeats` | `setMingouStaticDockLiveBlurVisible(boolean)` | 工作台时强制关闭静态 Dock 实时模糊（`true`→`false`） |
+| `HotSeats` | `setMingouStaticDockSnapshotMode(boolean)` | 工作台时强制快照模式（恒 `true`），钉住壁纸快照 |
+| `Launcher` | `showOrHideRecent()` | 多任务切换时刷新壁纸快照；工作台路径与普通模式兼容 |
+| `CellLayout` | `onLayout` | All Apps 界面垂直偏移（横竖屏独立），先跑原生再补偿 |
+| `DockContainer` | `setMingouLaptopPcModeEnabled(boolean)` | 笔记本/工作台模式开关，驱动上述工作台分支 |
+
 ## 桌面网格
 
 | 目标类 | 方法 | 作用 |
 |--------|------|------|
-| `com.miui.home.launcher.Launcher` | `setupViews`（网格路径） | 网格初始化入口 |
+| `com.miui.home.launcher.Launcher` | `setupViews`（网格路径） | 网格初始化入口，缓存 Workspace 弱引用并触发全页刷新 |
 | `Folder` | `onMeasure` | 文件夹测量（网格尺寸参与） |
-| `CellLayout` | `calculateXsAndYs` | 图标行列坐标计算——8x4/4x8 布局的核心 |
+| `CellLayout` | `calculateXsAndYs` | 图标行列坐标计算——8x4/4x8 布局的核心，前后各应用一次自定义几何 |
 | `CellLayout` | `onLayout` | 布局阶段，应用行列偏移 |
-| `com.miui.home.launcher.Launcher` | `onConfigurationChanged` | 配置变化时网格重算 |
+| `com.miui.home.launcher.Launcher` | `onConfigurationChanged` | 配置变化时网格重算；等待 Workspace 尺寸与方向匹配后刷新 |
 | `Workspace`（screenView） | `updateIndicatorPositions` | 指示器位置 |
-| 占位计算工具 | `addOccupied` / `transformToHVArray` | 网格占位与行列映射 |
-| 网格规则类 | `checkCellCount` | 行列数校验 |
-| 网格配置类 | 行列数 getter/setter | 读写行列数配置 |
+| `LayoutTransformRuleGridChanged` | 构造函数 | 8x4/4x8 旋转变换规则：注入竖屏/横屏屏幕坐标映射与 totalBlocks |
+| `LayoutTransformRuleGridChanged` | `checkCellCount` | 行列数校验（8x4/4x8 直接放行，绕过原生校验） |
+| 网格配置类 | 行列数 getter/setter | 把 6 列改写成 8 列（`hookGridCountSetter/Getter`） |
+| 设备兼容类 | `getCellCountX/YMin/Def` | 旋转时返回方向相关行列数：竖屏 4x8 / 横屏 8x4（`hookAxis`） |
+
+> 旋转图标偏移修复（v1.1.0）：旋转后 Workspace 尺寸延迟更新，早前 `getCellLayout(int)`
+> 在此 HyperOS 构建返回 null 导致错误几何未被覆盖。现改为 `sizeMatchesOrientation`
+> 等待尺寸与方向匹配，再经 `collectWorkspaceCellLayouts` 递归遍历真实 CellLayout 后代重算。
+> 已删除 `addOccupied` / `transformToHVArray` hook（8x4/4x8 矩阵转置方向不安全）。
 
 ## 反射工具层
 
