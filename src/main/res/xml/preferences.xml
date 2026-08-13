@@ -349,6 +349,36 @@
 
     </PreferenceCategory>
 
+
+    <PreferenceCategory android:title="Dock Divider">
+        <SwitchPreference
+            android:key="dock_divider_enabled"
+            android:title="Customize Dock Divider"
+            android:summary="Independent from Dock size, blur and unit settings"
+            android:defaultValue="false" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_width_dp"
+            android:title="Divider Width (0.1 dp)" android:summary="%d × 0.1 dp"
+            android:defaultValue="10" app:min="0" app:max="160" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_height_scale"
+            android:title="Divider Height" android:summary="%d%%"
+            android:defaultValue="60" app:min="0" app:max="100" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_y_offset"
+            android:title="Divider Y Offset (0.1 dp)" android:summary="%d × 0.1 dp"
+            android:defaultValue="0" app:min="-80" app:max="80" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_color_r"
+            android:title="Divider Red" android:summary="%d" android:defaultValue="255"
+            app:min="0" app:max="255" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_color_g"
+            android:title="Divider Green" android:summary="%d" android:defaultValue="255"
+            app:min="0" app:max="255" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_color_b"
+            android:title="Divider Blue" android:summary="%d" android:defaultValue="255"
+            app:min="0" app:max="255" android:dependency="dock_divider_enabled" />
+        <com.hellovoid.liquiddock.SeekBarPreference android:key="dock_divider_alpha"
+            android:title="Divider Alpha" android:summary="%d" android:defaultValue="128"
+            app:min="0" app:max="255" android:dependency="dock_divider_enabled" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="Backup &amp; Restore">
 
         <Preference
