@@ -22,14 +22,13 @@ import io.github.libxposed.api.XposedInterface;
 /** Core Launcher hooks for LiquidDock — glass, stroke, dock geometry, workstation. */
 public class MainHook {
 
-    private static View overlay, shadowView, oldBg, nativeShadowTarget;
+    private static View shadowView, oldBg, nativeShadowTarget;
     private static int lastShadowW;
     private static DockLiquidGlassView liquidGlassView;
     private static volatile boolean launcherResumed;
     private static volatile boolean launcherLifecycleKnown;
     private static volatile boolean systemUiPanelExpanded;
     private static int bgW, bgH, shadowPad;
-    private static int strokeBaseR = 255, strokeBaseG = 255, strokeBaseB = 255, strokeBaseAlpha = 255;
     private static float bgR = 30f;
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
@@ -50,6 +49,7 @@ public class MainHook {
             log("[DC] LiquidDock master switch disabled");
             return;
         }
+        DockStrokeRenderer.installNativeHook(classLoader, config.dock);
         RecentsHapticHook.install(classLoader, () -> {
             DockLiquidGlassView glass = liquidGlassView;
             // Laptop/workstation Recents has a dedicated button; generic gesture/haptic
@@ -114,17 +114,6 @@ public class MainHook {
             final LiquidDockConfig.Dock strokeCfg = config.dock;
             try {
                 HookUtil.hookMethod(classLoader,
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    "setBackgroundRadius",
-                    chain -> {
-                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        strokeR = Math.max(0f, (Float) chain.getArgs().get(0));
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    }, float.class);
-            } catch (Throwable e) { log("[DC] stroke corner hook failed: " + e); }
-
-            try {
-                HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
@@ -144,24 +133,10 @@ public class MainHook {
                             } catch (Throwable ignored) {}
                             if (liquidGlassView != null && liquidGlassView.getParent() != null)
                                 return result;
-                            if (overlay == null || overlay.getParent() == null) {
-                                float ds = vBg.getResources().getDisplayMetrics().density;
-                                int sqW = Math.max(1, Math.round(strokeCfg.squircleStrokeWidth * ds));
-                                int sqOff = Math.round(strokeCfg.squircleStrokeOffset * ds);
-                                int sw = Math.max(1, Math.round(strokeCfg.strokeWidth * ds));
-                                int stdSw = Math.max(1, Math.round(strokeCfg.standardStrokeWidth * ds));
-                                overlay = makeOverlay(vBg, strokeCfg.strokeEnabled, strokeCfg.squircle,
-                                        sqOff, sqW, strokeCfg.squircleCp, strokeCfg.fillDiff, sw, stdSw,
-                                        strokeCfg.strokeShadow,
-                                        Math.max(1, Math.round(strokeCfg.strokeShadowRadius * ds)),
-                                        strokeCfg.strokeShadowAlpha);
-                                overlay.setId(View.generateViewId());
-                                parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
-                            }
                             if (liquidGlassView != null)
                                 log("[DC] re-creating glass view (previous detached)");
                             liquidGlassView = LiquidGlassFactory.create(vBg, workspace,
-                                    config.glass, false, 0.58f);
+                                    config.glass, strokeCfg, false, 0.58f);
                             liquidGlassView.setId(View.generateViewId());
                             seedLauncherLifecycleState(chain.getThisObject());
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
@@ -200,7 +175,7 @@ public class MainHook {
         // ── full dock-customization + liquid-glass path ──
         LiquidDockConfig.Dock dock = config.dock;
         log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
-        boolean sq = dock.squircle, fd = dock.fillDiff;
+        boolean sq = dock.squircle;
         float dockScale = dock.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
         int wo = Math.round(dock.widthOffset * dockScale);
@@ -291,7 +266,6 @@ public class MainHook {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         if (!workstationMode) {
                             View v = (View) chain.getThisObject();
-                            if (animating(v)) return chain.proceed(args);
                             float systemRadius = (Float) args[0];
                             strokeR = Math.max(0f, systemRadius + co);
                             args[0] = Math.max(0f, systemRadius + blurCo);
@@ -346,7 +320,7 @@ public class MainHook {
                         });
             } catch (Throwable e) { log("[DC] native Dock shadow hook unavailable: " + e); }
 
-            // setupViews: the big glass+overlay init
+            // setupViews: glass + independent Dock shadow init
             HookUtil.hookMethod(cl, "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
@@ -368,25 +342,15 @@ public class MainHook {
                             ViewGroup parent = (ViewGroup) oldBg.getParent();
                             if (parent == null) return r;
                             int gv = ((FrameLayout.LayoutParams) oldBg.getLayoutParams()).gravity;
-                            strokeBaseR = c2.strokeR; strokeBaseG = c2.strokeG;
-                            strokeBaseB = c2.strokeB; strokeBaseAlpha = c2.strokeAlpha;
                             float ds2 = c2.dimensionsDp ? oldBg.getResources().getDisplayMetrics().density : 1f;
-                            int sqW = Math.max(1, Math.round(c2.squircleStrokeWidth * ds2));
                             int sqOff = Math.round(c2.squircleStrokeOffset * ds2);
                             float sqCp = c2.squircleCp;
-                            int sw = Math.max(1, Math.round(c2.strokeWidth * ds2));
-                            int stdSw = Math.max(1, Math.round(c2.standardStrokeWidth * ds2));
-                            boolean shadow = c2.strokeShadow;
-                            int shadowRadius = Math.max(1, Math.round(c2.strokeShadowRadius * ds2));
-                            int shadowAlpha = c2.strokeShadowAlpha;
                             boolean dockShadow = c2.shadowEnabled;
                             boolean liquid = current.glass.enabled;
                             int dsR = Math.max(1, Math.round(c2.shadowRadius * ds2));
                             int dsS = Math.max(1, Math.round(c2.shadowSize * ds2));
                             int dsA = c2.shadowAlpha;
                             int dsY = Math.round(c2.shadowY * ds2);
-                            if (overlay != null && overlay.getParent() != null) return r;
-                            if (overlay != null) log("[DC] re-creating dock overlay (previous detached)");
                             if (liquidGlassView != null && liquidGlassView.getParent() != null) return r;
                             if (liquidGlassView != null) log("[DC] re-creating glass view (previous detached)");
                             if (liquid) {
@@ -395,7 +359,7 @@ public class MainHook {
                                     Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
                                     if (w instanceof View) workspace = (View) w;
                                 } catch (Throwable ignored) {}
-                                liquidGlassView = LiquidGlassFactory.create(oldBg, workspace, current.glass, c2.squircle, sqCp);
+                                liquidGlassView = LiquidGlassFactory.create(oldBg, workspace, current.glass, c2, c2.squircle, sqCp);
                                 liquidGlassView.setId(View.generateViewId());
                                 seedLauncherLifecycleState(chain.getThisObject());
                                 liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
@@ -434,10 +398,6 @@ public class MainHook {
                                     unc = nxt instanceof ViewGroup ? (ViewGroup) nxt : null;
                                 }
                             }
-                            overlay = makeOverlay(oldBg, c2.strokeEnabled, c2.squircle, sqOff, sqW, sqCp,
-                                    c2.fillDiff, sw, stdSw, shadow, shadowRadius, shadowAlpha);
-                            overlay.setId(View.generateViewId());
-                            parent.addView(overlay, new FrameLayout.LayoutParams(-1, -1, gv));
                             syncAll(oldBg);
                         } catch (Throwable e) { log("[DC] err: " + e); }
                         return r;
@@ -964,7 +924,6 @@ public class MainHook {
             if (oldBg != null) oldBg.post(() -> {
                 if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
                 else oldBg.setAlpha(1f);
-                if (overlay != null) overlay.setVisibility(View.VISIBLE);
                 if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
                 syncAll(oldBg);
             });
@@ -974,7 +933,6 @@ public class MainHook {
             // The workstation Dock background is rendered by its independent laptop
             // DockContainerView. Suppress every normal-mode background layer here.
             oldBg.setAlpha(0f);
-            if (overlay != null) overlay.setVisibility(View.GONE);
             if (shadowView != null) shadowView.setVisibility(View.GONE);
             if (liquidGlassView != null) liquidGlassView.setWorkstationMode(true);
         });
@@ -1079,94 +1037,6 @@ public class MainHook {
         };
     }
 
-    private static View makeOverlay(View bg, boolean strokeEnabled, boolean sq, int sqOff, int sqW, float sqCp,
-                                    boolean fd, int sw, int stdSw, boolean shadow,
-                                    int shadowRadius, int shadowAlpha) {
-        return new View(bg.getContext()) {
-            @Override protected void onDraw(Canvas c) {
-                if (!strokeEnabled || getWidth() < 1 || getHeight() < 1) return;
-                float w = getWidth(), h = getHeight(), r = Math.max(0, sq ? strokeR + sqOff : strokeR - 1f);
-                if (sq) {
-                    if (shadow) drawSqShadow(c, w, h, r, sqOff, sqCp, shadowRadius, shadowAlpha);
-                    drawSq(c, w, h, r, sqOff, sqW, sqCp); return;
-                }
-                if (shadow) drawRoundShadow(c, w, h, r, shadowRadius, shadowAlpha);
-                if (fd) c.drawPath(roundRectRing(w, h, r, sw), noc(150));
-                else {
-                    Paint stroke = noc(150); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(stdSw);
-                    c.drawRoundRect(1, 1, w - 1, h - 1, r, r, stroke);
-                }
-            }
-            @Override protected void onDetachedFromWindow() {
-                boolean ownsGlobalState = overlay == this;
-                DockLiquidGlassView glass = liquidGlassView;
-                if (glass != null) glass.setLauncherResumed(false);
-                liquidGlassView = null;
-                if (ownsGlobalState) overlay = null;
-                if (oldBg == bg) oldBg = null;
-                super.onDetachedFromWindow();
-            }
-        };
-    }
-
-    private static Path roundRectRing(float w, float h, float r, float inset) {
-        Path outer = new Path(); outer.addRoundRect(new RectF(0, 0, w, h), r, r, Path.Direction.CW);
-        Path inner = new Path(); float ir = Math.max(0, r - inset);
-        inner.addRoundRect(new RectF(inset, inset, w - inset, h - inset), ir, ir, Path.Direction.CW);
-        outer.op(inner, Path.Op.DIFFERENCE);
-        return outer;
-    }
-
-    private static void drawRoundShadow(Canvas c, float w, float h, float r, int radius, int alpha) {
-        int steps = Math.max(1, Math.min(radius, 40));
-        for (int i = steps; i >= 1; i--) {
-            float oi = i - 1f, ii = i;
-            Path band = new Path();
-            float or = Math.max(0, r - oi), ir = Math.max(0, r - ii);
-            band.addRoundRect(new RectF(oi, oi, w - oi, h - oi), or, or, Path.Direction.CW);
-            Path inner = new Path();
-            inner.addRoundRect(new RectF(ii, ii, w - ii, h - ii), ir, ir, Path.Direction.CW);
-            band.op(inner, Path.Op.DIFFERENCE);
-            float strength = 1f - (i - 1f) / steps;
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setColor(Color.argb(Math.round(alpha * strength * strength), 0, 0, 0));
-            c.drawPath(band, paint);
-        }
-    }
-
-    private static void drawSqShadow(Canvas c, float w, float h, float r, int sqOff,
-                                     float sqCp, int radius, int alpha) {
-        int steps = Math.max(1, Math.min(radius, 40));
-        for (int i = steps; i >= 1; i--) {
-            float oi = i - 1f, ii = i;
-            Path band = squirclePath(new RectF(-sqOff + oi, -sqOff + oi,
-                w + sqOff - oi, h + sqOff - oi), Math.max(0, r - oi), sqCp);
-            Path inner = squirclePath(new RectF(-sqOff + ii, -sqOff + ii,
-                w + sqOff - ii, h + sqOff - ii), Math.max(0, r - ii), sqCp);
-            band.op(inner, Path.Op.DIFFERENCE);
-            float strength = 1f - (i - 1f) / steps;
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setColor(Color.argb(Math.round(alpha * strength * strength), 0, 0, 0));
-            c.drawPath(band, paint);
-        }
-    }
-
-    private static void drawSq(Canvas c, float w, float h, float r, int sqOff, int sqW, float sqCp) {
-        Path outer = squirclePath(new RectF(-sqOff, -sqOff, w + sqOff, h + sqOff), r, sqCp);
-        Path inner = squirclePath(new RectF(-sqOff + sqW, -sqOff + sqW, w + sqOff - sqW, h + sqOff - sqW),
-            Math.max(0, r - sqW * .5f), .65f);
-        outer.op(inner, Path.Op.DIFFERENCE);
-        c.drawPath(outer, noc(200));
-    }
-
-    private static Paint noc(int a) {
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        int alpha = Math.round(a * clamp(strokeBaseAlpha, 0, 255) / 255f);
-        p.setColor(Color.argb(alpha, Math.max(0, Math.min(255, strokeBaseR)),
-            Math.max(0, Math.min(255, strokeBaseG)), Math.max(0, Math.min(255, strokeBaseB))));
-        return p;
-    }
-
     private static void syncShadowGeometry() {
         View shadow = shadowView, dockBg = oldBg;
         if (shadow == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
@@ -1183,35 +1053,11 @@ public class MainHook {
     private static void syncAll(View bg) {
         if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
-        if (overlay == null && liquidGlassView == null && shadowView == null) return;
-        boolean anim = animating(bg);
-        if (anim) { log("[DC] syncAll skip (animating)"); return; }
+        if (liquidGlassView == null && shadowView == null) return;
         try {
             bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
             Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
-            if (overlay != null) {
-                if (workstationMode) overlay.setVisibility(View.GONE);
-                ViewGroup.LayoutParams lp = overlay.getLayoutParams();
-                if (lp != null) {
-                    boolean sizeChanged = lp.width != bgW || lp.height != bgH;
-                    if (sizeChanged) {
-                        final int fromW = lp.width, fromH = lp.height;
-                        overlay.animate().cancel();
-                        overlay.animate().setDuration(160)
-                            .setUpdateListener(a -> {
-                                float t = a.getAnimatedFraction();
-                                ViewGroup.LayoutParams l = overlay.getLayoutParams();
-                                l.width = fromW + (int) ((bgW - fromW) * t);
-                                l.height = fromH + (int) ((bgH - fromH) * t);
-                                overlay.setLayoutParams(l);
-                                overlay.invalidate();
-                            }).start();
-                        log("[DC] syncAll overlay animate " + fromW + "x" + fromH + " -> " + bgW + "x" + bgH);
-                    }
-                }
-                overlay.invalidate();
-            }
             if (liquidGlassView != null) {
                 ViewGroup.LayoutParams glp = liquidGlassView.getLayoutParams();
                 if (glp != null) { if (glp.width != bgW || glp.height != bgH) {
@@ -1224,7 +1070,7 @@ public class MainHook {
                 if (bgW != lastShadowW) {
                     lastShadowW = bgW;
                     syncShadowGeometry();
-                    overlay.post(MainHook::syncShadowGeometry);
+                    shadowView.post(MainHook::syncShadowGeometry);
                 }
             }
         } catch (Throwable ignored) {}

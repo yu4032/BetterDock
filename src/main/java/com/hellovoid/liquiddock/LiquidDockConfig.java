@@ -7,6 +7,7 @@ final class LiquidDockConfig {
     final boolean debugLog;
     final Grid grid;
     final Dock dock;
+    final Divider divider;
     final Glass glass;
     final Workstation workstation;
 
@@ -17,6 +18,7 @@ final class LiquidDockConfig {
         debugLog = c.b("liquiddock_debug_log", false);
         grid = new Grid(c);
         dock = new Dock(c);
+        divider = new Divider(c);
         glass = new Glass(c);
         workstation = new Workstation(c);
     }
@@ -64,8 +66,6 @@ final class LiquidDockConfig {
         final int strokeR, strokeG, strokeB, strokeAlpha;
         final float strokeShadowRadius, shadowRadius, shadowSize, shadowY;
         final int strokeShadowAlpha, shadowAlpha;
-        final float dividerWidthDp, dividerHeightScale, dividerYOffset;
-        final int dividerColorR, dividerColorG, dividerColorB, dividerAlpha;
 
         Dock(ConfigReader c) {
             enabled = c.b("dock_customization", true);
@@ -100,13 +100,40 @@ final class LiquidDockConfig {
             shadowSize = c.f("dock_shadow_size", 52);
             shadowAlpha = channel(c.i("dock_shadow_alpha", 140));
             shadowY = c.f("dock_shadow_y", 12);
-            dividerWidthDp = c.f("dock_divider_width_dp", 0);
-            dividerHeightScale = c.f("dock_divider_height_scale", 0);
-            dividerYOffset = c.f("dock_divider_y_offset", 0);
-            dividerColorR = c.i("dock_divider_color_r", 0);
-            dividerColorG = c.i("dock_divider_color_g", 0);
-            dividerColorB = c.i("dock_divider_color_b", 0);
-            dividerAlpha = c.i("dock_divider_alpha", 0);
+        }
+    }
+
+    /** Divider customization is independent from Dock geometry and unit switches. */
+    static final class Divider {
+        final boolean enabled, explicitMode;
+        final float widthDp, heightPercent, yOffsetDp;
+        final int colorR, colorG, colorB, alpha;
+
+        Divider(ConfigReader c) {
+            boolean hasLegacyConfig = c.has("dock_divider_width_dp")
+                    || c.has("dock_divider_height_scale")
+                    || c.has("dock_divider_y_offset")
+                    || c.has("dock_divider_color_r")
+                    || c.has("dock_divider_color_g")
+                    || c.has("dock_divider_color_b")
+                    || c.has("dock_divider_alpha");
+            explicitMode = c.has("dock_divider_enabled");
+            enabled = c.b("dock_divider_enabled", hasLegacyConfig);
+
+            // Historical storage is tenths of dp. Normalize it here so the Hook only
+            // sees real dp and never knows about dock_dimensions_dp. Missing fields must
+            // stay zero in legacy mode because zero meant "do not override system".
+            float widthDefault = explicitMode ? 10f : 0f;
+            float heightDefault = explicitMode ? 60f : 0f;
+            int colorDefault = explicitMode ? 255 : 0;
+            int alphaDefault = explicitMode ? 128 : 0;
+            widthDp = Math.max(0f, c.f("dock_divider_width_dp", widthDefault) / 10f);
+            heightPercent = clamp(c.f("dock_divider_height_scale", heightDefault), 0f, 100f);
+            yOffsetDp = c.f("dock_divider_y_offset", 0) / 10f;
+            colorR = channel(c.i("dock_divider_color_r", colorDefault));
+            colorG = channel(c.i("dock_divider_color_g", colorDefault));
+            colorB = channel(c.i("dock_divider_color_b", colorDefault));
+            alpha = channel(c.i("dock_divider_alpha", alphaDefault));
         }
     }
 
@@ -191,6 +218,9 @@ final class LiquidDockConfig {
 
     private static int channel(int value) { return clamp(value, 0, 255); }
     private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+    private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
 }

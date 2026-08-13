@@ -527,13 +527,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         cornerRadius = Math.max(0f, radius);
         squircle = useSquircle;
         squircleCp = cp;
+        DockStrokeRenderer.updateRadius(this, cornerRadius);
         applyRoundedOutline();
         invalidate();
     }
 
     void setGlassRadius(float radius) {
         cornerRadius = Math.max(0f, radius);
+        DockStrokeRenderer.updateRadius(this, cornerRadius);
         applyRoundedOutline();
+        invalidate();
+    }
+
+    /**
+     * Configure the Dock border as this View's foreground.
+     *
+     * The foreground is still part of this View/RenderNode, so it cannot lag behind
+     * the glass as the old independent overlay did.  The renderer itself draws an
+     * explicitly hollow ring rather than Paint.Style.STROKE / Path.op().
+     */
+    void setDockStrokeConfig(LiquidDockConfig.Dock config) {
+        DockStrokeRenderer.configure(this, config, cornerRadius);
         invalidate();
     }
 
@@ -1396,7 +1410,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Re-read GUI-adjustable appearance keys from Remote Preferences. */
     private void reloadAppearanceFromConfig() {
         try {
-            LiquidDockConfig.Glass cfg = LiquidDockConfig.load().glass;
+            LiquidDockConfig fullConfig = LiquidDockConfig.load();
+            LiquidDockConfig.Glass cfg = fullConfig.glass;
             if (!cfg.enabled) {
                 setRuntimeGlassEnabled(false);
                 return;
@@ -1407,6 +1422,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);
             setHighlightAlpha(cfg.highlightAlpha);
+            setDockStrokeConfig(fullConfig.dock);
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
                     cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
             setCaptureScale(cfg.captureScale);

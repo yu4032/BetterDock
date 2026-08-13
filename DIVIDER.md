@@ -1,63 +1,33 @@
 # Dock 分隔竖线控制
 
-## 概览
+## 独立配置
 
-HyperOS 3 工作台模式 Dock 的图标分隔竖线由独立 Hook 控制。  
-Hook 点：`HotSeatsListContentAdapter$LineViewHolder.bindView()`  
-位置：`DockDividerHook.java`
+HyperOS 3 工作台模式 Dock 的图标分隔竖线由 `DockDividerHook` 独立控制。
+它与普通 Dock 的尺寸、模糊、`dock_dimensions_dp` 和工作台 Dock 尺寸开关均无依赖。
 
-系统每次 `bindView()` 后覆盖以下参数，不影响普通桌面模式。
+Hook 点：`HotSeatsListContentAdapter$LineViewHolder.bindView()`。
+系统完成 bind 后再覆盖分隔线 View，因此旋转、Dock 展开/收起都会重新应用。
 
 ## 参数
 
-所有参数在 **Dock 设置页** 调整。
+| key | 语义 |
+|---|---|
+| `dock_divider_enabled` | 独立总开关 |
+| `dock_divider_width_dp` | 0–160，历史存储单位 0.1 dp，运行时规范化为 dp |
+| `dock_divider_height_scale` | 0–100%，相对父容器高度 |
+| `dock_divider_y_offset` | -80–80，历史存储单位 0.1 dp，正值下移 |
+| `dock_divider_color_r/g/b` | 0–255 |
+| `dock_divider_alpha` | 0–255 |
 
-### 宽度
+## 兼容规则
 
-| key | 范围 | 说明 |
-|-----|------|------|
-| `dock_divider_width_dp` | 0–160 (0–16 dp) | 竖线的绝对宽度。0 使用系统默认 |
+旧版本没有 `dock_divider_enabled`，并把数值 `0` 当作“保持系统默认”。升级后：
 
-### 高度比例
+- 若存在任一旧 divider key 且没有新开关，自动进入 **legacy mode**，继续保持旧 sentinel 语义；
+- 一旦 `dock_divider_enabled` 被明确写入，则进入 **explicit mode**，此时 `0` 是真正的可设置值；
+- 新设置页在第一次主动开启 Divider 时会写入一组完整默认值，因此不会因为缺少字段而改变旧配置。
 
-| key | 范围 | 说明 |
-|-----|------|------|
-| `dock_divider_height_scale` | 0–100 (%) | 竖线占图标高度的百分比。0 使用系统默认 |
+## 单位边界
 
-### 垂直偏移
-
-| key | 范围 | 说明 |
-|-----|------|------|
-| `dock_divider_y_offset` | −80–80 (dp×10) | 竖线上下偏移。正值下移，负值上移。不受高度比例影响（可独立控制位置） |
-
-### 颜色与透明度
-
-| key | 范围 | 说明 |
-|-----|------|------|
-| `dock_divider_color_r` | 0–255 | 红色通道。全 0 使用系统默认色 |
-| `dock_divider_color_g` | 0–255 | 绿色通道 |
-| `dock_divider_color_b` | 0–255 | 蓝色通道 |
-| `dock_divider_alpha` | 0–255 | 不透明度。0 使用系统默认 |
-
-RGB 全 0 且 alpha 为 0 → 不干预，系统原样渲染。  
-任一通道非 0 或 alpha 非 0 → 覆盖颜色。
-
-## 实现原理
-
-```
-HotSeatsList$AdapterItem.asDivLine()
-    ↓ viewType=64
-HotSeatsListContentAdapter.onCreateViewHolder(parent, 64)
-    ↓
-LineViewHolder.bindView()
-    ↓ after（系统算完尺寸后覆盖）
-    ↓
-getContent() → View (竖线本体)
-    ↓
-LayoutParams.width     → 宽度
-LayoutParams.height    → 高度
-LayoutParams.topMargin → 居中位置 + 偏移
-setBackgroundColor()   → 颜色 / 透明度
-```
-
-Hook 位于 RecyclerView 的 bind 阶段，旋转、Dock 展开/收起均会重新触发。
+Divider 的 dp 换算只在 `LiquidDockConfig.Divider` 与 `DockDividerHook` 内完成，绝不读取
+`dock_dimensions_dp`。Dock 尺寸单位切换不会改变 Divider 的宽度或 Y 偏移。

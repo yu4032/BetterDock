@@ -5,6 +5,7 @@
     <string name="action_restart_launcher">重启桌面</string>
     <string name="page_grid">主屏幕布局</string>
     <string name="page_dock">Dock 尺寸与模糊</string>
+    <string name="page_divider">Dock 分隔线</string>
     <string name="page_workstation">工作台 Dock</string>
     <string name="page_liquid">液态玻璃</string>
     <string name="page_stroke">描边</string>
@@ -16,9 +17,10 @@
     <string name="category_configuration">配置</string>
     <string name="category_about">关于</string>
     <string name="enable_liquiddock">启用 LiquidDock</string>
-    <string name="enable_liquiddock_summary">关闭后停止主屏幕布局、Dock、液态玻璃、描边和阴影的全部 Hook</string>
+    <string name="enable_liquiddock_summary">关闭后停止主屏幕布局、Dock、分隔线、液态玻璃、描边和阴影的全部 Hook</string>
     <string name="home_grid_summary">8×4 / 4×8、横竖屏边距与指示器</string>
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
+    <string name="home_divider_summary">独立控制分隔线宽度、高度、位置、颜色与透明度</string>
     <string name="home_workstation_summary">独立长度与间距；不继承普通 Dock 参数</string>
     <string name="home_liquid_summary">折射、色散、模糊后端与自适应局部捕获</string>
     <string name="home_stroke_summary">底色、方圆曲线与线宽</string>

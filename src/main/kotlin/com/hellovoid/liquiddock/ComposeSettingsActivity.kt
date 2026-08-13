@@ -66,7 +66,7 @@ class ComposeSettingsActivity : SettingsActivity() {
 
 private enum class Page(val titleRes: Int) {
     Home(R.string.app_name), Grid(R.string.page_grid), Dock(R.string.page_dock),
-    Workstation(R.string.page_workstation), Liquid(R.string.page_liquid),
+    Divider(R.string.page_divider), Workstation(R.string.page_workstation), Liquid(R.string.page_liquid),
     Stroke(R.string.page_stroke), Shadow(R.string.page_shadow), Data(R.string.page_data),
     About(R.string.page_about)
 }
@@ -105,10 +105,10 @@ private fun optionSummary(key: String): String = when (key) {
     "dock_divider_width_dp" -> "调整图标分隔竖线的宽度"
     "dock_divider_height_scale" -> "调整分隔竖线占图标高度的百分比"
     "dock_divider_y_offset" -> "上下偏移分隔竖线，正值下移负值上移"
-    "dock_divider_color_r" -> "分隔竖线颜色 · 红，全为 0 使用系统默认"
-    "dock_divider_color_g" -> "分隔竖线颜色 · 绿，全为 0 使用系统默认"
-    "dock_divider_color_b" -> "分隔竖线颜色 · 蓝，全为 0 使用系统默认"
-    "dock_divider_alpha" -> "分隔竖线不透明度，0 使用系统默认"
+    "dock_divider_color_r" -> "分隔竖线颜色 · 红"
+    "dock_divider_color_g" -> "分隔竖线颜色 · 绿"
+    "dock_divider_color_b" -> "分隔竖线颜色 · 蓝"
+    "dock_divider_alpha" -> "分隔竖线不透明度"
     "workstation_dock_width_offset" -> "相对系统工作台 Dock 的原始长度增减；不会改变位置或普通 Dock"
     "workstation_grid_horizontal_offset" -> "单独调整工作台 8 列图标区域的左右距离，不继承普通桌面偏移"
     "workstation_all_apps_landscape_horizontal_offset" -> "仅调整工作台所有应用横屏图标区的水平位置"
@@ -186,14 +186,24 @@ private val dockSpecs = listOf(
     IntSpec("blur_corner_offset", "内部模糊圆角偏移", 0, -50, 100, "dp"),
     IntSpec("dock_spacing", "Dock 图标间距", 0, -8, 12, "dp"),
     IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, -30, 40, "dp"),
-    IntSpec("dock_divider_width_dp", "分隔线宽度", 0, 0, 160, "dp×10"),
-    IntSpec("dock_divider_height_scale", "分隔线高度比例", 0, 0, 100, "%"),
-    IntSpec("dock_divider_y_offset", "分隔线垂直偏移", 0, -80, 80, "dp×10"),
-    IntSpec("dock_divider_color_r", "分隔线颜色 · 红", 0, 0, 255, ""),
-    IntSpec("dock_divider_color_g", "分隔线颜色 · 绿", 0, 0, 255, ""),
-    IntSpec("dock_divider_color_b", "分隔线颜色 · 蓝", 0, 0, 255, ""),
-    IntSpec("dock_divider_alpha", "分隔线透明度", 0, 0, 255, ""),
 )
+private val dividerSpecs = listOf(
+    IntSpec("dock_divider_width_dp", "分隔线宽度", 10, 0, 160, "dp×10"),
+    IntSpec("dock_divider_height_scale", "分隔线高度比例", 60, 0, 100, "%"),
+    IntSpec("dock_divider_y_offset", "分隔线垂直偏移", 0, -80, 80, "dp×10"),
+    IntSpec("dock_divider_color_r", "分隔线颜色 · 红", 255, 0, 255, ""),
+    IntSpec("dock_divider_color_g", "分隔线颜色 · 绿", 255, 0, 255, ""),
+    IntSpec("dock_divider_color_b", "分隔线颜色 · 蓝", 255, 0, 255, ""),
+    IntSpec("dock_divider_alpha", "分隔线透明度", 128, 0, 255, ""),
+)
+private val dividerKeys = dividerSpecs.map { it.key }
+private fun hasLegacyDividerConfig(prefs: SharedPreferences): Boolean =
+    dividerKeys.any(prefs::contains)
+private fun ensureDividerDefaults(prefs: SharedPreferences) {
+    val e = prefs.edit()
+    dividerSpecs.forEach { if (!prefs.contains(it.key)) e.putInt(it.key, it.default) }
+    e.apply()
+}
 private val workstationSpecs = listOf(
     IntSpec("workstation_dock_width_offset", "工作台 Dock 长度偏移", 0, -240, 240, "dp"),
     IntSpec("workstation_grid_horizontal_offset", "工作台桌面水平偏移", 0, -240, 240, "dp"),
@@ -300,6 +310,7 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
                     { masterEnabled = it }) { page = it }
                 Page.Grid -> GridPage(padding, prefs, masterEnabled)
                 Page.Dock -> DockPage(padding, prefs, masterEnabled)
+                Page.Divider -> DividerPage(padding, prefs, masterEnabled)
                 Page.Workstation -> WorkstationPage(padding, prefs, masterEnabled)
                 Page.Liquid -> LiquidPage(padding, prefs, masterEnabled)
                 Page.Stroke -> StrokePage(padding, prefs, masterEnabled)
@@ -326,6 +337,7 @@ private fun HomePage(
             SettingsCard {
                 ArrowPreference(stringResource(R.string.page_grid), summary = stringResource(R.string.home_grid_summary), onClick = { open(Page.Grid) })
                 ArrowPreference(stringResource(R.string.page_dock), summary = stringResource(R.string.home_dock_summary), onClick = { open(Page.Dock) })
+                ArrowPreference(stringResource(R.string.page_divider), summary = stringResource(R.string.home_divider_summary), onClick = { open(Page.Divider) })
                 ArrowPreference(stringResource(R.string.page_workstation), summary = stringResource(R.string.home_workstation_summary), onClick = { open(Page.Workstation) })
                 ArrowPreference(stringResource(R.string.page_liquid), summary = stringResource(R.string.home_liquid_summary), onClick = { open(Page.Liquid) })
                 ArrowPreference(stringResource(R.string.page_stroke), summary = stringResource(R.string.home_stroke_summary), onClick = { open(Page.Stroke) })
@@ -369,6 +381,23 @@ private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
         BooleanSetting(prefs, "dock_smooth_resize_animation", stringResource(R.string.dock_smooth_resize_animation), true,
             stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation) { smoothResize = it }
         dockSpecs.forEach { IntSetting(prefs, it, masterEnabled && dockEnabled) }
+    }
+}
+
+@Composable
+private fun DividerPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+    val legacyDefault = remember { hasLegacyDividerConfig(prefs) }
+    var enabled by remember {
+        mutableStateOf(prefs.getBoolean("dock_divider_enabled", legacyDefault))
+    }
+    SettingsList(padding, stringResource(R.string.page_divider)) {
+        BooleanSetting(prefs, "dock_divider_enabled", "自定义 Dock 分隔线", legacyDefault,
+            "独立于 Dock 尺寸、模糊和单位开关；宽度与偏移固定使用 dp",
+            masterEnabled) {
+            enabled = it
+            if (it) ensureDividerDefaults(prefs)
+        }
+        dividerSpecs.forEach { IntSetting(prefs, it, masterEnabled && enabled) }
     }
 }
 
@@ -645,6 +674,7 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
         .putBoolean("dock_resize_animation", false)
         .putBoolean("dock_smooth_resize_animation", true)
         .putBoolean("workstation_dock_customization", false)
+        .putBoolean("dock_divider_enabled", false)
         .putInt("blur_radius", 100)
         .putBoolean("liquid_glass", true).putBoolean("liquid_dimensions_dp", true)
         .putInt("liquid_ior", 170).putInt("liquid_normal_strength", 115)

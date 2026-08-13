@@ -8,6 +8,7 @@ final class LiquidGlassFactory {
 
     static DockLiquidGlassView create(View background, View workspace,
                                       LiquidDockConfig.Glass config,
+                                      LiquidDockConfig.Dock dockConfig,
                                       boolean squircle, float squircleCp) {
         float scale = config.dimensionsDp
                 ? background.getResources().getDisplayMetrics().density : 1f;
@@ -29,6 +30,7 @@ final class LiquidGlassFactory {
         view.setAppearance(config.depthEffect, config.brightness, config.specularSharp,
                 config.specularStrength, config.rimLight, config.caustics, config.edgeBand);
         view.setHighlightAlpha(config.highlightAlpha);
+        view.setDockStrokeConfig(dockConfig);
         view.setRecentsPrearmDistanceDp(config.recentsPrearmDistance);
         view.setFullscreenCapture(config.fullscreenCapture);
         return view;

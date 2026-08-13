@@ -322,6 +322,12 @@ public class SettingsActivity extends AppCompatActivity {
         j.put("dock_customization", sp.getBoolean("dock_customization", true));
         j.put("dock_resize_animation", sp.getBoolean("dock_resize_animation", false));
         j.put("dock_smooth_resize_animation", sp.getBoolean("dock_smooth_resize_animation", true));
+        if (sp.contains("dock_divider_enabled"))
+            j.put("dock_divider_enabled", sp.getBoolean("dock_divider_enabled", false));
+        String[] dividerKeys = {"dock_divider_width_dp", "dock_divider_height_scale",
+                "dock_divider_y_offset", "dock_divider_color_r", "dock_divider_color_g",
+                "dock_divider_color_b", "dock_divider_alpha"};
+        for (String key : dividerKeys) if (sp.contains(key)) j.put(key, sp.getInt(key, 0));
         j.put("workstation_dock_customization",
                 sp.getBoolean("workstation_dock_customization", false));
         j.put("workstation_dock_width_offset", readDpPreference(sp,
@@ -534,6 +540,13 @@ public class SettingsActivity extends AppCompatActivity {
         putInt(j, e, "shadow_alpha", 0, 200);
         putInt(j, e, "dock_spacing", -10, 20);
         putInt(j, e, "dock_bottom_offset", 0, 80);
+        putInt(j, e, "dock_divider_width_dp", 0, 160);
+        putInt(j, e, "dock_divider_height_scale", 0, 100);
+        putInt(j, e, "dock_divider_y_offset", -80, 80);
+        putInt(j, e, "dock_divider_color_r", 0, 255);
+        putInt(j, e, "dock_divider_color_g", 0, 255);
+        putInt(j, e, "dock_divider_color_b", 0, 255);
+        putInt(j, e, "dock_divider_alpha", 0, 255);
         String[] dpKeys = {
             "grid_landscape_horizontal_distance", "grid_landscape_top_distance",
             "grid_landscape_bottom_distance", "grid_portrait_horizontal_distance",
@@ -568,6 +581,8 @@ public class SettingsActivity extends AppCompatActivity {
                 "dock_resize_animation", j.optBoolean("dock_resize_animation"));
         if (j.has("dock_smooth_resize_animation")) e.putBoolean(
                 "dock_smooth_resize_animation", j.optBoolean("dock_smooth_resize_animation"));
+        if (j.has("dock_divider_enabled")) e.putBoolean(
+                "dock_divider_enabled", j.optBoolean("dock_divider_enabled"));
         if (j.has("workstation_dock_customization")) e.putBoolean(
                 "workstation_dock_customization", j.optBoolean("workstation_dock_customization"));
         if (j.has("dock_dimensions_dp")) e.putBoolean("dock_dimensions_dp",
