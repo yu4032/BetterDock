@@ -49,6 +49,7 @@ public class MainHook {
             log("[DC] LiquidDock master switch disabled");
             return;
         }
+        DockStrokeRenderer.installNativeHook(classLoader, config.dock);
         RecentsHapticHook.install(classLoader, () -> {
             DockLiquidGlassView glass = liquidGlassView;
             // Laptop/workstation Recents has a dedicated button; generic gesture/haptic
