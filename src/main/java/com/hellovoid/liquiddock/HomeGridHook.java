@@ -296,6 +296,10 @@ final class HomeGridHook {
             int width = layout.getWidth();
             int height = layout.getHeight();
             if (width <= 0 || height <= 0) return;
+            // MIUI can invoke calculateXsAndYs() after Configuration has switched but
+            // before this CellLayout has the new orientation bounds. Never write grid
+            // geometry from the previous orientation's stable size.
+            if (!sizeMatchesOrientation(layout, width, height)) return;
 
             boolean workstation = workstationMode || MainHook.isWorkstationMode();
             boolean workstationAllApps = workstation && isLaptopAllApps(cellLayout);
@@ -440,13 +444,16 @@ final class HomeGridHook {
                     }
                 }
                 frames++;
-                // Wait until the new-orientation Workspace bounds have survived two
-                // consecutive frames. A bounded fallback avoids waiting forever on OEM
-                // builds that keep animating insets during rotation.
-                if ((width > 0 && height > 0 && stableFrames >= 2) || frames >= 18) {
+                // Stable old bounds are still wrong bounds. Only settle after Workspace
+                // dimensions match the new Configuration orientation and stay unchanged
+                // for two consecutive frames. Do not force a frame-count fallback: that
+                // was the source of the persistent landscape-down / portrait-right drift.
+                boolean orientationReady = width > 0 && height > 0
+                    && sizeMatchesOrientation(workspace, width, height);
+                if (orientationReady && stableFrames >= 2) {
                     refreshWorkspaceGrid(workspace);
-                    workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 180L);
-                    workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 500L);
+                    workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 180L);
+                    workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 500L);
                     return;
                 }
                 workspace.postOnAnimation(this);
@@ -470,6 +477,22 @@ final class HomeGridHook {
                     }
                     return result;
                 });
+    }
+
+    private static boolean sizeMatchesOrientation(android.view.View view,
+                                                  int width, int height) {
+        int orientation = view.getResources().getConfiguration().orientation;
+        if (orientation == Configuration.ORIENTATION_PORTRAIT) return height >= width;
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE) return width >= height;
+        return true;
+    }
+
+    private static void refreshWorkspaceGridIfReady(android.view.View workspace) {
+        int width = workspace.getWidth();
+        int height = workspace.getHeight();
+        if (width <= 0 || height <= 0
+                || !sizeMatchesOrientation(workspace, width, height)) return;
+        refreshWorkspaceGrid(workspace);
     }
 
     static void scheduleAllPageRefresh() {
