@@ -56,21 +56,6 @@ Dock 背景的尺寸、圆角、模糊与阴影均通过 Hook 调整，描边 ov
 | `RecentsView` 相关类 | `performEnterRecent(View)` | 进入最近任务时的触觉反馈行为。通过 `HookUtil.findMethodExact` 沿父类查找，兼容 HyperOS 继承链 |
 | `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | 工作台 Dock 图标分隔竖线的属性调整（宽度、高度、颜色、透明度、偏移） |
 
-## 工作台模式
-
-工作台（笔记本）模式下，HyperOS 3 无 Mingou snapshot 方法且 `showOrHideRecent` 不触发实时捕获，
-模块强制壁纸快照（mode-2），禁止进入 mode-1 全屏实时捕获。相关 hook 集中在
-`WorkstationWallpaperOnlyHook` 与 `MainHook` 的工作台分支：
-
-| 目标类 | 方法 | 作用 |
-|--------|------|------|
-| `DockLiquidGlassView` | `onWorkstationRecentsButton()` | 工作台 Recents 时阻止 mode-1 实时捕获，改用壁纸快照 |
-| `HotSeats` | `setMingouStaticDockLiveBlurVisible(boolean)` | 工作台时强制关闭静态 Dock 实时模糊（`true`→`false`） |
-| `HotSeats` | `setMingouStaticDockSnapshotMode(boolean)` | 工作台时强制快照模式（恒 `true`），钉住壁纸快照 |
-| `Launcher` | `showOrHideRecent()` | 多任务切换时刷新壁纸快照；工作台路径与普通模式兼容 |
-| `CellLayout` | `onLayout` | All Apps 界面垂直偏移（横竖屏独立），先跑原生再补偿 |
-| `DockContainer` | `setMingouLaptopPcModeEnabled(boolean)` | 笔记本/工作台模式开关，驱动上述工作台分支 |
-
 ## 桌面网格
 
 | 目标类 | 方法 | 作用 |
