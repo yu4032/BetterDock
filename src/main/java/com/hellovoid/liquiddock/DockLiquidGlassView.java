@@ -245,6 +245,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dockStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int blurRadius;
     private boolean fullscreenCapture = true;
     private final float chromaticAberration;
@@ -269,6 +270,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
     // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
     private float glassHighlightAlpha = 1.0f;
+    // Dock border is recorded in this same View/RenderNode.
+    private boolean dockStrokeEnabled;
+    private float dockStrokeWidthPx;
+    private int dockStrokeColor = Color.TRANSPARENT;
     // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
     // endDrag).  During a drag the glass keeps capturing so the background follows the icon
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
@@ -534,6 +539,24 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     void setGlassRadius(float radius) {
         cornerRadius = Math.max(0f, radius);
         applyRoundedOutline();
+        invalidate();
+    }
+
+    /** Configure the Dock border inside the glass RenderNode. */
+    void setDockStrokeConfig(LiquidDockConfig.Dock config) {
+        if (config == null) {
+            dockStrokeEnabled = false;
+            dockStrokeWidthPx = 0f;
+            dockStrokeColor = Color.TRANSPARENT;
+            invalidate();
+            return;
+        }
+        float scale = config.dimensionsDp ? displayDensity : 1f;
+        float width = squircle ? config.squircleStrokeWidth
+                : (config.fillDiff ? config.strokeWidth : config.standardStrokeWidth);
+        dockStrokeEnabled = config.strokeEnabled;
+        dockStrokeWidthPx = Math.max(0f, width * scale);
+        dockStrokeColor = Color.argb(config.strokeAlpha, config.strokeR, config.strokeG, config.strokeB);
         invalidate();
     }
 
@@ -1396,7 +1419,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Re-read GUI-adjustable appearance keys from Remote Preferences. */
     private void reloadAppearanceFromConfig() {
         try {
-            LiquidDockConfig.Glass cfg = LiquidDockConfig.load().glass;
+            LiquidDockConfig fullConfig = LiquidDockConfig.load();
+            LiquidDockConfig.Glass cfg = fullConfig.glass;
             if (!cfg.enabled) {
                 setRuntimeGlassEnabled(false);
                 return;
@@ -1407,6 +1431,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);
             setHighlightAlpha(cfg.highlightAlpha);
+            setDockStrokeConfig(fullConfig.dock);
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
                     cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
             setCaptureScale(cfg.captureScale);
@@ -2708,6 +2733,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 glassTintR, glassTintG, glassTintB));
         canvas.drawPath(shape, tintPaint);
         canvas.restore();
+        // Same-RenderNode Dock stroke: no second View and no Path.op ring.
+        if (dockStrokeEnabled && dockStrokeWidthPx > 0f && Color.alpha(dockStrokeColor) > 0) {
+            float minDim = Math.min(getWidth(), getHeight());
+            float strokeWidth = Math.min(dockStrokeWidthPx, Math.max(1f, minDim - 1f));
+            Path strokeShape = shapePathInset(getWidth(), getHeight(), cornerRadius, strokeWidth * 0.5f);
+            dockStrokePaint.setShader(null);
+            dockStrokePaint.setStyle(Paint.Style.STROKE);
+            dockStrokePaint.setStrokeWidth(strokeWidth);
+            dockStrokePaint.setStrokeJoin(Paint.Join.ROUND);
+            dockStrokePaint.setStrokeCap(Paint.Cap.ROUND);
+            dockStrokePaint.setColor(dockStrokeColor);
+            canvas.drawPath(strokeShape, dockStrokePaint);
+        }
         // Draw the highlight on the unchanged outer geometry.  Keeping this outside
         // the blur body's clip creates the requested clear separation at the edge.
         canvas.save();
