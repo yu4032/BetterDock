@@ -515,6 +515,8 @@ public class MainHook {
         hookDockGestureTarget(cl, "GestureToHome", "HOME");
         hookDockGestureTarget(cl, "GestureToApp", "APP");
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
+        hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
+        hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
 
         // Workstation Recents is entered from the dedicated Dock button. The system DEX
         // routes HotSeatsListContentAdapter's laptop branch to Launcher.showOrHideRecent().
@@ -665,6 +667,25 @@ public class MainHook {
                 });
             }
         } catch (Throwable e) { log("[DC] " + eventName + " capture hook unavailable: " + e); }
+    }
+
+    private static void hookOverviewStateEvent(ClassLoader cl, String eventName, boolean active) {
+        try {
+            Class<?> eventClass = Class.forName("com.miui.home.recents.event." + eventName, false, cl);
+            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
+                HookUtil.hook(ctor, chain -> {
+                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    DockLiquidGlassView glass = liquidGlassView;
+                    if (glass != null && !workstationMode)
+                        glass.setOverviewActive(active, eventName);
+                    if (!workstationMode) log("[DC] liquid overview active=" + active
+                            + " event=" + eventName);
+                    return r;
+                });
+            }
+        } catch (Throwable e) {
+            log("[DC] " + eventName + " capture state hook unavailable: " + e);
+        }
     }
 
     private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {

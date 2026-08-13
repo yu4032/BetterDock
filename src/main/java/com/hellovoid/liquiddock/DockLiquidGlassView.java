@@ -37,6 +37,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private static final String TAG = "LiquidDock";
     private static final long CONFIG_VISIBLE_RELOAD_MS = 1000L;
     private static final long CONFIG_DISABLED_RELOAD_MS = 5000L;
+    private static final long VISIBILITY_CACHE_NS = 100_000_000L;
+    private static final int CAPTURE_TIMEOUT_BREAKER_LIMIT = 4;
+    private static final long[] CAPTURE_TIMEOUT_BACKOFF_MS = {0L, 250L, 750L};
 
     /** Debug logs gated by the master switch (MainHook.debugLogging); also
      *  appended to Download/liquiddock.log by MainHook.fileLog. */
@@ -295,12 +298,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final int[] tmpWorkspaceLocation = new int[2];
     private final Point tmpDisplaySize = new Point();
     private final Rect tmpGlassVisibleRect = new Rect();
-    private final PowerManager powerManager;
+     private final PowerManager powerManager;
+    private final float displayDensity;
     private boolean runtimeGlassEnabled = true;
     private boolean configReloadScheduled;
+    private boolean glassVisibilityDirty = true;
+    private long glassVisibilityCheckedNanos;
+    private boolean cachedGlassActuallyVisible;
+    // Authoritative Overview latch. HyperOS keeps mOverviewPanel attached/VISIBLE on HOME
+    // on some builds, so View visibility must never start the self-sustained Recents loop.
+    private boolean overviewActive;
+    private int captureTimeoutStreak;
+    private boolean captureCircuitOpen;
 
     private Bitmap capture;
     private BitmapShader captureShader;
+    private final Path cachedDrawShape = new Path();
+    private int cachedDrawShapeW = -1, cachedDrawShapeH = -1;
+    private int cachedDrawRadiusBits, cachedDrawCpBits;
+    private boolean cachedDrawSquircle;
+    private LinearGradient cachedHighlightGradient;
+    private int cachedHighlightW = -1, cachedHighlightH = -1, cachedHighlightAlphaBits;
     private float captureSampleOffsetX;
     private float captureSampleOffsetY;
     private float captureSourceWidth = 1f;
@@ -461,6 +479,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             (v, l, t, r, b, ol, ot, or, ob) -> {
                 if (l != ol || t != ot || r != or || b != ob) {
                     observationValid = false;
+                    beginObservationBurst();
                     requestStateCapture();
                 }
             };
@@ -478,6 +497,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         this.chromaticAberration = chromaticAberration;
         this.captureCadence = new CaptureCadence(captureFps);
         this.powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        this.displayDensity = getResources().getDisplayMetrics().density;
 
         float density = getResources().getDisplayMetrics().density;
         float displacement = this.blurRadius * .5f * (1f + Math.abs(chromaticAberration));
@@ -574,6 +594,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             cancelPendingCaptureWork();
         } else {
             logI("Liquid capture resumed: SystemUI panel collapsed");
+            resetCaptureCircuit("systemui-collapse");
+            beginObservationBurst();
             observationValid = false;
             requestStateCapture("systemui-panel-collapsed");
         }
@@ -625,6 +647,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         super.onAttachedToWindow();
         attached = true;
         captureGeneration++;
+        captureTimeoutStreak = 0;
+        captureCircuitOpen = false;
+        beginObservationBurst();
         windowVisible = getWindowVisibility() == View.VISIBLE;
         windowFocused = hasWindowFocus();
         dockWindowSurface = resolveWindowSurfaceControl();
@@ -695,11 +720,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         windowVisible = visibility == View.VISIBLE;
         if (windowVisible) {
             mainHandler.removeCallbacks(cancelGrace);
+            resetCaptureCircuit("window-visible");
+            beginObservationBurst();
             invalidateDockWindowSurfaceCache();
             observationValid = false;
             ensureConfigReloadTick(true);
             requestStateCapture("window-visible");
         } else {
+            markGlassVisibilityDirty();
             // Defer the hard cancel by the stop-grace period so a collapse/hide animation
             // tail is still captured instead of freezing mid-animation.
             mainHandler.removeCallbacks(cancelGrace);
@@ -719,6 +747,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // steady state on HyperOS Pad and must not cancel capture.  A genuine focus gain is
         // still a useful hint that the Home surface is in front, so keep it as a capture trigger.
         if (hasWindowFocus) {
+            resetCaptureCircuit("window-focus");
+            beginObservationBurst();
             observationValid = false;
             ensureConfigReloadTick(true);
             requestStateCapture("window-focus");
@@ -734,14 +764,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (updateObservation()) {
             requestStateCapture("observation");
         }
-        // Frame-driven scene check: recents visibility may change without
-        // dock geometry movement.  resolve() is O(1) — just a few comparisons.
         updateDesiredScene();
         return true;
     }
 
     @Override protected void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        resetCaptureCircuit("configuration");
+        beginObservationBurst();
         // HyperOS may stop drawing the floating Dock while rebuilding its window, so rotation
         // cannot rely on onPreDraw polling. Invalidate immediately, then capture again after
         // the new orientation's Dock geometry has settled.
@@ -801,11 +831,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         int dockSx = Float.floatToIntBits(geometrySource.getScaleX());
         int dockSy = Float.floatToIntBits(geometrySource.getScaleY());
 
-        boolean recentsVisible = false;
+        boolean recentsVisible = overviewActive;
         int recentsScrollX = 0, recentsScrollY = 0, recentsTx = 0, recentsTy = 0;
         View rec = recentsView;
-        if (rec != null && rec.getVisibility() == View.VISIBLE) {
-            recentsVisible = true;
+        // mOverviewPanel is only an animation-observation source. It is NOT a state signal.
+        if (recentsVisible && rec != null) {
             recentsScrollX = rec.getScrollX();
             recentsScrollY = rec.getScrollY();
             recentsTx = Float.floatToIntBits(rec.getTranslationX());
@@ -1047,6 +1077,26 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         recentsView = view;
     }
 
+    /** Exact Overview lifecycle supplied by launcher Enter/ExitOverviewStateEvent hooks.
+     * Gesture target hooks also update this latch early so the first transition frame is live. */
+    void setOverviewActive(boolean active, String reason) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setOverviewActive(active, reason));
+            return;
+        }
+        if (overviewActive == active) return;
+        overviewActive = active;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        if (active) {
+            sceneState.setGestureTarget("RECENTS", System.nanoTime());
+        } else if (sceneState.desired() == CaptureScene.RECENTS) {
+            sceneState.clearGestureTarget();
+        }
+        updateDesiredScene();
+        requestStateCapture(active ? "overview-enter-" + reason : "overview-exit-" + reason);
+    }
+
     /** A touch event on the Dock area (MainHook's touch listener on the Dock window root).
      *  Any touch — tap, hover before an up-swipe, drag — means the user is interacting with
      *  the Dock, so refresh the glass even if the Dock geometry has not moved yet.  Simple
@@ -1057,6 +1107,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(this::onDockTouchEvent);
             return;
         }
+        resetCaptureCircuit("dock-touch");
+        beginObservationBurst();
         requestStateCapture("dock-touch");
     }
 
@@ -1069,6 +1121,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // may activate live capture there.
         if (workstationMode) return;
         if (action == android.view.MotionEvent.ACTION_DOWN) {
+            resetCaptureCircuit("gesture-down");
+            beginObservationBurst();
             gestureDownRawY = rawY;
             recentsPrearmed = false;
             requestStateCapture("dock-gesture-down");
@@ -1139,6 +1193,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dockDragging = dragging;
         dragLayerName = dragging ? dragSurfaceLayerName : null;
         if (dragging) {
+            resetCaptureCircuit("drag-start");
+            beginObservationBurst();
             observationValid = false;
             requestStateCapture("drag-start");
         }
@@ -1266,6 +1322,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         runtimeGlassEnabled = enabled;
         if (!enabled) {
             cancelPendingCaptureWork();
+            markGlassVisibilityDirty();
             appVisualSignatureValid = false;
             dynamicAppActiveUntilNanos = 0L;
             clearWallpaperCacheSafely();
@@ -1286,6 +1343,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
 
         if (!sceneState.workstationSuspended()) setVisibility(VISIBLE);
+        resetCaptureCircuit("runtime-enable");
+        beginObservationBurst();
         observationValid = false;
         appVisualSignatureValid = false;
         dynamicAppActiveUntilNanos = 0L;
@@ -1295,8 +1354,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     /**
      * Keep the 1 Hz hot-reload only while the glass is actually on-screen (or Recents is
-     * intentionally self-capturing).  A runtime-disabled glass polls slowly so it can be
-     * re-enabled without restarting Launcher.  Screen-off/Doze does not poll at all.
+     * intentionally self-capturing). A runtime-disabled glass polls slowly so it can be
+     * re-enabled without restarting Launcher. Screen-off/Doze does not poll at all.
      */
     private void ensureConfigReloadTick(boolean immediate) {
         if (configReloadScheduled || !attached || !isDisplayInteractive()) return;
@@ -1317,10 +1376,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         configReloadScheduled = false;
     }
 
-    /** Re-read GUI-adjustable appearance keys from the config file and apply them live.
-     *  Called periodically from the capture loop so GUI edits take effect within ~1s
-     *  without restarting the launcher (the glass view is only created once per Dock
-     *  window lifetime, so creation-time values would otherwise go stale). */
+    /** Re-read GUI-adjustable appearance keys from Remote Preferences. */
     private void reloadAppearanceFromConfig() {
         try {
             LiquidDockConfig.Glass cfg = LiquidDockConfig.load().glass;
@@ -1360,9 +1416,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     };
 
+    private void beginObservationBurst() {
+        markGlassVisibilityDirty();
+    }
+
+    private void markGlassVisibilityDirty() {
+        glassVisibilityDirty = true;
+        glassVisibilityCheckedNanos = 0L;
+    }
+
+    /** Recents is an explicit launcher state, not a View-visibility heuristic. */
     private boolean isRecentsVisible() {
-        View rec = recentsView;
-        return rec != null && rec.getVisibility() == View.VISIBLE && rec.isShown();
+        return overviewActive;
     }
 
     /** Capture source is target-state driven; animation progress only controls cadence. */
@@ -1380,6 +1445,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         if (workstationMode) return;
+        // Gesture events are earlier than Overview enter/exit events and therefore provide
+        // the first-frame latch. HOME/APP immediately clear a cancelled/closing Recents path.
+        overviewActive = "RECENTS".equals(target);
         sceneState.setGestureTarget(target, System.nanoTime());
         updateDesiredScene();
         observationValid = false;
@@ -1434,37 +1502,49 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      * isShown() alone is insufficient on HyperOS because the Floating Dock can collapse via
      * alpha/scale/translation while its View remains VISIBLE and attached. */
     private boolean isGlassActuallyVisible() {
-        if (!attached || !windowVisible || getVisibility() != View.VISIBLE || !isShown()) return false;
-        if (getWidth() <= 1 || getHeight() <= 1) return false;
-
-        float effectiveAlpha = getAlpha();
-        float effectiveScaleX = Math.abs(getScaleX());
-        float effectiveScaleY = Math.abs(getScaleY());
-        android.view.ViewParent parent = getParent();
-        while (parent instanceof View) {
-            View pv = (View) parent;
-            effectiveAlpha *= pv.getAlpha();
-            effectiveScaleX *= Math.abs(pv.getScaleX());
-            effectiveScaleY *= Math.abs(pv.getScaleY());
-            if (effectiveAlpha <= 0.01f || effectiveScaleX <= 0.02f || effectiveScaleY <= 0.02f)
-                return false;
-            parent = pv.getParent();
+        long now = System.nanoTime();
+        if (!glassVisibilityDirty && glassVisibilityCheckedNanos != 0L
+                && now - glassVisibilityCheckedNanos <= VISIBILITY_CACHE_NS) {
+            return cachedGlassActuallyVisible;
         }
-        if (effectiveAlpha <= 0.01f || effectiveScaleX <= 0.02f || effectiveScaleY <= 0.02f)
-            return false;
-
-        tmpGlassVisibleRect.setEmpty();
-        if (!getGlobalVisibleRect(tmpGlassVisibleRect) || tmpGlassVisibleRect.isEmpty()) return false;
-        long visibleArea = (long) tmpGlassVisibleRect.width() * tmpGlassVisibleRect.height();
-        long fullArea = (long) getWidth() * getHeight();
-        // Ignore a collapsed sliver/animation residue.  Five percent still keeps the final
-        // visible tail eligible for the normal stop-grace window below.
-        long minimumVisibleArea = Math.max(64L, fullArea / 20L);
-        return visibleArea >= minimumVisibleArea;
+        boolean visible = attached && windowVisible && getVisibility() == View.VISIBLE && isShown()
+                && getWidth() > 1 && getHeight() > 1;
+        if (visible) {
+            float effectiveAlpha = getAlpha();
+            float effectiveScaleX = Math.abs(getScaleX());
+            float effectiveScaleY = Math.abs(getScaleY());
+            android.view.ViewParent parent = getParent();
+            while (parent instanceof View) {
+                View pv = (View) parent;
+                effectiveAlpha *= pv.getAlpha();
+                effectiveScaleX *= Math.abs(pv.getScaleX());
+                effectiveScaleY *= Math.abs(pv.getScaleY());
+                if (effectiveAlpha <= 0.01f || effectiveScaleX <= 0.02f
+                        || effectiveScaleY <= 0.02f) {
+                    visible = false;
+                    break;
+                }
+                parent = pv.getParent();
+            }
+            if (visible) {
+                tmpGlassVisibleRect.setEmpty();
+                visible = getGlobalVisibleRect(tmpGlassVisibleRect) && !tmpGlassVisibleRect.isEmpty();
+                if (visible) {
+                    long visibleArea = (long) tmpGlassVisibleRect.width() * tmpGlassVisibleRect.height();
+                    long fullArea = (long) getWidth() * getHeight();
+                    visible = visibleArea >= Math.max(64L, fullArea / 20L);
+                }
+            }
+        }
+        cachedGlassActuallyVisible = visible;
+        glassVisibilityCheckedNanos = now;
+        glassVisibilityDirty = false;
+        return visible;
     }
 
     private boolean isCaptureAllowed() {
         if (!runtimeGlassEnabled) return false;
+        if (captureCircuitOpen) return false;
         // Workstation/laptop Dock has an independent background. The normal Dock glass
         // must not capture or render while that container is active.
         if (sceneState.workstationSuspended()) return false;
@@ -1504,6 +1584,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     /** Launcher gained window focus.  APP→HOME delay is user-configurable via
      *  liquid_home_settle_delay (default 1200 ms).  Spring-backs use 500 ms. */
     void onLauncherFocused() {
+        resetCaptureCircuit("launcher-focus");
+        beginObservationBurst();
         boolean wasAway = launcherWasAway;
         launcherWasAway = false;
         long delay = wasAway
@@ -1705,6 +1787,23 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
+    private void markCaptureHealthy() {
+        captureTimeoutStreak = 0;
+        captureCircuitOpen = false;
+    }
+
+    /** A tripped breaker means the current worker is presumed wedged.  Only a genuine
+     * external state/user event creates one fresh worker; there is no autonomous thread leak. */
+    private void resetCaptureCircuit(String reason) {
+        if (!captureCircuitOpen && captureTimeoutStreak == 0) return;
+        boolean wasOpen = captureCircuitOpen;
+        captureCircuitOpen = false;
+        captureTimeoutStreak = 0;
+        if (wasOpen && attached && captureThread != null) {
+            rebuildCaptureWorker("circuit-reset-" + reason);
+        }
+    }
+
     /** Remove every queued main/worker capture task; an already-running binder/native capture
      * cannot be interrupted safely, so generation invalidation makes its result disposable. */
     private void cancelPendingCaptureWork() {
@@ -1792,18 +1891,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // captureGeneration (rotation/scene context stays valid).
         if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
         captureTimeout = () -> {
-            // The attempt ID is the only truth: capturing is a derived convenience
-            // state that other paths may legitimately clear; it must never decide
-            // whether this watchdog still owns the attempt.
             if (activeCaptureAttempt != attempt) return;
-            logW("capture timeout attempt=" + attempt + "; rebuilding capture worker");
+            captureTimeout = null;
             activeCaptureAttempt = ++captureAttemptSeq;
             capturing = false;
             kickScheduled = false;
             sourceDirty = true;
             lastCaptureStartNanos = 0L;
-            rebuildCaptureWorker("capture-timeout");
-            requestStateCapture("capture-timeout-new-worker");
+            int streak = ++captureTimeoutStreak;
+            if (streak >= CAPTURE_TIMEOUT_BREAKER_LIMIT) {
+                captureCircuitOpen = true;
+                logW("capture circuit opened after " + streak
+                        + " consecutive timeouts; waiting for external recovery");
+                return;
+            }
+            rebuildCaptureWorker("capture-timeout-" + streak);
+            long backoff = CAPTURE_TIMEOUT_BACKOFF_MS[Math.min(
+                    streak - 1, CAPTURE_TIMEOUT_BACKOFF_MS.length - 1)];
+            mainHandler.postDelayed(() -> {
+                if (!attached || captureCircuitOpen || !isCaptureAllowed()) return;
+                requestStateCapture("capture-timeout-retry");
+            }, backoff);
         };
         mainHandler.postDelayed(captureTimeout, 600L);
         // APP/RECENTS mode-1 needs the Dock exclusion.  Cache the SurfaceControl across
@@ -2191,27 +2299,27 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (id != cacheWallpaperId) return false;
         } catch (Throwable ignored) {
         }
-        // Independent copy: Bitmap.createBitmap() may return the source itself, which
-        // would alias capture == wallpaperStripCache and let a later cache recycle kill
-        // the live backdrop.  Crop from a private ARGB copy instead.
-        Bitmap copy = wallpaperStripCache.copy(Bitmap.Config.ARGB_8888, false);
-        if (copy == null) return false;
-        CroppedFrame frame = cropWallpaperTile(copy, cacheStripRect,
-                req.tileRect, req.dockRect, true);
+        // The wallpaper cache is immutable.  Serve it directly; installCapture() knows
+        // not to recycle a bitmap still owned by wallpaperStripCache.  In the common
+        // case stripRect == tileRect this turns a cache hit into zero bitmap copies.
+        final Bitmap cachedSource = wallpaperStripCache;
+        CroppedFrame frame = cropWallpaperTile(cachedSource, cacheStripRect,
+                req.tileRect, req.dockRect, false);
         if (frame == null) return false;
+        final boolean frameUsesCacheBitmap = frame.bitmap == cachedSource;
         final long generation = captureGeneration;
         mainHandler.post(() -> {
             updateDesiredScene();
             // Stale callback: owns nothing.
             if (activeCaptureAttempt != attempt) {
-                frame.recycle();
+                if (!frameUsesCacheBitmap) frame.recycle();
                 return;
             }
             if (generation != captureGeneration
                     || !sceneState.matches(requestScene, requestSceneRevision)
                     || !isRequestOrientationCurrent(req)
                     || !isCaptureAllowed()) {
-                frame.recycle();
+                if (!frameUsesCacheBitmap) frame.recycle();
                 retireCaptureAttempt(attempt);
                 if (isCaptureAllowed()) requestStateCapture("stale-cache-result");
                 return;
@@ -2245,7 +2353,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             } catch (Throwable ignored) {
                 cacheWallpaperId = -1;
             }
-            if (old != null && old != copy && !old.isRecycled()) old.recycle();
+            if (old != null && old != copy && old != capture
+                    && !old.isRecycled()) old.recycle();
         } catch (Throwable ignored) {
         }
     }
@@ -2409,6 +2518,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private void installCapture(CroppedFrame frame, String from) {
+        markCaptureHealthy();
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
         if (!nativeBackgroundHiddenByGlass) {
@@ -2427,7 +2537,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 + " src=" + frame.sourceWidth + "x" + frame.sourceHeight
                 + " off=" + frame.sampleOffsetX + "," + frame.sampleOffsetY);
         invalidate();
-        if (old != null && old != capture && !old.isRecycled()) old.recycle();
+        if (old != null && old != capture && old != wallpaperStripCache
+                && !old.isRecycled()) old.recycle();
     }
 
     @Override protected void onDraw(Canvas canvas) {
@@ -2451,7 +2562,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("blurRadius", blurRadius);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
         // GUI-configurable via liquid_* settings.
-        float density = getResources().getDisplayMetrics().density;
+        float density = displayDensity;
         refraction.setFloatUniform("thickness", Math.max(1f, glassThickness * density));
         refraction.setFloatUniform("ior", Math.max(1.001f, Math.min(2f, glassIor)));
         refraction.setFloatUniform("normalStrength", Math.max(0f, Math.min(5f, glassNormalStrength)));
@@ -2470,7 +2581,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("captureSize", capture.getWidth(), capture.getHeight());
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);
-        Path shape = shapePath(getWidth(), getHeight(), cornerRadius);
+        Path shape = obtainDrawShapePath();
         canvas.save();
         canvas.clipPath(shape);
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
@@ -2483,14 +2594,46 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         canvas.save();
         highlightPaint.setStyle(Paint.Style.STROKE);
         highlightPaint.setStrokeWidth(Math.max(1f,
-                getResources().getDisplayMetrics().density * .65f * glassHighlightWidth));
-        highlightPaint.setShader(new LinearGradient(0, 0, getWidth(), getHeight(),
-            new int[]{Color.argb((int)(175 * glassHighlightAlpha), 255, 255, 255),
-                      Color.argb((int)(25 * glassHighlightAlpha), 255, 255, 255),
-                      Color.argb((int)(105 * glassHighlightAlpha), 255, 255, 255)},
-            null, Shader.TileMode.CLAMP));
+                displayDensity * .65f * glassHighlightWidth));
+        highlightPaint.setShader(obtainHighlightGradient());
         canvas.drawPath(shape, highlightPaint);
         canvas.restore();
+    }
+
+    private Path obtainDrawShapePath() {
+        int w = getWidth(), h = getHeight();
+        int radiusBits = Float.floatToIntBits(cornerRadius);
+        int cpBits = Float.floatToIntBits(squircleCp);
+        if (w != cachedDrawShapeW || h != cachedDrawShapeH
+                || radiusBits != cachedDrawRadiusBits || cpBits != cachedDrawCpBits
+                || squircle != cachedDrawSquircle) {
+            cachedDrawShape.reset();
+            cachedDrawShape.set(shapePath(w, h, cornerRadius));
+            cachedDrawShapeW = w;
+            cachedDrawShapeH = h;
+            cachedDrawRadiusBits = radiusBits;
+            cachedDrawCpBits = cpBits;
+            cachedDrawSquircle = squircle;
+        }
+        return cachedDrawShape;
+    }
+
+    private LinearGradient obtainHighlightGradient() {
+        int w = getWidth(), h = getHeight();
+        int alphaBits = Float.floatToIntBits(glassHighlightAlpha);
+        if (cachedHighlightGradient == null || w != cachedHighlightW || h != cachedHighlightH
+                || alphaBits != cachedHighlightAlphaBits) {
+            cachedHighlightGradient = new LinearGradient(0, 0, w, h,
+                    new int[]{
+                            Color.argb((int) (175 * glassHighlightAlpha), 255, 255, 255),
+                            Color.argb((int) (25 * glassHighlightAlpha), 255, 255, 255),
+                            Color.argb((int) (105 * glassHighlightAlpha), 255, 255, 255)},
+                    null, Shader.TileMode.CLAMP);
+            cachedHighlightW = w;
+            cachedHighlightH = h;
+            cachedHighlightAlphaBits = alphaBits;
+        }
+        return cachedHighlightGradient;
     }
 
     private Path shapePathInset(float width, float height, float radius, float inset) {
