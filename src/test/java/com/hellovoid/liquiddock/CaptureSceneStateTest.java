@@ -24,13 +24,15 @@ public class CaptureSceneStateTest {
         assertTrue(state.gestureTargetExpired(1_500_003_000L));
     }
 
-    @Test public void workstationAlwaysUsesWallpaper() {
+    @Test public void workstationSuspendedTracksFlagOnly() {
         CaptureSceneState state = new CaptureSceneState();
-        state.setWorkstationWallpaperOnly(true, 1L, false, false, false);
-        assertEquals(CaptureScene.HOME, state.desired());
-        assertEquals(CaptureScene.HOME, state.resolve(2L, true, false, false));
-        state.setWorkstationWallpaperOnly(false, 3L, false, false, false);
-        assertEquals(CaptureScene.APP, state.desired());
+        assertFalse(state.workstationSuspended());
+        state.setWorkstationSuspended(true, 1L, false, false, false);
+        assertTrue(state.workstationSuspended());
+        // The suspend flag no longer forces a scene — resolve is scene-driven only.
+        assertEquals(CaptureScene.APP, state.resolve(2L, false, false, false));
+        state.setWorkstationSuspended(false, 3L, false, false, false);
+        assertFalse(state.workstationSuspended());
     }
 
     @Test public void prearmRevisionRejectsOlderFrames() {
