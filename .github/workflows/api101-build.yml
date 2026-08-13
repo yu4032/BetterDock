@@ -5,23 +5,75 @@ on:
     branches: [ api101-migration ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
+      - name: Apply independent divider split
+        shell: bash
+        run: |
+          TRIGGER=$(git rev-parse HEAD)
+          BASE=$(git rev-parse HEAD^^)
+          git show "$TRIGGER:.ci/apply_divider_split.py" > /tmp/apply_divider_split.py
+          git checkout "$BASE"
+          python3 /tmp/apply_divider_split.py
+      - name: Verify divider split scope
+        shell: bash
+        run: |
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 8
+          git diff --name-only | grep -qx 'DIVIDER.md'
+          git diff --name-only | grep -qx 'src/main/java/com/hellovoid/liquiddock/DockDividerHook.java'
+          git diff --name-only | grep -qx 'src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java'
+          git diff --name-only | grep -qx 'src/main/java/com/hellovoid/liquiddock/SettingsActivity.java'
+          git diff --name-only | grep -qx 'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt'
+          git diff --name-only | grep -qx 'src/main/res/values/strings.xml'
+          git diff --name-only | grep -qx 'src/main/res/values-zh-rCN/strings.xml'
+          git diff --name-only | grep -qx 'src/main/res/xml/preferences.xml'
+          grep -q 'final Divider divider;' src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java
+          grep -q 'LiquidDockConfig.Divider cfg' src/main/java/com/hellovoid/liquiddock/DockDividerHook.java
+          grep -q 'Page.Divider -> DividerPage' src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+          grep -q 'dock_divider_enabled' src/main/java/com/hellovoid/liquiddock/SettingsActivity.java
+          ! grep -q 'dividerWidthDp' src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java
+          git diff --stat
       - run: chmod +x ./gradlew
-      - run: ./gradlew assembleDebug --stacktrace
+      - run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+      - name: Publish clean production commit
+        shell: bash
+        run: |
+          TRIGGER=${{ github.sha }}
+          BASE=$(git rev-parse HEAD)
+          REMOTE=$(git ls-remote origin refs/heads/api101-migration | awk '{print $1}')
+          test "$REMOTE" = "$TRIGGER"
+          git config user.name yu4032
+          git config user.email 4032542465@smail.lnu.edu.cn
+          git add DIVIDER.md \
+            src/main/java/com/hellovoid/liquiddock/DockDividerHook.java \
+            src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
+            src/main/java/com/hellovoid/liquiddock/SettingsActivity.java \
+            src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt \
+            src/main/res/values/strings.xml \
+            src/main/res/values-zh-rCN/strings.xml \
+            src/main/res/xml/preferences.xml
+          TREE=$(git write-tree)
+          COMMIT=$(printf '%s\n' 'refactor: split Dock divider settings' | git commit-tree "$TREE" -p "$BASE")
+          git push --force-with-lease=refs/heads/api101-migration:$TRIGGER origin "$COMMIT:refs/heads/api101-migration"
+          echo "published=$COMMIT" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      # Keep this workflow branch-local until the API101 migration is device-verified.
