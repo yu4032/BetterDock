@@ -191,7 +191,8 @@ final class HomeGridHook {
                     chain -> {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         Object result = chain.proceed(args);
-                        applyWidgetGridSize(chain.getThisObject(), args[2], args[3]);
+                        applyWidgetGridSize(chain.getThisObject(),
+                                (Integer) args[0], (Integer) args[1], args[2], args[3]);
                         return result;
                     });
         } catch (Throwable e) {
@@ -258,7 +259,8 @@ final class HomeGridHook {
         }
     }
 
-    private static void applyWidgetGridSize(Object cellLayout, Object info, Object layoutParams) {
+    private static void applyWidgetGridSize(Object cellLayout, int cellX, int cellY,
+                                            Object info, Object layoutParams) {
         try {
             if (!grid8x4Enabled || info == null || layoutParams == null) return;
 
@@ -274,24 +276,26 @@ final class HomeGridHook {
             if (!WidgetGridSizing.isSupportedSpec(spanX, spanY)) return;
             if (!(layoutParams instanceof android.view.ViewGroup.MarginLayoutParams)) return;
 
-            android.view.ViewGroup.MarginLayoutParams lp =
-                    (android.view.ViewGroup.MarginLayoutParams) layoutParams;
             int cellWidth = HookUtil.getIntField(cellLayout, "mCellWidth");
             int cellHeight = HookUtil.getIntField(cellLayout, "mCellHeight");
             int widthGap = Math.max(0, HookUtil.getIntField(cellLayout, "mWidthGap"));
             int heightGap = Math.max(0, HookUtil.getIntField(cellLayout, "mHeightGap"));
-            if (cellWidth <= 0 || cellHeight <= 0) return;
+            int[] xs = (int[]) HookUtil.getField(cellLayout, "mXs");
+            int[] ys = (int[]) HookUtil.getField(cellLayout, "mYs");
+            if (cellWidth <= 0 || cellHeight <= 0 || xs == null || ys == null) return;
 
-            int width = WidgetGridSizing.spanSize(
-                    spanX, cellWidth, widthGap, lp.leftMargin, lp.rightMargin);
-            int height = WidgetGridSizing.spanSize(
-                    spanY, cellHeight, heightGap, lp.topMargin, lp.bottomMargin);
-            if (width <= 0 || height <= 0) return;
+            int[] rect = WidgetGridSizing.gridRect(cellX, cellY, spanX, spanY,
+                    xs, ys, cellWidth, cellHeight, widthGap, heightGap);
+            if (rect[2] <= 0 || rect[3] <= 0) return;
 
-            lp.width = width;
-            lp.height = height;
+            android.view.ViewGroup.MarginLayoutParams lp =
+                    (android.view.ViewGroup.MarginLayoutParams) layoutParams;
+            lp.width = rect[2];
+            lp.height = rect[3];
+            HookUtil.setIntField(layoutParams, "x", rect[0]);
+            HookUtil.setIntField(layoutParams, "y", rect[1]);
         } catch (Throwable e) {
-            MainHook.log("[DC] widget span sizing failed: " + e);
+            MainHook.log("[DC] widget grid bounds failed: " + e);
         }
     }
 
