@@ -1,5 +1,7 @@
 package com.hellovoid.liquiddock;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -8,6 +10,16 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class WidgetGridSizingTest {
+    @Before
+    public void enableAdaptationForGeometryTests() {
+        WidgetGridSizing.setWidgetAdaptationEnabled(true);
+    }
+
+    @After
+    public void restoreDefaultAdaptationState() {
+        WidgetGridSizing.setWidgetAdaptationEnabled(false);
+    }
+
     @Test
     public void supportedWidgetSpecsAreLimitedToLauncherSizes() {
         assertTrue(WidgetGridSizing.isSupportedSpec(1, 1));
@@ -25,6 +37,16 @@ public class WidgetGridSizingTest {
         assertFalse(WidgetGridSizing.shouldAdaptWidgets(false, true));
         assertFalse(WidgetGridSizing.shouldAdaptWidgets(true, false));
         assertTrue(WidgetGridSizing.shouldAdaptWidgets(true, true));
+    }
+
+    @Test
+    public void disabledAdaptationLeavesWidgetGeometryUntouched() {
+        WidgetGridSizing.setWidgetAdaptationEnabled(false);
+        assertArrayEquals(new int[]{0, 0, 0, 0},
+                WidgetGridSizing.gridRect(
+                        0, 0, 2, 2,
+                        new int[]{0, 112, 224}, new int[]{0, 108, 216},
+                        100, 100, 12, 8));
     }
 
     @Test
