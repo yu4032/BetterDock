@@ -80,6 +80,32 @@ public class WidgetGridSizingTest {
     }
 
     @Test
+    public void fourOneByOneAllocationsExactlyTileOneTwoByTwo() {
+        int[] xs = {0, 112, 224};
+        int[] ys = {0, 108, 216};
+
+        int[] whole = WidgetGridSizing.gridRect(
+                0, 0, 2, 2, xs, ys, 100, 100, 12, 8);
+        int[] topLeft = WidgetGridSizing.gridRect(
+                0, 0, 1, 1, xs, ys, 100, 100, 12, 8);
+        int[] topRight = WidgetGridSizing.gridRect(
+                1, 0, 1, 1, xs, ys, 100, 100, 12, 8);
+        int[] bottomLeft = WidgetGridSizing.gridRect(
+                0, 1, 1, 1, xs, ys, 100, 100, 12, 8);
+        int[] bottomRight = WidgetGridSizing.gridRect(
+                1, 1, 1, 1, xs, ys, 100, 100, 12, 8);
+
+        assertEquals(whole[0], topLeft[0]);
+        assertEquals(whole[1], topLeft[1]);
+        assertEquals(topLeft[0] + topLeft[2], topRight[0]);
+        assertEquals(topLeft[1] + topLeft[3], bottomLeft[1]);
+        assertEquals(whole[0] + whole[2], topRight[0] + topRight[2]);
+        assertEquals(whole[0] + whole[2], bottomRight[0] + bottomRight[2]);
+        assertEquals(whole[1] + whole[3], bottomLeft[1] + bottomLeft[3]);
+        assertEquals(whole[1] + whole[3], bottomRight[1] + bottomRight[3]);
+    }
+
+    @Test
     public void finalRowAndColumnExtrapolateTheMeasuredPitch() {
         int[] xs = {10, 120, 230};
         int[] ys = {20, 150, 280};
