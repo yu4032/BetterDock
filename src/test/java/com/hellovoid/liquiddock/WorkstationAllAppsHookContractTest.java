@@ -44,4 +44,15 @@ public class WorkstationAllAppsHookContractTest {
         assertTrue("All Apps must bypass the normal Workspace orientation-bounds guard",
                 source.contains("if (!workstationAllApps && !sizeMatchesOrientation(layout, width, height)) return;"));
     }
+
+    @Test
+    public void verticalSpacingControlsBothOuterEdgesInsteadOfOnlyTheTopOrigin() throws IOException {
+        String source = source();
+        assertTrue("All Apps must derive an inner height from the two absolute edge spacings",
+                source.contains("int allAppsInnerHeight = Math.max(countY, height - top - bottom);"));
+        assertTrue("All Apps must redistribute the remaining vertical span into row gaps",
+                source.contains("if (workstationAllApps && countY > 1)"));
+        assertTrue("the final height gap must be written to CellLayout",
+                source.contains("HookUtil.setIntField(cellLayout, \"mHeightGap\", heightGap);"));
+    }
 }
