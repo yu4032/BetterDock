@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased (2026-08-14)
+## v1.2.0 (2026-08-15)
+
+### Dynamic liquid highlight (RuntimeShader)
+
+- 高光从 Canvas 静态渐变改为 RuntimeShader 实时逐像素计算（specular/rimLight/caustics 几何光照），配合 self-blur 折射保持锐利
+- 高光参数热重载：GUI 滑条调整即时生效
+- squircle 圆角高光平滑修复
 
 ### API101 configuration convergence
 
