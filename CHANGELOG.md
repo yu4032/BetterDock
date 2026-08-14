@@ -16,6 +16,15 @@
 - Divider width/Y 明确保留历史 DIRECT raw-tenths JSON 语义，避免错误通用 `DP_TENTHS` sidecar 与 clamp 漂移
 - 增加 forced Dock/Liquid dimension、absent-default、legacy migration、storage compatibility 等回归测试
 
+### Liquid Glass advanced material blur
+
+- 新增 `liquid_blur_mode`：默认 `shader` 保持现有行为，可选 `advanced_material` 使用 HyperOS/MIUI SurfaceFlinger self-blur
+- 新增缓存反射 `MiBlurBridge`，直接调用 `View.setMiSelfBlur`、`setPassTextureScale` 与 self-blur enhance flag；能力失败仅回退当前运行时 backend，不改写用户配置
+- RuntimeShader 增加 `shaderBlurEnabled`，高级材质实际生效时绕过原 40-sample blur kernel；Shader 模式和 fallback 继续使用原 kernel
+- Liquid Glass 拆为 `DockLiquidGlassHostView` + `DockLiquidGlassView` + `DockStrokeOverlayView`：glass body 负责折射/模糊，overlay 保持 Canvas 高光和可配置描边锐利
+- 最终 round/squircle clip 移到 host 合成层；高级模式下 self-blurred child 不预先裁圆角，修复实验中左上圆角区域没有模糊的问题
+- 两条 `Launcher.setupViews()` 路径统一使用同一 Liquid Glass layer assembly；workstation 仍保持未完成适配状态
+
 ### Documentation / known status
 
 - 更新 README、ARCHITECTURE、HOOKS、FEATURES、DIVIDER、CONTRIBUTING、TODO 以匹配当前 API101 实现

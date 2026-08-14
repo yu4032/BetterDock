@@ -8,9 +8,9 @@ LiquidDock 是一个面向 HyperOS 3 Pad 启动器的 LSPosed/libxposed API 101 
 
 ## 当前能力
 
-- **液态玻璃 Dock**：RuntimeShader 实现模糊、折射、色散、穹顶、高光与焦散
+- **液态玻璃 Dock**：可选标准 RuntimeShader 模糊或 HyperOS SurfaceFlinger 高级材质 self-blur；折射、色散、穹顶与光学效果继续由 LiquidDock 渲染
 - **Dock 几何**：宽高、底部偏移、图标间距、模糊、圆角和方圆形轮廓
-- **前景描边**：`DockStrokeRenderer` 直接安装到宿主 View foreground，不再创建独立描边 overlay / RenderNode
+- **前景描边**：原生 blur Dock 继续使用 foreground `DockStrokeRenderer`；Liquid Glass 使用独立锐利 overlay，使描边/Canvas 高光不进入 self-blur
 - **独立 Dock 阴影**：与描边分离，并抑制 HyperOS 原生 Dock 阴影避免重复
 - **捕获管线**：HOME / APP / RECENTS 场景状态、动态画面探针、黑帧保护、旋转稳定与捕获节流
 - **桌面网格**：横屏 8×4、竖屏 4×8，自定义边距、行距与页面指示器偏移
@@ -19,6 +19,12 @@ LiquidDock 是一个面向 HyperOS 3 Pad 启动器的 LSPosed/libxposed API 101 
 - **工作台相关实验代码**：包含模式检测、独立 Dock 参数、All Apps/Grid 偏移、Divider 和 wallpaper snapshot 处理，但**工作台整体仍未完成适配，不属于当前受支持功能**
 
 功能参数见 [FEATURES.md](FEATURES.md)，当前实际 Hook 点见 [HOOKS.md](HOOKS.md)，配置与模块边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+### Liquid Glass 模糊后端
+
+`liquid_blur_mode` 提供两种后端：`shader`（兼容默认）和 `advanced_material`。高级材质模式直接反射 `View.setMiSelfBlur(...)` / `setPassTextureScale(...)` 驱动 HyperOS SurfaceFlinger self-blur；运行时能力检测失败时只在当前运行中回退到 Shader，不改写用户保存的模式。
+
+高级模式把玻璃主体、锐利高光/描边和最终形状裁剪分层：`DockLiquidGlassView` 保持矩形 RenderNode 进入 self-blur，`DockLiquidGlassHostView` 在合成后裁回 Dock 圆角/方圆轮廓，`DockStrokeOverlayView` 在最上层绘制 Canvas 高光和可配置描边。这样避免 self-blur 前的圆角裁剪造成角落采样缺失，同时不让描边和高光被内容模糊。
 
 ## 配置架构
 

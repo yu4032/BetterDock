@@ -87,7 +87,7 @@ LiquidDock 不阻止系统壁纸滚动/缩放调用，而是在原调用后读�
 
 | 目标类 | 方法 | 当前作用 |
 |---|---|---|
-| `com.miui.home.launcher.Launcher` | `setupViews()` | Dock 视图树完成后创建/绑定 Liquid Glass 与可选整体 shadow；保存原生背景引用 |
+| `com.miui.home.launcher.Launcher` | `setupViews()` | Dock 视图树完成后通过共享 assembly 创建 `DockLiquidGlassHostView`（glass body + sharp overlay）与可选整体 shadow；保存原生背景引用 |
 | `HotSeatsListContentBlurBackground2` | `setBackgroundWidth(int)` | 普通模式宽度偏移；同步 Glass / shadow 几何；工作台实验路径也会在同入口应用独立宽度偏移 |
 | `HotSeatsListContentBlurBackground2` | `setBackgroundHeight(int)` | 普通 Dock 高度偏移并同步几何 |
 | `HotSeatsListContentBlurBackground2` | `setBackgroundRadius(float)` | 原生模糊圆角更新；同时是 `DockStrokeRenderer` 的 native Dock 描边刷新入口 |
@@ -101,16 +101,21 @@ LiquidDock 不阻止系统壁纸滚动/缩放调用，而是在原调用后读�
 
 旧文档中的 `HotSeatsListContentBlurBackground2.setBackgroundBlur(...)`、`HotSeats.setBackgroundWidth/Height/Radius` 已不是当前 Hook 点。
 
-## 描边：当前 foreground 实现
+## 描边与 Liquid Glass 分层
 
-`DockStrokeRenderer` 已取代旧的独立描边 overlay：
+`DockStrokeRenderer` 仍是唯一的可配置边框 renderer，但宿主因渲染后端而不同：
 
-- Hook `HotSeatsListContentBlurBackground2.setBackgroundRadius(float)`；
-- native blur Dock 和 `DockLiquidGlassView` 复用同一 foreground renderer；
-- `StrokeDrawable` 构造 outer/inner path；
-- 通过 `clipPath(outer)` + `clipOutPath(inner)` 从几何上排除 Dock 中心；
-- 不使用独立 overlay View / RenderNode；
-- 不把可配置 Dock border 画成普通 `Paint.Style.STROKE`。
+- native blur Dock：继续安装到系统背景 View foreground；
+- Liquid Glass：安装到独立 `DockStrokeOverlayView` foreground，overlay 与 Canvas 高光位于 self-blurred glass body 之上；
+- `StrokeDrawable` 仍构造 outer/inner path，并用 `clipPath(outer)` + `clipOutPath(inner)` 从几何上排除 Dock 中心；
+- 不恢复旧的独立 RenderNode/布局动画描边实现；Liquid Glass overlay 只承担锐利视觉层，不改变 Dock/icon LayoutParams；
+- 不把可配置 Dock border 退化为普通 `Paint.Style.STROKE`。
+
+### Liquid Glass 高级材质模糊
+
+`liquid_blur_mode=advanced_material` 时，`MiBlurBridge` 缓存并直接反射 `View.setMiSelfBlur(int, ArrayList)`、`setPassTextureScale(float)` 与 `setMiSelfBlurEnhanceFlag(int,int)`。成功后 `DockLiquidGlassView` 把 `shaderBlurEnabled=0`，原 `blurred()` 直接返回 `source()`，由 SurfaceFlinger self-blur 接管模糊；任一能力调用失败则 active backend 回到 Shader，但持久化模式不变。
+
+最终裁剪由 `DockLiquidGlassHostView.dispatchDraw()` 完成。高级模式下 glass child 自身保持矩形、不使用 `clipToOutline`，使圆角外但仍位于矩形 RenderNode 内的像素可以参与 self-blur，再由 host clip 回 round/squircle 形状。这是对实验中左上角模糊缺口的结构性修复。
 
 ### 旧描边阴影
 

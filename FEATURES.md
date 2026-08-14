@@ -58,7 +58,7 @@ Widget 类型与 span 目前仍是硬编码规则。后续计划改为 `WidgetCl
 
 ## 描边 (Stroke)
 
-当前描边由 `DockStrokeRenderer` 直接安装到 native blur Dock 或 Liquid Glass View 的 foreground。
+native blur Dock 的描边仍由 `DockStrokeRenderer` 直接安装到 foreground；Liquid Glass 则把 `DockStrokeRenderer` 放到独立的 `DockStrokeOverlayView` foreground，以避免高级材质 self-blur 模糊描边。
 
 | 参数 | 当前范围 | 说明 |
 |------|------:|------|
@@ -107,7 +107,8 @@ LiquidDock 会识别并抑制 HyperOS 原生 Dock shadow target，避免自绘 s
 
 | 参数 | 当前范围 | 说明 |
 |------|------:|------|
-| 玻璃模糊 | 0 ~ 60 dp | 捕获背景的模糊范围 |
+| 模糊方式 | Shader / 高级材质 | `liquid_blur_mode`；默认 `shader`，高级材质不可用时运行时安全回退 |
+| 玻璃模糊 | 0 ~ 60 dp | Shader 模式为采样模糊范围；高级材质模式映射为 MIUI self-blur 半径 |
 | 玻璃厚度 | 1 ~ 60 dp | 虚拟玻璃厚度 |
 | 折射率 IOR | 100 ~ 200 % | 运行时除以 100 |
 | 法线强度 | 0 ~ 300 % | 运行时除以 100 |
@@ -116,6 +117,14 @@ LiquidDock 会识别并抑制 HyperOS 原生 Dock shadow target，避免自绘 s
 | 色散强度 | 0 ~ 40 % | RGB 分离强度 |
 | 深度透镜效果 | 0 ~ 50 % | `liquid_depth_effect` |
 | 亮度 | 50 ~ 200 % | `liquid_brightness` |
+
+### 模糊后端与分层
+
+- **标准 Shader 模糊**：保留原 40-sample kernel，是旧配置/新安装的兼容默认。
+- **高级材质模糊**：直接调用 `View.setMiSelfBlur`、`setPassTextureScale(0.5)` 和 self-blur enhance flag，由 SurfaceFlinger 执行内容模糊；不依赖 `HyperMaterialUtils.isEnable()`。
+- 高级材质调用失败时，当前 Launcher 运行实例回退到标准 Shader；`liquid_blur_mode` 不会被运行时代码改写。
+- `DockLiquidGlassHostView` 在 self-blur 合成后做最终 round/squircle clip；self-blurred `DockLiquidGlassView` 不先裁圆角，避免左上等圆角区域因输入像素被提前裁掉而出现未模糊缺口。
+- Canvas 高光和可配置 Dock stroke 位于 `DockStrokeOverlayView`，不参与 self-blur，因此保持锐利。
 
 ### 颜色、高光与边缘
 

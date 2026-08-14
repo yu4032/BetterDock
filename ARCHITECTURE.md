@@ -147,9 +147,12 @@ A later phase should move top-level config gating to the composition boundary so
 - `HomeGridHook` — current 8×4/4×8 count, geometry, rotation, widget sizing, indicator and folder alignment implementation.
 - `WidgetGridSizing` — shared widget allocation geometry. It is not yet pure because it still owns a static adaptation flag.
 - `DockDividerHook` — independent workstation Divider view adaptation.
-- `DockStrokeRenderer` — shared foreground border renderer for native blur Dock and Liquid Glass.
-- `LiquidGlassFactory` — central construction/configuration of `DockLiquidGlassView`.
-- `DockLiquidGlassView` — current View + capture lifecycle + recovery + dynamic detection + shader rendering owner.
+- `DockStrokeRenderer` — shared configurable border renderer; native blur Dock uses it directly, Liquid Glass hosts it on the sharp overlay.
+- `LiquidGlassFactory` — central construction/configuration of the Liquid Glass body.
+- `DockLiquidGlassHostView` — exact Dock-sized composition/final-clip boundary for Liquid Glass.
+- `DockLiquidGlassView` — capture lifecycle + recovery + dynamic detection + refraction body; selects Shader or MIUI self-blur at runtime.
+- `DockStrokeOverlayView` — crisp Canvas highlight + `DockStrokeRenderer` layer above the glass body.
+- `MiBlurBridge` / `LiquidBlurBackendPolicy` — cached MIUI `View.setMi*` self-blur bridge and fail-closed runtime backend policy.
 - `CaptureSceneState` — pure HOME/APP/RECENTS state and stale-frame revision policy.
 - `CaptureCadence` — pure capture cadence/power policy.
 - `LiveScreenCapture` — hidden SurfaceFlinger compatibility layer.
@@ -188,6 +191,20 @@ Important invariants:
 - widget adaptation changes pixel allocation/frame geometry only, not placement semantics;
 - lazy/off-screen pages must derive geometry from their own valid orientation bounds before layout.
 
+## Liquid Glass rendering architecture
+
+`liquid_blur_mode` is a persisted user-intent setting with `shader` as the compatibility default and `advanced_material` as the optional HyperOS SurfaceFlinger backend. `MiBlurBridge` resolves the MIUI `View.setMi*` methods once and never owns preferences; if advanced material cannot be applied, `LiquidBlurBackendPolicy` keeps the active backend on Shader without rewriting the saved choice.
+
+The Liquid Glass view hierarchy is layered:
+
+```text
+DockLiquidGlassHostView    <- exact Dock size; final round/squircle clip
+  ├─ DockLiquidGlassView   <- capture/refraction/tint; self-blurred rectangular RenderNode
+  └─ DockStrokeOverlayView <- sharp Canvas highlight + DockStrokeRenderer foreground
+```
+
+In active advanced mode the AGSL `blurred()` function bypasses its 40-sample kernel and samples the source directly. The glass child is deliberately not pre-clipped to the rounded outline: SurfaceFlinger receives corner pixels first, then the host clips the composed result. Standard mode and advanced-mode runtime fallback retain the existing Shader kernel.
+
 ## Capture architecture
 
 Scene state is expressed as HOME / APP / RECENTS, but capture mode is not a simple fixed scene-to-mode table.
@@ -224,7 +241,7 @@ Documentation should therefore say **"experimental implementation exists; workst
 
 ## Stroke and shadow boundary
 
-`DockStrokeRenderer` replaced the old independent stroke overlay. It installs a `StrokeDrawable` in the host foreground, builds validated outer/inner paths and excludes the Dock center with `clipOutPath(inner)`.
+`DockStrokeRenderer` replaced the old layout-coupled stroke overlay. Native blur Dock installs its `StrokeDrawable` directly in the host foreground; Liquid Glass now installs the same renderer on `DockStrokeOverlayView` so the border remains outside the self-blur RenderNode. The renderer still builds validated outer/inner paths and excludes the Dock center with `clipOutPath(inner)`.
 
 The old stroke-shadow preference keys remain part of the compatibility contract, but the current foreground renderer does not implement the previous stroke-shadow visual. Do not treat the missing old stroke shadow as a regression in the current renderer. The separate whole-Dock shadow remains a different feature.
 
