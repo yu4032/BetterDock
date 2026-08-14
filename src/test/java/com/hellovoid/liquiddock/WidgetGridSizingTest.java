@@ -20,6 +20,14 @@ public class WidgetGridSizingTest {
     }
 
     @Test
+    public void widgetAdaptationRequiresGridAndExplicitSwitch() {
+        assertFalse(WidgetGridSizing.shouldAdaptWidgets(false, false));
+        assertFalse(WidgetGridSizing.shouldAdaptWidgets(false, true));
+        assertFalse(WidgetGridSizing.shouldAdaptWidgets(true, false));
+        assertTrue(WidgetGridSizing.shouldAdaptWidgets(true, true));
+    }
+
+    @Test
     public void oneByOneUsesTheCompleteGridPitch() {
         int[] xs = {0, 112, 224};
         int[] ys = {0, 108, 216};
