@@ -205,6 +205,9 @@ public final class ConfigSchema {
                 "liquid_glass", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> DIMENSIONS_DP = bool(
                 "liquid_dimensions_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<String> BLUR_MODE = string(
+                "liquid_blur_mode", "shader", "shader", "shader",
+                ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BLUR = dp(
                 "liquid_blur", 6, 6, 6, 0, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CHROMATIC = integer(
@@ -360,7 +363,7 @@ public final class ConfigSchema {
                 Dock.SHADOW_RADIUS, Dock.SHADOW_SIZE, Dock.SHADOW_ALPHA, Dock.SHADOW_Y);
         add(keys, Divider.ENABLED, Divider.WIDTH_DP, Divider.HEIGHT_SCALE, Divider.Y_OFFSET_DP,
                 Divider.COLOR_RED, Divider.COLOR_GREEN, Divider.COLOR_BLUE, Divider.ALPHA);
-        add(keys, Glass.ENABLED, Glass.DIMENSIONS_DP, Glass.BLUR, Glass.CHROMATIC,
+        add(keys, Glass.ENABLED, Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,
                 Glass.TINT_ALPHA, Glass.CAPTURE_FPS, Glass.CAPTURE_STOP_DELAY,
                 Glass.CAPTURE_BLEED_TOP, Glass.CAPTURE_BLEED_BOTTOM, Glass.THICKNESS,
                 Glass.IOR, Glass.NORMAL_STRENGTH, Glass.DOME, Glass.LENS_REFRACTION,
@@ -392,6 +395,13 @@ public final class ConfigSchema {
     private static ConfigKey<Boolean> bool(String name, Boolean uiDefault, Boolean runtimeFallback,
                                            Boolean exportDefault, ConfigKey.ExportMode exportMode) {
         return new ConfigKey<>(name, ConfigKey.Type.BOOLEAN, uiDefault, runtimeFallback,
+                exportDefault, null, null, ConfigKey.StorageMode.DIRECT, exportMode);
+    }
+
+    private static ConfigKey<String> string(String name, String uiDefault,
+                                             String runtimeFallback, String exportDefault,
+                                             ConfigKey.ExportMode exportMode) {
+        return new ConfigKey<>(name, ConfigKey.Type.STRING, uiDefault, runtimeFallback,
                 exportDefault, null, null, ConfigKey.StorageMode.DIRECT, exportMode);
     }
 

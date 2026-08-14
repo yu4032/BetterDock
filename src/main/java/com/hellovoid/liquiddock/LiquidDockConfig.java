@@ -194,6 +194,7 @@ final class LiquidDockConfig {
 
     static final class Glass {
         final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture;
+        final LiquidBlurMode blurMode;
         final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
                 lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
                 rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
@@ -207,6 +208,8 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.ENABLED.runtimeFallback());
             dimensionsDp = c.b(ConfigSchema.Glass.DIMENSIONS_DP.name(),
                     ConfigSchema.Glass.DIMENSIONS_DP.runtimeFallback());
+            blurMode = LiquidBlurMode.fromPersisted(c.s(ConfigSchema.Glass.BLUR_MODE.name(),
+                    ConfigSchema.Glass.BLUR_MODE.runtimeFallback()));
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
                     ConfigSchema.Glass.CHROMATIC.runtimeFallback()) / 100f;

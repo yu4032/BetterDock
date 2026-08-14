@@ -440,6 +440,17 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
     SettingsList(padding, stringResource(R.string.page_liquid)) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable),
             stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+        StringDropdown(
+            prefs,
+            ConfigSchema.Glass.BLUR_MODE.name(),
+            "模糊方式",
+            ConfigSchema.Glass.BLUR_MODE.uiDefault(),
+            listOf(
+                "标准 Shader 模糊" to "shader",
+                "高级材质模糊" to "advanced_material",
+            ),
+            masterEnabled && liquidGlass,
+        )
         BooleanSetting(prefs, ConfigSchema.Glass.DYNAMIC_APP_CAPTURE, stringResource(R.string.liquid_dynamic_capture),
             stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass) { dynamicAppCapture = it }
         liquidSpecs.forEach {

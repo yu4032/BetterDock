@@ -25,7 +25,9 @@ public final class PresetManager {
             Object value = entry.getValue();
             if (value instanceof Boolean) {
                 editor.putBoolean(entry.getKey(), (Boolean) value);
-            } else {
+            } else if (value instanceof String) {
+                editor.putString(entry.getKey(), (String) value);
+            } else if (value instanceof Integer) {
                 editor.putInt(entry.getKey(), (Integer) value);
             }
         }
@@ -151,6 +153,7 @@ public final class PresetManager {
         values.put("blur_radius", 100);
         values.put("liquid_glass", true);
         values.put("liquid_dimensions_dp", true);
+        values.put("liquid_blur_mode", "shader");
         values.put("liquid_ior", 170);
         values.put("liquid_normal_strength", 115);
         values.put("liquid_dome", 100);
