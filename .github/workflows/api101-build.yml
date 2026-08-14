@@ -5,11 +5,28 @@ on:
     branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply dynamic highlight routing once
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python3 .github/scripts/apply-dynamic-highlight-task1.py
+          rm .github/scripts/apply-dynamic-highlight-task1.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java \
+                  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java \
+                  src/main/java/com/hellovoid/liquiddock/DockStrokeOverlayView.java \
+                  .github/scripts/apply-dynamic-highlight-task1.py
+          git commit -m 'feat: route liquid highlight by active blur backend'
+          git push origin HEAD:api101-migration
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
