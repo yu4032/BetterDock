@@ -57,13 +57,20 @@ final class DockStrokeOverlayView extends View {
 
         highlightPaint.setStyle(Paint.Style.STROKE);
         highlightPaint.setStrokeWidth(Math.max(1f, density * .65f * highlightWidth));
+        int strong = clampAlpha(175f * highlightAlpha);
+        int faint = clampAlpha(25f * highlightAlpha);
+        int tail = clampAlpha(105f * highlightAlpha);
         highlightPaint.setShader(new LinearGradient(0, 0, w, h,
                 new int[]{
-                        Color.argb((int) (175 * highlightAlpha), 255, 255, 255),
-                        Color.argb((int) (25 * highlightAlpha), 255, 255, 255),
-                        Color.argb((int) (105 * highlightAlpha), 255, 255, 255)},
+                        Color.argb(strong, 255, 255, 255),
+                        Color.argb(faint, 255, 255, 255),
+                        Color.argb(tail, 255, 255, 255)},
                 null, Shader.TileMode.CLAMP));
         canvas.drawPath(shape, highlightPaint);
         highlightPaint.setShader(null);
+    }
+
+    private static int clampAlpha(float alpha) {
+        return Math.max(0, Math.min(255, Math.round(alpha)));
     }
 }
