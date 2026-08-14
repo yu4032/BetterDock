@@ -60,4 +60,17 @@ public class LiquidGlassLayerContractTest {
         assertTrue(mainHook.contains("DockLiquidGlassHostView"));
         assertTrue(mainHook.contains("installLiquidGlassLayer("));
     }
+
+    @Test
+    public void advancedBackendIsReappliedAfterViewReattach() throws IOException {
+        String glass = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
+
+        assertTrue("detach must forget compositor-active state after clearing it",
+                glass.contains("advancedMaterialActive = false;\n"
+                        + "        activeBlurBackend = LiquidBlurMode.SHADER;"));
+        assertTrue("reattach must restore the requested advanced backend",
+                glass.contains("requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL\n"
+                        + "                && !advancedMaterialUnavailableForProcess\n"
+                        + "                && !advancedMaterialActive"));
+    }
 }
