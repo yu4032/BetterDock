@@ -25,30 +25,6 @@ LiquidDock 是一个面向 HyperOS 3 Pad 启动器的 LSPosed/libxposed API 101 
 
 高级模式分层：`DockLiquidGlassView` 保持矩形 RenderNode 进入 self-blur，`DockLiquidGlassHostView` 在合成后裁回 Dock 圆角/方圆轮廓，`DockStrokeOverlayView` 在最上层绘制高光和可配置描边。
 
-## 配置架构
-
-设置进程与 Launcher 进程通过 API 101 Remote Preferences 解耦：
-
-```text
-Settings SharedPreferences
-    -> ConfigMigration
-    -> ConfigSchema / ConfigCodec / PresetManager
-    -> API101 Remote Preferences
-    -> ConfigReader
-    -> LiquidDockConfig immutable snapshot
-    -> Hook / renderer
-```
-
-核心职责：
-
-- `ConfigSchema`：持久化 key、类型、范围、存储模式和导出策略的统一登记处
-- `ConfigCodec`：JSON 导入/导出的纯转换层
-- `ConfigMigration`：设置进程中的历史 SharedPreferences 升级
-- `PresetManager`：默认预设和 iPad 风格预设写入
-- `ConfigReader`：Launcher 进程只读 Remote Preferences snapshot
-- `LiquidDockConfig`：把 snapshot 转成不可变、类型化的运行时配置
-- `LegacyConfigMigration`：仅在 `ModuleMain.onPackageReady()` 的显式兼容边界尝试把 pre-API101 JSON 迁移到空的 Remote Preferences
-
 ## 构建
 
 要求：Android SDK、JDK 17、LSPosed API 101（`libs/api-101.jar`）。
