@@ -22,7 +22,7 @@ public final class ConfigSchema {
         public static final ConfigKey<Boolean> ENABLED = bool(
                 "home_grid_8x4", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> WIDGET_ADAPTATION = bool(
-                "grid_widget_adaptation", false, false, false, ConfigKey.ExportMode.NEVER);
+                "grid_widget_adaptation", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> MARGINS_DP = bool(
                 "grid_margins_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> MARGINS_OFFSET = bool(

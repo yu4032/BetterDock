@@ -22,6 +22,8 @@ public class ConfigSchemaTest {
         assertEquals("grid_widget_adaptation", ConfigSchema.Grid.WIDGET_ADAPTATION.name());
         assertEquals(Boolean.FALSE, ConfigSchema.Grid.WIDGET_ADAPTATION.uiDefault());
         assertEquals(Boolean.FALSE, ConfigSchema.Grid.WIDGET_ADAPTATION.runtimeFallback());
+        assertEquals(ConfigKey.ExportMode.ALWAYS,
+                ConfigSchema.Grid.WIDGET_ADAPTATION.exportMode());
     }
 
     @Test
