@@ -683,6 +683,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         attached = true;
+        if (requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL
+                && !advancedMaterialUnavailableForProcess
+                && !advancedMaterialActive) {
+            updateBlurBackend();
+        }
         captureGeneration++;
         captureTimeoutStreak = 0;
         captureCircuitOpen = false;
@@ -725,6 +730,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     @Override protected void onDetachedFromWindow() {
         attached = false;
         MiBlurBridge.clearContentBlur(this);
+        advancedMaterialActive = false;
+        activeBlurBackend = LiquidBlurMode.SHADER;
         cancelPendingCaptureWork();
         stopConfigReloadTick();
         invalidateDockWindowSurfaceCache();

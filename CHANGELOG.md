@@ -24,6 +24,7 @@
 - Liquid Glass 拆为 `DockLiquidGlassHostView` + `DockLiquidGlassView` + `DockStrokeOverlayView`：glass body 负责折射/模糊，overlay 保持 Canvas 高光和可配置描边锐利
 - 最终 round/squircle clip 移到 host 合成层；高级模式下 self-blurred child 不预先裁圆角，修复实验中左上圆角区域没有模糊的问题
 - 两条 `Launcher.setupViews()` 路径统一使用同一 Liquid Glass layer assembly；workstation 仍保持未完成适配状态
+- Floating Dock View detach 时清理 MIUI self-blur 状态；同一 View 重新 attach 后按保存的 advanced 请求自动重施
 
 ### Documentation / known status
 
