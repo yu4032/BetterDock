@@ -72,6 +72,9 @@ final class MiBlurBridge {
             SET_MI_SELF_BLUR.invoke(view, 0, null);
         } catch (Throwable ignored) {}
         try {
+            SET_MI_SELF_BLUR_ENHANCE_FLAG.invoke(view, 0, SELF_BLUR_ENHANCE_FLAG);
+        } catch (Throwable ignored) {}
+        try {
             SET_PASS_TEXTURE_SCALE.invoke(view, 1f);
         } catch (Throwable ignored) {}
     }
