@@ -37,6 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.preference.PreferenceManager
+import com.hellovoid.liquiddock.config.ConfigKey
+import com.hellovoid.liquiddock.config.ConfigSchema
 import com.hellovoid.liquiddock.config.PresetManager
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Button
@@ -78,12 +80,18 @@ private enum class Page(val titleRes: Int) {
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }
 
 private data class IntSpec(
-    val key: String, val title: String, val default: Int,
-    val min: Int, val max: Int, val unit: String = "dp",
+    val config: ConfigKey<Int>,
+    val title: String,
+    val unit: String = "dp",
     val dependency: String? = null,
     val section: IntSection = IntSection.General,
-    val summary: String = optionSummary(key),
-)
+    val summary: String = optionSummary(config.name()),
+) {
+    val key: String get() = config.name()
+    val default: Int get() = config.uiDefault()
+    val min: Int get() = requireNotNull(config.minInt())
+    val max: Int get() = requireNotNull(config.maxInt())
+}
 
 private fun optionSummary(key: String): String = when (key) {
     "grid_landscape_horizontal_distance" -> "同时调整横屏布局左右两侧的水平距离"
@@ -168,34 +176,34 @@ private fun optionSummary(key: String): String = when (key) {
 }
 
 private val gridSpecs = listOf(
-    IntSpec("grid_landscape_horizontal_distance", "横屏水平距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_landscape_top_distance", "横屏顶部距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_landscape_bottom_distance", "横屏底部距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_portrait_horizontal_distance", "竖屏水平距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_portrait_top_distance", "竖屏顶部距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_portrait_bottom_distance", "竖屏底部距离偏移", 0, -600, 600, "dp"),
-    IntSpec("grid_landscape_row_gap", "横屏图标纵向间距偏移", 0, -200, 400, "dp"),
-    IntSpec("grid_portrait_row_gap", "竖屏图标纵向间距偏移", 0, -200, 400, "dp"),
-    IntSpec("indicator_landscape_y", "横屏指示器 Y", 0, -160, 160, "dp"),
-    IntSpec("indicator_portrait_y", "竖屏指示器 Y", 0, -160, 160, "dp"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏水平距离偏移"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_TOP_DISTANCE, "横屏顶部距离偏移"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_BOTTOM_DISTANCE, "横屏底部距离偏移"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏水平距离偏移"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_TOP_DISTANCE, "竖屏顶部距离偏移"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE, "竖屏底部距离偏移"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏图标纵向间距偏移"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏图标纵向间距偏移"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
 )
 private val dockSpecs = listOf(
-    IntSpec("blur_radius", "模糊强度", 100, 0, 400, ""),
-    IntSpec("height_offset", "高度偏移", 0, -80, 80, "dp"),
-    IntSpec("width_offset", "宽度偏移", 0, -80, 80, "dp"),
-    IntSpec("corner_offset", "描边圆角偏移", -1, -50, 100, "dp"),
-    IntSpec("blur_corner_offset", "内部模糊圆角偏移", 0, -50, 100, "dp"),
-    IntSpec("dock_spacing", "Dock 图标间距", 0, -8, 12, "dp"),
-    IntSpec("dock_bottom_offset", "Dock 底部偏移", 0, -30, 40, "dp"),
+    IntSpec(ConfigSchema.Dock.BLUR_RADIUS, "模糊强度", ""),
+    IntSpec(ConfigSchema.Dock.HEIGHT_OFFSET, "高度偏移"),
+    IntSpec(ConfigSchema.Dock.WIDTH_OFFSET, "宽度偏移"),
+    IntSpec(ConfigSchema.Dock.CORNER_OFFSET, "描边圆角偏移"),
+    IntSpec(ConfigSchema.Dock.BLUR_CORNER_OFFSET, "内部模糊圆角偏移"),
+    IntSpec(ConfigSchema.Dock.SPACING, "Dock 图标间距"),
+    IntSpec(ConfigSchema.Dock.BOTTOM_OFFSET, "Dock 底部偏移"),
 )
 private val dividerSpecs = listOf(
-    IntSpec("dock_divider_width_dp", "分隔线宽度", 10, 0, 160, "dp×10"),
-    IntSpec("dock_divider_height_scale", "分隔线高度比例", 60, 0, 100, "%"),
-    IntSpec("dock_divider_y_offset", "分隔线垂直偏移", 0, -80, 80, "dp×10"),
-    IntSpec("dock_divider_color_r", "分隔线颜色 · 红", 255, 0, 255, ""),
-    IntSpec("dock_divider_color_g", "分隔线颜色 · 绿", 255, 0, 255, ""),
-    IntSpec("dock_divider_color_b", "分隔线颜色 · 蓝", 255, 0, 255, ""),
-    IntSpec("dock_divider_alpha", "分隔线透明度", 128, 0, 255, ""),
+    IntSpec(ConfigSchema.Divider.WIDTH_DP, "分隔线宽度", "dp×10"),
+    IntSpec(ConfigSchema.Divider.HEIGHT_SCALE, "分隔线高度比例", "%"),
+    IntSpec(ConfigSchema.Divider.Y_OFFSET_DP, "分隔线垂直偏移", "dp×10"),
+    IntSpec(ConfigSchema.Divider.COLOR_RED, "分隔线颜色 · 红", ""),
+    IntSpec(ConfigSchema.Divider.COLOR_GREEN, "分隔线颜色 · 绿", ""),
+    IntSpec(ConfigSchema.Divider.COLOR_BLUE, "分隔线颜色 · 蓝", ""),
+    IntSpec(ConfigSchema.Divider.ALPHA, "分隔线透明度", ""),
 )
 private val dividerKeys = dividerSpecs.map { it.key }
 private fun hasLegacyDividerConfig(prefs: SharedPreferences): Boolean =
@@ -206,73 +214,75 @@ private fun ensureDividerDefaults(prefs: SharedPreferences) {
     e.apply()
 }
 private val workstationSpecs = listOf(
-    IntSpec("workstation_dock_width_offset", "工作台 Dock 长度偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_grid_horizontal_offset", "工作台桌面水平偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_landscape_horizontal_offset", "所有应用 · 横屏水平偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_landscape_vertical_offset", "所有应用 · 横屏垂直偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_portrait_horizontal_offset", "所有应用 · 竖屏水平偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_all_apps_portrait_vertical_offset", "所有应用 · 竖屏垂直偏移", 0, -240, 240, "dp"),
-    IntSpec("workstation_dock_icon_top_offset", "工作台图标上间距", 0, -48, 48, "dp"),
-    IntSpec("workstation_dock_icon_bottom_offset", "工作台图标下间距", 0, -48, 48, "dp"),
+    IntSpec(ConfigSchema.Workstation.DOCK_WIDTH_OFFSET, "工作台 Dock 长度偏移"),
+    IntSpec(ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET, "工作台桌面水平偏移"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET, "所有应用 · 横屏水平偏移"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_VERTICAL_OFFSET, "所有应用 · 横屏垂直偏移"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET, "所有应用 · 竖屏水平偏移"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_VERTICAL_OFFSET, "所有应用 · 竖屏垂直偏移"),
+    IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台图标上间距"),
+    IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台图标下间距"),
 )
 private val liquidSpecs = listOf(
-    IntSpec("liquid_blur", "玻璃模糊", 6, 0, 60, "dp"),
-    IntSpec("liquid_thickness", "玻璃厚度", 18, 1, 60, "dp"),
-    IntSpec("liquid_ior", "折射率 IOR", 155, 100, 200, "%"),
-    IntSpec("liquid_normal_strength", "法线强度", 115, 0, 300, "%"),
-    IntSpec("liquid_dome", "穹顶凸起", 100, 0, 200, "%"),
-    IntSpec("liquid_lens_refraction", "透镜折射", 12, 0, 60, "dp"),
-    IntSpec("liquid_chromatic", "色散强度", 8, 0, 40, "%"),
-    IntSpec("liquid_tint_alpha", "玻璃底色透明度", 38, 0, 160, ""),
-    IntSpec("liquid_tint_r", "底色 · 红", 238, 0, 255, ""),
-    IntSpec("liquid_tint_g", "底色 · 绿", 244, 0, 255, ""),
-    IntSpec("liquid_tint_b", "底色 · 蓝", 255, 0, 255, ""),
-    IntSpec("liquid_highlight_width", "边缘高光厚度", 100, 20, 300, "%"),
-    IntSpec("liquid_highlight_alpha", "高光不透明度", 100, 0, 200, "%"),
-    IntSpec("liquid_depth_effect", "深度透镜效果", 8, 0, 50, "%"),
-    IntSpec("liquid_brightness", "亮度", 108, 50, 200, "%"),
-    IntSpec("liquid_specular_sharp", "高光锐度", 88, 1, 200, ""),
-    IntSpec("liquid_specular_strength", "高光强度", 105, 0, 300, "%"),
-    IntSpec("liquid_rim_light", "边缘光强度", 100, 0, 300, "%"),
-    IntSpec("liquid_caustics", "焦散强度", 28, 0, 100, "%"),
-    IntSpec("liquid_edge_band", "边缘光带宽度", 32, 5, 100, "‰"),
-    IntSpec("liquid_capture_power_limit_fps", "实时捕获帧率上限", 20, 5, 60, "FPS"),
-    IntSpec("liquid_dynamic_app_probe_fps", "静态画面探测帧率", 3, 1, 10, "FPS", "liquid_dynamic_app_capture"),
-    IntSpec("liquid_dynamic_motion_threshold", "动态亮度变化阈值", 12, 1, 240, "", "liquid_dynamic_app_capture"),
-    IntSpec("liquid_dynamic_bit_threshold", "动态像素位变化阈值", 18, 1, 64, "", "liquid_dynamic_app_capture"),
-    IntSpec("liquid_dynamic_hold_ms", "高频捕获保持时间", 900, 0, 5000, "ms", "liquid_dynamic_app_capture"),
-    IntSpec("liquid_black_threshold", "黑帧亮度阈值", 10, 0, 64, ""),
-    IntSpec("liquid_home_settle_delay", "主页壁纸捕获延迟", 1200, 200, 3000, "ms"),
-    IntSpec("liquid_capture_scale", "捕获分辨率", 50, 10, 100, "%"),
-    IntSpec("liquid_capture_stop_delay", "捕获停止延迟", 150, 0, 10000, "ms"),
-    IntSpec("liquid_recents_prearm_distance", "多任务捕获预触发距离", 8, 1, 48, "dp"),
-    IntSpec("liquid_capture_bleed_top", "上额外捕获高度", 17, 0, 256, "dp"),
-    IntSpec("liquid_capture_bleed_bottom", "下额外捕获高度", 6, 0, 256, "dp"),
+    IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊"),
+    IntSpec(ConfigSchema.Glass.THICKNESS, "玻璃厚度"),
+    IntSpec(ConfigSchema.Glass.IOR, "折射率 IOR", "%"),
+    IntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, "法线强度", "%"),
+    IntSpec(ConfigSchema.Glass.DOME, "穹顶凸起", "%"),
+    IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射"),
+    IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", "%"),
+    IntSpec(ConfigSchema.Glass.TINT_ALPHA, "玻璃底色透明度", ""),
+    IntSpec(ConfigSchema.Glass.TINT_RED, "底色 · 红", ""),
+    IntSpec(ConfigSchema.Glass.TINT_GREEN, "底色 · 绿", ""),
+    IntSpec(ConfigSchema.Glass.TINT_BLUE, "底色 · 蓝", ""),
+    IntSpec(ConfigSchema.Glass.HIGHLIGHT_WIDTH, "边缘高光厚度", "%"),
+    IntSpec(ConfigSchema.Glass.HIGHLIGHT_ALPHA, "高光不透明度", "%"),
+    IntSpec(ConfigSchema.Glass.DEPTH_EFFECT, "深度透镜效果", "%"),
+    IntSpec(ConfigSchema.Glass.BRIGHTNESS, "亮度", "%"),
+    IntSpec(ConfigSchema.Glass.SPECULAR_SHARPNESS, "高光锐度", ""),
+    IntSpec(ConfigSchema.Glass.SPECULAR_STRENGTH, "高光强度", "%"),
+    IntSpec(ConfigSchema.Glass.RIM_LIGHT, "边缘光强度", "%"),
+    IntSpec(ConfigSchema.Glass.CAUSTICS, "焦散强度", "%"),
+    IntSpec(ConfigSchema.Glass.EDGE_BAND, "边缘光带宽度", "‰"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_FPS, "实时捕获帧率上限", "FPS"),
+    IntSpec(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS, "静态画面探测帧率", "FPS", "liquid_dynamic_app_capture"),
+    IntSpec(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD, "动态亮度变化阈值", "", "liquid_dynamic_app_capture"),
+    IntSpec(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD, "动态像素位变化阈值", "", "liquid_dynamic_app_capture"),
+    IntSpec(ConfigSchema.Glass.DYNAMIC_HOLD_MS, "高频捕获保持时间", "ms", "liquid_dynamic_app_capture"),
+    IntSpec(ConfigSchema.Glass.BLACK_THRESHOLD, "黑帧亮度阈值", ""),
+    IntSpec(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS, "主页壁纸捕获延迟", "ms"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_SCALE, "捕获分辨率", "%"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_STOP_DELAY, "捕获停止延迟", "ms"),
+    IntSpec(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE, "多任务捕获预触发距离"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外捕获高度"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, "下额外捕获高度"),
 )
 private val strokeSpecs = listOf(
-    IntSpec("stroke_base_r", "描边底色 · 红", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
-    IntSpec("stroke_base_g", "描边底色 · 绿", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
-    IntSpec("stroke_base_b", "描边底色 · 蓝", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
-    IntSpec("stroke_base_alpha", "描边底色 · 透明度", 255, 0, 255, "", "dock_stroke", IntSection.StrokeBackground),
-    IntSpec("sq_stroke_w", "方圆形描边宽度", 1, 1, 10, "dp", "squircle", IntSection.StrokeGeometry),
-    IntSpec("sq_stroke_off", "方圆形描边内缩", 3, 0, 16, "dp", "squircle", IntSection.StrokeGeometry),
-    IntSpec("sq_outer_cp", "方圆曲线控制点", 58, 40, 80, "", "squircle", IntSection.StrokeGeometry),
-    IntSpec("stroke_w", "Fill-Diff 宽度", 1, 1, 6, "dp", "fill_diff", IntSection.StrokeGeometry),
-    IntSpec("std_stroke_w", "标准描边宽度", 1, 1, 10, "dp", null, IntSection.StrokeGeometry),
+    IntSpec(ConfigSchema.Dock.STROKE_RED, "描边底色 · 红", "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec(ConfigSchema.Dock.STROKE_GREEN, "描边底色 · 绿", "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec(ConfigSchema.Dock.STROKE_BLUE, "描边底色 · 蓝", "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec(ConfigSchema.Dock.STROKE_ALPHA, "描边底色 · 透明度", "", "dock_stroke", IntSection.StrokeBackground),
+    IntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, "方圆形描边宽度", "dp", "squircle", IntSection.StrokeGeometry),
+    IntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET, "方圆形描边内缩", "dp", "squircle", IntSection.StrokeGeometry),
+    IntSpec(ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT, "方圆曲线控制点", "", "squircle", IntSection.StrokeGeometry),
+    IntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, "Fill-Diff 宽度", "dp", "fill_diff", IntSection.StrokeGeometry),
+    IntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, "标准描边宽度", "dp", null, IntSection.StrokeGeometry),
 )
 private val shadowSpecs = listOf(
-    IntSpec("dock_shadow_radius", "Dock 阴影柔化", 15, 1, 40, "dp", "dock_shadow"),
-    IntSpec("dock_shadow_size", "Dock 阴影扩散大小", 18, 1, 60, "dp", "dock_shadow"),
-    IntSpec("dock_shadow_alpha", "Dock 阴影透明度", 140, 0, 200, "", "dock_shadow"),
-    IntSpec("dock_shadow_y", "Dock 阴影 Y 偏移", 4, -24, 24, "dp", "dock_shadow"),
-    IntSpec("shadow_radius", "描边阴影半径", 3, 1, 24, "dp", "stroke_shadow"),
-    IntSpec("shadow_alpha", "描边阴影透明度", 70, 0, 200, "", "stroke_shadow"),
+    IntSpec(ConfigSchema.Dock.SHADOW_RADIUS, "Dock 阴影柔化", "dp", "dock_shadow"),
+    IntSpec(ConfigSchema.Dock.SHADOW_SIZE, "Dock 阴影扩散大小", "dp", "dock_shadow"),
+    IntSpec(ConfigSchema.Dock.SHADOW_ALPHA, "Dock 阴影透明度", "", "dock_shadow"),
+    IntSpec(ConfigSchema.Dock.SHADOW_Y, "Dock 阴影 Y 偏移", "dp", "dock_shadow"),
+    IntSpec(ConfigSchema.Dock.STROKE_SHADOW_RADIUS, "描边阴影半径", "dp", "stroke_shadow"),
+    IntSpec(ConfigSchema.Dock.STROKE_SHADOW_ALPHA, "描边阴影透明度", "", "stroke_shadow"),
 )
 
 @Composable
 private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
     val prefs = remember { PreferenceManager.getDefaultSharedPreferences(activity) }
-    var masterEnabled by remember { mutableStateOf(prefs.getBoolean("liquiddock_enabled", true)) }
+    var masterEnabled by remember {
+        mutableStateOf(prefs.getBoolean(ConfigSchema.Core.ENABLED.name(), ConfigSchema.Core.ENABLED.uiDefault()))
+    }
     var page by rememberSaveable { mutableStateOf(Page.Home) }
     BackHandler(enabled = page != Page.Home) { page = Page.Home }
     Scaffold(
@@ -331,7 +341,7 @@ private fun HomePage(
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.app_name)) }
         item { SmallTitle(stringResource(R.string.category_master)) }
-        item { SettingsCard { BooleanSetting(prefs, "liquiddock_enabled", stringResource(R.string.enable_liquiddock), true,
+        item { SettingsCard { BooleanSetting(prefs, ConfigSchema.Core.ENABLED, stringResource(R.string.enable_liquiddock),
             stringResource(R.string.enable_liquiddock_summary)) { onMasterChanged(it) } } }
         item { SmallTitle(stringResource(R.string.category_customization)) }
         item {
@@ -354,15 +364,17 @@ private fun HomePage(
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var grid8x4 by remember { mutableStateOf(prefs.getBoolean("home_grid_8x4", false)) }
+    var grid8x4 by remember {
+        mutableStateOf(prefs.getBoolean(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault()))
+    }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.page_grid), stringResource(R.string.grid_header_summary)) }
         item { SmallTitle(stringResource(R.string.category_grid)) }
         item {
             SettingsCard {
-                BooleanSetting(prefs, "home_grid_8x4", stringResource(R.string.enable_grid_8x4), false,
+                BooleanSetting(prefs, ConfigSchema.Grid.ENABLED, stringResource(R.string.enable_grid_8x4),
                     stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
-                BooleanSetting(prefs, "grid_widget_adaptation", stringResource(R.string.enable_widget_adaptation), false,
+                BooleanSetting(prefs, ConfigSchema.Grid.WIDGET_ADAPTATION, stringResource(R.string.enable_widget_adaptation),
                     stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
             }
         }
@@ -377,15 +389,15 @@ private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
 
 @Composable
 private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var dockEnabled by remember { mutableStateOf(prefs.getBoolean("dock_customization", true)) }
-    var resizeAnimation by remember { mutableStateOf(prefs.getBoolean("dock_resize_animation", false)) }
-    var smoothResize by remember { mutableStateOf(prefs.getBoolean("dock_smooth_resize_animation", true)) }
+    var dockEnabled by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.ENABLED.name(), ConfigSchema.Dock.ENABLED.uiDefault())) }
+    var resizeAnimation by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.RESIZE_ANIMATION.name(), ConfigSchema.Dock.RESIZE_ANIMATION.uiDefault())) }
+    var smoothResize by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.name(), ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_dock)) {
-        BooleanSetting(prefs, "dock_customization", stringResource(R.string.dock_customization), true,
+        BooleanSetting(prefs, ConfigSchema.Dock.ENABLED, stringResource(R.string.dock_customization),
             stringResource(R.string.dock_customization_summary), masterEnabled) { dockEnabled = it }
-        BooleanSetting(prefs, "dock_resize_animation", stringResource(R.string.dock_resize_animation), false,
+        BooleanSetting(prefs, ConfigSchema.Dock.RESIZE_ANIMATION, stringResource(R.string.dock_resize_animation),
             stringResource(R.string.dock_resize_animation_summary), masterEnabled && dockEnabled) { resizeAnimation = it }
-        BooleanSetting(prefs, "dock_smooth_resize_animation", stringResource(R.string.dock_smooth_resize_animation), true,
+        BooleanSetting(prefs, ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION, stringResource(R.string.dock_smooth_resize_animation),
             stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation) { smoothResize = it }
         dockSpecs.forEach { IntSetting(prefs, it, masterEnabled && dockEnabled) }
     }
@@ -395,12 +407,12 @@ private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
 private fun DividerPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
     val legacyDefault = remember { hasLegacyDividerConfig(prefs) }
     var enabled by remember {
-        mutableStateOf(prefs.getBoolean("dock_divider_enabled", legacyDefault))
+        mutableStateOf(prefs.getBoolean(ConfigSchema.Divider.ENABLED.name(), legacyDefault))
     }
     SettingsList(padding, stringResource(R.string.page_divider)) {
-        BooleanSetting(prefs, "dock_divider_enabled", "自定义 Dock 分隔线", legacyDefault,
+        BooleanSetting(prefs, ConfigSchema.Divider.ENABLED, "自定义 Dock 分隔线",
             "独立于 Dock 尺寸、模糊和单位开关；宽度与偏移固定使用 dp",
-            masterEnabled) {
+            masterEnabled, default = legacyDefault) {
             enabled = it
             if (it) ensureDividerDefaults(prefs)
         }
@@ -410,9 +422,11 @@ private fun DividerPage(padding: PaddingValues, prefs: SharedPreferences, master
 
 @Composable
 private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var enabled by remember { mutableStateOf(prefs.getBoolean("workstation_dock_customization", false)) }
+    var enabled by remember {
+        mutableStateOf(prefs.getBoolean(ConfigSchema.Workstation.DOCK_CUSTOMIZATION.name(), ConfigSchema.Workstation.DOCK_CUSTOMIZATION.uiDefault()))
+    }
     SettingsList(padding, stringResource(R.string.page_workstation)) {
-        BooleanSetting(prefs, "workstation_dock_customization", stringResource(R.string.workstation_customization), false,
+        BooleanSetting(prefs, ConfigSchema.Workstation.DOCK_CUSTOMIZATION, stringResource(R.string.workstation_customization),
             stringResource(R.string.workstation_customization_summary),
             masterEnabled) { enabled = it }
         workstationSpecs.forEach { IntSetting(prefs, it, masterEnabled && enabled) }
@@ -421,12 +435,12 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 
 @Composable
 private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var liquidGlass by remember { mutableStateOf(prefs.getBoolean("liquid_glass", false)) }
-    var dynamicAppCapture by remember { mutableStateOf(prefs.getBoolean("liquid_dynamic_app_capture", true)) }
+    var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
+    var dynamicAppCapture by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(), ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_liquid)) {
-        BooleanSetting(prefs, "liquid_glass", stringResource(R.string.liquid_enable), false,
+        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable),
             stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanSetting(prefs, "liquid_dynamic_app_capture", stringResource(R.string.liquid_dynamic_capture), true,
+        BooleanSetting(prefs, ConfigSchema.Glass.DYNAMIC_APP_CAPTURE, stringResource(R.string.liquid_dynamic_capture),
             stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass) { dynamicAppCapture = it }
         liquidSpecs.forEach {
             IntSetting(prefs, it, masterEnabled && liquidGlass && (it.dependency != "liquid_dynamic_app_capture" || dynamicAppCapture))
@@ -436,13 +450,13 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
 
 @Composable
 private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var dockStroke by remember { mutableStateOf(prefs.getBoolean("dock_stroke", true)) }
-    var squircle by remember { mutableStateOf(prefs.getBoolean("squircle", false)) }
-    var fillDiff by remember { mutableStateOf(prefs.getBoolean("fill_diff", false)) }
+    var dockStroke by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.STROKE_ENABLED.name(), ConfigSchema.Dock.STROKE_ENABLED.uiDefault())) }
+    var squircle by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SQUIRCLE.name(), ConfigSchema.Dock.SQUIRCLE.uiDefault())) }
+    var fillDiff by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.FILL_DIFF.name(), ConfigSchema.Dock.FILL_DIFF.uiDefault())) }
     SettingsList(padding, "描边") {
-        BooleanSetting(prefs, "dock_stroke", "显示完整描边", true, "控制 Dock 边框与灯光", masterEnabled) { dockStroke = it }
-        BooleanSetting(prefs, "squircle", "方圆形连续曲线", false, "iPad 风格连续圆角", masterEnabled) { squircle = it }
-        BooleanSetting(prefs, "fill_diff", "Fill-Diff 描边", false, "通过填充与挖空获得清晰抗锯齿", masterEnabled) { fillDiff = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.STROKE_ENABLED, "显示完整描边", "控制 Dock 边框与灯光", masterEnabled) { dockStroke = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.SQUIRCLE, "方圆形连续曲线", "iPad 风格连续圆角", masterEnabled) { squircle = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.FILL_DIFF, "Fill-Diff 描边", "通过填充与挖空获得清晰抗锯齿", masterEnabled) { fillDiff = it }
         SmallTitle("描边背景色")
         strokeSpecs.filter { it.section == IntSection.StrokeBackground }.forEach {
             IntSetting(prefs, it, masterEnabled && dockStroke)
@@ -462,12 +476,12 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterE
 
 @Composable
 private fun ShadowPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    val dockEnabled = prefs.getBoolean("dock_customization", true)
-    var dockShadow by remember { mutableStateOf(prefs.getBoolean("dock_shadow", true)) }
-    var strokeShadow by remember { mutableStateOf(prefs.getBoolean("stroke_shadow", false)) }
+    val dockEnabled = prefs.getBoolean(ConfigSchema.Dock.ENABLED.name(), ConfigSchema.Dock.ENABLED.uiDefault())
+    var dockShadow by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SHADOW_ENABLED.name(), ConfigSchema.Dock.SHADOW_ENABLED.uiDefault())) }
+    var strokeShadow by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.STROKE_SHADOW.name(), ConfigSchema.Dock.STROKE_SHADOW.uiDefault())) }
     SettingsList(padding, "阴影") {
-        BooleanSetting(prefs, "dock_shadow", "整个 Dock 下方阴影", true, "跟随 Dock 长宽、高度和圆角", masterEnabled && dockEnabled) { dockShadow = it }
-        BooleanSetting(prefs, "stroke_shadow", "描边阴影", false, "描边下方的柔和阴影", masterEnabled && dockEnabled) { strokeShadow = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.SHADOW_ENABLED, "整个 Dock 下方阴影", "跟随 Dock 长宽、高度和圆角", masterEnabled && dockEnabled) { dockShadow = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.STROKE_SHADOW, "描边阴影", "描边下方的柔和阴影", masterEnabled && dockEnabled) { strokeShadow = it }
         shadowSpecs.forEach {
             IntSetting(prefs, it, masterEnabled && dockEnabled && when (it.dependency) {
                 "dock_shadow" -> dockShadow
@@ -504,8 +518,8 @@ private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity,
         item { PageHeader("引用与许可", "LiquidDock 使用的框架与实现参考") }
         item {
             SettingsCard {
-                BooleanSetting(prefs, "liquiddock_debug_log", "调试日志",
-                    false, "输出诊断日志到 Download/liquiddock.log，重启桌面生效")
+                BooleanSetting(prefs, ConfigSchema.Debug.LOGGING, "调试日志",
+                    "输出诊断日志到 Download/liquiddock.log，重启桌面生效")
             }
         }
         item { SmallTitle("界面与运行框架") }
@@ -567,9 +581,10 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 private fun BooleanSetting(
-    prefs: SharedPreferences, key: String, title: String, default: Boolean, summary: String? = null,
-    enabled: Boolean = true, onChanged: (Boolean) -> Unit = {},
+    prefs: SharedPreferences, config: ConfigKey<Boolean>, title: String, summary: String? = null,
+    enabled: Boolean = true, default: Boolean = config.uiDefault(), onChanged: (Boolean) -> Unit = {},
 ) {
+    val key = config.name()
     var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
     SwitchPreference(
         checked = value,

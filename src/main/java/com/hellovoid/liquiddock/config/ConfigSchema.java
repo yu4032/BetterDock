@@ -75,16 +75,16 @@ public final class ConfigSchema {
 
         // Runtime defaults for row gaps are compatibility-dependent and stay in LiquidDockConfig.
         public static final ConfigKey<Integer> LANDSCAPE_ROW_GAP = dp(
-                "grid_landscape_row_gap", 0, null, 0, -600, 1200,
+                "grid_landscape_row_gap", 0, null, 0, -200, 400,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PORTRAIT_ROW_GAP = dp(
-                "grid_portrait_row_gap", 0, null, 0, -600, 1200,
+                "grid_portrait_row_gap", 0, null, 0, -200, 400,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LANDSCAPE_INDICATOR_Y = dp(
-                "indicator_landscape_y", 0, 0, 0, -400, 400,
+                "indicator_landscape_y", 0, 0, 0, -160, 160,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PORTRAIT_INDICATOR_Y = dp(
-                "indicator_portrait_y", 0, 0, 0, -400, 400,
+                "indicator_portrait_y", 0, 0, 0, -160, 160,
                 ConfigKey.ExportMode.ALWAYS);
 
         // Import-only JSON aliases from pre-axis-distance exports. They never become
@@ -117,13 +117,13 @@ public final class ConfigSchema {
         public static final ConfigKey<Boolean> DIMENSIONS_DP = bool(
                 "dock_dimensions_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> WIDTH_OFFSET = dp(
-                "width_offset", 0, 0, 0, -200, 200, ConfigKey.ExportMode.ALWAYS);
+                "width_offset", 0, 0, 0, -80, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> HEIGHT_OFFSET = dp(
-                "height_offset", 0, 0, 0, -200, 200, ConfigKey.ExportMode.ALWAYS);
+                "height_offset", 0, 0, 0, -80, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SPACING = dp(
-                "dock_spacing", 0, 0, 0, -10, 20, ConfigKey.ExportMode.ALWAYS);
+                "dock_spacing", 0, 0, 0, -8, 12, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BOTTOM_OFFSET = dp(
-                "dock_bottom_offset", 0, 0, 0, 0, 80, ConfigKey.ExportMode.ALWAYS);
+                "dock_bottom_offset", 0, 0, 0, -30, 40, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BLUR_RADIUS = integer(
                 "blur_radius", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> CORNERS_DP = bool(
@@ -141,13 +141,13 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> SQUIRCLE_CONTROL_POINT = integer(
                 "sq_outer_cp", 58, 58, 58, 40, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_WIDTH = dp(
-                "sq_stroke_w", 1, 4, 4, 1, 20, ConfigKey.ExportMode.ALWAYS);
+                "sq_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_OFFSET = dp(
-                "sq_stroke_off", 3, 8, 8, 0, 30, ConfigKey.ExportMode.ALWAYS);
+                "sq_stroke_off", 3, 8, 8, 0, 16, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> FILL_DIFF_STROKE_WIDTH = dp(
-                "stroke_w", 1, 2, 2, 1, 10, ConfigKey.ExportMode.ALWAYS);
+                "stroke_w", 1, 2, 2, 1, 6, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STANDARD_STROKE_WIDTH = dp(
-                "std_stroke_w", 1, 4, 4, 1, 20, ConfigKey.ExportMode.ALWAYS);
+                "std_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_RED = integer(
                 "stroke_base_r", 255, 255, 255, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_GREEN = integer(
@@ -159,19 +159,19 @@ public final class ConfigSchema {
         public static final ConfigKey<Boolean> STROKE_SHADOW = bool(
                 "stroke_shadow", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_SHADOW_RADIUS = dp(
-                "shadow_radius", 3, 8, 8, 1, 40, ConfigKey.ExportMode.ALWAYS);
+                "shadow_radius", 3, 8, 8, 1, 24, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_SHADOW_ALPHA = integer(
                 "shadow_alpha", 70, 70, 70, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> SHADOW_ENABLED = bool(
                 "dock_shadow", true, true, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SHADOW_RADIUS = dp(
-                "dock_shadow_radius", 15, 42, 42, 1, 80, ConfigKey.ExportMode.ALWAYS);
+                "dock_shadow_radius", 15, 42, 42, 1, 40, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SHADOW_SIZE = dp(
-                "dock_shadow_size", 18, 52, 52, 1, 120, ConfigKey.ExportMode.ALWAYS);
+                "dock_shadow_size", 18, 52, 52, 1, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SHADOW_ALPHA = integer(
                 "dock_shadow_alpha", 140, 140, 140, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SHADOW_Y = dp(
-                "dock_shadow_y", 4, 12, 12, -40, 40, ConfigKey.ExportMode.ALWAYS);
+                "dock_shadow_y", 4, 12, 12, -24, 24, ConfigKey.ExportMode.ALWAYS);
 
         private Dock() {}
     }
