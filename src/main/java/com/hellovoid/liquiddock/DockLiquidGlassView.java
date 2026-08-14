@@ -68,6 +68,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float liquidDome;"
       + "uniform float lensRefractionPx;"
       + "uniform float highlightWidth;"
+      + "uniform float highlightEnabled;"
+      + "uniform float highlightAlpha;"
       + "uniform float brightness;"
       + "uniform float specularSharp;"
       + "uniform float specularStrength;"
@@ -218,7 +220,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float sh=max(specularSharp,1.0);float sp=1.52*max(specularStrength,0.0);"
       + "float specP=pow(max(dot(N,Hp),0.0),sh)*sp;"
       + "specP*=(0.32+0.68*height);"
-      + "color+=specP*float3(0.99,0.993,1.0);"
       + "float bandFracR=max(edgeBand,0.005);"
       + "float bandR=clamp(minDim*bandFracR,0.5,min(12.0,minDim*0.1));"
       + "float shellRim=smoothstep(bandR,bandR*0.06,edgeDist)*smoothstep(-2.2,0.0,sd);"
@@ -228,11 +229,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "float edgeLight=dot(gN,Lxy);"
       + "float rimLitSide=pow(max(edgeLight,0.0),3.6)*shellRim*1.22*0.95*rimLight*(0.58+0.42*height);"
       + "float rimOpposite=pow(max(-edgeLight,0.0),1.05)*shellRim*1.22*0.4*rimLight*(0.4+0.6*height);"
-      + "color+=float3(0.98,0.992,1.008)*rimLitSide;"
-      + "color+=float3(0.952,0.968,1.018)*rimOpposite;"
       + "float causticDot=dot(normalize(float3(gradH*normalStrength,0.45)),Lp);"
       + "float caust=pow(max(causticDot,0.0),7.0)*max(causticStrength,0.0)*height;"
-      + "color+=caust*float3(1.0,0.96,0.90);"
+      + "float3 hl=specP*float3(0.99,0.993,1.0)"
+      + "+float3(0.98,0.992,1.008)*rimLitSide"
+      + "+float3(0.952,0.968,1.018)*rimOpposite"
+      + "+caust*float3(1.0,0.96,0.90);"
+      + "if(highlightEnabled>0.5){color+=hl*highlightAlpha;}"
       + "return half4(color,1.0);}";
 
     private final View workspace;
@@ -246,8 +249,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private int blurRadius;
+    interface ActiveBlurBackendListener {
+        void onActiveBlurBackendChanged(LiquidBlurMode mode);
+    }
+
     private LiquidBlurMode requestedBlurMode = LiquidBlurMode.SHADER;
     private LiquidBlurMode activeBlurBackend = LiquidBlurMode.SHADER;
+    private ActiveBlurBackendListener activeBlurBackendListener;
     private boolean advancedMaterialActive;
     private boolean advancedMaterialUnavailableForProcess;
     private boolean fullscreenCapture = true;
@@ -261,6 +269,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // Edge highlight thickness multiplier (liquid_highlight_width): scales the shader's
     // edge-glow band (silW) AND the canvas stroke highlight width.
     private float glassHighlightWidth = 1.0f;
+    private float glassHighlightAlpha = 1.0f;
     // Glass tint color (liquid_tint_r/g/b); alpha stays liquid_tint_alpha.
     private int glassTintR = 238, glassTintG = 244, glassTintB = 255;
     // Shader appearance knobs (all GUI-configurable)
@@ -550,6 +559,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         updateBlurBackend();
     }
 
+    void setActiveBlurBackendListener(ActiveBlurBackendListener listener) {
+        activeBlurBackendListener = listener;
+        if (listener != null) listener.onActiveBlurBackendChanged(activeBlurBackend);
+    }
+
+    private void setActiveBlurBackendState(LiquidBlurMode mode) {
+        LiquidBlurMode next = mode == null ? LiquidBlurMode.SHADER : mode;
+        if (activeBlurBackend == next) return;
+        activeBlurBackend = next;
+        advancedMaterialActive = next == LiquidBlurMode.ADVANCED_MATERIAL;
+        if (activeBlurBackendListener != null) {
+            activeBlurBackendListener.onActiveBlurBackendChanged(activeBlurBackend);
+        }
+    }
+
     void setBlurRadiusPx(int radiusPx) {
         int next = Math.max(0, radiusPx);
         if (blurRadius == next) return;
@@ -576,8 +600,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } else if (requestedBlurMode == LiquidBlurMode.SHADER) {
             MiBlurBridge.clearContentBlur(this);
         }
-        activeBlurBackend = LiquidBlurBackendPolicy.activeBackend(requestedBlurMode, applied);
-        advancedMaterialActive = activeBlurBackend == LiquidBlurMode.ADVANCED_MATERIAL;
+        setActiveBlurBackendState(
+                LiquidBlurBackendPolicy.activeBackend(requestedBlurMode, applied));
         if (!advancedMaterialActive && requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL) {
             MiBlurBridge.clearContentBlur(this);
         }
@@ -730,8 +754,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     @Override protected void onDetachedFromWindow() {
         attached = false;
         MiBlurBridge.clearContentBlur(this);
-        advancedMaterialActive = false;
-        activeBlurBackend = LiquidBlurMode.SHADER;
+        setActiveBlurBackendState(LiquidBlurMode.SHADER);
         cancelPendingCaptureWork();
         stopConfigReloadTick();
         invalidateDockWindowSurfaceCache();
@@ -1328,7 +1351,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  liquid_specular_sharp / liquid_specular_strength / liquid_rim_light /
      *  liquid_caustics / liquid_edge_band). */
     void setAppearance(float depthEffect, float brightness, float specularSharp,
-                       float specularStrength, float rimLight, float caustics, float edgeBand) {
+                       float specularStrength, float rimLight, float caustics, float edgeBand,
+                       float highlightAlpha) {
         float nd = Math.max(0f, Math.min(1f, depthEffect));
         float nb = Math.max(0.5f, Math.min(2f, brightness));
         float ns = Math.max(1f, Math.min(400f, specularSharp));
@@ -1336,9 +1360,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         float nr = Math.max(0f, Math.min(3f, rimLight));
         float nc = Math.max(0f, Math.min(1f, caustics));
         float ne = Math.max(0.005f, Math.min(0.1f, edgeBand));
+        float nha = Math.max(0f, Math.min(2f, highlightAlpha));
         if (nd == glassDepthEffect && nb == glassBrightness && ns == glassSpecularSharp
                 && nst == glassSpecularStrength && nr == glassRimLight
-                && nc == glassCaustics && ne == glassEdgeBand) return;
+                && nc == glassCaustics && ne == glassEdgeBand
+                && nha == glassHighlightAlpha) return;
         glassDepthEffect = nd;
         glassBrightness = nb;
         glassSpecularSharp = ns;
@@ -1346,6 +1372,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         glassRimLight = nr;
         glassCaustics = nc;
         glassEdgeBand = ne;
+        glassHighlightAlpha = nha;
         invalidate();
     }
 
@@ -1440,7 +1467,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 ((DockLiquidGlassHostView) getParent()).reloadOverlay(fullConfig.dock, cfg);
             }
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
-                    cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
+                    cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand,
+                    cfg.highlightAlpha);
             setCaptureScale(cfg.captureScale);
             setDynamicAppCapture(cfg.dynamicAppCapture, cfg.captureFps, cfg.probeFps,
                     cfg.motionThreshold, cfg.motionBitThreshold, cfg.motionHoldMs,
@@ -2712,6 +2740,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);
         refraction.setFloatUniform("shaderBlurEnabled", advancedMaterialActive ? 0f : 1f);
+        refraction.setFloatUniform("highlightEnabled", advancedMaterialActive ? 0f : 1f);
+        refraction.setFloatUniform("highlightAlpha", glassHighlightAlpha);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
         // GUI-configurable via liquid_* settings.
         float density = displayDensity;

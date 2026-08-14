@@ -35,6 +35,9 @@ final class DockLiquidGlassHostView extends FrameLayout {
         removeAllViews();
         glassView = glass;
         overlayView = overlay;
+        glass.setActiveBlurBackendListener(mode -> {
+            if (overlayView != null) overlayView.setActiveBlurBackend(mode);
+        });
         addView(glass, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         addView(overlay, new LayoutParams(

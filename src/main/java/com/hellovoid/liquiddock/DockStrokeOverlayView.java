@@ -18,6 +18,7 @@ final class DockStrokeOverlayView extends View {
     private float squircleCp = .58f;
     private float highlightAlpha = 1f;
     private float highlightWidth = 1f;
+    private LiquidBlurMode activeBlurBackend = LiquidBlurMode.SHADER;
     private final float density;
 
     DockStrokeOverlayView(Context context) {
@@ -40,6 +41,13 @@ final class DockStrokeOverlayView extends View {
     void setHighlight(float alpha, float width) {
         highlightAlpha = Math.max(0f, Math.min(2f, alpha));
         highlightWidth = Math.max(0f, width);
+        invalidate();
+    }
+
+    void setActiveBlurBackend(LiquidBlurMode mode) {
+        LiquidBlurMode next = mode == null ? LiquidBlurMode.SHADER : mode;
+        if (activeBlurBackend == next) return;
+        activeBlurBackend = next;
         invalidate();
     }
 
