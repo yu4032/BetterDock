@@ -1,8 +1,6 @@
 package com.hellovoid.liquiddock;
 
-import android.content.res.Configuration;
 import android.view.View;
-import android.view.ViewGroup;
 
 /**
  * Keeps HyperOS workstation/laptop Dock backgrounds on the launcher's native
@@ -22,8 +20,6 @@ final class WorkstationWallpaperOnlyHook {
             "com.miui.home.launcher.laptop.AllAppsController";
     private static final String LAUNCHER =
             "com.miui.home.launcher.Launcher";
-    private static final String CELL_LAYOUT =
-            "com.miui.home.launcher.CellLayout";
 
     private WorkstationWallpaperOnlyHook() {}
 
@@ -32,7 +28,6 @@ final class WorkstationWallpaperOnlyHook {
         installNativeSnapshotLock(classLoader);
         installAllAppsSnapshotTriggers(classLoader);
         installRecentsSnapshotTrigger(classLoader);
-        installAllAppsVerticalOffset(classLoader);
     }
 
     /**
@@ -177,73 +172,6 @@ final class WorkstationWallpaperOnlyHook {
             MainHook.log("[DC] workstation wallpaper snapshot forced reason=" + reason);
         } catch (Throwable error) {
             MainHook.log("[DC] workstation wallpaper snapshot force FAILED: " + error);
-        }
-    }
-
-    /**
-     * HomeGridHook already applies as much of the requested All Apps Y translation as
-     * the native GridConfig's top/bottom slack permits. Laptop All Apps commonly has
-     * baseBottom == 0, which clamps every positive offset to zero. After native layout,
-     * add only the missing delta (requested - already-applied), so positive Y works and
-     * negative Y is not doubled. The original onLayout runs first every time, so this
-     * correction never accumulates.
-     */
-    private static void installAllAppsVerticalOffset(ClassLoader classLoader) {
-        try {
-            Class<?> cellLayout = Class.forName(CELL_LAYOUT, false, classLoader);
-            HookUtil.hookMethod(cellLayout, "onLayout",
-                    new Class<?>[]{boolean.class, int.class, int.class, int.class, int.class},
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (!MainHook.isWorkstationMode()) return result;
-                        Object target = chain.getThisObject();
-                        if (!(target instanceof ViewGroup)
-                                || !Boolean.TRUE.equals(HookUtil.invoke(target, "isInLapTopAllApps")))
-                            return result;
-
-                        ViewGroup layout = (ViewGroup) target;
-                        LiquidDockConfig fullConfig = LiquidDockConfig.load();
-                        LiquidDockConfig.Workstation config = fullConfig.workstation;
-                        boolean portrait = layout.getResources().getConfiguration().orientation
-                                == Configuration.ORIENTATION_PORTRAIT;
-                        float configured = portrait
-                                ? config.allAppsPortraitVerticalOffset
-                                : config.allAppsLandscapeVerticalOffset;
-                        float scale = fullConfig.grid.dp
-                                ? layout.getResources().getDisplayMetrics().density : 1f;
-                        int requested = Math.round(configured * scale);
-                        if (requested == 0) return result;
-
-                        int alreadyApplied = 0;
-                        try {
-                            Object gridConfig = HookUtil.getField(target, "mGridConfig");
-                            int baseTop = Math.max(0,
-                                    ((Number) HookUtil.invoke(gridConfig, "getTop")).intValue());
-                            int baseCell = ((Number) HookUtil.invoke(
-                                    gridConfig, "getCellSize")).intValue();
-                            int countY = HookUtil.getIntField(target, "mVCells");
-                            int baseHeightGap = Math.max(0,
-                                    HookUtil.getIntField(target, "mHeightGap"));
-                            int baseBottom = Math.max(0, layout.getHeight()
-                                    - (baseTop + baseCell * countY
-                                    + baseHeightGap * Math.max(0, countY - 1)));
-                            alreadyApplied = Math.max(-baseTop,
-                                    Math.min(baseBottom, requested));
-                        } catch (Throwable ignored) {
-                        }
-
-                        int correction = requested - alreadyApplied;
-                        if (correction == 0) return result;
-                        for (int i = 0; i < layout.getChildCount(); i++) {
-                            View child = layout.getChildAt(i);
-                            child.layout(child.getLeft(), child.getTop() + correction,
-                                    child.getRight(), child.getBottom() + correction);
-                        }
-                        return result;
-                    });
-            MainHook.log("[DC] workstation All Apps vertical-offset guard installed");
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation All Apps vertical-offset guard unavailable: " + error);
         }
     }
 }

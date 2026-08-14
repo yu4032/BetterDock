@@ -18,9 +18,11 @@ final class HomeGridHook {
     private static volatile boolean workstationMode;
     private static int workstationHorizontalOffset;
     private static int workstationAllAppsLandscapeHorizontalOffset;
-    private static int workstationAllAppsLandscapeVerticalOffset;
+    private static int workstationAllAppsLandscapeTopSpacing;
+    private static int workstationAllAppsLandscapeBottomSpacing;
     private static int workstationAllAppsPortraitHorizontalOffset;
-    private static int workstationAllAppsPortraitVerticalOffset;
+    private static int workstationAllAppsPortraitTopSpacing;
+    private static int workstationAllAppsPortraitBottomSpacing;
     private static java.lang.ref.WeakReference<android.view.View> workspaceRef =
             new java.lang.ref.WeakReference<>(null);
     private static float density;
@@ -46,12 +48,16 @@ final class HomeGridHook {
         workstationHorizontalOffset = offset;
     }
 
-    static void setWorkstationAllAppsOffsets(int landscapeHorizontal, int landscapeVertical,
-                                                    int portraitHorizontal, int portraitVertical) {
+    static void setWorkstationAllAppsOffsets(int landscapeHorizontal,
+                                                    int landscapeTop, int landscapeBottom,
+                                                    int portraitHorizontal,
+                                                    int portraitTop, int portraitBottom) {
         workstationAllAppsLandscapeHorizontalOffset = landscapeHorizontal;
-        workstationAllAppsLandscapeVerticalOffset = landscapeVertical;
+        workstationAllAppsLandscapeTopSpacing = landscapeTop;
+        workstationAllAppsLandscapeBottomSpacing = landscapeBottom;
         workstationAllAppsPortraitHorizontalOffset = portraitHorizontal;
-        workstationAllAppsPortraitVerticalOffset = portraitVertical;
+        workstationAllAppsPortraitTopSpacing = portraitTop;
+        workstationAllAppsPortraitBottomSpacing = portraitBottom;
     }
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
@@ -533,12 +539,15 @@ final class HomeGridHook {
                 int horizontalMargin = portrait
                         ? workstationAllAppsPortraitHorizontalOffset
                         : workstationAllAppsLandscapeHorizontalOffset;
-                int verticalMargin = portrait
-                        ? workstationAllAppsPortraitVerticalOffset
-                        : workstationAllAppsLandscapeVerticalOffset;
+                int topMargin = portrait
+                        ? workstationAllAppsPortraitTopSpacing
+                        : workstationAllAppsLandscapeTopSpacing;
+                int bottomMargin = portrait
+                        ? workstationAllAppsPortraitBottomSpacing
+                        : workstationAllAppsLandscapeBottomSpacing;
                 int[] margins = WorkstationGridMarginPolicy.apply(
                         baseLeft, baseRight, baseTop, baseBottom,
-                        horizontalMargin, verticalMargin);
+                        horizontalMargin, topMargin, bottomMargin);
                 left = margins[0];
                 right = margins[1];
                 top = margins[2];

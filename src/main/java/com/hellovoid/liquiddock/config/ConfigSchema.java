@@ -294,14 +294,28 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET = dp(
                 "workstation_all_apps_landscape_horizontal_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
+        // Merged vertical keys are retained for old configs/JSON only; current UI writes
+        // independent top/bottom spacing keys below.
         public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_VERTICAL_OFFSET = dp(
                 "workstation_all_apps_landscape_vertical_offset", 0, 0, 0, 0, 240,
+                ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_TOP_SPACING = dp(
+                "workstation_all_apps_landscape_top_spacing", 0, 0, 0, 0, 240,
+                ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_BOTTOM_SPACING = dp(
+                "workstation_all_apps_landscape_bottom_spacing", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET = dp(
                 "workstation_all_apps_portrait_horizontal_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_VERTICAL_OFFSET = dp(
                 "workstation_all_apps_portrait_vertical_offset", 0, 0, 0, 0, 240,
+                ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_TOP_SPACING = dp(
+                "workstation_all_apps_portrait_top_spacing", 0, 0, 0, 0, 240,
+                ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_BOTTOM_SPACING = dp(
+                "workstation_all_apps_portrait_bottom_spacing", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> DOCK_ICON_TOP_OFFSET = dp(
                 "workstation_dock_icon_top_offset", 0, 0, 0, -48, 48,
@@ -379,8 +393,12 @@ public final class ConfigSchema {
                 Workstation.GRID_HORIZONTAL_OFFSET,
                 Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET,
                 Workstation.ALL_APPS_LANDSCAPE_VERTICAL_OFFSET,
+                Workstation.ALL_APPS_LANDSCAPE_TOP_SPACING,
+                Workstation.ALL_APPS_LANDSCAPE_BOTTOM_SPACING,
                 Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET,
                 Workstation.ALL_APPS_PORTRAIT_VERTICAL_OFFSET,
+                Workstation.ALL_APPS_PORTRAIT_TOP_SPACING,
+                Workstation.ALL_APPS_PORTRAIT_BOTTOM_SPACING,
                 Workstation.DOCK_ICON_TOP_OFFSET, Workstation.DOCK_ICON_BOTTOM_OFFSET,
                 Workstation.LEGACY_ALL_APPS_HORIZONTAL_OFFSET,
                 Workstation.LEGACY_ALL_APPS_VERTICAL_OFFSET);

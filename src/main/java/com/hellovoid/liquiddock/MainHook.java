@@ -103,9 +103,11 @@ public class MainHook {
         float workstationAllAppsScale = android.content.res.Resources.getSystem().getDisplayMetrics().density;
         HomeGridHook.setWorkstationAllAppsOffsets(
                 Math.round(config.workstation.allAppsLandscapeHorizontalOffset * workstationAllAppsScale),
-                Math.round(config.workstation.allAppsLandscapeVerticalOffset * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsLandscapeTopSpacing * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsLandscapeBottomSpacing * workstationAllAppsScale),
                 Math.round(config.workstation.allAppsPortraitHorizontalOffset * workstationAllAppsScale),
-                Math.round(config.workstation.allAppsPortraitVerticalOffset * workstationAllAppsScale));
+                Math.round(config.workstation.allAppsPortraitTopSpacing * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsPortraitBottomSpacing * workstationAllAppsScale));
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
@@ -489,10 +491,17 @@ public class MainHook {
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        // Stock laptop All Apps opens a focusable LauncherOverlayWindow named
+                        // "Laptop overlay". That focus transfer is still Launcher-owned and
+                        // must not be classified as an external APP scene.
+                        if (glass != null && glass.isAllAppsActive()) {
+                            log("[DC] liquid focus ignored while stock All Apps overlay owns focus: " + hasFocus);
+                            return r;
+                        }
                         launcherLifecycleKnown = true;
                         launcherResumed = hasFocus;
                         log("[DC] liquid focus: " + hasFocus);
-                        DockLiquidGlassView glass = liquidGlassView;
                         if (glass != null) {
                             if (!hasFocus) {
                                 // Resolve the APP/layer before requesting the APP scene. Previously
@@ -517,6 +526,7 @@ public class MainHook {
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
         hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
         hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
+        installAllAppsCaptureHooks(cl);
 
         // Workstation Recents is entered from the dedicated Dock button. The system DEX
         // routes HotSeatsListContentAdapter's laptop branch to Launcher.showOrHideRecent().
@@ -652,6 +662,104 @@ public class MainHook {
     }
 
     // ── helpers ──────────────────────────────────────────────────────
+
+    private static void installAllAppsCaptureHooks(ClassLoader cl) {
+        // Stock laptop/workstation All Apps lives in LauncherOverlayWindow("Laptop overlay")
+        // and calls enableFocus(true). Mark the launcher-owned scene BEFORE the original call
+        // so nested onWindowFocusChanged(false) cannot be mistaken for an external app.
+        try {
+            Class<?> laptop = Class.forName(
+                    "com.miui.home.launcher.laptop.AllAppsController", false, cl);
+            HookUtil.hookMethod(laptop, "showAllApps", new Class<?>[]{boolean.class},
+                    chain -> {
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(
+                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(
+                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
+                        return result;
+                    });
+            HookUtil.hookMethod(laptop, "closeAllApps", new Class<?>[]{boolean.class},
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(false, null);
+                        return result;
+                    });
+            log("[DC] stock laptop All Apps capture state hooked");
+        } catch (Throwable e) {
+            log("[DC] stock laptop All Apps capture hook unavailable: " + e);
+        }
+
+        // Normal All Apps stays in the Launcher main window. Its transition controller gives
+        // us the target LauncherState early enough to prevent a first-frame display capture.
+        try {
+            Class<?> transition = Class.forName(
+                    "com.miui.home.launcher.allapps.AllAppsTransitionController", false, cl);
+            Class<?> launcherState = Class.forName(
+                    "com.miui.home.launcher.LauncherState", false, cl);
+            HookUtil.hookMethod(transition, "setState", new Class<?>[]{launcherState},
+                    chain -> {
+                        boolean entering = isStockAllAppsState(chain.getArgs().get(0));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (entering && glass != null) glass.setAllAppsActive(
+                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(entering,
+                                entering ? resolveNormalAllAppsCaptureRoot(chain.getThisObject()) : null);
+                        return result;
+                    });
+            Class<?> builder = Class.forName(
+                    "com.miui.home.launcher.anim.AnimatorSetBuilder", false, cl);
+            Class<?> animationConfig = Class.forName(
+                    "com.miui.home.launcher.LauncherStateManager$AnimationConfig", false, cl);
+            HookUtil.hookMethod(transition, "setStateWithAnimation",
+                    new Class<?>[]{launcherState, launcherState, builder, animationConfig},
+                    chain -> {
+                        // Official DEX: the second LauncherState is the destination whose
+                        // getAllAppsVerticalProgress() drives this animation.
+                        boolean entering = isStockAllAppsState(chain.getArgs().get(1));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (entering && glass != null) glass.setAllAppsActive(
+                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        glass = liquidGlassView;
+                        if (glass != null && !entering) glass.setAllAppsActive(false, null);
+                        return result;
+                    });
+            log("[DC] stock normal All Apps capture state hooked");
+        } catch (Throwable e) {
+            log("[DC] stock normal All Apps capture hook unavailable: " + e);
+        }
+    }
+
+    private static boolean isStockAllAppsState(Object state) {
+        return state != null && "com.miui.home.launcher.uioverrides.AllAppsState"
+                .equals(state.getClass().getName());
+    }
+
+    private static View resolveLaptopAllAppsCaptureRoot(Object controller) {
+        try {
+            Object dragLayer = HookUtil.invoke(controller, "getDragLayer");
+            if (dragLayer instanceof View) return (View) dragLayer;
+        } catch (Throwable ignored) {}
+        try {
+            Object dragLayer = HookUtil.getField(controller, "mDragLayer");
+            if (dragLayer instanceof View) return (View) dragLayer;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static View resolveNormalAllAppsCaptureRoot(Object controller) {
+        try {
+            Object appsView = HookUtil.getField(controller, "mAppsView");
+            if (appsView instanceof View) return (View) appsView;
+        } catch (Throwable ignored) {}
+        return null;
+    }
 
     private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
         try {

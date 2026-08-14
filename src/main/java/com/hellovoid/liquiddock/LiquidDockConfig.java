@@ -281,8 +281,10 @@ final class LiquidDockConfig {
     static final class Workstation {
         final boolean dockEnabled, dimensionsDp;
         final float dockWidthOffset, gridHorizontalOffset;
-        final float allAppsLandscapeHorizontalOffset, allAppsLandscapeVerticalOffset;
-        final float allAppsPortraitHorizontalOffset, allAppsPortraitVerticalOffset;
+        final float allAppsLandscapeHorizontalOffset;
+        final float allAppsLandscapeTopSpacing, allAppsLandscapeBottomSpacing;
+        final float allAppsPortraitHorizontalOffset;
+        final float allAppsPortraitTopSpacing, allAppsPortraitBottomSpacing;
         final float iconTopOffset, iconBottomOffset;
 
         Workstation(ConfigReader c) {
@@ -293,18 +295,27 @@ final class LiquidDockConfig {
                     ConfigSchema.Workstation.DOCK_WIDTH_OFFSET.runtimeFallback());
             gridHorizontalOffset = c.f(ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET.name(),
                     ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET.runtimeFallback());
-            // Preserve existing workstation All Apps tuning as the fallback for both
-            // orientations; new installs can tune landscape and portrait independently.
-            float legacyAllAppsX = c.f("workstation_all_apps_horizontal_offset", 0);
-            float legacyAllAppsY = c.f("workstation_all_apps_vertical_offset", 0);
+            // Compatibility chain: oldest global vertical -> old per-orientation merged
+            // vertical -> new independent top/bottom. Existing users keep their layout until
+            // they move either new edge control.
+            float legacyAllAppsX = c.f(ConfigSchema.Workstation.LEGACY_ALL_APPS_HORIZONTAL_OFFSET.name(), 0);
+            float legacyAllAppsY = c.f(ConfigSchema.Workstation.LEGACY_ALL_APPS_VERTICAL_OFFSET.name(), 0);
+            float mergedLandscapeY = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_VERTICAL_OFFSET.name(), legacyAllAppsY);
+            float mergedPortraitY = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_PORTRAIT_VERTICAL_OFFSET.name(), legacyAllAppsY);
             allAppsLandscapeHorizontalOffset = c.f(
-                    "workstation_all_apps_landscape_horizontal_offset", legacyAllAppsX);
-            allAppsLandscapeVerticalOffset = c.f(
-                    "workstation_all_apps_landscape_vertical_offset", legacyAllAppsY);
+                    ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET.name(), legacyAllAppsX);
+            allAppsLandscapeTopSpacing = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_TOP_SPACING.name(), mergedLandscapeY);
+            allAppsLandscapeBottomSpacing = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_BOTTOM_SPACING.name(), mergedLandscapeY);
             allAppsPortraitHorizontalOffset = c.f(
-                    "workstation_all_apps_portrait_horizontal_offset", legacyAllAppsX);
-            allAppsPortraitVerticalOffset = c.f(
-                    "workstation_all_apps_portrait_vertical_offset", legacyAllAppsY);
+                    ConfigSchema.Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET.name(), legacyAllAppsX);
+            allAppsPortraitTopSpacing = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_PORTRAIT_TOP_SPACING.name(), mergedPortraitY);
+            allAppsPortraitBottomSpacing = c.f(
+                    ConfigSchema.Workstation.ALL_APPS_PORTRAIT_BOTTOM_SPACING.name(), mergedPortraitY);
             iconTopOffset = c.f(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET.name(),
                     ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET.runtimeFallback());
             iconBottomOffset = c.f(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET.name(),

@@ -7,10 +7,12 @@ final class CaptureSceneState {
     private long gestureTargetUntilNanos;
     private long revision;
     private boolean workstationSuspended;
+    private boolean allAppsActive;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
     boolean workstationSuspended() { return workstationSuspended; }
+    boolean allAppsActive() { return allAppsActive; }
     boolean matches(CaptureScene scene, long expectedRevision) {
         return desired == scene && revision == expectedRevision;
     }
@@ -44,10 +46,26 @@ final class CaptureSceneState {
         return true;
     }
 
+    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow.  It can make the
+     * main Launcher window lose focus without an external app taking the foreground. */
+    void setAllAppsActive(boolean active) {
+        if (allAppsActive == active) return;
+        allAppsActive = active;
+        revision++;
+        if (active) {
+            desired = CaptureScene.ALL_APPS;
+        } else if (desired == CaptureScene.ALL_APPS) {
+            // The owning DockLiquidGlassView immediately refreshes against real launcher
+            // lifecycle/overview state. APP is only a neutral interim value here.
+            desired = CaptureScene.APP;
+        }
+    }
+
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (recentsVisible) return CaptureScene.RECENTS;
+        if (allAppsActive) return CaptureScene.ALL_APPS;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
         return CaptureScene.APP;
     }

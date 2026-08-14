@@ -4,16 +4,12 @@ package com.hellovoid.liquiddock;
 final class WorkstationGridMarginPolicy {
     private WorkstationGridMarginPolicy() {}
 
-    /**
-     * Returns {left, right, top, bottom} as absolute symmetric edge spacing.
-     * The native All Apps grid is intentionally ignored because its stock margins are
-     * asymmetric; adding deltas to them can never make one numeric setting truly centered.
-     * The base arguments remain only to preserve the existing call/test signature.
-     */
+    /** Returns {left, right, top, bottom}. Native asymmetric margins are intentionally ignored. */
     static int[] apply(int baseLeft, int baseRight, int baseTop, int baseBottom,
-                       int horizontalSpacing, int verticalSpacing) {
+                       int horizontalSpacing, int topSpacing, int bottomSpacing) {
         int horizontal = Math.max(0, horizontalSpacing);
-        int vertical = Math.max(0, verticalSpacing);
-        return new int[]{horizontal, horizontal, vertical, vertical};
+        int top = Math.max(0, topSpacing);
+        int bottom = Math.max(0, bottomSpacing);
+        return new int[]{horizontal, horizontal, top, bottom};
     }
 }
