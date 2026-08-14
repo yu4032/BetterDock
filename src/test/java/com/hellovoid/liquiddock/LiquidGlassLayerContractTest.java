@@ -11,35 +11,35 @@ import java.nio.file.Paths;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+/** Contract tests for the split self-blur/body and sharp overlay layer architecture. */
 public class LiquidGlassLayerContractTest {
     private static String read(String path) throws IOException {
         return Files.readString(Paths.get(path), StandardCharsets.UTF_8);
     }
 
     @Test
-    public void advancedBackendBypassesShaderKernelButKeepsFallbackInSameShader()
-            throws IOException {
+    public void selfBlurDoesNotOwnStrokeOrHighlightOverlay() throws IOException {
         String glass = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
+        String overlay = read("src/main/java/com/hellovoid/liquiddock/DockStrokeOverlayView.java");
 
-        assertTrue(glass.contains("uniform float shaderBlurEnabled"));
-        assertTrue(glass.contains("shaderBlurEnabled < 0.5"));
-        assertTrue(glass.contains("MiBlurBridge.applyContentBlur"));
-        assertTrue(glass.contains("LiquidBlurBackendPolicy.activeBackend"));
+        assertFalse("glass body must not configure DockStrokeRenderer",
+                glass.contains("DockStrokeRenderer.configure(this"));
+        assertTrue("sharp overlay must own configurable Dock stroke",
+                overlay.contains("DockStrokeRenderer.configure(this"));
     }
 
     @Test
-    public void sharpStrokeAndHighlightLiveAboveSelfBlurredGlass() throws IOException {
-        Path host = Paths.get("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java");
-        Path overlay = Paths.get("src/main/java/com/hellovoid/liquiddock/DockStrokeOverlayView.java");
-        assertTrue("Liquid Glass needs a final-clip host", Files.exists(host));
-        assertTrue("Liquid Glass needs a sharp overlay", Files.exists(overlay));
-
+    public void glassBodyCanBypassShaderBlurWhenAdvancedBackendIsActive() throws IOException {
         String glass = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
-        String overlaySource = read(overlay.toString());
-        assertFalse("glass child must not own the configurable foreground stroke",
-                glass.contains("setDockStrokeConfig(fullConfig.dock)"));
-        assertTrue(overlaySource.contains("DockStrokeRenderer.configure"));
-        assertTrue(overlaySource.contains("LinearGradient"));
+        assertTrue(glass.contains("shaderBlurEnabled"));
+        assertTrue(glass.contains("advancedMaterialActive ? 0f : 1f"));
+    }
+
+    @Test
+    public void sharpOverlayDoesNotReceiveMiuiSelfBlur() throws IOException {
+        String overlay = read("src/main/java/com/hellovoid/liquiddock/DockStrokeOverlayView.java");
+        assertFalse(overlay.contains("MiBlurBridge"));
+        assertFalse(overlay.contains("setMiSelfBlur"));
     }
 
     @Test
@@ -65,9 +65,9 @@ public class LiquidGlassLayerContractTest {
     public void advancedBackendIsReappliedAfterViewReattach() throws IOException {
         String glass = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
 
-        assertTrue("detach must forget compositor-active state after clearing it",
-                glass.contains("advancedMaterialActive = false;\n"
-                        + "        activeBlurBackend = LiquidBlurMode.SHADER;"));
+        assertTrue("detach must forget compositor-active state through the unified backend state path",
+                glass.contains("MiBlurBridge.clearContentBlur(this);\n"
+                        + "        setActiveBlurBackendState(LiquidBlurMode.SHADER);"));
         assertTrue("reattach must restore the requested advanced backend",
                 glass.contains("requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL\n"
                         + "                && !advancedMaterialUnavailableForProcess\n"
