@@ -64,6 +64,7 @@ public class ConfigPresetTest {
         expected.put("blur_radius", 100);
         expected.put("liquid_glass", true);
         expected.put("liquid_dimensions_dp", true);
+        expected.put("liquid_blur_mode", "shader");
         expected.put("liquid_ior", 170);
         expected.put("liquid_normal_strength", 115);
         expected.put("liquid_dome", 100);
