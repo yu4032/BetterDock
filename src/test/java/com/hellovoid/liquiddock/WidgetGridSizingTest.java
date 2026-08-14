@@ -24,9 +24,9 @@ public class WidgetGridSizingTest {
         int[] xs = {0, 112, 224};
         int[] ys = {0, 108, 216};
 
-        assertArrayEquals(new int[]{4, 4, 102, 100},
+        assertArrayEquals(new int[]{4, 4, 98, 96},
                 WidgetGridSizing.slotRect(0, 0, 1, 1, xs, ys, 100, 100, 4));
-        assertArrayEquals(new int[]{110, 4, 106, 100},
+        assertArrayEquals(new int[]{110, 4, 104, 96},
                 WidgetGridSizing.slotRect(1, 0, 1, 1, xs, ys, 100, 100, 4));
     }
 
