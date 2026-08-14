@@ -357,8 +357,14 @@ private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.page_grid), stringResource(R.string.grid_header_summary)) }
         item { SmallTitle(stringResource(R.string.category_grid)) }
-        item { SettingsCard { BooleanSetting(prefs, "home_grid_8x4", stringResource(R.string.enable_grid_8x4), false,
-            stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it } } }
+        item {
+            SettingsCard {
+                BooleanSetting(prefs, "home_grid_8x4", stringResource(R.string.enable_grid_8x4), false,
+                    stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
+                BooleanSetting(prefs, "grid_widget_adaptation", stringResource(R.string.enable_widget_adaptation), false,
+                    stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
+            }
+        }
         item { SmallTitle(stringResource(R.string.category_landscape)) }
         item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }
             .forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
@@ -664,6 +670,7 @@ private fun applyDefaultPreset(activity: ComposeSettingsActivity) {
     editor
         .putBoolean("liquiddock_enabled", true)
         .putBoolean("home_grid_8x4", false)
+        .putBoolean("grid_widget_adaptation", false)
         .putBoolean("grid_margins_dp", true).putBoolean("grid_margins_offset", true)
         .putInt("grid_landscape_margin_left", 0).putInt("grid_landscape_margin_right", 0)
         .putInt("grid_landscape_margin_top", 0).putInt("grid_landscape_margin_bottom", 0)
