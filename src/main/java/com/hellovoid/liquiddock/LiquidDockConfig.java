@@ -1,5 +1,7 @@
 package com.hellovoid.liquiddock;
 
+import com.hellovoid.liquiddock.config.ConfigSchema;
+
 /** Immutable, typed runtime configuration. All defaults and unit semantics live here so
  * hooks and renderers do not need to know JSON keys. */
 final class LiquidDockConfig {
@@ -13,9 +15,13 @@ final class LiquidDockConfig {
 
     static LiquidDockConfig load() { return new LiquidDockConfig(ConfigReader.load()); }
 
+    static LiquidDockConfig from(ConfigReader reader) { return new LiquidDockConfig(reader); }
+
     private LiquidDockConfig(ConfigReader c) {
-        enabled = c.b("liquiddock_enabled", true);
-        debugLog = c.b("liquiddock_debug_log", false);
+        enabled = c.b(ConfigSchema.Core.ENABLED.name(),
+                ConfigSchema.Core.ENABLED.runtimeFallback());
+        debugLog = c.b(ConfigSchema.Debug.LOGGING.name(),
+                ConfigSchema.Debug.LOGGING.runtimeFallback());
         grid = new Grid(c);
         dock = new Dock(c);
         divider = new Divider(c);
@@ -24,35 +30,52 @@ final class LiquidDockConfig {
     }
 
     static final class Grid {
-        final boolean enabled, dp, offsets;
+        final boolean enabled, widgetAdaptation, dp, offsets;
         final float landscapeHorizontal, landscapeTop, landscapeBottom, landscapeRowGap;
         final float portraitHorizontal, portraitTop, portraitBottom, portraitRowGap;
         final float landscapeIndicatorY, portraitIndicatorY;
 
         Grid(ConfigReader c) {
-            enabled = c.b("home_grid_8x4", false);
-            dp = c.b("grid_margins_dp", false);
-            offsets = c.b("grid_margins_offset", false);
-            landscapeHorizontal = c.has("grid_landscape_horizontal_distance")
-                    ? c.f("grid_landscape_horizontal_distance", 0)
-                    : (c.f("grid_landscape_margin_left", 0)
-                    + c.f("grid_landscape_margin_right", 0)) / 2f;
-            landscapeTop = c.f("grid_landscape_top_distance",
-                    c.f("grid_landscape_margin_top", 0));
-            landscapeBottom = c.f("grid_landscape_bottom_distance",
-                    c.f("grid_landscape_margin_bottom", 0));
-            portraitHorizontal = c.has("grid_portrait_horizontal_distance")
-                    ? c.f("grid_portrait_horizontal_distance", 0)
-                    : (c.f("grid_portrait_margin_left", 0)
-                    + c.f("grid_portrait_margin_right", 0)) / 2f;
-            portraitTop = c.f("grid_portrait_top_distance",
-                    c.f("grid_portrait_margin_top", 0));
-            portraitBottom = c.f("grid_portrait_bottom_distance",
-                    c.f("grid_portrait_margin_bottom", 0));
+            enabled = c.b(ConfigSchema.Grid.ENABLED.name(),
+                    ConfigSchema.Grid.ENABLED.runtimeFallback());
+            widgetAdaptation = c.b(ConfigSchema.Grid.WIDGET_ADAPTATION.name(),
+                    ConfigSchema.Grid.WIDGET_ADAPTATION.runtimeFallback());
+            dp = c.b(ConfigSchema.Grid.MARGINS_DP.name(),
+                    ConfigSchema.Grid.MARGINS_DP.runtimeFallback());
+            offsets = c.b(ConfigSchema.Grid.MARGINS_OFFSET.name(),
+                    ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());
+            landscapeHorizontal = c.has(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE.name())
+                    ? c.f(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE.name(),
+                            ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE.runtimeFallback())
+                    : (c.f(ConfigSchema.Grid.LANDSCAPE_MARGIN_LEFT.name(),
+                            ConfigSchema.Grid.LANDSCAPE_MARGIN_LEFT.runtimeFallback())
+                    + c.f(ConfigSchema.Grid.LANDSCAPE_MARGIN_RIGHT.name(),
+                            ConfigSchema.Grid.LANDSCAPE_MARGIN_RIGHT.runtimeFallback())) / 2f;
+            landscapeTop = c.f(ConfigSchema.Grid.LANDSCAPE_TOP_DISTANCE.name(),
+                    c.f(ConfigSchema.Grid.LANDSCAPE_MARGIN_TOP.name(),
+                            ConfigSchema.Grid.LANDSCAPE_MARGIN_TOP.runtimeFallback()));
+            landscapeBottom = c.f(ConfigSchema.Grid.LANDSCAPE_BOTTOM_DISTANCE.name(),
+                    c.f(ConfigSchema.Grid.LANDSCAPE_MARGIN_BOTTOM.name(),
+                            ConfigSchema.Grid.LANDSCAPE_MARGIN_BOTTOM.runtimeFallback()));
+            portraitHorizontal = c.has(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE.name())
+                    ? c.f(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE.name(),
+                            ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE.runtimeFallback())
+                    : (c.f(ConfigSchema.Grid.PORTRAIT_MARGIN_LEFT.name(),
+                            ConfigSchema.Grid.PORTRAIT_MARGIN_LEFT.runtimeFallback())
+                    + c.f(ConfigSchema.Grid.PORTRAIT_MARGIN_RIGHT.name(),
+                            ConfigSchema.Grid.PORTRAIT_MARGIN_RIGHT.runtimeFallback())) / 2f;
+            portraitTop = c.f(ConfigSchema.Grid.PORTRAIT_TOP_DISTANCE.name(),
+                    c.f(ConfigSchema.Grid.PORTRAIT_MARGIN_TOP.name(),
+                            ConfigSchema.Grid.PORTRAIT_MARGIN_TOP.runtimeFallback()));
+            portraitBottom = c.f(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE.name(),
+                    c.f(ConfigSchema.Grid.PORTRAIT_MARGIN_BOTTOM.name(),
+                            ConfigSchema.Grid.PORTRAIT_MARGIN_BOTTOM.runtimeFallback()));
             landscapeRowGap = c.f("grid_landscape_row_gap", offsets ? 0 : (dp ? 1 : 3));
             portraitRowGap = c.f("grid_portrait_row_gap", offsets ? 0 : (dp ? 1 : 3));
-            landscapeIndicatorY = c.f("indicator_landscape_y", 0);
-            portraitIndicatorY = c.f("indicator_portrait_y", 0);
+            landscapeIndicatorY = c.f(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y.name(),
+                    ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y.runtimeFallback());
+            portraitIndicatorY = c.f(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y.name(),
+                    ConfigSchema.Grid.PORTRAIT_INDICATOR_Y.runtimeFallback());
         }
     }
 
@@ -68,38 +91,70 @@ final class LiquidDockConfig {
         final int strokeShadowAlpha, shadowAlpha;
 
         Dock(ConfigReader c) {
-            enabled = c.b("dock_customization", true);
-            resizeAnimation = c.b("dock_resize_animation", false);
-            smoothResizeAnimation = c.b("dock_smooth_resize_animation", true);
-            dimensionsDp = c.b("dock_dimensions_dp", false);
-            widthOffset = c.f("width_offset", 0);
-            heightOffset = c.f("height_offset", 0);
-            spacing = c.f("dock_spacing", 0);
-            bottomOffset = c.f("dock_bottom_offset", 0);
-            blurRadius = c.i("blur_radius", 100);
-            cornersDp = c.b("corners_dp", false);
-            cornerOffset = c.f("corner_offset", -1);
-            blurCornerOffset = c.f("blur_corner_offset", 0);
-            squircle = c.b("squircle", false);
-            fillDiff = c.b("fill_diff", false);
-            strokeEnabled = c.b("dock_stroke", true);
-            squircleCp = c.i("sq_outer_cp", 58) / 100f;
-            squircleStrokeWidth = c.f("sq_stroke_w", 4);
-            squircleStrokeOffset = c.f("sq_stroke_off", 8);
-            strokeWidth = c.f("stroke_w", 2);
-            standardStrokeWidth = c.f("std_stroke_w", 4);
-            strokeR = channel(c.i("stroke_base_r", 255));
-            strokeG = channel(c.i("stroke_base_g", 255));
-            strokeB = channel(c.i("stroke_base_b", 255));
-            strokeAlpha = channel(c.i("stroke_base_alpha", 255));
-            strokeShadow = c.b("stroke_shadow", false);
-            strokeShadowRadius = c.f("shadow_radius", 8);
-            strokeShadowAlpha = channel(c.i("shadow_alpha", 70));
-            shadowEnabled = c.b("dock_shadow", true);
-            shadowRadius = c.f("dock_shadow_radius", 42);
-            shadowSize = c.f("dock_shadow_size", 52);
-            shadowAlpha = channel(c.i("dock_shadow_alpha", 140));
-            shadowY = c.f("dock_shadow_y", 12);
+            enabled = c.b(ConfigSchema.Dock.ENABLED.name(),
+                    ConfigSchema.Dock.ENABLED.runtimeFallback());
+            resizeAnimation = c.b(ConfigSchema.Dock.RESIZE_ANIMATION.name(),
+                    ConfigSchema.Dock.RESIZE_ANIMATION.runtimeFallback());
+            smoothResizeAnimation = c.b(ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.name(),
+                    ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.runtimeFallback());
+            dimensionsDp = c.b(ConfigSchema.Dock.DIMENSIONS_DP.name(),
+                    ConfigSchema.Dock.DIMENSIONS_DP.runtimeFallback());
+            widthOffset = c.f(ConfigSchema.Dock.WIDTH_OFFSET.name(),
+                    ConfigSchema.Dock.WIDTH_OFFSET.runtimeFallback());
+            heightOffset = c.f(ConfigSchema.Dock.HEIGHT_OFFSET.name(),
+                    ConfigSchema.Dock.HEIGHT_OFFSET.runtimeFallback());
+            spacing = c.f(ConfigSchema.Dock.SPACING.name(),
+                    ConfigSchema.Dock.SPACING.runtimeFallback());
+            bottomOffset = c.f(ConfigSchema.Dock.BOTTOM_OFFSET.name(),
+                    ConfigSchema.Dock.BOTTOM_OFFSET.runtimeFallback());
+            blurRadius = c.i(ConfigSchema.Dock.BLUR_RADIUS.name(),
+                    ConfigSchema.Dock.BLUR_RADIUS.runtimeFallback());
+            cornersDp = c.b(ConfigSchema.Dock.CORNERS_DP.name(),
+                    ConfigSchema.Dock.CORNERS_DP.runtimeFallback());
+            cornerOffset = c.f(ConfigSchema.Dock.CORNER_OFFSET.name(),
+                    ConfigSchema.Dock.CORNER_OFFSET.runtimeFallback());
+            blurCornerOffset = c.f(ConfigSchema.Dock.BLUR_CORNER_OFFSET.name(),
+                    ConfigSchema.Dock.BLUR_CORNER_OFFSET.runtimeFallback());
+            squircle = c.b(ConfigSchema.Dock.SQUIRCLE.name(),
+                    ConfigSchema.Dock.SQUIRCLE.runtimeFallback());
+            fillDiff = c.b(ConfigSchema.Dock.FILL_DIFF.name(),
+                    ConfigSchema.Dock.FILL_DIFF.runtimeFallback());
+            strokeEnabled = c.b(ConfigSchema.Dock.STROKE_ENABLED.name(),
+                    ConfigSchema.Dock.STROKE_ENABLED.runtimeFallback());
+            squircleCp = c.i(ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT.name(),
+                    ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT.runtimeFallback()) / 100f;
+            squircleStrokeWidth = c.f(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.name(),
+                    ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.runtimeFallback());
+            squircleStrokeOffset = c.f(ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET.name(),
+                    ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET.runtimeFallback());
+            strokeWidth = c.f(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH.name(),
+                    ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH.runtimeFallback());
+            standardStrokeWidth = c.f(ConfigSchema.Dock.STANDARD_STROKE_WIDTH.name(),
+                    ConfigSchema.Dock.STANDARD_STROKE_WIDTH.runtimeFallback());
+            strokeR = channel(c.i(ConfigSchema.Dock.STROKE_RED.name(),
+                    ConfigSchema.Dock.STROKE_RED.runtimeFallback()));
+            strokeG = channel(c.i(ConfigSchema.Dock.STROKE_GREEN.name(),
+                    ConfigSchema.Dock.STROKE_GREEN.runtimeFallback()));
+            strokeB = channel(c.i(ConfigSchema.Dock.STROKE_BLUE.name(),
+                    ConfigSchema.Dock.STROKE_BLUE.runtimeFallback()));
+            strokeAlpha = channel(c.i(ConfigSchema.Dock.STROKE_ALPHA.name(),
+                    ConfigSchema.Dock.STROKE_ALPHA.runtimeFallback()));
+            strokeShadow = c.b(ConfigSchema.Dock.STROKE_SHADOW.name(),
+                    ConfigSchema.Dock.STROKE_SHADOW.runtimeFallback());
+            strokeShadowRadius = c.f(ConfigSchema.Dock.STROKE_SHADOW_RADIUS.name(),
+                    ConfigSchema.Dock.STROKE_SHADOW_RADIUS.runtimeFallback());
+            strokeShadowAlpha = channel(c.i(ConfigSchema.Dock.STROKE_SHADOW_ALPHA.name(),
+                    ConfigSchema.Dock.STROKE_SHADOW_ALPHA.runtimeFallback()));
+            shadowEnabled = c.b(ConfigSchema.Dock.SHADOW_ENABLED.name(),
+                    ConfigSchema.Dock.SHADOW_ENABLED.runtimeFallback());
+            shadowRadius = c.f(ConfigSchema.Dock.SHADOW_RADIUS.name(),
+                    ConfigSchema.Dock.SHADOW_RADIUS.runtimeFallback());
+            shadowSize = c.f(ConfigSchema.Dock.SHADOW_SIZE.name(),
+                    ConfigSchema.Dock.SHADOW_SIZE.runtimeFallback());
+            shadowAlpha = channel(c.i(ConfigSchema.Dock.SHADOW_ALPHA.name(),
+                    ConfigSchema.Dock.SHADOW_ALPHA.runtimeFallback()));
+            shadowY = c.f(ConfigSchema.Dock.SHADOW_Y.name(),
+                    ConfigSchema.Dock.SHADOW_Y.runtimeFallback());
         }
     }
 
@@ -139,6 +194,7 @@ final class LiquidDockConfig {
 
     static final class Glass {
         final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture;
+        final LiquidBlurMode blurMode;
         final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
                 lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
                 rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
@@ -148,42 +204,77 @@ final class LiquidDockConfig {
                 tintR, tintG, tintB, specularSharp;
 
         Glass(ConfigReader c) {
-            enabled = c.b("liquid_glass", false);
-            dimensionsDp = c.b("liquid_dimensions_dp", false);
-            blur = c.f("liquid_blur", 6);
-            chromatic = c.i("liquid_chromatic", 8) / 100f;
-            tintAlpha = channel(c.i("liquid_tint_alpha", 38));
-            captureFps = clamp(c.i("liquid_capture_power_limit_fps", 20), 1, 165);
-            stopDelayMs = Math.max(0, c.i("liquid_capture_stop_delay", 150));
-            bleedTop = c.f("liquid_capture_bleed_top", -1);
-            bleedBottom = c.f("liquid_capture_bleed_bottom", -1);
-            thickness = c.f("liquid_thickness", 18);
-            ior = c.i("liquid_ior", 155) / 100f;
-            normalStrength = c.i("liquid_normal_strength", 115) / 100f;
-            dome = c.i("liquid_dome", 100) / 100f;
-            lensRefraction = c.f("liquid_lens_refraction", 12);
-            captureScale = c.i("liquid_capture_scale", 50) / 100f;
-            dynamicAppCapture = c.b("liquid_dynamic_app_capture", true);
-            fullscreenCapture = c.b("liquid_capture_fullscreen", true);
-            probeFps = clamp(c.i("liquid_dynamic_app_probe_fps", 3), 1, 60);
-            motionThreshold = Math.max(0, c.i("liquid_dynamic_motion_threshold", 12));
-            motionBitThreshold = Math.max(0, c.i("liquid_dynamic_bit_threshold", 18));
-            motionHoldMs = Math.max(0, c.i("liquid_dynamic_hold_ms", 900));
-            blackThreshold = channel(c.i("liquid_black_threshold", 10));
-            homeSettleDelayMs = clamp(c.i("liquid_home_settle_delay", 1200), 200, 3000);
-            highlightWidth = c.i("liquid_highlight_width", 100) / 100f;
-            tintR = channel(c.i("liquid_tint_r", 238));
-            tintG = channel(c.i("liquid_tint_g", 244));
-            tintB = channel(c.i("liquid_tint_b", 255));
-            depthEffect = c.i("liquid_depth_effect", 8) / 100f;
-            brightness = c.i("liquid_brightness", 108) / 100f;
-            specularSharp = Math.max(1, c.i("liquid_specular_sharp", 88));
-            specularStrength = c.i("liquid_specular_strength", 105) / 100f;
-            rimLight = c.i("liquid_rim_light", 100) / 100f;
-            caustics = c.i("liquid_caustics", 28) / 100f;
-            edgeBand = c.i("liquid_edge_band", 32) / 1000f;
-            highlightAlpha = c.i("liquid_highlight_alpha", 100) / 100f;
-            recentsPrearmDistance = c.f("liquid_recents_prearm_distance", 8);
+            enabled = c.b(ConfigSchema.Glass.ENABLED.name(),
+                    ConfigSchema.Glass.ENABLED.runtimeFallback());
+            dimensionsDp = c.b(ConfigSchema.Glass.DIMENSIONS_DP.name(),
+                    ConfigSchema.Glass.DIMENSIONS_DP.runtimeFallback());
+            blurMode = LiquidBlurMode.fromPersisted(c.s(ConfigSchema.Glass.BLUR_MODE.name(),
+                    ConfigSchema.Glass.BLUR_MODE.runtimeFallback()));
+            blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
+            chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
+                    ConfigSchema.Glass.CHROMATIC.runtimeFallback()) / 100f;
+            tintAlpha = channel(c.i(ConfigSchema.Glass.TINT_ALPHA.name(),
+                    ConfigSchema.Glass.TINT_ALPHA.runtimeFallback()));
+            captureFps = clamp(c.i(ConfigSchema.Glass.CAPTURE_FPS.name(),
+                    ConfigSchema.Glass.CAPTURE_FPS.runtimeFallback()), 1, 165);
+            stopDelayMs = Math.max(0, c.i(ConfigSchema.Glass.CAPTURE_STOP_DELAY.name(),
+                    ConfigSchema.Glass.CAPTURE_STOP_DELAY.runtimeFallback()));
+            bleedTop = c.f(ConfigSchema.Glass.CAPTURE_BLEED_TOP.name(),
+                    ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback());
+            bleedBottom = c.f(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.name(),
+                    ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback());
+            thickness = c.f(ConfigSchema.Glass.THICKNESS.name(),
+                    ConfigSchema.Glass.THICKNESS.runtimeFallback());
+            ior = c.i(ConfigSchema.Glass.IOR.name(), ConfigSchema.Glass.IOR.runtimeFallback()) / 100f;
+            normalStrength = c.i(ConfigSchema.Glass.NORMAL_STRENGTH.name(),
+                    ConfigSchema.Glass.NORMAL_STRENGTH.runtimeFallback()) / 100f;
+            dome = c.i(ConfigSchema.Glass.DOME.name(), ConfigSchema.Glass.DOME.runtimeFallback()) / 100f;
+            lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(),
+                    ConfigSchema.Glass.LENS_REFRACTION.runtimeFallback());
+            captureScale = c.i(ConfigSchema.Glass.CAPTURE_SCALE.name(),
+                    ConfigSchema.Glass.CAPTURE_SCALE.runtimeFallback()) / 100f;
+            dynamicAppCapture = c.b(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(),
+                    ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.runtimeFallback());
+            fullscreenCapture = c.b(ConfigSchema.Glass.FULLSCREEN_CAPTURE.name(),
+                    ConfigSchema.Glass.FULLSCREEN_CAPTURE.runtimeFallback());
+            probeFps = clamp(c.i(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS.name(),
+                    ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS.runtimeFallback()), 1, 60);
+            motionThreshold = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD.name(),
+                    ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD.runtimeFallback()));
+            motionBitThreshold = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD.name(),
+                    ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD.runtimeFallback()));
+            motionHoldMs = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_HOLD_MS.name(),
+                    ConfigSchema.Glass.DYNAMIC_HOLD_MS.runtimeFallback()));
+            blackThreshold = channel(c.i(ConfigSchema.Glass.BLACK_THRESHOLD.name(),
+                    ConfigSchema.Glass.BLACK_THRESHOLD.runtimeFallback()));
+            homeSettleDelayMs = clamp(c.i(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS.name(),
+                    ConfigSchema.Glass.HOME_SETTLE_DELAY_MS.runtimeFallback()), 200, 3000);
+            highlightWidth = c.i(ConfigSchema.Glass.HIGHLIGHT_WIDTH.name(),
+                    ConfigSchema.Glass.HIGHLIGHT_WIDTH.runtimeFallback()) / 100f;
+            tintR = channel(c.i(ConfigSchema.Glass.TINT_RED.name(),
+                    ConfigSchema.Glass.TINT_RED.runtimeFallback()));
+            tintG = channel(c.i(ConfigSchema.Glass.TINT_GREEN.name(),
+                    ConfigSchema.Glass.TINT_GREEN.runtimeFallback()));
+            tintB = channel(c.i(ConfigSchema.Glass.TINT_BLUE.name(),
+                    ConfigSchema.Glass.TINT_BLUE.runtimeFallback()));
+            depthEffect = c.i(ConfigSchema.Glass.DEPTH_EFFECT.name(),
+                    ConfigSchema.Glass.DEPTH_EFFECT.runtimeFallback()) / 100f;
+            brightness = c.i(ConfigSchema.Glass.BRIGHTNESS.name(),
+                    ConfigSchema.Glass.BRIGHTNESS.runtimeFallback()) / 100f;
+            specularSharp = Math.max(1, c.i(ConfigSchema.Glass.SPECULAR_SHARPNESS.name(),
+                    ConfigSchema.Glass.SPECULAR_SHARPNESS.runtimeFallback()));
+            specularStrength = c.i(ConfigSchema.Glass.SPECULAR_STRENGTH.name(),
+                    ConfigSchema.Glass.SPECULAR_STRENGTH.runtimeFallback()) / 100f;
+            rimLight = c.i(ConfigSchema.Glass.RIM_LIGHT.name(),
+                    ConfigSchema.Glass.RIM_LIGHT.runtimeFallback()) / 100f;
+            caustics = c.i(ConfigSchema.Glass.CAUSTICS.name(),
+                    ConfigSchema.Glass.CAUSTICS.runtimeFallback()) / 100f;
+            edgeBand = c.i(ConfigSchema.Glass.EDGE_BAND.name(),
+                    ConfigSchema.Glass.EDGE_BAND.runtimeFallback()) / 1000f;
+            highlightAlpha = c.i(ConfigSchema.Glass.HIGHLIGHT_ALPHA.name(),
+                    ConfigSchema.Glass.HIGHLIGHT_ALPHA.runtimeFallback()) / 100f;
+            recentsPrearmDistance = c.f(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.name(),
+                    ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.runtimeFallback());
         }
     }
 
@@ -195,10 +286,13 @@ final class LiquidDockConfig {
         final float iconTopOffset, iconBottomOffset;
 
         Workstation(ConfigReader c) {
-            dockEnabled = c.b("workstation_dock_customization", false);
+            dockEnabled = c.b(ConfigSchema.Workstation.DOCK_CUSTOMIZATION.name(),
+                    ConfigSchema.Workstation.DOCK_CUSTOMIZATION.runtimeFallback());
             dimensionsDp = c.b("dock_dimensions_dp", true);
-            dockWidthOffset = c.f("workstation_dock_width_offset", 0);
-            gridHorizontalOffset = c.f("workstation_grid_horizontal_offset", 0);
+            dockWidthOffset = c.f(ConfigSchema.Workstation.DOCK_WIDTH_OFFSET.name(),
+                    ConfigSchema.Workstation.DOCK_WIDTH_OFFSET.runtimeFallback());
+            gridHorizontalOffset = c.f(ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET.name(),
+                    ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET.runtimeFallback());
             // Preserve existing workstation All Apps tuning as the fallback for both
             // orientations; new installs can tune landscape and portrait independently.
             float legacyAllAppsX = c.f("workstation_all_apps_horizontal_offset", 0);
@@ -211,8 +305,10 @@ final class LiquidDockConfig {
                     "workstation_all_apps_portrait_horizontal_offset", legacyAllAppsX);
             allAppsPortraitVerticalOffset = c.f(
                     "workstation_all_apps_portrait_vertical_offset", legacyAllAppsY);
-            iconTopOffset = c.f("workstation_dock_icon_top_offset", 0);
-            iconBottomOffset = c.f("workstation_dock_icon_bottom_offset", 0);
+            iconTopOffset = c.f(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET.name(),
+                    ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET.runtimeFallback());
+            iconBottomOffset = c.f(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET.name(),
+                    ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET.runtimeFallback());
         }
     }
 

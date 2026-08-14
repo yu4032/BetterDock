@@ -25,6 +25,7 @@ public class MainHook {
     private static View shadowView, oldBg, nativeShadowTarget;
     private static int lastShadowW;
     private static DockLiquidGlassView liquidGlassView;
+    private static DockLiquidGlassHostView liquidGlassHostView;
     private static volatile boolean launcherResumed;
     private static volatile boolean launcherLifecycleKnown;
     private static volatile boolean systemUiPanelExpanded;
@@ -43,6 +44,8 @@ public class MainHook {
     public void install(ClassLoader classLoader) {
         installWorkstationModeGuard(classLoader);
         LiquidDockConfig config = LiquidDockConfig.load();
+        WidgetGridSizing.setWidgetAdaptationEnabled(
+                WidgetGridSizing.shouldAdaptWidgets(config.grid.enabled, config.grid.widgetAdaptation));
         debugLogging = config.debugLog;
         log("[DC] LiquidDock " + (debugLogging ? "debug logging ON" : "loaded"));
         if (!config.enabled) {
@@ -131,13 +134,13 @@ public class MainHook {
                                 Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
                                 if (w instanceof View) workspace = (View) w;
                             } catch (Throwable ignored) {}
-                            if (liquidGlassView != null && liquidGlassView.getParent() != null)
+                            if (liquidGlassHostView != null && liquidGlassHostView.getParent() != null)
                                 return result;
                             if (liquidGlassView != null)
                                 log("[DC] re-creating glass view (previous detached)");
-                            liquidGlassView = LiquidGlassFactory.create(vBg, workspace,
-                                    config.glass, strokeCfg, false, 0.58f);
-                            liquidGlassView.setId(View.generateViewId());
+                            int bgIndex = parent.indexOfChild(vBg);
+                            liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIndex), gv,
+                                    vBg, workspace, config, false, 0.58f);
                             seedLauncherLifecycleState(chain.getThisObject());
                             liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                             liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
@@ -150,9 +153,6 @@ public class MainHook {
                                 liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
                                         ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
                             } catch (Throwable ignored) {}
-                            int bgIndex = parent.indexOfChild(vBg);
-                            parent.addView(liquidGlassView, Math.max(0, bgIndex),
-                                    new FrameLayout.LayoutParams(1, 1, gv));
                             syncAll(vBg);
                             liquidGlassView.post(() -> syncAll(vBg));
                         } catch (Throwable e) { log("[DC] liquid-only init err: " + e); }
@@ -351,7 +351,7 @@ public class MainHook {
                             int dsS = Math.max(1, Math.round(c2.shadowSize * ds2));
                             int dsA = c2.shadowAlpha;
                             int dsY = Math.round(c2.shadowY * ds2);
-                            if (liquidGlassView != null && liquidGlassView.getParent() != null) return r;
+                            if (liquidGlassHostView != null && liquidGlassHostView.getParent() != null) return r;
                             if (liquidGlassView != null) log("[DC] re-creating glass view (previous detached)");
                             if (liquid) {
                                 View workspace = null;
@@ -359,8 +359,9 @@ public class MainHook {
                                     Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
                                     if (w instanceof View) workspace = (View) w;
                                 } catch (Throwable ignored) {}
-                                liquidGlassView = LiquidGlassFactory.create(oldBg, workspace, current.glass, c2, c2.squircle, sqCp);
-                                liquidGlassView.setId(View.generateViewId());
+                                int bgIdx = parent.indexOfChild(oldBg);
+                                liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIdx), gv,
+                                        oldBg, workspace, current, c2.squircle, sqCp);
                                 seedLauncherLifecycleState(chain.getThisObject());
                                 liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
                                 liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
@@ -373,9 +374,6 @@ public class MainHook {
                                     liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
                                             ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
                                 } catch (Throwable ignored) {}
-                                int bgIdx = parent.indexOfChild(oldBg);
-                                parent.addView(liquidGlassView, Math.max(0, bgIdx),
-                                        new FrameLayout.LayoutParams(1, 1, gv));
                             }
                             if (workstationMode) {
                                 // Laptop/workstation Dock has its own DockContainerView
@@ -384,6 +382,8 @@ public class MainHook {
                                 oldBg.setAlpha(0f);
                                 if (liquidGlassView != null)
                                     liquidGlassView.setWorkstationMode(true);
+                                if (liquidGlassHostView != null)
+                                    liquidGlassHostView.setVisibility(View.GONE);
                                 return r;
                             }
                             if (dockShadow) {
@@ -403,6 +403,36 @@ public class MainHook {
                         return r;
                     });
         } catch (Throwable e) { log("[DC] init err: " + e); }
+    }
+
+    private static DockLiquidGlassView installLiquidGlassLayer(
+            ViewGroup parent, int insertIndex, int gravity,
+            View background, View workspace, LiquidDockConfig config,
+            boolean squircle, float squircleCp) {
+        DockLiquidGlassView glass = LiquidGlassFactory.create(background, workspace,
+                config.glass, config.dock, squircle, squircleCp);
+        glass.setId(View.generateViewId());
+
+        DockStrokeOverlayView overlay = new DockStrokeOverlayView(parent.getContext());
+        overlay.setId(View.generateViewId());
+        DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
+        host.setId(View.generateViewId());
+        host.setLayers(glass, overlay);
+
+        float radius = bgR;
+        try {
+            Object value = HookUtil.getField(background, "mCornerRadius");
+            if (value instanceof Float) radius = (Float) value;
+        } catch (Throwable ignored) {}
+        overlay.reload(config.dock, config.glass, radius);
+        host.setGeometry(radius, squircle, squircleCp);
+        overlay.setGeometry(radius, squircle, squircleCp);
+
+        parent.addView(host, insertIndex,
+                new FrameLayout.LayoutParams(1, 1, gravity));
+        liquidGlassHostView = host;
+        liquidGlassView = glass;
+        return glass;
     }
 
     // ── lifecycle / capture hooks ────────────────────────────────────
@@ -1053,15 +1083,29 @@ public class MainHook {
     private static void syncAll(View bg) {
         if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
-        if (liquidGlassView == null && shadowView == null) return;
+        if (liquidGlassHostView == null && liquidGlassView == null && shadowView == null) return;
         try {
             bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
             Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
             if (bgW <= 0) return;
-            if (liquidGlassView != null) {
+            if (liquidGlassHostView != null) {
+                liquidGlassHostView.setVisibility(workstationMode ? View.GONE : View.VISIBLE);
+                ViewGroup.LayoutParams hlp = liquidGlassHostView.getLayoutParams();
+                if (hlp != null && (hlp.width != bgW || hlp.height != bgH)) {
+                    hlp.width = bgW;
+                    hlp.height = bgH;
+                    liquidGlassHostView.setLayoutParams(hlp);
+                }
+                liquidGlassHostView.setRadius(bgR);
+                liquidGlassHostView.invalidate();
+            } else if (liquidGlassView != null) {
+                // Compatibility fallback for a stale pre-host instance during Launcher setup.
                 ViewGroup.LayoutParams glp = liquidGlassView.getLayoutParams();
-                if (glp != null) { if (glp.width != bgW || glp.height != bgH) {
-                    glp.width = bgW; glp.height = bgH; liquidGlassView.setLayoutParams(glp); } }
+                if (glp != null && (glp.width != bgW || glp.height != bgH)) {
+                    glp.width = bgW;
+                    glp.height = bgH;
+                    liquidGlassView.setLayoutParams(glp);
+                }
                 liquidGlassView.setGlassRadius(bgR);
                 liquidGlassView.invalidate();
             }
