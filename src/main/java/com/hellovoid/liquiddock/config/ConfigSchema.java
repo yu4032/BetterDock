@@ -292,16 +292,16 @@ public final class ConfigSchema {
                 "workstation_grid_horizontal_offset", 0, 0, 0, -240, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET = dp(
-                "workstation_all_apps_landscape_horizontal_offset", 0, 0, 0, -240, 240,
+                "workstation_all_apps_landscape_horizontal_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_LANDSCAPE_VERTICAL_OFFSET = dp(
-                "workstation_all_apps_landscape_vertical_offset", 0, 0, 0, -240, 240,
+                "workstation_all_apps_landscape_vertical_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET = dp(
-                "workstation_all_apps_portrait_horizontal_offset", 0, 0, 0, -240, 240,
+                "workstation_all_apps_portrait_horizontal_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> ALL_APPS_PORTRAIT_VERTICAL_OFFSET = dp(
-                "workstation_all_apps_portrait_vertical_offset", 0, 0, 0, -240, 240,
+                "workstation_all_apps_portrait_vertical_offset", 0, 0, 0, 0, 240,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> DOCK_ICON_TOP_OFFSET = dp(
                 "workstation_dock_icon_top_offset", 0, 0, 0, -48, 48,

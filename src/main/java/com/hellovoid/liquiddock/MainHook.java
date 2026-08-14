@@ -97,11 +97,15 @@ public class MainHook {
             Math.round(grid.portraitIndicatorY * gridScale));
         HomeGridHook.setWorkstationHorizontalOffset(Math.round(
                 config.workstation.gridHorizontalOffset * gridScale));
+        // All Apps controls are absolute edge spacing in dp. They must not inherit the
+        // ordinary grid_margins_dp unit switch, otherwise the same spacing setting changes
+        // meaning when the normal desktop grid unit mode changes.
+        float workstationAllAppsScale = android.content.res.Resources.getSystem().getDisplayMetrics().density;
         HomeGridHook.setWorkstationAllAppsOffsets(
-                Math.round(config.workstation.allAppsLandscapeHorizontalOffset * gridScale),
-                Math.round(config.workstation.allAppsLandscapeVerticalOffset * gridScale),
-                Math.round(config.workstation.allAppsPortraitHorizontalOffset * gridScale),
-                Math.round(config.workstation.allAppsPortraitVerticalOffset * gridScale));
+                Math.round(config.workstation.allAppsLandscapeHorizontalOffset * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsLandscapeVerticalOffset * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsPortraitHorizontalOffset * workstationAllAppsScale),
+                Math.round(config.workstation.allAppsPortraitVerticalOffset * workstationAllAppsScale));
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;

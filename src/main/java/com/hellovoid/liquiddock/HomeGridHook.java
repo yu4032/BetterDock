@@ -562,19 +562,29 @@ final class HomeGridHook {
                     : (portrait ? portraitRowGap : landscapeRowGap));
 
             int availableWidth = Math.max(countX, width - left - right);
-            int availableHeight = height - top - bottom
-                - rowGap * Math.max(0, countY - 1);
+            int allAppsInnerHeight = Math.max(countY, height - top - bottom);
+            int availableHeight = workstationAllApps
+                    ? allAppsInnerHeight
+                    : allAppsInnerHeight - rowGap * Math.max(0, countY - 1);
             int cellSize = Math.min(baseCell, Math.min(
                 Math.max(1, availableWidth / countX),
                 Math.max(1, availableHeight / countY)));
             int widthGap = countX > 1
                 ? Math.max(0, availableWidth - cellSize * countX) / (countX - 1) : 0;
+            int heightGap = rowGap;
+            if (workstationAllApps && countY > 1) {
+                // Absolute top/bottom spacing means the last row must end at height-bottom,
+                // not merely fit somewhere inside it. Distribute the remaining inner span
+                // between rows just as the horizontal path already does for left/right.
+                heightGap = Math.max(0, allAppsInnerHeight - cellSize * countY)
+                        / (countY - 1);
+            }
             HookUtil.setIntField(cellLayout, "mCellPaddingLeft", left);
             HookUtil.setIntField(cellLayout, "mCellPaddingTop", top);
             HookUtil.setIntField(cellLayout, "mCellWidth", cellSize);
             HookUtil.setIntField(cellLayout, "mCellHeight", cellSize);
             HookUtil.setIntField(cellLayout, "mWidthGap", widthGap);
-            HookUtil.setIntField(cellLayout, "mHeightGap", rowGap);
+            HookUtil.setIntField(cellLayout, "mHeightGap", heightGap);
         } catch (Throwable e) {
             MainHook.log("[DC] CellLayout offset apply failed: " + e);
         }
