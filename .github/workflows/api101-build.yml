@@ -5,9 +5,6 @@ on:
     branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,27 +17,12 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply stock-launcher capture and spacing fix
-        run: |
-          python .github/scripts/patch_stock_launcher_capture.py
-          python .github/scripts/patch_stock_launcher_followup.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
-      - name: Commit verified production fix
-        if: github.ref == 'refs/heads/api101-migration'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/main/java src/main/kotlin src/test/java
-          if git diff --cached --quiet; then
-            echo 'No production changes to commit'
-          else
-            git commit -m 'fix: follow stock launcher surfaces for All Apps and Recents'
-            git push origin HEAD:api101-migration
-          fi
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+      # Keep this workflow limited to the API101 migration/refactor branches until device-verified.
