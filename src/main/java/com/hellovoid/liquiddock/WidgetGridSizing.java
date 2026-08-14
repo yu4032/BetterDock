@@ -11,68 +11,48 @@ final class WidgetGridSizing {
                 || (spanX == 4 && spanY == 2);
     }
 
-    /** Small visual inset around the whole occupied slot rectangle. */
-    static int visualPadding(int cellWidth, int cellHeight) {
-        int cell = Math.min(Math.max(0, cellWidth), Math.max(0, cellHeight));
-        if (cell <= 0) return 0;
-        return Math.max(1, Math.round(cell * 0.04f));
-    }
-
     /**
-     * Runtime compatibility entry point used by HomeGridHook. The launcher
-     * width/height gaps are already encoded in xs/ys, so they no longer define
-     * visible widget spacing. Every widget is sized from seamless cell slots
-     * and receives the same span-independent visual padding.
+     * Returns {left, top, width, height} for the complete grid allocation.
+     * mXs/mYs are cell origins, so the next origin is the exact boundary of
+     * the next allocation slot. X and Y pitches are intentionally independent:
+     * a 2x2 widget must stretch to two real rows even when the grid is not
+     * square. Widget/provider padding remains responsible for visible spacing.
      */
     static int[] gridRect(int cellX, int cellY, int spanX, int spanY,
                           int[] xs, int[] ys, int cellWidth, int cellHeight,
                           int widthGap, int heightGap) {
-        return slotRect(cellX, cellY, spanX, spanY, xs, ys,
-                cellWidth, cellHeight, visualPadding(cellWidth, cellHeight));
-    }
-
-    /**
-     * Returns {left, top, width, height}. Each cell owns a seamless slot whose
-     * internal boundaries lie at the midpoint of the launcher gap. A widget
-     * takes the union of all occupied slots and then applies one fixed padding
-     * around that union. Therefore all adjacent widgets have exactly 2*padding
-     * visible spacing independent of span and of the launcher's X/Y grid gaps.
-     */
-    static int[] slotRect(int cellX, int cellY, int spanX, int spanY,
-                          int[] xs, int[] ys, int cellWidth, int cellHeight,
-                          int padding) {
         if (spanX <= 0 || spanY <= 0 || cellWidth <= 0 || cellHeight <= 0
-                || xs == null || ys == null || cellX < 0 || cellY < 0
+                || xs == null || ys == null || xs.length == 0 || ys.length == 0
+                || cellX < 0 || cellY < 0
                 || cellX + spanX > xs.length || cellY + spanY > ys.length) {
             return new int[]{0, 0, 0, 0};
         }
 
-        int endX = cellX + spanX;
-        int endY = cellY + spanY;
-        int safePadding = Math.max(0, padding);
+        int left = axisBoundary(xs, cellX, cellWidth, widthGap);
+        int right = axisBoundary(xs, cellX + spanX, cellWidth, widthGap);
+        int top = axisBoundary(ys, cellY, cellHeight, heightGap);
+        int bottom = axisBoundary(ys, cellY + spanY, cellHeight, heightGap);
 
-        int left = slotBoundaryBefore(cellX, xs, cellWidth);
-        int right = slotBoundaryAfter(endX - 1, xs, cellWidth);
-        int top = slotBoundaryBefore(cellY, ys, cellHeight);
-        int bottom = slotBoundaryAfter(endY - 1, ys, cellHeight);
-
-        left += safePadding;
-        top += safePadding;
-        right -= safePadding;
-        bottom -= safePadding;
-
-        return new int[]{left, top, Math.max(0, right - left), Math.max(0, bottom - top)};
+        return new int[]{
+                left,
+                top,
+                Math.max(0, right - left),
+                Math.max(0, bottom - top)
+        };
     }
 
-    private static int slotBoundaryBefore(int index, int[] origins, int cellSize) {
-        if (index <= 0) return origins[0];
-        int previousEnd = origins[index - 1] + cellSize;
-        return previousEnd + (origins[index] - previousEnd) / 2;
-    }
+    private static int axisBoundary(int[] origins, int boundaryIndex,
+                                    int cellSize, int gap) {
+        if (boundaryIndex < origins.length) return origins[boundaryIndex];
 
-    private static int slotBoundaryAfter(int index, int[] origins, int cellSize) {
-        if (index >= origins.length - 1) return origins[index] + cellSize;
-        int currentEnd = origins[index] + cellSize;
-        return currentEnd + (origins[index + 1] - currentEnd) / 2;
+        int last = origins.length - 1;
+        int pitch;
+        if (origins.length >= 2) {
+            pitch = origins[last] - origins[last - 1];
+        } else {
+            pitch = cellSize + Math.max(0, gap);
+        }
+        if (pitch <= 0) pitch = Math.max(1, cellSize + Math.max(0, gap));
+        return origins[last] + pitch;
     }
 }
