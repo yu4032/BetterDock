@@ -59,6 +59,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "uniform float depthEffect;"
       + "uniform float chromaticAberration;"
       + "uniform float blurRadius;"
+      + "uniform float shaderBlurEnabled;"
       + "uniform float2 screenOffset;"
       + "uniform float2 captureScale;"
       + "uniform float thickness;"
@@ -95,7 +96,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
       + "c=min(c,period-c);"
       + "return content.eval(clamp(c,float2(0.0),hi));}"
       + "half4 blurred(float2 p){"
-      + "if(blurRadius<=0.5){return source(p);}"
+      + "if(shaderBlurEnabled < 0.5 || blurRadius<=0.5){return source(p);}"
       + "float r=max(blurRadius,1.0);"
       + "half4 col=source(p)*0.256;"
       // 5-ring octagonal kernel (40 samples) — ghost-free up to blurRadius 60.
@@ -244,8 +245,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private final RuntimeShader refraction;
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final int blurRadius;
+    private int blurRadius;
+    private LiquidBlurMode requestedBlurMode = LiquidBlurMode.SHADER;
+    private LiquidBlurMode activeBlurBackend = LiquidBlurMode.SHADER;
+    private boolean advancedMaterialActive;
+    private boolean advancedMaterialUnavailableForProcess;
     private boolean fullscreenCapture = true;
     private final float chromaticAberration;
     // Prismal liquid-glass parameters (GUI-configurable)
@@ -267,8 +271,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private float glassRimLight = 1.0f;        // liquid_rim_light
     private float glassCaustics = 0.28f;       // liquid_caustics
     private float glassEdgeBand = 0.032f;      // liquid_edge_band (fraction of minDim)
-    // Canvas stroke highlight opacity multiplier (liquid_highlight_alpha)
-    private float glassHighlightAlpha = 1.0f;
     // True while a Dock icon drag is in flight (MainHook hooks DragController.startDrag/
     // endDrag).  During a drag the glass keeps capturing so the background follows the icon
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
@@ -284,7 +286,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int dynamicMotionBitThreshold = 18;
     private long dynamicMotionHoldNanos = 900_000_000L;
     private int blackFrameThreshold = 10;
-    private final int captureBleedPx;
+    private int captureBleedPx;
     // Extra capture height above/below the glass (GUI: liquid_capture_bleed_top /
     // liquid_capture_bleed_bottom).  The Dock's distance from the screen bottom is fixed,
     // so top and bottom are independent knobs; the bottom one can stay small so the
@@ -328,8 +330,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int cachedDrawShapeW = -1, cachedDrawShapeH = -1;
     private int cachedDrawRadiusBits, cachedDrawCpBits;
     private boolean cachedDrawSquircle;
-    private LinearGradient cachedHighlightGradient;
-    private int cachedHighlightW = -1, cachedHighlightH = -1, cachedHighlightAlphaBits;
     private float captureSampleOffsetX;
     private float captureSampleOffsetY;
     private float captureSourceWidth = 1f;
@@ -520,56 +520,68 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction = new RuntimeShader(REFRACTION_SHADER);
         tintPaint.setColor(Color.argb(Math.max(0, Math.min(255, tintAlpha)), 238, 244, 255));
         setWillNotDraw(false);
-        applyRoundedOutline();
+        setClipToOutline(false);
     }
 
     void setGlassGeometry(float radius, boolean useSquircle, float cp) {
         cornerRadius = Math.max(0f, radius);
         squircle = useSquircle;
         squircleCp = cp;
-        DockStrokeRenderer.updateRadius(this, cornerRadius);
-        applyRoundedOutline();
+        // Final shape clipping is owned by DockLiquidGlassHostView. The glass RenderNode
+        // stays rectangular so SurfaceFlinger self-blur receives corner source pixels.
+        setClipToOutline(false);
         invalidate();
     }
 
     void setGlassRadius(float radius) {
         cornerRadius = Math.max(0f, radius);
-        DockStrokeRenderer.updateRadius(this, cornerRadius);
-        applyRoundedOutline();
+        setClipToOutline(false);
         invalidate();
     }
 
-    /**
-     * Configure the Dock border as this View's foreground.
-     *
-     * The foreground is still part of this View/RenderNode, so it cannot lag behind
-     * the glass as the old independent overlay did.  The renderer itself draws an
-     * explicitly hollow ring rather than Paint.Style.STROKE / Path.op().
-     */
-    void setDockStrokeConfig(LiquidDockConfig.Dock config) {
-        DockStrokeRenderer.configure(this, config, cornerRadius);
-        invalidate();
-    }
-
-    /** Give the RenderNode a rounded outline so SurfaceFlinger's self-blur follows the
-     *  glass shape instead of blurring a rectangle. */
-    private void applyRoundedOutline() {
-        try {
-            setClipToOutline(true);
-            setOutlineProvider(new android.view.ViewOutlineProvider() {
-                @Override public void getOutline(android.view.View view, android.graphics.Outline outline) {
-                    float r = Math.max(0f, cornerRadius);
-                    int w = view.getWidth(), h = view.getHeight();
-                    if (w <= 0 || h <= 0) {
-                        outline.setRect(0, 0, 1, 1);
-                        return;
-                    }
-                    outline.setRoundRect(0, 0, w, h, r);
-                }
-            });
-        } catch (Throwable e) {
-            logW("rounded outline failed: " + e);
+    void setBlurMode(LiquidBlurMode mode) {
+        LiquidBlurMode next = mode == null ? LiquidBlurMode.SHADER : mode;
+        if (requestedBlurMode == next
+                && (next != LiquidBlurMode.ADVANCED_MATERIAL
+                    || advancedMaterialActive || advancedMaterialUnavailableForProcess)) {
+            return;
         }
+        requestedBlurMode = next;
+        updateBlurBackend();
+    }
+
+    void setBlurRadiusPx(int radiusPx) {
+        int next = Math.max(0, radiusPx);
+        if (blurRadius == next) return;
+        blurRadius = next;
+        float displacement = blurRadius * .5f * (1f + Math.abs(chromaticAberration));
+        captureBleedPx = Math.max(8, Math.min(512,
+                (int) Math.ceil(blurRadius + displacement + 8f * displayDensity)));
+        if (requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL) {
+            updateBlurBackend();
+        } else {
+            invalidate();
+        }
+    }
+
+    private void updateBlurBackend() {
+        boolean applied = false;
+        if (requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL
+                && !advancedMaterialUnavailableForProcess) {
+            applied = MiBlurBridge.applyContentBlur(this, blurRadius, .5f);
+            if (!applied) {
+                advancedMaterialUnavailableForProcess = true;
+                logW("advanced material blur failed; shader fallback for this Launcher process");
+            }
+        } else if (requestedBlurMode == LiquidBlurMode.SHADER) {
+            MiBlurBridge.clearContentBlur(this);
+        }
+        activeBlurBackend = LiquidBlurBackendPolicy.activeBackend(requestedBlurMode, applied);
+        advancedMaterialActive = activeBlurBackend == LiquidBlurMode.ADVANCED_MATERIAL;
+        if (!advancedMaterialActive && requestedBlurMode == LiquidBlurMode.ADVANCED_MATERIAL) {
+            MiBlurBridge.clearContentBlur(this);
+        }
+        invalidate();
     }
 
     /** Called by MainHook's Launcher lifecycle hooks.  Unknown is intentionally allowed:
@@ -712,6 +724,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     @Override protected void onDetachedFromWindow() {
         attached = false;
+        MiBlurBridge.clearContentBlur(this);
         cancelPendingCaptureWork();
         stopConfigReloadTick();
         invalidateDockWindowSurfaceCache();
@@ -1421,8 +1434,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             setTintColor(cfg.tintR, cfg.tintG, cfg.tintB);
             tintPaint.setAlpha(cfg.tintAlpha);
             setHighlightWidth(cfg.highlightWidth);
-            setHighlightAlpha(cfg.highlightAlpha);
-            setDockStrokeConfig(fullConfig.dock);
+            float blurScale = cfg.dimensionsDp ? displayDensity : 1f;
+            setBlurRadiusPx(Math.round(cfg.blur * blurScale));
+            setBlurMode(cfg.blurMode);
+            if (getParent() instanceof DockLiquidGlassHostView) {
+                ((DockLiquidGlassHostView) getParent()).reloadOverlay(fullConfig.dock, cfg);
+            }
             setAppearance(cfg.depthEffect, cfg.brightness, cfg.specularSharp,
                     cfg.specularStrength, cfg.rimLight, cfg.caustics, cfg.edgeBand);
             setCaptureScale(cfg.captureScale);
@@ -2695,6 +2712,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("depthEffect", glassDepthEffect);
         refraction.setFloatUniform("chromaticAberration", chromaticAberration);
         refraction.setFloatUniform("blurRadius", blurRadius);
+        refraction.setFloatUniform("shaderBlurEnabled", advancedMaterialActive ? 0f : 1f);
         // Prismal liquid-glass model parameters (ported from styropyr0/Prismal);
         // GUI-configurable via liquid_* settings.
         float density = displayDensity;
@@ -2717,22 +2735,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         refraction.setFloatUniform("captureScale", csx, csy);
         glassPaint.setShader(refraction);
         Path shape = obtainDrawShapePath();
-        canvas.save();
-        canvas.clipPath(shape);
+        int bodySave = canvas.save();
+        if (advancedMaterialActive) {
+            // Keep the self-blurred RenderNode rectangular. DockLiquidGlassHostView clips
+            // the composed child afterwards, fixing the unblurred upper-left round corner.
+        } else {
+            canvas.clipPath(shape);
+        }
         canvas.drawRect(0, 0, getWidth(), getHeight(), glassPaint);
         tintPaint.setColor(Color.argb(tintPaint.getAlpha(),
                 glassTintR, glassTintG, glassTintB));
         canvas.drawPath(shape, tintPaint);
-        canvas.restore();
-        // Draw the highlight on the unchanged outer geometry.  Keeping this outside
-        // the blur body's clip creates the requested clear separation at the edge.
-        canvas.save();
-        highlightPaint.setStyle(Paint.Style.STROKE);
-        highlightPaint.setStrokeWidth(Math.max(1f,
-                displayDensity * .65f * glassHighlightWidth));
-        highlightPaint.setShader(obtainHighlightGradient());
-        canvas.drawPath(shape, highlightPaint);
-        canvas.restore();
+        canvas.restoreToCount(bodySave);
     }
 
     private Path obtainDrawShapePath() {
@@ -2751,24 +2765,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             cachedDrawSquircle = squircle;
         }
         return cachedDrawShape;
-    }
-
-    private LinearGradient obtainHighlightGradient() {
-        int w = getWidth(), h = getHeight();
-        int alphaBits = Float.floatToIntBits(glassHighlightAlpha);
-        if (cachedHighlightGradient == null || w != cachedHighlightW || h != cachedHighlightH
-                || alphaBits != cachedHighlightAlphaBits) {
-            cachedHighlightGradient = new LinearGradient(0, 0, w, h,
-                    new int[]{
-                            Color.argb((int) (175 * glassHighlightAlpha), 255, 255, 255),
-                            Color.argb((int) (25 * glassHighlightAlpha), 255, 255, 255),
-                            Color.argb((int) (105 * glassHighlightAlpha), 255, 255, 255)},
-                    null, Shader.TileMode.CLAMP);
-            cachedHighlightW = w;
-            cachedHighlightH = h;
-            cachedHighlightAlphaBits = alphaBits;
-        }
-        return cachedHighlightGradient;
     }
 
     private Path shapePathInset(float width, float height, float radius, float inset) {
