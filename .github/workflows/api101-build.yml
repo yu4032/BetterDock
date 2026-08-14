@@ -5,11 +5,27 @@ on:
     branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply advanced blur finalization once
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python3 .github/scripts/finalize-advanced-blur.py
+          rm .github/scripts/finalize-advanced-blur.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java \
+                  README.md FEATURES.md HOOKS.md ARCHITECTURE.md CHANGELOG.md \
+                  .github/scripts/finalize-advanced-blur.py
+          git commit -m 'fix: finalize advanced material liquid blur'
+          git push origin HEAD:api101-migration
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
