@@ -5,33 +5,11 @@ on:
     branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Repair blur mode preset contract once
-        if: github.actor != 'github-actions[bot]'
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java')
-          s = p.read_text()
-          old = '        expected.put("liquid_dimensions_dp", true);\n        expected.put("liquid_ior", 170);'
-          new = '        expected.put("liquid_dimensions_dp", true);\n        expected.put("liquid_blur_mode", "shader");\n        expected.put("liquid_ior", 170);'
-          if s.count(old) != 1:
-              raise SystemExit('unexpected ConfigPresetTest shape')
-          p.write_text(s.replace(old, new, 1))
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java
-          git commit -m 'test: include liquid blur mode in default preset'
-          git push origin HEAD:api101-migration
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
