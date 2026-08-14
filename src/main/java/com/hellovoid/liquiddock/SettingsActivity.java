@@ -1,11 +1,7 @@
 package com.hellovoid.liquiddock;
 
 import android.content.SharedPreferences;
-import android.content.Context;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.content.res.Resources;
-import android.util.DisplayMetrics;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.net.Uri;
@@ -31,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import com.hellovoid.liquiddock.config.ConfigCodec;
 import com.hellovoid.liquiddock.config.ConfigMigration;
+import com.hellovoid.liquiddock.config.PresetManager;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -219,106 +216,15 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         private void applyIpadPreset() {
-            Context context = requireContext();
-            DisplayMetrics dm = context.getResources().getDisplayMetrics();
-            float density = dm.density;
-            float shortSideDp = Math.min(dm.widthPixels, dm.heightPixels) / density;
-            float displayScale = Math.max(0.90f, Math.min(1.20f, shortSideDp / 668f));
-
-            Resources launcherRes = null;
-            String launcherPackage = "com.miui.home";
-            try {
-                launcherRes = context.createPackageContext(launcherPackage,
-                    Context.CONTEXT_IGNORE_SECURITY).getResources();
-            } catch (PackageManager.NameNotFoundException ignored) {}
-
-            int icon = dimenPx(launcherRes, launcherPackage,
-                "config_hotseats_icon_content_default_height", 60f, density);
-            int cell = dimenPx(launcherRes, launcherPackage,
-                "hotseats_list_content_cell_width", 80f, density);
-            int dockHeight = dimenPx(launcherRes, launcherPackage,
-                "hotseats_height_land", 78f, density);
-            int dockRadius = dimenPx(launcherRes, launcherPackage,
-                "hotseats_list_content_background_radius", 21f, density);
-            int sidePadding = dimenPx(launcherRes, launcherPackage,
-                "hotseats_list_content_padding_side", 9.3f, density);
-
-            int targetGap = Math.round(14f * density * displayScale);
-            int targetHeight = icon + Math.round(20f * density * displayScale);
-            int targetRadius = Math.round(22f * density * displayScale);
-            int targetSidePadding = Math.round(14f * density * displayScale);
-            int spacing = Math.round((icon + targetGap - cell) / 2f);
-            int heightOffset = targetHeight - dockHeight;
-            int widthOffset = 2 * (targetSidePadding - sidePadding);
-            int cornerOffset = targetRadius - dockRadius;
-            int oneDp = Math.max(1, Math.round(density * displayScale));
-
-            PreferenceManager.getDefaultSharedPreferences(context).edit()
-                .putInt("blur_radius", 100)
-                .putInt("height_offset", heightOffset)
-                .putInt("width_offset", widthOffset)
-                .putBoolean("corners_dp", true)
-                .putInt("corner_offset", Math.round(cornerOffset / density))
-                .putInt("blur_corner_offset", -1)
-                .putBoolean("home_grid_8x4", true)
-                .putBoolean("grid_margins_dp", true)
-                .putBoolean("grid_margins_offset", true)
-                .putInt("grid_landscape_margin_left", 0)
-                .putInt("grid_landscape_margin_right", 0)
-                .putInt("grid_landscape_margin_top", 0)
-                .putInt("grid_landscape_margin_bottom", 0)
-                .putInt("grid_portrait_margin_left", 0)
-                .putInt("grid_portrait_margin_right", 0)
-                .putInt("grid_portrait_margin_top", 0)
-                .putInt("grid_portrait_margin_bottom", 0)
-                .putInt("grid_landscape_row_gap", 0)
-                .putInt("grid_portrait_row_gap", 0)
-                .putInt("indicator_landscape_y", 0)
-                .putInt("indicator_portrait_y", 0)
-                .putBoolean("dock_customization", true)
-                .putBoolean("dock_stroke", true)
-                .putInt("stroke_base_r", 255)
-                .putInt("stroke_base_g", 255)
-                .putInt("stroke_base_b", 255)
-                .putInt("stroke_base_alpha", 255)
-                .putBoolean("squircle", true)
-                .putInt("sq_stroke_w", oneDp)
-                .putInt("sq_stroke_off", 0)
-                .putInt("sq_outer_cp", 65)
-                .putBoolean("fill_diff", true)
-                .putInt("stroke_w", oneDp)
-                .putInt("std_stroke_w", oneDp)
-                .putBoolean("dock_shadow", true)
-                .putInt("dock_shadow_radius", Math.round(10f * density * displayScale))
-                .putInt("dock_shadow_size", Math.round(13f * density * displayScale))
-                .putInt("dock_shadow_alpha", 140)
-                .putInt("dock_shadow_y", Math.round(3f * density * displayScale))
-                .putBoolean("stroke_shadow", false)
-                .putInt("shadow_radius", Math.round(3f * density * displayScale))
-                .putInt("shadow_alpha", 70)
-                .putInt("dock_spacing", spacing)
-                .putInt("dock_bottom_offset", Math.round(10f * density * displayScale))
-                .commit();
-
-            Toast.makeText(context,
-                "iPad preset: spacing " + spacing + " px, height "
-                    + signed(heightOffset) + " px, width " + signed(widthOffset)
-                    + " px, radius " + signed(cornerOffset) + " px, bottom +"
-                    + Math.round(10f * density * displayScale) + " px",
+            PresetManager.IpadPresetResult result = PresetManager.applyIpad(requireContext(),
+                    PreferenceManager.getDefaultSharedPreferences(requireContext()));
+            Toast.makeText(requireContext(),
+                "iPad preset: spacing " + result.spacing + " px, height "
+                    + signed(result.heightOffset) + " px, width " + signed(result.widthOffset)
+                    + " px, radius " + signed(result.cornerOffset) + " px, bottom +"
+                    + result.bottomOffset + " px",
                 Toast.LENGTH_LONG).show();
             ((SettingsActivity) requireActivity()).restartLauncher();
-        }
-
-        private static int dimenPx(Resources resources, String packageName,
-                                   String name, float fallbackDp, float density) {
-            if (resources != null) {
-                int id = resources.getIdentifier(name, "dimen", packageName);
-                if (id != 0) {
-                    try { return resources.getDimensionPixelSize(id); }
-                    catch (Resources.NotFoundException ignored) {}
-                }
-            }
-            return Math.round(fallbackDp * density);
         }
 
         private static String signed(int value) {
