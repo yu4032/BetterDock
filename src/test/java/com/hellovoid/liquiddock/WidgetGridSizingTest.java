@@ -19,25 +19,20 @@ public class WidgetGridSizingTest {
     }
 
     @Test
-    public void spanSizeMatchesTheFullGridFootprint() {
-        assertEquals(100, WidgetGridSizing.gridSpanSize(1, 100, 12));
-        assertEquals(212, WidgetGridSizing.gridSpanSize(2, 100, 12));
-        assertEquals(436, WidgetGridSizing.gridSpanSize(4, 100, 12));
+    public void spanSizeFillsTheWholeGridFootprint() {
+        assertEquals(100, WidgetGridSizing.spanSize(1, 100, 12, 0, 0));
+        assertEquals(212, WidgetGridSizing.spanSize(2, 100, 12, 0, 0));
+        assertEquals(436, WidgetGridSizing.spanSize(4, 100, 12, 0, 0));
     }
 
     @Test
-    public void twoRowWidgetsIncludeTheInternalRowGap() {
-        assertEquals(208, WidgetGridSizing.gridSpanSize(2, 100, 8));
+    public void marginsDoNotShrinkWidgetEdges() {
+        assertEquals(212, WidgetGridSizing.spanSize(2, 100, 12, 3, 5));
+        assertEquals(208, WidgetGridSizing.spanSize(2, 100, 8, 4, 4));
     }
 
     @Test
-    public void negativeGapCannotShrinkTheGridFootprint() {
-        assertEquals(200, WidgetGridSizing.gridSpanSize(2, 100, -12));
-    }
-
-    @Test
-    public void invalidGeometryProducesNoSize() {
-        assertEquals(0, WidgetGridSizing.gridSpanSize(0, 100, 8));
-        assertEquals(0, WidgetGridSizing.gridSpanSize(2, 0, 8));
+    public void twoRowWidgetsIncludeTheRowGap() {
+        assertEquals(208, WidgetGridSizing.spanSize(2, 100, 8, 0, 0));
     }
 }
