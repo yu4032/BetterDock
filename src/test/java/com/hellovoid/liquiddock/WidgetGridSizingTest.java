@@ -20,70 +20,91 @@ public class WidgetGridSizingTest {
     }
 
     @Test
-    public void oneByOneUsesAlmostTheEntireCellSlot() {
+    public void oneByOneUsesTheCompleteGridPitch() {
         int[] xs = {0, 112, 224};
         int[] ys = {0, 108, 216};
 
-        assertArrayEquals(new int[]{4, 4, 98, 96},
-                WidgetGridSizing.slotRect(0, 0, 1, 1, xs, ys, 100, 100, 4));
-        assertArrayEquals(new int[]{110, 4, 104, 96},
-                WidgetGridSizing.slotRect(1, 0, 1, 1, xs, ys, 100, 100, 4));
+        assertArrayEquals(new int[]{0, 0, 112, 108},
+                WidgetGridSizing.gridRect(
+                        0, 0, 1, 1, xs, ys, 100, 100, 12, 8));
+        assertArrayEquals(new int[]{112, 0, 112, 108},
+                WidgetGridSizing.gridRect(
+                        1, 0, 1, 1, xs, ys, 100, 100, 12, 8));
     }
 
     @Test
-    public void everyAdjacentWidgetPairUsesTwiceTheSamePadding() {
+    public void adjacentWidgetAllocationsShareTheSameBoundary() {
         int[] xs = {0, 112, 224, 336};
         int[] ys = {0, 108, 216};
-        int padding = 4;
 
-        int[] oneByOne = WidgetGridSizing.slotRect(
-                0, 0, 1, 1, xs, ys, 100, 100, padding);
-        int[] twoByOne = WidgetGridSizing.slotRect(
-                1, 0, 2, 1, xs, ys, 100, 100, padding);
-        int[] top = WidgetGridSizing.slotRect(
-                0, 0, 2, 1, xs, ys, 100, 100, padding);
-        int[] bottom = WidgetGridSizing.slotRect(
-                0, 1, 2, 1, xs, ys, 100, 100, padding);
+        int[] oneByOne = WidgetGridSizing.gridRect(
+                0, 0, 1, 1, xs, ys, 100, 100, 12, 8);
+        int[] twoByOne = WidgetGridSizing.gridRect(
+                1, 0, 2, 1, xs, ys, 100, 100, 12, 8);
+        int[] top = WidgetGridSizing.gridRect(
+                0, 0, 2, 1, xs, ys, 100, 100, 12, 8);
+        int[] bottom = WidgetGridSizing.gridRect(
+                0, 1, 2, 1, xs, ys, 100, 100, 12, 8);
 
-        assertEquals(padding * 2,
-                twoByOne[0] - (oneByOne[0] + oneByOne[2]));
-        assertEquals(padding * 2,
-                bottom[1] - (top[1] + top[3]));
+        assertEquals(oneByOne[0] + oneByOne[2], twoByOne[0]);
+        assertEquals(top[1] + top[3], bottom[1]);
     }
 
     @Test
-    public void twoStackedTwoByOneWidgetsShareTheTwoByTwoOuterFrame() {
+    public void twoByTwoFollowsIndependentHorizontalAndVerticalPitch() {
+        int[] xs = {10, 120, 230, 340};
+        int[] ys = {20, 150, 280};
+
+        assertArrayEquals(new int[]{10, 20, 220, 260},
+                WidgetGridSizing.gridRect(
+                        0, 0, 2, 2, xs, ys, 100, 100, 10, 30));
+    }
+
+    @Test
+    public void twoStackedTwoByOneAllocationsExactlyCoverOneTwoByTwo() {
         int[] xs = {0, 112, 224};
         int[] ys = {0, 108, 216};
-        int padding = 4;
 
-        int[] whole = WidgetGridSizing.slotRect(
-                0, 0, 2, 2, xs, ys, 100, 100, padding);
-        int[] top = WidgetGridSizing.slotRect(
-                0, 0, 2, 1, xs, ys, 100, 100, padding);
-        int[] bottom = WidgetGridSizing.slotRect(
-                0, 1, 2, 1, xs, ys, 100, 100, padding);
+        int[] whole = WidgetGridSizing.gridRect(
+                0, 0, 2, 2, xs, ys, 100, 100, 12, 8);
+        int[] top = WidgetGridSizing.gridRect(
+                0, 0, 2, 1, xs, ys, 100, 100, 12, 8);
+        int[] bottom = WidgetGridSizing.gridRect(
+                0, 1, 2, 1, xs, ys, 100, 100, 12, 8);
 
         assertEquals(whole[0], top[0]);
         assertEquals(whole[0] + whole[2], top[0] + top[2]);
         assertEquals(whole[1], top[1]);
+        assertEquals(top[1] + top[3], bottom[1]);
         assertEquals(whole[1] + whole[3], bottom[1] + bottom[3]);
-        assertEquals(padding * 2,
-                bottom[1] - (top[1] + top[3]));
     }
 
     @Test
-    public void visualPaddingScalesWithCellSize() {
-        assertEquals(4, WidgetGridSizing.visualPadding(100, 100));
-        assertEquals(8, WidgetGridSizing.visualPadding(200, 200));
-        assertEquals(1, WidgetGridSizing.visualPadding(1, 1));
+    public void finalRowAndColumnExtrapolateTheMeasuredPitch() {
+        int[] xs = {10, 120, 230};
+        int[] ys = {20, 150, 280};
+
+        assertArrayEquals(new int[]{230, 280, 110, 130},
+                WidgetGridSizing.gridRect(
+                        2, 2, 1, 1, xs, ys, 100, 100, 10, 30));
     }
 
     @Test
-    public void invalidSlotGeometryReturnsEmptyRect() {
+    public void aSingleCellAxisFallsBackToCellSizePlusGap() {
+        int[] xs = {15};
+        int[] ys = {25};
+
+        assertArrayEquals(new int[]{15, 25, 112, 108},
+                WidgetGridSizing.gridRect(
+                        0, 0, 1, 1, xs, ys, 100, 100, 12, 8));
+    }
+
+    @Test
+    public void invalidGridGeometryReturnsEmptyRect() {
         int[] xs = {0, 112};
         int[] ys = {0, 108};
         assertArrayEquals(new int[]{0, 0, 0, 0},
-                WidgetGridSizing.slotRect(1, 0, 2, 1, xs, ys, 100, 100, 4));
+                WidgetGridSizing.gridRect(
+                        1, 0, 2, 1, xs, ys, 100, 100, 12, 8));
     }
 }
