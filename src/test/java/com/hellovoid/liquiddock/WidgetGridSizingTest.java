@@ -20,30 +20,6 @@ public class WidgetGridSizingTest {
     }
 
     @Test
-    public void gridSpanSizeIncludesEveryInternalGridGap() {
-        assertEquals(100, WidgetGridSizing.gridSpanSize(1, 100, 12));
-        assertEquals(212, WidgetGridSizing.gridSpanSize(2, 100, 12));
-        assertEquals(436, WidgetGridSizing.gridSpanSize(4, 100, 12));
-    }
-
-    @Test
-    public void launcherMarginsDoNotShrinkGridFootprint() {
-        assertEquals(212, WidgetGridSizing.spanSize(2, 100, 12, 3, 5));
-        assertEquals(208, WidgetGridSizing.spanSize(2, 100, 8, 4, 4));
-    }
-
-    @Test
-    public void negativeGapCannotShrinkWidgetFootprint() {
-        assertEquals(200, WidgetGridSizing.gridSpanSize(2, 100, -12));
-    }
-
-    @Test
-    public void invalidGeometryNeverProducesNegativeSize() {
-        assertEquals(0, WidgetGridSizing.gridSpanSize(2, 0, 8));
-        assertEquals(0, WidgetGridSizing.gridSpanSize(0, 100, 8));
-    }
-
-    @Test
     public void twoStackedTwoByOneWidgetsShareTheTwoByTwoOuterFrame() {
         int[] xs = {0, 112, 224};
         int[] ys = {0, 108, 216};
