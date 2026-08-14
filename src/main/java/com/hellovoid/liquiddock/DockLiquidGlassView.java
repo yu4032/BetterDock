@@ -1342,14 +1342,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         invalidate();
     }
 
-    /** Canvas stroke highlight opacity multiplier (GUI: liquid_highlight_alpha). */
-    void setHighlightAlpha(float multiplier) {
-        float next = Math.max(0f, Math.min(2f, multiplier));
-        if (next == glassHighlightAlpha) return;
-        glassHighlightAlpha = next;
-        invalidate();
-    }
-
     void setRecentsPrearmDistanceDp(float distanceDp) {
         recentsPrearmDistancePx = Math.max(1f,
                 distanceDp * getResources().getDisplayMetrics().density);
