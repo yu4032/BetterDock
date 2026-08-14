@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -19,20 +20,69 @@ public class WidgetGridSizingTest {
     }
 
     @Test
-    public void spanSizeFillsTheWholeGridFootprint() {
-        assertEquals(100, WidgetGridSizing.spanSize(1, 100, 12, 0, 0));
-        assertEquals(212, WidgetGridSizing.spanSize(2, 100, 12, 0, 0));
-        assertEquals(436, WidgetGridSizing.spanSize(4, 100, 12, 0, 0));
+    public void gridSpanSizeIncludesEveryInternalGridGap() {
+        assertEquals(100, WidgetGridSizing.gridSpanSize(1, 100, 12));
+        assertEquals(212, WidgetGridSizing.gridSpanSize(2, 100, 12));
+        assertEquals(436, WidgetGridSizing.gridSpanSize(4, 100, 12));
     }
 
     @Test
-    public void marginsDoNotShrinkWidgetEdges() {
+    public void launcherMarginsDoNotShrinkGridFootprint() {
         assertEquals(212, WidgetGridSizing.spanSize(2, 100, 12, 3, 5));
         assertEquals(208, WidgetGridSizing.spanSize(2, 100, 8, 4, 4));
     }
 
     @Test
-    public void twoRowWidgetsIncludeTheRowGap() {
-        assertEquals(208, WidgetGridSizing.spanSize(2, 100, 8, 0, 0));
+    public void negativeGapCannotShrinkWidgetFootprint() {
+        assertEquals(200, WidgetGridSizing.gridSpanSize(2, 100, -12));
+    }
+
+    @Test
+    public void invalidGeometryNeverProducesNegativeSize() {
+        assertEquals(0, WidgetGridSizing.gridSpanSize(2, 0, 8));
+        assertEquals(0, WidgetGridSizing.gridSpanSize(0, 100, 8));
+    }
+
+    @Test
+    public void twoStackedTwoByOneWidgetsShareTheTwoByTwoOuterFrame() {
+        int[] xs = {0, 112, 224};
+        int[] ys = {0, 108, 216};
+        int gutter = 12;
+
+        int[] whole = WidgetGridSizing.gridRect(
+                0, 0, 2, 2, xs, ys, 100, 100, gutter);
+        int[] top = WidgetGridSizing.gridRect(
+                0, 0, 2, 1, xs, ys, 100, 100, gutter);
+        int[] bottom = WidgetGridSizing.gridRect(
+                0, 1, 2, 1, xs, ys, 100, 100, gutter);
+
+        assertArrayEquals(new int[]{6, 6, 212, 204}, whole);
+        assertEquals(whole[0], top[0]);
+        assertEquals(whole[0] + whole[2], top[0] + top[2]);
+        assertEquals(whole[1], top[1]);
+        assertEquals(whole[1] + whole[3], bottom[1] + bottom[3]);
+        assertEquals(gutter, bottom[1] - (top[1] + top[3]));
+    }
+
+    @Test
+    public void mixedOneByOneAndTwoByOneWidgetsKeepTheSameGutter() {
+        int[] xs = {0, 112, 224, 336};
+        int[] ys = {0, 108, 216};
+        int gutter = 12;
+
+        int[] oneByOne = WidgetGridSizing.gridRect(
+                0, 0, 1, 1, xs, ys, 100, 100, gutter);
+        int[] twoByOne = WidgetGridSizing.gridRect(
+                1, 0, 2, 1, xs, ys, 100, 100, gutter);
+
+        assertEquals(gutter,
+                twoByOne[0] - (oneByOne[0] + oneByOne[2]));
+    }
+
+    @Test
+    public void uniformGutterUsesTheLargerGridGap() {
+        assertEquals(14, WidgetGridSizing.uniformGutter(14, 8));
+        assertEquals(14, WidgetGridSizing.uniformGutter(8, 14));
+        assertEquals(0, WidgetGridSizing.uniformGutter(-2, -4));
     }
 }
