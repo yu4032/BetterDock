@@ -43,6 +43,8 @@ public class MainHook {
     public void install(ClassLoader classLoader) {
         installWorkstationModeGuard(classLoader);
         LiquidDockConfig config = LiquidDockConfig.load();
+        WidgetGridSizing.setWidgetAdaptationEnabled(
+                WidgetGridSizing.shouldAdaptWidgets(config.grid.enabled, config.grid.widgetAdaptation));
         debugLogging = config.debugLog;
         log("[DC] LiquidDock " + (debugLogging ? "debug logging ON" : "loaded"));
         if (!config.enabled) {

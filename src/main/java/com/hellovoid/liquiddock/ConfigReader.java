@@ -29,6 +29,10 @@ public class ConfigReader {
 
     private final Map<String, ?> prefs;
 
+    ConfigReader(Map<String, ?> prefs) {
+        this.prefs = new HashMap<>(prefs);
+    }
+
     private ConfigReader() {
         Map<String, ?> loaded = Collections.emptyMap();
         try {
