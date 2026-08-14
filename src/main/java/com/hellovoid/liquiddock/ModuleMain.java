@@ -2,6 +2,8 @@ package com.hellovoid.liquiddock;
 
 import androidx.annotation.NonNull;
 
+import com.hellovoid.liquiddock.config.LegacyConfigMigration;
+
 import io.github.libxposed.api.XposedModule;
 
 /** libxposed API 101 entry point. */
@@ -17,6 +19,7 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         if (!"com.miui.home".equals(param.getPackageName())) return;
         try {
+            LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
             new MainHook().install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);

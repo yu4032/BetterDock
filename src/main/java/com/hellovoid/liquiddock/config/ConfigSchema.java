@@ -178,13 +178,15 @@ public final class ConfigSchema {
 
     public static final class Divider {
         // Explicit-versus-legacy runtime defaults are conditional and deliberately not flattened.
+        // Divider width/Y are historical raw tenths-of-dp integers in JSON, not DP_TENTHS
+        // sidecar values; DIRECT preserves the old import clamps and export representation.
         public static final ConfigKey<Boolean> ENABLED = bool(
                 "dock_divider_enabled", false, null, false, ConfigKey.ExportMode.IF_PRESENT);
-        public static final ConfigKey<Integer> WIDTH_DP = dp(
+        public static final ConfigKey<Integer> WIDTH_DP = integer(
                 "dock_divider_width_dp", 10, null, 0, 0, 160, ConfigKey.ExportMode.IF_PRESENT);
         public static final ConfigKey<Integer> HEIGHT_SCALE = integer(
                 "dock_divider_height_scale", 60, null, 0, 0, 100, ConfigKey.ExportMode.IF_PRESENT);
-        public static final ConfigKey<Integer> Y_OFFSET_DP = dp(
+        public static final ConfigKey<Integer> Y_OFFSET_DP = integer(
                 "dock_divider_y_offset", 0, null, 0, -80, 80, ConfigKey.ExportMode.IF_PRESENT);
         public static final ConfigKey<Integer> COLOR_RED = integer(
                 "dock_divider_color_r", 255, null, 0, 0, 255, ConfigKey.ExportMode.IF_PRESENT);
@@ -243,7 +245,9 @@ public final class ConfigSchema {
                 "liquid_dynamic_hold_ms", 900, 900, 900, 0, 5000, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BLACK_THRESHOLD = integer(
                 "liquid_black_threshold", 10, 10, 10, 0, 64, ConfigKey.ExportMode.ALWAYS);
-        public static final ConfigKey<Integer> HOME_SETTLE_DELAY_MS = integer(
+        // Historical JSON export/import included this key in the _tenths round-trip list even
+        // though the current UI presents whole milliseconds. Preserve that storage contract.
+        public static final ConfigKey<Integer> HOME_SETTLE_DELAY_MS = dp(
                 "liquid_home_settle_delay", 1200, 1200, 1200, 200, 3000, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> HIGHLIGHT_WIDTH = integer(
                 "liquid_highlight_width", 100, 100, 100, 20, 300, ConfigKey.ExportMode.ALWAYS);

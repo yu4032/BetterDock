@@ -48,7 +48,7 @@ public class ConfigCodecTest {
         expected.put("sq_stroke_w", 2.5d);
         expected.put("dock_shadow_alpha", 130);
         expected.put("dock_divider_enabled", true);
-        expected.put("dock_divider_width_dp", 8.3d);
+        expected.put("dock_divider_width_dp", 8);
         expected.put("workstation_dock_customization", true);
         expected.put("workstation_all_apps_landscape_vertical_offset", -3.6d);
         expected.put("liquid_glass", true);
@@ -79,7 +79,7 @@ public class ConfigCodecTest {
         json.put("grid_portrait_margin_horizontal", -12);
         json.put("liquid_capture_power_limit_fps", 100);
         json.put("dock_shadow_alpha", -3);
-        json.put("dock_divider_width_dp", 99.6d);
+        json.put("dock_divider_width_dp", 999);
         json.put("workstation_all_apps_horizontal_offset", 2.6d);
         json.put("workstation_all_apps_vertical_offset", -3.4d);
 
@@ -89,8 +89,7 @@ public class ConfigCodecTest {
         expected.put("grid_widget_adaptation", true);
         expected.put("liquid_capture_power_limit_fps", 60);
         expected.put("dock_shadow_alpha", 0);
-        expected.put("dock_divider_width_dp", 100);
-        expected.put("dock_divider_width_dp_tenths", 996);
+        expected.put("dock_divider_width_dp", 160);
         expected.put("grid_landscape_margin_left", 41);
         expected.put("grid_landscape_margin_right", 41);
         expected.put("grid_portrait_margin_left", -12);
@@ -136,6 +135,83 @@ public class ConfigCodecTest {
 
         assertEquals(60, imported.get("liquid_capture_power_limit_fps"));
         assertEquals(0, imported.get("dock_shadow_alpha"));
+    }
+
+    @Test
+    public void dividerTenthsEncodedIntegersClampWithoutCreatingDpSidecars() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("dock_divider_width_dp", 999);
+        json.put("dock_divider_y_offset", -999);
+
+        Map<String, Object> imported = ConfigCodec.importValues(json);
+
+        assertEquals(160, imported.get("dock_divider_width_dp"));
+        assertEquals(-80, imported.get("dock_divider_y_offset"));
+        assertFalse(imported.containsKey("dock_divider_width_dp_tenths"));
+        assertFalse(imported.containsKey("dock_divider_y_offset_tenths"));
+    }
+
+    @Test
+    public void dividerExportIgnoresUnhistoricalDpSidecars() {
+        Map<String, Object> prefs = new HashMap<>();
+        prefs.put("dock_divider_width_dp", 11);
+        prefs.put("dock_divider_width_dp_tenths", 999);
+        prefs.put("dock_divider_y_offset", -7);
+        prefs.put("dock_divider_y_offset_tenths", -999);
+
+        Map<String, Object> exported = ConfigCodec.exportValues(prefs);
+
+        assertEquals(11, exported.get("dock_divider_width_dp"));
+        assertEquals(-7, exported.get("dock_divider_y_offset"));
+    }
+
+    @Test
+    public void homeSettleDelayPreservesHistoricalTenthsRoundTrip() {
+        Map<String, Object> prefs = new HashMap<>();
+        prefs.put("liquid_home_settle_delay", 1201);
+        prefs.put("liquid_home_settle_delay_tenths", 12005);
+
+        Map<String, Object> exported = ConfigCodec.exportValues(prefs);
+        assertEquals(1200.5d,
+                ((Number) exported.get("liquid_home_settle_delay")).doubleValue(), 0.0001d);
+
+        Map<String, Object> imported = ConfigCodec.importValues(exported);
+        assertEquals(1201, imported.get("liquid_home_settle_delay"));
+        assertEquals(12005, imported.get("liquid_home_settle_delay_tenths"));
+    }
+
+    @Test
+    public void dimensionModeExportsStayForcedTrueWhenSourceExplicitlyFalse() {
+        Map<String, Object> prefs = new HashMap<>();
+        prefs.put("dock_dimensions_dp", false);
+        prefs.put("liquid_dimensions_dp", false);
+
+        Map<String, Object> exported = ConfigCodec.exportValues(prefs);
+
+        assertEquals(Boolean.TRUE, exported.get("dock_dimensions_dp"));
+        assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
+    }
+
+    @Test
+    public void absentPreferencesExportCompleteHistoricalDefaults() {
+        Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
+
+        assertEquals(99, exported.size());
+        assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
+        assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
+        assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
+        assertEquals(Boolean.TRUE, exported.get("grid_margins_dp"));
+        assertEquals(100, exported.get("blur_radius"));
+        assertEquals(Boolean.TRUE, exported.get("dock_dimensions_dp"));
+        assertEquals(4, exported.get("sq_stroke_w"));
+        assertEquals(42, exported.get("dock_shadow_radius"));
+        assertEquals(Boolean.FALSE, exported.get("liquid_glass"));
+        assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
+        assertEquals(48, exported.get("liquid_capture_bleed_top"));
+        assertEquals(1200, exported.get("liquid_home_settle_delay"));
+        assertEquals(Boolean.FALSE, exported.get("workstation_dock_customization"));
+        assertFalse(exported.containsKey("dock_divider_enabled"));
+        assertFalse(exported.containsKey("dock_divider_width_dp"));
     }
 
     @Test
