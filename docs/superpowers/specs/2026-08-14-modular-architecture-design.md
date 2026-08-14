@@ -12,7 +12,7 @@ Refactor LiquidDock into independently maintainable feature modules without chan
 
 The refactor must make it possible to add, modify, disable, or remove a feature without needing to understand or modify unrelated modules. Configuration must have one authoritative schema, runtime configuration loading must be side-effect free, widget detection and span handling must be extensible, and `MainHook`, `HomeGridHook`, and `DockLiquidGlassView` must stop acting as multi-purpose ownership points.
 
-This is an internal architecture refactor. It is not a feature redesign.
+This is an internal architecture refactor, not a feature redesign.
 
 ## 2. Compatibility contract
 
@@ -30,12 +30,14 @@ The following are compatibility contracts:
 - Existing rotation behavior and MIUI occupancy ownership remain unchanged.
 - Existing Liquid Glass capture behavior, scene ordering, retry behavior, rotation recovery, and rendering output remain unchanged during extraction.
 
-Explicitly allowed defect fixes include:
+Explicitly allowed defect fixes are limited to:
 
-- `grid_widget_adaptation` must participate in configuration export/import.
-- Configuration loading must not mutate widget runtime state.
-- Dead widget adaptation code may be removed after equivalent active paths are covered by tests.
-- The master switch must prevent optional LiquidDock feature hooks from being installed.
+- `grid_widget_adaptation` participating in configuration export/import;
+- configuration loading no longer mutating widget runtime state;
+- dead widget adaptation code being removed after equivalent active paths are covered by tests;
+- the master switch preventing optional LiquidDock feature hooks from being installed.
+
+Extensibility mechanisms must not silently enable new behavior for existing users. In particular, the initial widget span registry preserves the currently supported 1x1, 2x1, 2x2, and 4x2 behavior. Future span types are enabled by adding/activating registry policy, not by making every currently present unknown span active during this refactor.
 
 ## 3. Refactor strategy
 
@@ -71,6 +73,7 @@ config/
   ConfigKey<T>
   ConfigCodec
   ConfigMigration
+  ConfigProvider
   LiquidDockConfig
   PresetManager
 ```
@@ -79,11 +82,13 @@ config/
 
 The GUI still owns presentation: page placement, label, summary, and conditional enablement. It must reuse schema key/default/range instead of redefining them.
 
-`LiquidDockConfig` remains the immutable typed runtime snapshot. Constructing or loading it may read, validate, and parse configuration only. It must not install hooks, modify views, mutate feature state, or call setters on other modules.
+`LiquidDockConfig` remains an immutable typed runtime snapshot. Constructing or loading it may read, validate, and parse configuration only. It must not install hooks, modify views, mutate feature state, or call setters on other modules.
 
-`ConfigCodec` owns current JSON serialization/deserialization. Existing JSON keys remain unchanged. `ConfigMigration` owns all legacy preference migration logic currently embedded in settings activities; migration behavior is moved before it is simplified.
+`ConfigProvider` is the runtime source of immutable `LiquidDockConfig` snapshots. It preserves the current distinction between process-start settings and settings that are refreshed while the launcher process remains alive, without allowing individual modules to invent independent configuration loading side effects.
 
-Preset values must remain unchanged. They can later be expressed through typed keys, but no preset behavior changes are allowed in this refactor.
+`ConfigCodec` owns JSON serialization/deserialization. Existing JSON keys remain unchanged. `ConfigMigration` owns all legacy preference migration logic currently embedded in settings activities; migration behavior is moved before it is simplified.
+
+Preset values remain unchanged. They can later be expressed through typed keys, but no preset behavior changes are allowed in this refactor.
 
 ### Phase 2: widget isolation and extensibility
 
@@ -100,6 +105,7 @@ Target structure:
 grid/widget/
   WidgetClassifier
   WidgetTypeRegistry
+  WidgetSpanRegistry
   WidgetSpanPolicy
   WidgetAdaptationHook
   WidgetGridSizing
@@ -114,9 +120,9 @@ Initial compatibility rules preserve current behavior:
 
 The numeric MIUI item types are compatibility constants, not user configuration. Future rules can be registered by type, class, method behavior, or another explicit compatibility predicate without changing `WidgetAdaptationHook`.
 
-Span policy is not a fixed 1x1/2x1/2x2/4x2 whitelist. Any positive span that fits the active grid is geometrically valid. This permits future 3x2, 4x1, 4x4, or other spans without modifying `WidgetGridSizing`.
+Span extensibility is registry/policy driven. The initial registry contains the currently supported 1x1, 2x1, 2x2, and 4x2 spans so this refactor does not change existing behavior. The core hook does not contain a fixed whitelist. Future 3x2, 4x1, 4x4, or generic bounded-span policies can be registered without changing the hook or geometry code.
 
-`WidgetGridSizing` contains geometry calculation and validation only. It owns no global enable flag and has no configuration side effects.
+`WidgetGridSizing` contains geometry calculation and bounds validation only. It owns no global enable flag and has no configuration side effects. Once a span has been accepted by `WidgetSpanPolicy`, geometry is computed generically from cell coordinates and X/Y pitch.
 
 The existing two-stage adaptation behavior is preserved:
 
@@ -192,17 +198,17 @@ workstation/
   WorkstationLayoutStateStore
 ```
 
-`WorkstationModeController` is the single state owner. It encapsulates current and legacy HyperOS detection APIs and exposes state/listener behavior through a small interface.
+`WorkstationModeController` is the single workstation-mode state owner. It encapsulates current and legacy HyperOS detection APIs and exposes state/listener behavior through a small interface.
 
 No other module may call `MainHook.isWorkstationMode()` or maintain a duplicate workstation boolean.
 
-Grid receives an abstract `GridAdjustment`/`GridAdjustmentProvider`, not Mingou/laptop implementation details. The normal provider returns no adjustment; the workstation provider returns requested home or All Apps translation.
+Grid receives an abstract `GridAdjustmentProvider`, not Mingou/laptop implementation details. The normal provider returns no adjustment; `WorkstationGridAdjustment` provides requested workstation home or All Apps translations.
 
 `WorkstationWallpaperHook` owns native snapshot mode, live blur suppression, and snapshot refresh boundaries. It does not hook `DockLiquidGlassView` methods. Launcher/recents events are routed through shared lifecycle/state and each active feature decides whether it handles the event.
 
-`WorkstationAllAppsHook` owns the current post-layout vertical correction and related transition handling. Wallpaper behavior and All Apps geometry must not remain coupled.
+`WorkstationAllAppsHook` owns the current post-layout vertical correction and related transition handling. Wallpaper behavior and All Apps geometry do not remain coupled.
 
-Normal home item backup/restore state moves from `MainHook` to `WorkstationLayoutStateStore` or the workstation controller. Entering workstation backs up; leaving restores and requests workspace refresh. Other modules do not own this data.
+Normal home item backup/restore state moves from `MainHook` to `WorkstationLayoutStateStore`. Entering workstation backs up the normal layout; leaving restores it and requests workspace refresh. No other module owns this data.
 
 ### Phase 5: MainHook reduction and runtime wiring
 
@@ -230,7 +236,9 @@ dock/
   DockViewBinding
 ```
 
-`FeatureContext` carries only shared runtime dependencies such as class loader, configuration provider/snapshot, workstation state abstraction, launcher state, and logger. It is not a service locator and does not hold feature business state.
+`FeatureContext` carries only shared runtime dependencies: class loader, `ConfigProvider`, workstation state abstraction, launcher state, and logger. It is not a service locator and does not hold feature business state.
+
+Modules take an immutable `LiquidDockConfig` snapshot when installing process-start-only hooks. Modules that already support live refresh request a new immutable snapshot through `ConfigProvider` at the same effective cadence/boundary as the current implementation. No module mutates configuration or another module while reading it.
 
 `LauncherState` owns shared launcher lifecycle observations such as lifecycle-known/resumed, SystemUI panel expansion, and recents state. `LauncherLifecycleHook` translates HyperOS callbacks into this state. Glass and other consumers react to state rather than installing overlapping lifecycle ownership.
 
@@ -243,7 +251,7 @@ Dock responsibilities move as follows:
 
 Logging is provided through a logger abstraction instead of feature code depending on `MainHook.log()`.
 
-The master switch is checked before any optional feature module is installed. API101 module loading may still occur, but disabled LiquidDock must leave optional launcher behavior untouched.
+The master switch is checked before any optional feature module is installed. API101 module loading may still occur, but disabled LiquidDock leaves optional launcher behavior untouched.
 
 Hook installation order is explicit and documented. Dependencies are provided through constructors/small interfaces rather than implied static state or accidental call order.
 
@@ -295,9 +303,9 @@ Extraction order is intentionally conservative:
 
 `CaptureController` is the unique owner of capture request lifecycle, in-flight/coalescing state, generation/revision validation, retry scheduling, capture client reset, rotation stabilization, and accepting/rejecting async frames.
 
-Existing `CaptureSceneState`, `CaptureCadence`, and `LiveScreenCapture` are already useful boundaries and should not be rewritten merely for style.
+Existing `CaptureSceneState`, `CaptureCadence`, and `LiveScreenCapture` are retained as existing useful boundaries and are not rewritten merely for style.
 
-`CaptureFailurePolicy` expresses current timeout, black-frame, reset, and backoff decisions. Current proven recovery behavior, including discarding/rebuilding a stuck live capture client before appropriate retry, must be preserved.
+`CaptureFailurePolicy` expresses current timeout, black-frame, reset, and backoff decisions. Current proven recovery behavior, including discarding/rebuilding a stuck live capture client before the corresponding retry path, must be preserved.
 
 `DynamicMotionDetector` answers whether application content is active/static. `CaptureCadence` determines requested cadence. `CaptureController` decides whether a capture is actually issued.
 
@@ -318,7 +326,7 @@ No merge back to `api101-migration` is implied by completion of code refactoring
 
 ## 5. Module boundary rules
 
-Every feature unit must have one clear owner for mutable state and one narrow public capability boundary.
+Every feature unit has one clear owner for mutable state and one narrow public capability boundary.
 
 Rules:
 
@@ -326,9 +334,9 @@ Rules:
 - hooks translate vendor callbacks into module/controller calls but do not own unrelated rendering or business state;
 - pure policy classes do not depend on Android views or Xposed;
 - modules depend on capabilities/interfaces, not large concrete modules;
-- no feature may hook another LiquidDock feature's implementation class to coordinate behavior;
-- disabling a feature should prevent its feature-specific hooks from being installed;
-- deleting a feature should require removing its module registration and its own files/config/UI, not editing unrelated feature internals;
+- no feature hooks another LiquidDock feature's implementation class to coordinate behavior;
+- disabling a feature prevents its feature-specific hooks from being installed;
+- deleting a feature requires removing its module registration and its own files/config/UI, not editing unrelated feature internals;
 - vendor compatibility constants remain centralized and named, but are not necessarily user configuration.
 
 Examples of narrow capabilities:
@@ -342,20 +350,21 @@ LauncherState snapshot/listener
 
 ## 6. Widget extensibility contract
 
-Widget extensibility must cover both detection and span.
+Widget extensibility covers both detection and span while preserving current behavior by default.
 
 Detection:
 
 - current MIUI `isWidget()` behavior remains primary;
 - current item type fallbacks remain registered compatibility rules;
-- future rules can be added to the registry without modifying the core adaptation hook.
+- future rules can be added to `WidgetTypeRegistry` without modifying the core adaptation hook.
 
 Span:
 
-- no fixed current-size whitelist remains in the geometry core;
-- positive spans that fit the current grid are accepted by default;
-- placement bounds remain validated;
-- `WidgetGridSizing` computes geometry from X/Y coordinate boundaries and pitch and therefore supports independent horizontal and vertical pitch.
+- the core hook and geometry code contain no built-in size-specific branching;
+- the initial `WidgetSpanRegistry` enables only the currently supported 1x1, 2x1, 2x2, and 4x2 specs;
+- future specs or a generic bounded-span policy can be registered without modifying the hook;
+- every accepted span still passes positive-size and placement-bound validation;
+- `WidgetGridSizing` computes geometry from X/Y coordinate boundaries and pitch and therefore supports independent horizontal and vertical pitch for any accepted span.
 
 Current tiling invariants remain regression contracts:
 
@@ -388,7 +397,7 @@ A failed optional compatibility hook must:
 
 Compatibility fallback selection, such as current vs legacy workstation state APIs or optimized vs launcher wallpaper capture fallback, remains explicit and tested where possible.
 
-No refactor phase may intentionally hide a failure that currently produces actionable debug logging.
+No refactor phase intentionally hides a failure that currently produces actionable debug logging.
 
 ## 9. Testing strategy
 
@@ -398,7 +407,7 @@ Every implementation phase begins by establishing or extending tests for the beh
 
 - all schema keys are unique;
 - defaults are legal and parseable;
-- numeric defaults fall within their declared bounds;
+- numeric defaults fall within declared bounds;
 - export -> import -> export preserves supported values;
 - legacy JSON fixtures import correctly;
 - `grid_widget_adaptation` defaults to false and round-trips;
@@ -410,7 +419,8 @@ Every implementation phase begins by establishing or extending tests for the beh
 - fallback type registry preserves current types;
 - unknown item types do not become widgets without a matching rule;
 - registry can add a new type without modifying the core hook;
-- arbitrary legal spans such as 3x2 and 4x4 are accepted;
+- initial span registry preserves only 1x1, 2x1, 2x2, and 4x2 behavior;
+- a test-only registered 3x2 or 4x4 policy proves span extensibility without changing default production behavior;
 - invalid/out-of-bounds spans are rejected;
 - grid orientation mapping and native compatibility mapping remain correct;
 - grid geometry is tested in portrait/landscape with independent X/Y pitch and configured offsets;
@@ -449,9 +459,9 @@ Each phase must pass:
 ./gradlew assembleDebug --stacktrace
 ```
 
-Additionally, inspect the phase diff for accidental behavior changes before moving on.
+The phase diff is inspected for accidental behavior changes before moving on.
 
-For high-risk Glass phases, automated tests are necessary but not sufficient. Device regression will be required before merging the refactor back into the stable migration branch.
+For high-risk Glass phases, automated tests are necessary but not sufficient. Device regression is required before merging the refactor back into the stable migration branch.
 
 Critical device behaviors to preserve include:
 
@@ -471,7 +481,7 @@ The refactor is complete when all of the following are true:
 - configuration has one authoritative typed schema for user-configurable behavior;
 - configuration loading is side-effect free;
 - current and legacy configuration formats remain compatible;
-- widget type rules and span policy are independently extensible;
+- widget type rules and span policy are independently extensible without enabling unverified span behavior by default;
 - widget adaptation is an independent optional module;
 - grid geometry, rotation, indicator, folder alignment, and workspace refresh have separate owners;
 - workstation state has one owner and does not invade normal feature implementations;
@@ -496,4 +506,4 @@ This refactor does not:
 - expose all implementation constants to configuration;
 - introduce a dependency injection framework or generalized plugin framework.
 
-The architecture should remain explicit, small, and appropriate for an Xposed module that must tolerate HyperOS private API changes.
+The architecture remains explicit, small, and appropriate for an Xposed module that must tolerate HyperOS private API changes.
