@@ -11,17 +11,6 @@ final class WidgetGridSizing {
                 || (spanX == 4 && spanY == 2);
     }
 
-    static int gridSpanSize(int span, int cellSize, int gap) {
-        if (span <= 0 || cellSize <= 0) return 0;
-        int safeGap = Math.max(0, gap);
-        return span * cellSize + Math.max(0, span - 1) * safeGap;
-    }
-
-    static int spanSize(int span, int cellSize, int gap,
-                        int startMargin, int endMargin) {
-        return gridSpanSize(span, cellSize, gap);
-    }
-
     static int uniformGutter(int widthGap, int heightGap) {
         return Math.max(Math.max(0, widthGap), Math.max(0, heightGap));
     }
