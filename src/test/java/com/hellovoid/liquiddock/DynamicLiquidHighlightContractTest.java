@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /** Source-level wiring contract for backend-aware liquid-glass highlights. */
@@ -40,5 +41,28 @@ public class DynamicLiquidHighlightContractTest {
                 glass.contains("onActiveBlurBackendChanged(activeBlurBackend)"));
         assertTrue("host must route the active backend to the overlay",
                 host.contains("overlayView.setActiveBlurBackend(mode)"));
+    }
+
+    @Test
+    public void advancedOverlayUsesRealtimeGeometricHighlightShader() throws IOException {
+        String overlay = source("DockStrokeOverlayView.java");
+        assertTrue("advanced highlight must be computed with RuntimeShader",
+                overlay.contains("RuntimeShader"));
+        assertTrue("sharp highlight must use additive PLUS compositing",
+                overlay.contains("BlendMode.PLUS"));
+        assertTrue("highlight must be clipped to the shared Dock shape",
+                overlay.contains("DockShapePath.build"));
+        assertTrue("highlight draw must clip before drawing the shader rectangle",
+                overlay.contains("canvas.clipPath(shape)"));
+        assertTrue("overlay must compute specular lighting",
+                overlay.contains("specP"));
+        assertTrue("overlay must compute rim lighting",
+                overlay.contains("rimLitSide"));
+        assertTrue("overlay must compute caustics",
+                overlay.contains("caust"));
+        assertTrue("overlay must expose dynamic highlight parameters",
+                overlay.contains("setHighlightParams"));
+        assertFalse("static Canvas gradient is replaced by the realtime shader",
+                overlay.contains("LinearGradient"));
     }
 }
