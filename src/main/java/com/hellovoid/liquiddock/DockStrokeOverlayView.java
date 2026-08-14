@@ -14,6 +14,8 @@ final class DockStrokeOverlayView extends View {
             "uniform float2 size;"
           + "uniform float2 offset;"
           + "uniform float4 cornerRadii;"
+          + "uniform float squircleEnabled;"
+          + "uniform float squircleCp;"
           + "uniform float refractionHeight;"
           + "uniform float liquidDome;"
           + "uniform float normalStrength;"
@@ -22,30 +24,58 @@ final class DockStrokeOverlayView extends View {
           + "uniform float rimLight;"
           + "uniform float causticStrength;"
           + "uniform float edgeBand;"
+          + "uniform float highlightWidth;"
           + "uniform float highlightAlpha;"
           + "float radiusAt(float2 p,float4 r){if(p.x>=0){return p.y<=0?r.y:r.z;}return p.y<=0?r.x:r.w;}"
           + "float sdRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));return length(max(q,0.0))-r+min(max(q.x,q.y),0.0);}"
           + "float2 gradRound(float2 p,float2 h,float r){float2 q=abs(p)-(h-float2(r));float2 s=sign(p);"
           + "s.x=s.x==0.0?1.0:s.x;s.y=s.y==0.0?1.0:s.y;if(q.x>=0.0||q.y>=0.0)return s*normalize(max(q,0.0001));"
           + "float gx=step(q.y,q.x);return s*float2(gx,1.0-gx);}"
+          // Same symmetric cubic corner used by DockShapePath: P0=(0,r),
+          // P1=(0,r-c), P2=(r-c,0), P3=(r,0), c=r*squircleCp.
+          + "float2 bezierPoint(float t,float r,float c){float u=1.0-t;"
+          + "float2 p0=float2(0.0,r);float2 p1=float2(0.0,r-c);float2 p2=float2(r-c,0.0);float2 p3=float2(r,0.0);"
+          + "return u*u*u*p0+3.0*u*u*t*p1+3.0*u*t*t*p2+t*t*t*p3;}"
+          + "float2 bezierD1(float t,float r,float c){float u=1.0-t;"
+          + "float2 p0=float2(0.0,r);float2 p1=float2(0.0,r-c);float2 p2=float2(r-c,0.0);float2 p3=float2(r,0.0);"
+          + "return 3.0*u*u*(p1-p0)+6.0*u*t*(p2-p1)+3.0*t*t*(p3-p2);}"
+          + "float2 bezierD2(float t,float r,float c){float u=1.0-t;"
+          + "float2 p0=float2(0.0,r);float2 p1=float2(0.0,r-c);float2 p2=float2(r-c,0.0);float2 p3=float2(r,0.0);"
+          + "return 6.0*u*(p2-2.0*p1+p0)+6.0*t*(p3-2.0*p2+p1);}"
+          + "float refineBezierT(float t,float2 q,float r,float c){float2 b=bezierPoint(t,r,c);float2 d=bezierD1(t,r,c);"
+          + "float2 dd=bezierD2(t,r,c);float f=dot(b-q,d);float fp=dot(d,d)+dot(b-q,dd);"
+          + "float den=abs(fp)>0.0001?fp:(fp>=0.0?0.0001:-0.0001);return clamp(t-f/den,0.0,1.0);}"
+          + "float3 sdBezierSquircle(float2 p,float2 h,float r,float cp){float2 ap=abs(p);float2 inset=h-ap;float2 s=sign(p);"
+          + "s.x=s.x==0.0?1.0:s.x;s.y=s.y==0.0?1.0:s.y;"
+          + "if(inset.x>=r||inset.y>=r){float2 d=ap-h;float sd=max(d.x,d.y);"
+          + "float2 g=d.x>d.y?float2(s.x,0.0):float2(0.0,s.y);return float3(sd,g.x,g.y);}"
+          + "float c=r*clamp(cp,0.05,0.95);float2 q=inset;"
+          + "float t=clamp(0.5+0.5*(q.x-q.y)/max(r,1.0),0.0,1.0);"
+          + "t=refineBezierT(t,q,r,c);t=refineBezierT(t,q,r,c);t=refineBezierT(t,q,r,c);t=refineBezierT(t,q,r,c);"
+          + "float2 b=bezierPoint(t,r,c);float2 d=bezierD1(t,r,c);float dl=max(length(d),0.0001);"
+          + "float2 nInside=float2(-d.y,d.x)/dl;float dist=length(q-b);float side=dot(q-b,nInside);"
+          + "float sd=side>=0.0?-dist:dist;float2 g=s*nInside;return float3(sd,g.x,g.y);}"
+          + "float3 shapeField(float2 p,float2 h,float r){if(squircleEnabled>0.5&&r>1.0)return sdBezierSquircle(p,h,r,squircleCp);"
+          + "float sd=sdRound(p,h,r);float2 g=gradRound(p,h,r);return float3(sd,g.x,g.y);}"
+          + "float sdShape(float2 p,float2 h,float r){return shapeField(p,h,r).x;}"
           + "float getHeightFromDist(float dist,float tw){float t=clamp(-dist/tw,0.0,1.0);return sqrt(max(0.0,2.0*t-t*t));}"
           + "float2 computeGradientHeight(float2 p,float2 halfSz,float cr,float tw){"
-          + "float s=1.0;float hpx=getHeightFromDist(sdRound(p+float2(s,0.0),halfSz,cr),tw);"
-          + "float hnx=getHeightFromDist(sdRound(p-float2(s,0.0),halfSz,cr),tw);"
-          + "float hpy=getHeightFromDist(sdRound(p+float2(0.0,s),halfSz,cr),tw);"
-          + "float hny=getHeightFromDist(sdRound(p-float2(0.0,s),halfSz,cr),tw);"
+          + "float s=1.0;float hpx=getHeightFromDist(sdShape(p+float2(s,0.0),halfSz,cr),tw);"
+          + "float hnx=getHeightFromDist(sdShape(p-float2(s,0.0),halfSz,cr),tw);"
+          + "float hpy=getHeightFromDist(sdShape(p+float2(0.0,s),halfSz,cr),tw);"
+          + "float hny=getHeightFromDist(sdShape(p-float2(0.0,s),halfSz,cr),tw);"
           + "return float2((hpx-hnx)*0.5,(hpy-hny)*0.5);}"
           + "half4 main(float2 coord){"
-          + "float2 hs=size*0.5;float2 cc=(coord+offset)-hs;float2 pPx=cc;"
+          // DockShapePath uses [.5, .5, width-.5, height-.5], so its true half-size is
+          // half a pixel smaller than the View bounds. Matching that avoids a clipped halo.
+          + "float2 hs=max(size*0.5-float2(0.5),float2(0.5));float2 cc=(coord+offset)-size*0.5;float2 pPx=cc;"
           + "float r=radiusAt(cc,cornerRadii);float cr=min(r,min(hs.x,hs.y));"
-          + "float sd=sdRound(cc,hs,cr);"
+          + "float3 field=shapeField(cc,hs,cr);float sd=field.x;float2 gradLens=field.yz;"
           + "float minDim=min(hs.x,hs.y);"
           + "float dome=clamp(liquidDome,0.0,2.0);"
           + "float tw=max(refractionHeight*(1.0+0.38*dome),1.0);tw=min(tw,minDim*0.98);"
           + "float hSig=getHeightFromDist(sd,tw);"
           + "float2 gradHSig=computeGradientHeight(pPx,hs,cr,tw);"
-          + "float gradRadius=min(cr*1.5,min(hs.x,hs.y));"
-          + "float2 gradLens=gradRound(cc,hs,gradRadius);"
           + "float edgeDist=-sd;"
           + "float innerReach=max(min(hs.x,hs.y)-cr*0.42,minDim*0.22);"
           + "innerReach+=refractionHeight*(1.0+0.25*dome);innerReach=min(innerReach,max(hs.x,hs.y)*0.95);"
@@ -73,9 +103,9 @@ final class DockStrokeOverlayView extends View {
           + "float sh=max(specularSharp,1.0);float sp=1.52*max(specularStrength,0.0);"
           + "float specP=pow(max(dot(N,Hp),0.0),sh)*sp;"
           + "specP*=(0.32+0.68*height);"
-          + "float bandFracR=max(edgeBand,0.005);"
+          + "float bandFracR=max(edgeBand,0.005)*max(0.1,highlightWidth);"
           + "float bandR=clamp(minDim*bandFracR,0.5,min(12.0,minDim*0.1));"
-          + "float shellRim=smoothstep(bandR,bandR*0.06,edgeDist)*smoothstep(-2.2,0.0,sd);"
+          + "float shellRim=1.0-smoothstep(bandR*0.06,bandR,max(edgeDist,0.0));"
           + "float2 Lxy=normalize(float2(-0.5,-0.8)+float2(1e-5));"
           + "float2 gN=normalize(gradLens+float2(1e-4));"
           + "float edgeLight=dot(gN,Lxy);"
@@ -202,6 +232,8 @@ final class DockStrokeOverlayView extends View {
         highlightShader.setFloatUniform("size", w, h);
         highlightShader.setFloatUniform("offset", 0f, 0f);
         highlightShader.setFloatUniform("cornerRadii", radius, radius, radius, radius);
+        highlightShader.setFloatUniform("squircleEnabled", squircle ? 1f : 0f);
+        highlightShader.setFloatUniform("squircleCp", squircleCp);
         highlightShader.setFloatUniform("refractionHeight", Math.max(1f, Math.min(h * .48f, 140f)));
         highlightShader.setFloatUniform("liquidDome", dome);
         highlightShader.setFloatUniform("normalStrength", normalStrength);
@@ -210,6 +242,7 @@ final class DockStrokeOverlayView extends View {
         highlightShader.setFloatUniform("rimLight", rimLight);
         highlightShader.setFloatUniform("causticStrength", caustics);
         highlightShader.setFloatUniform("edgeBand", edgeBand);
+        highlightShader.setFloatUniform("highlightWidth", highlightWidth);
         highlightShader.setFloatUniform("highlightAlpha", highlightAlpha);
 
         int save = canvas.save();
