@@ -526,8 +526,8 @@ final class HomeGridHook {
                             : workstationAllAppsLandscapeHorizontalOffset)
                     : workstationHorizontalOffset;
             int workstationY = workstationAllApps
-                    ? (portrait ? workstationAllAppsLandscapeVerticalOffset
-                            : workstationAllAppsPortraitVerticalOffset)
+                    ? (portrait ? workstationAllAppsPortraitVerticalOffset
+                            : workstationAllAppsLandscapeVerticalOffset)
                     : 0;
             if (workstation) {
                 // Offsets are translations, not symmetric insets. Clamp them against the
