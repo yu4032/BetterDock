@@ -80,4 +80,26 @@ public class DynamicLiquidHighlightContractTest {
         assertTrue("reload must forward the dynamic model in one setter call",
                 overlay.contains("setHighlightParams(glass.normalStrength, glass.dome"));
     }
+
+    @Test
+    public void squircleHighlightUsesSharedBezierGeometryAndStableRimBand() throws IOException {
+        String overlay = source("DockStrokeOverlayView.java");
+        assertTrue("shader must know whether the shared Dock shape is a squircle",
+                overlay.contains("uniform float squircleEnabled;"));
+        assertTrue("shader must receive the same cubic control-point ratio as DockShapePath",
+                overlay.contains("uniform float squircleCp;"));
+        assertTrue("squircle distance must follow the cubic corner rather than sdRound only",
+                overlay.contains("sdBezierSquircle"));
+        assertTrue("all highlight geometry must route through the selected shape distance",
+                overlay.contains("sdShape"));
+        assertTrue("runtime must pass squircle mode to the highlight shader",
+                overlay.contains("setFloatUniform(\"squircleEnabled\""));
+        assertTrue("runtime must pass the shared squircle control point to the highlight shader",
+                overlay.contains("setFloatUniform(\"squircleCp\""));
+        assertTrue("highlight width must actually scale the advanced rim band",
+                overlay.contains("uniform float highlightWidth;")
+                        && overlay.contains("max(0.1,highlightWidth)"));
+        assertFalse("reverse-edge smoothstep causes a hard/undefined corner transition",
+                overlay.contains("smoothstep(bandR,bandR*0.06,edgeDist)"));
+    }
 }
