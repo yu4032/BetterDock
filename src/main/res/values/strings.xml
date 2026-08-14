@@ -35,6 +35,8 @@
     <string name="category_portrait">Portrait</string>
     <string name="enable_grid_8x4">Enable 8×4 / 4×8 grid</string>
     <string name="enable_grid_8x4_summary">Uses the stock MIUI layout when disabled; all settings below require this switch</string>
+    <string name="enable_widget_adaptation">Adapt widget sizes to the custom grid</string>
+    <string name="enable_widget_adaptation_summary">Resizes supported 1×1, 2×1, 2×2, and 4×2 widgets to the custom grid; disabled by default and requires a launcher restart</string>
     <string name="dock_customization">Customize Dock geometry and appearance</string>
     <string name="dock_customization_summary">Controls size, position, stroke, and shadow</string>
     <string name="dock_resize_animation">Dock size transition</string>
@@ -55,4 +57,3 @@
     <string name="pref_debug_log">Debug Logging</string>
     <string name="pref_debug_log_summary">Write [DC] diagnostics to logcat (about page), restart desktop to apply</string>
 </resources>
-
