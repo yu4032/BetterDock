@@ -35,6 +35,8 @@
     <string name="category_portrait">竖屏</string>
     <string name="enable_grid_8x4">启用 8×4 / 4×8 网格</string>
     <string name="enable_grid_8x4_summary">关闭时完全使用 MIUI 原生布局；下方全部参数仅在开启后生效</string>
+    <string name="enable_widget_adaptation">小组件自适应</string>
+    <string name="enable_widget_adaptation_summary">按自定义网格重新计算 1×1、2×1、2×2、4×2 小组件尺寸与位置；默认关闭，重启桌面生效</string>
     <string name="dock_customization">自定义 Dock 几何与外观</string>
     <string name="dock_customization_summary">控制尺寸、位置、描边和阴影</string>
     <string name="dock_resize_animation">Dock 尺寸过渡动画</string>
@@ -55,4 +57,3 @@
     <string name="pref_debug_log">调试日志</string>
     <string name="pref_debug_log_summary">向 logcat 输出 [DC] 诊断日志（关于页），重启桌面生效</string>
 </resources>
-
