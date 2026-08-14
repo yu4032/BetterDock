@@ -15,9 +15,25 @@ final class WidgetGridSizing {
                 || (spanX == 4 && spanY == 2);
     }
 
-    static int spanSize(int span, int cellSize, int gap, int startMargin, int endMargin) {
-        if (span <= 0) return 0;
-        int internalGaps = Math.max(0, span - 1) * gap;
-        return span * cellSize + internalGaps - startMargin - endMargin;
+    /**
+     * Pixel footprint occupied by a span in the custom CellLayout grid.
+     * CellLayout positions x/y from the cell coordinate and grid gaps; widget
+     * margins do not move that origin, so subtracting them here leaves the
+     * far edge short of the grid boundary.
+     */
+    static int gridSpanSize(int span, int cellSize, int gap) {
+        if (span <= 0 || cellSize <= 0) return 0;
+        int safeGap = Math.max(0, gap);
+        return span * cellSize + Math.max(0, span - 1) * safeGap;
+    }
+
+    /**
+     * Compatibility entry point used by HomeGridHook. Launcher margins are
+     * intentionally ignored: the widget view should fill its complete grid
+     * footprint rather than inherit MIUI's stock-grid visual inset.
+     */
+    static int spanSize(int span, int cellSize, int gap,
+                        int startMargin, int endMargin) {
+        return gridSpanSize(span, cellSize, gap);
     }
 }
