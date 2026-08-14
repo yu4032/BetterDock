@@ -4,27 +4,26 @@
 
 LiquidDock 是一个面向 HyperOS 3 Pad 启动器的 LSPosed/libxposed API 101 模块，用于扩展系统 Dock 的液态玻璃、Dock 外观、桌面网格等行为。
 
-当前 `api101-migration` 已完成第一阶段配置架构重构：设置、导入/导出、迁移、预设和运行时读取开始共享同一套类型化配置契约，而不是在多个界面和 Hook 中分别维护 key、默认值与范围。
-
-## 当前能力
+## 功能
 
 - **液态玻璃 Dock**：可选标准 RuntimeShader 模糊或 HyperOS SurfaceFlinger 高级材质 self-blur；折射、色散、穹顶与光学效果继续由 LiquidDock 渲染
+- **动态高光**：RuntimeShader 实时逐像素计算镜面/边缘光/焦散，配合 self-blur 保持锐利，GUI 滑条即时生效
 - **Dock 几何**：宽高、底部偏移、图标间距、模糊、圆角和方圆形轮廓
-- **前景描边**：原生 blur Dock 继续使用 foreground `DockStrokeRenderer`；Liquid Glass 使用独立锐利 overlay，使描边/Canvas 高光不进入 self-blur
+- **前景描边**：原生 blur Dock 使用 foreground `DockStrokeRenderer`；Liquid Glass 使用独立锐利 overlay，使描边/高光不进入 self-blur
 - **独立 Dock 阴影**：与描边分离，并抑制 HyperOS 原生 Dock 阴影避免重复
 - **捕获管线**：HOME / APP / RECENTS 场景状态、动态画面探针、黑帧保护、旋转稳定与捕获节流
 - **桌面网格**：横屏 8×4、竖屏 4×8，自定义边距、行距与页面指示器偏移
-- **Widget adaptation**：可独立开关；当前活动实现只覆盖已验证的 1×1、2×1、2×2、4×2 span
+- **Widget adaptation**：可独立开关
+- **Dock 分隔线**：图标间竖线的宽度、高度比例、垂直偏移、颜色和透明度独立调节
 - **配置管理**：Schema 驱动的 JSON 导入/导出、默认预设、历史配置迁移和 API 101 Remote Preferences
-- **工作台相关实验代码**：包含模式检测、独立 Dock 参数、All Apps/Grid 偏移、Divider 和 wallpaper snapshot 处理，但**工作台整体仍未完成适配，不属于当前受支持功能**
 
 功能参数见 [FEATURES.md](FEATURES.md)，当前实际 Hook 点见 [HOOKS.md](HOOKS.md)，配置与模块边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ### Liquid Glass 模糊后端
 
-`liquid_blur_mode` 提供两种后端：`shader`（兼容默认）和 `advanced_material`。高级材质模式直接反射 `View.setMiSelfBlur(...)` / `setPassTextureScale(...)` 驱动 HyperOS SurfaceFlinger self-blur；运行时能力检测失败时只在当前运行中回退到 Shader，不改写用户保存的模式。
+`liquid_blur_mode` 提供两种后端：`shader`（兼容默认）和 `advanced_material`。高级材质模式反射 `View.setMiSelfBlur(...)` / `setPassTextureScale(...)` 驱动 HyperOS SurfaceFlinger self-blur。
 
-高级模式把玻璃主体、锐利高光/描边和最终形状裁剪分层：`DockLiquidGlassView` 保持矩形 RenderNode 进入 self-blur，`DockLiquidGlassHostView` 在合成后裁回 Dock 圆角/方圆轮廓，`DockStrokeOverlayView` 在最上层绘制 Canvas 高光和可配置描边。这样避免 self-blur 前的圆角裁剪造成角落采样缺失，同时不让描边和高光被内容模糊。
+高级模式分层：`DockLiquidGlassView` 保持矩形 RenderNode 进入 self-blur，`DockLiquidGlassHostView` 在合成后裁回 Dock 圆角/方圆轮廓，`DockStrokeOverlayView` 在最上层绘制高光和可配置描边。
 
 ## 配置架构
 
@@ -48,21 +47,7 @@ Settings SharedPreferences
 - `PresetManager`：默认预设和 iPad 风格预设写入
 - `ConfigReader`：Launcher 进程只读 Remote Preferences snapshot
 - `LiquidDockConfig`：把 snapshot 转成不可变、类型化的运行时配置
-- `LegacyConfigMigration`：仅在 `ModuleMain.onPackageReady()` 的显式兼容边界尝试把 pre-API101 JSON 迁移到空的 Remote Preferences；普通 `LiquidDockConfig.load()` 不再执行写入
-
-`ConfigSchema` 有意区分 UI 默认值、运行时缺省值和历史导出默认值。历史 `_tenths`、legacy alias、Divider sentinel 等兼容语义不能为了“统一默认值”而被抹平。
-
-## 当前架构状态
-
-这次完成的是 **Phase 1：configuration convergence**，不是整个项目的模块化终点。当前仍有几个明确的后续重构目标：
-
-- `MainHook` 仍承担过多 Dock / Glass / Workstation / Grid 组装与状态职责
-- `HomeGridHook` 仍同时负责网格数量、几何、旋转、Widget、指示器和文件夹对齐
-- `WidgetGridSizing` 仍使用静态 feature flag，Widget 类型与 span 仍写死在活动路径中
-- `DockLiquidGlassView` 仍同时承载 View、捕获控制、失败恢复、动态检测和 Shader 渲染
-- 工作台存在实验实现，但仍未完成设备级适配与回归
-
-后续重构必须保持当前 SharedPreferences key、历史 JSON、默认值、预设和已验证 8×4/4×8 行为兼容。
+- `LegacyConfigMigration`：仅在 `ModuleMain.onPackageReady()` 的显式兼容边界尝试把 pre-API101 JSON 迁移到空的 Remote Preferences
 
 ## 构建
 
@@ -80,13 +65,6 @@ Debug/CI 基线：
 ```
 
 Release 构建启用 R8 代码与资源裁剪，产物位于 `build/outputs/apk/release/`。
-
-## 已知限制
-
-- **工作台 / Laptop 模式尚未完成适配**。现有 Workstation Hook 只表示已有实验实现，不能视为功能完成；出现布局、Dock、捕获或切换异常仍属于已知范围
-- **旧描边阴影已失效**。描边迁移到 foreground `DockStrokeRenderer` 后，历史 `stroke_shadow` / `shadow_radius` / `shadow_alpha` key 仍为配置兼容保留，但当前描边 renderer 不实现旧阴影效果
-- Widget adaptation 当前只支持 1×1、2×1、2×2、4×2；Widget 类型识别与 span registry 尚未完成下一阶段泛化
-- 分屏、小窗和不同 HyperOS Launcher 版本的 SurfaceFlinger/布局行为仍可能需要单独兼容
 
 ## 免责声明
 
