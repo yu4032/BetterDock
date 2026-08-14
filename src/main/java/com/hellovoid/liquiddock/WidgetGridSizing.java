@@ -19,6 +19,19 @@ final class WidgetGridSizing {
     }
 
     /**
+     * Runtime compatibility entry point used by HomeGridHook. The launcher
+     * width/height gaps are already encoded in xs/ys, so they no longer define
+     * visible widget spacing. Every widget is sized from seamless cell slots
+     * and receives the same span-independent visual padding.
+     */
+    static int[] gridRect(int cellX, int cellY, int spanX, int spanY,
+                          int[] xs, int[] ys, int cellWidth, int cellHeight,
+                          int widthGap, int heightGap) {
+        return slotRect(cellX, cellY, spanX, spanY, xs, ys,
+                cellWidth, cellHeight, visualPadding(cellWidth, cellHeight));
+    }
+
+    /**
      * Returns {left, top, width, height}. Each cell owns a seamless slot whose
      * internal boundaries lie at the midpoint of the launcher gap. A widget
      * takes the union of all occupied slots and then applies one fixed padding
