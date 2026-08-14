@@ -33,6 +33,7 @@ final class DockStrokeOverlayView extends View {
         this.radius = Math.max(0f, radius);
         this.squircle = squircle;
         this.squircleCp = Math.max(.05f, Math.min(.95f, cp));
+        DockStrokeRenderer.updateRadius(this, this.radius);
         invalidate();
     }
 
