@@ -210,7 +210,9 @@ final class HomeGridHook {
                 // CellLayout from its own first valid bounds, before MIUI positions its
                 // children, so lazy/off-screen pages cannot miss the 8x4 geometry pass.
                 prepareCellLayoutGeometryForLayout(layout);
-                return chain.proceed(args);
+                Object result = chain.proceed(args);
+                enforceWidgetGridFrames(layout);
+                return result;
             });
     }
 
@@ -296,6 +298,95 @@ final class HomeGridHook {
             HookUtil.setIntField(layoutParams, "y", rect[1]);
         } catch (Throwable e) {
             MainHook.log("[DC] widget grid bounds failed: " + e);
+        }
+    }
+
+    /**
+     * MIUI performs additional span-dependent positioning in CellLayout.onLayout().
+     * Re-assert the custom grid allocation afterwards so a pair of 1x1 widgets
+     * tiles exactly the same frame as one 2x1, and four 1x1 widgets tile one 2x2.
+     * The widget's own content padding remains untouched.
+     */
+    private static void enforceWidgetGridFrames(android.view.ViewGroup cellLayout) {
+        if (!grid8x4Enabled || cellLayout == null) return;
+        try {
+            int cellWidth = HookUtil.getIntField(cellLayout, "mCellWidth");
+            int cellHeight = HookUtil.getIntField(cellLayout, "mCellHeight");
+            int widthGap = Math.max(0, HookUtil.getIntField(cellLayout, "mWidthGap"));
+            int heightGap = Math.max(0, HookUtil.getIntField(cellLayout, "mHeightGap"));
+            int[] xs = (int[]) HookUtil.getField(cellLayout, "mXs");
+            int[] ys = (int[]) HookUtil.getField(cellLayout, "mYs");
+            if (cellWidth <= 0 || cellHeight <= 0 || xs == null || ys == null) return;
+
+            for (int i = 0; i < cellLayout.getChildCount(); i++) {
+                android.view.View child = cellLayout.getChildAt(i);
+                if (child == null || child.getVisibility() == android.view.View.GONE) continue;
+                Object info = child.getTag();
+                if (info == null) continue;
+
+                boolean widget = Boolean.TRUE.equals(HookUtil.invoke(info, "isWidget"));
+                if (!widget) {
+                    try {
+                        int itemType = HookUtil.getIntField(info, "itemType");
+                        widget = itemType == 4 || itemType == 5 || itemType == 19;
+                    } catch (Throwable ignored) {}
+                }
+                if (!widget) continue;
+
+                Object lpObject = child.getLayoutParams();
+                if (lpObject == null) continue;
+                try {
+                    if (HookUtil.getBooleanField(lpObject, "isDragging")) continue;
+                } catch (Throwable ignored) {}
+
+                int spanX;
+                int spanY;
+                int cellX;
+                int cellY;
+                try {
+                    spanX = HookUtil.getIntField(info, "spanX");
+                    spanY = HookUtil.getIntField(info, "spanY");
+                    cellX = HookUtil.getIntField(info, "cellX");
+                    cellY = HookUtil.getIntField(info, "cellY");
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (!WidgetGridSizing.isSupportedSpec(spanX, spanY)) continue;
+
+                int[] rect = WidgetGridSizing.gridRect(cellX, cellY, spanX, spanY,
+                        xs, ys, cellWidth, cellHeight, widthGap, heightGap);
+                int targetWidth = rect[2];
+                int targetHeight = rect[3];
+                if (targetWidth <= 0 || targetHeight <= 0) continue;
+
+                if (lpObject instanceof android.view.ViewGroup.MarginLayoutParams) {
+                    android.view.ViewGroup.MarginLayoutParams lp =
+                            (android.view.ViewGroup.MarginLayoutParams) lpObject;
+                    lp.width = targetWidth;
+                    lp.height = targetHeight;
+                }
+                try {
+                    HookUtil.setIntField(lpObject, "x", rect[0]);
+                    HookUtil.setIntField(lpObject, "y", rect[1]);
+                } catch (Throwable ignored) {}
+
+                if (child.getMeasuredWidth() != targetWidth
+                        || child.getMeasuredHeight() != targetHeight) {
+                    child.measure(
+                            android.view.View.MeasureSpec.makeMeasureSpec(
+                                    targetWidth, android.view.View.MeasureSpec.EXACTLY),
+                            android.view.View.MeasureSpec.makeMeasureSpec(
+                                    targetHeight, android.view.View.MeasureSpec.EXACTLY));
+                }
+                int right = rect[0] + targetWidth;
+                int bottom = rect[1] + targetHeight;
+                if (child.getLeft() != rect[0] || child.getTop() != rect[1]
+                        || child.getRight() != right || child.getBottom() != bottom) {
+                    child.layout(rect[0], rect[1], right, bottom);
+                }
+            }
+        } catch (Throwable e) {
+            MainHook.log("[DC] final widget frame enforcement failed: " + e);
         }
     }
 
@@ -435,8 +526,8 @@ final class HomeGridHook {
                             : workstationAllAppsLandscapeHorizontalOffset)
                     : workstationHorizontalOffset;
             int workstationY = workstationAllApps
-                    ? (portrait ? workstationAllAppsPortraitVerticalOffset
-                            : workstationAllAppsLandscapeVerticalOffset)
+                    ? (portrait ? workstationAllAppsLandscapeVerticalOffset
+                            : workstationAllAppsPortraitVerticalOffset)
                     : 0;
             if (workstation) {
                 // Offsets are translations, not symmetric insets. Clamp them against the
