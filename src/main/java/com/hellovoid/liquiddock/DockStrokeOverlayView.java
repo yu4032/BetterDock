@@ -183,6 +183,9 @@ final class DockStrokeOverlayView extends View {
     void reload(LiquidDockConfig.Dock dock, LiquidDockConfig.Glass glass, float radius) {
         setGeometry(radius, dock.squircle, dock.squircleCp);
         setHighlight(glass.highlightAlpha, glass.highlightWidth);
+        setHighlightParams(glass.normalStrength, glass.dome, glass.specularSharp,
+                glass.specularStrength, glass.rimLight, glass.caustics,
+                glass.edgeBand, glass.highlightAlpha);
         DockStrokeRenderer.configure(this, dock, radius);
     }
 
