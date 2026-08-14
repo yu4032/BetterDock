@@ -13,26 +13,27 @@ public class WorkstationGridMarginPolicyTest {
     public void configuredSpacingReplacesAsymmetricNativeMargins() throws Exception {
         Class<?> policy = Class.forName("com.hellovoid.liquiddock.WorkstationGridMarginPolicy");
         Method apply = policy.getDeclaredMethod("apply",
-                int.class, int.class, int.class, int.class, int.class, int.class);
+                int.class, int.class, int.class, int.class,
+                int.class, int.class, int.class);
         apply.setAccessible(true);
 
-        // Native All Apps is not centered. Absolute spacing must ignore that asymmetry and
-        // produce equal opposing margins so the icon grid is centered by construction.
-        assertArrayEquals(new int[]{12, 12, 8, 8},
-                (int[]) apply.invoke(null, 10, 20, 5, 0, 12, 8));
-        assertArrayEquals(new int[]{12, 12, 8, 8},
-                (int[]) apply.invoke(null, 90, 3, 44, 71, 12, 8));
+        // Horizontal remains symmetric, but top and bottom are independent absolute edges.
+        assertArrayEquals(new int[]{12, 12, 8, 20},
+                (int[]) apply.invoke(null, 10, 20, 5, 0, 12, 8, 20));
+        assertArrayEquals(new int[]{12, 12, 8, 20},
+                (int[]) apply.invoke(null, 90, 3, 44, 71, 12, 8, 20));
     }
 
     @Test
     public void absoluteSpacingCannotBecomeNegative() throws Exception {
         Class<?> policy = Class.forName("com.hellovoid.liquiddock.WorkstationGridMarginPolicy");
         Method apply = policy.getDeclaredMethod("apply",
-                int.class, int.class, int.class, int.class, int.class, int.class);
+                int.class, int.class, int.class, int.class,
+                int.class, int.class, int.class);
         apply.setAccessible(true);
 
         assertArrayEquals(new int[]{0, 0, 0, 0},
-                (int[]) apply.invoke(null, 10, 20, 5, 7, -15, -10));
+                (int[]) apply.invoke(null, 10, 20, 5, 7, -15, -10, -30));
     }
 
     @Test
