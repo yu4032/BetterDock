@@ -21,7 +21,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
       - name: Apply stock-launcher capture and spacing fix
-        run: python .github/scripts/patch_stock_launcher_capture.py
+        run: |
+          python .github/scripts/patch_stock_launcher_capture.py
+          python .github/scripts/patch_stock_launcher_followup.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - name: Commit verified production fix
