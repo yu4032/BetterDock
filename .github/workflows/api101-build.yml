@@ -13,17 +13,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply advanced material rendering patch once
+      - name: Remove stale glass highlight setter once
         if: github.actor != 'github-actions[bot]'
         shell: bash
         run: |
-          python3 .github/scripts/apply-liquid-blur-rendering.py
-          rm -f .github/scripts/apply-liquid-blur-rendering.py \
-                .github/scripts/apply-liquid-blur-task1.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java')
+          s = p.read_text()
+          old = '''    /** Canvas stroke highlight opacity multiplier (GUI: liquid_highlight_alpha). */
+              void setHighlightAlpha(float multiplier) {
+                  float next = Math.max(0f, Math.min(2f, multiplier));
+                  if (next == glassHighlightAlpha) return;
+                  glassHighlightAlpha = next;
+                  invalidate();
+              }
+
+          '''
+          # The source uses four-space method indentation; normalize the heredoc indentation.
+          old = old.replace('              ', '    ')
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one stale setHighlightAlpha block, got {s.count(old)}')
+          p.write_text(s.replace(old, '', 1))
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'feat: add advanced material liquid blur rendering'
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+          git commit -m 'fix: remove stale glass highlight setter'
           git push origin HEAD:api101-migration
       - uses: actions/setup-java@v4
         with:
