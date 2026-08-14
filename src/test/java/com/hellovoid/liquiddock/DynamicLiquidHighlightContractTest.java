@@ -65,4 +65,19 @@ public class DynamicLiquidHighlightContractTest {
         assertFalse("static Canvas gradient is replaced by the realtime shader",
                 overlay.contains("LinearGradient"));
     }
+
+    @Test
+    public void dynamicHighlightParametersFollowGlassHotReload() throws IOException {
+        String overlay = source("DockStrokeOverlayView.java");
+        assertTrue(overlay.contains("glass.normalStrength"));
+        assertTrue(overlay.contains("glass.dome"));
+        assertTrue(overlay.contains("glass.specularSharp"));
+        assertTrue(overlay.contains("glass.specularStrength"));
+        assertTrue(overlay.contains("glass.rimLight"));
+        assertTrue(overlay.contains("glass.caustics"));
+        assertTrue(overlay.contains("glass.edgeBand"));
+        assertTrue(overlay.contains("glass.highlightAlpha"));
+        assertTrue("reload must forward the dynamic model in one setter call",
+                overlay.contains("setHighlightParams(glass.normalStrength, glass.dome"));
+    }
 }
