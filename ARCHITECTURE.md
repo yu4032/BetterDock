@@ -6,6 +6,33 @@ LiquidDock has two processes and one configuration boundary:
 - The LSPosed entry point runs inside `com.miui.home` and installs API 101 hooks (libxposed native).
 - `LiquidDockConfig` is the immutable, typed boundary between Remote Preferences and runtime code.
 
+## Configuration flow
+
+The settings process owns configuration storage and compatibility conversion. Its Phase 1
+data path is:
+
+```text
+local SharedPreferences -> ConfigMigration -> ConfigSchema/ConfigCodec
+                                                \
+                                                 -> API101 Remote Preferences -> ConfigReader -> LiquidDockConfig snapshot
+```
+
+`ConfigMigration` performs legacy preference upgrades before the settings UI or codec uses
+the values. `ConfigSchema` is the single definition of persisted keys, types, bounds, and
+compatibility metadata; `ConfigCodec` uses it for import and export. The settings app then
+publishes the resulting values through API 101 Remote Preferences. In the launcher process,
+`ConfigReader` reads that boundary and `LiquidDockConfig` converts it into an immutable,
+side-effect-free runtime snapshot.
+
+Schema metadata intentionally distinguishes three meanings of a default:
+
+- `uiDefault` is the current UI/storage default used when presenting or persisting settings.
+- `runtimeFallback` preserves the injected runtime behavior for absent legacy preferences.
+- `exportDefault` preserves the historic exported representation where compatibility requires it.
+
+Those values may differ. They must not be normalized merely because a current UI default,
+a legacy runtime fallback, and an export fallback happen to describe the same feature.
+
 ## Runtime modules
 
 - `ModuleMain`: libxposed API 101 entry point. Calls `MainHook.install(CL)` + `HomeGridHook.install(CL)` + `RecentsHapticHook.install(CL)`.
@@ -41,7 +68,7 @@ capture work to ensure the scene switch is not coalesced away.
 
 ## Adding a feature
 
-1. Add its key and default to the appropriate section of `LiquidDockConfig`.
+1. Add its key, type, and compatibility defaults to the appropriate `ConfigSchema` section.
 2. Add one settings specification and translated label/summary.
 3. Put launcher reflection in a dedicated `*Hook` adapter.
 4. Put deterministic policy in a small Android-free class and add a unit test.
