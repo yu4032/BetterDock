@@ -17,6 +17,8 @@ final class LiquidDockConfig {
         enabled = c.b("liquiddock_enabled", true);
         debugLog = c.b("liquiddock_debug_log", false);
         grid = new Grid(c);
+        WidgetGridSizing.setWidgetAdaptationEnabled(
+                WidgetGridSizing.shouldAdaptWidgets(grid.enabled, grid.widgetAdaptation));
         dock = new Dock(c);
         divider = new Divider(c);
         glass = new Glass(c);
@@ -24,13 +26,14 @@ final class LiquidDockConfig {
     }
 
     static final class Grid {
-        final boolean enabled, dp, offsets;
+        final boolean enabled, widgetAdaptation, dp, offsets;
         final float landscapeHorizontal, landscapeTop, landscapeBottom, landscapeRowGap;
         final float portraitHorizontal, portraitTop, portraitBottom, portraitRowGap;
         final float landscapeIndicatorY, portraitIndicatorY;
 
         Grid(ConfigReader c) {
             enabled = c.b("home_grid_8x4", false);
+            widgetAdaptation = c.b("grid_widget_adaptation", false);
             dp = c.b("grid_margins_dp", false);
             offsets = c.b("grid_margins_offset", false);
             landscapeHorizontal = c.has("grid_landscape_horizontal_distance")
