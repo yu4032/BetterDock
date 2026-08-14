@@ -181,6 +181,22 @@ final class HomeGridHook {
                 rebuildCellCoordinates(thisObj);
                 return result;
             });
+        try {
+            Class<?> itemInfo = Class.forName(
+                    "com.miui.home.launcher.ItemInfo", false, classLoader);
+            Class<?> cellLayoutParams = Class.forName(
+                    "com.miui.home.launcher.CellLayout$LayoutParams", false, classLoader);
+            HookUtil.hookMethod(cellLayout, "setupLayoutParam",
+                    new Class[]{int.class, int.class, itemInfo, cellLayoutParams},
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        Object result = chain.proceed(args);
+                        applyWidgetGridSize(chain.getThisObject(), args[2], args[3]);
+                        return result;
+                    });
+        } catch (Throwable e) {
+            MainHook.log("[DC] widget span sizing hook unavailable: " + e);
+        }
         HookUtil.hookMethod(cellLayout, "onLayout",
             new Class[]{boolean.class, int.class, int.class, int.class, int.class},
             chain -> {
@@ -193,11 +209,7 @@ final class HomeGridHook {
                 // CellLayout from its own first valid bounds, before MIUI positions its
                 // children, so lazy/off-screen pages cannot miss the 8x4 geometry pass.
                 prepareCellLayoutGeometryForLayout(layout);
-
-                Object result = chain.proceed(args);
-                for (int i = 0; i < layout.getChildCount(); i++)
-                    adaptTwoByOneWidget(layout, layout.getChildAt(i));
-                return result;
+                return chain.proceed(args);
             });
     }
 
@@ -243,6 +255,43 @@ final class HomeGridHook {
             HookUtil.setField(cellLayout, "mYs", ys);
         } catch (Throwable e) {
             MainHook.log("[DC] final cell coordinate rebuild failed: " + e);
+        }
+    }
+
+    private static void applyWidgetGridSize(Object cellLayout, Object info, Object layoutParams) {
+        try {
+            if (!grid8x4Enabled || info == null || layoutParams == null) return;
+
+            boolean widget = Boolean.TRUE.equals(HookUtil.invoke(info, "isWidget"));
+            if (!widget) {
+                int itemType = HookUtil.getIntField(info, "itemType");
+                widget = itemType == 4 || itemType == 5 || itemType == 19;
+            }
+            if (!widget) return;
+
+            int spanX = HookUtil.getIntField(info, "spanX");
+            int spanY = HookUtil.getIntField(info, "spanY");
+            if (!WidgetGridSizing.isSupportedSpec(spanX, spanY)) return;
+            if (!(layoutParams instanceof android.view.ViewGroup.MarginLayoutParams)) return;
+
+            android.view.ViewGroup.MarginLayoutParams lp =
+                    (android.view.ViewGroup.MarginLayoutParams) layoutParams;
+            int cellWidth = HookUtil.getIntField(cellLayout, "mCellWidth");
+            int cellHeight = HookUtil.getIntField(cellLayout, "mCellHeight");
+            int widthGap = Math.max(0, HookUtil.getIntField(cellLayout, "mWidthGap"));
+            int heightGap = Math.max(0, HookUtil.getIntField(cellLayout, "mHeightGap"));
+            if (cellWidth <= 0 || cellHeight <= 0) return;
+
+            int width = WidgetGridSizing.spanSize(
+                    spanX, cellWidth, widthGap, lp.leftMargin, lp.rightMargin);
+            int height = WidgetGridSizing.spanSize(
+                    spanY, cellHeight, heightGap, lp.topMargin, lp.bottomMargin);
+            if (width <= 0 || height <= 0) return;
+
+            lp.width = width;
+            lp.height = height;
+        } catch (Throwable e) {
+            MainHook.log("[DC] widget span sizing failed: " + e);
         }
     }
 
