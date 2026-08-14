@@ -5,11 +5,26 @@ on:
     branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply advanced material rendering patch once
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python3 .github/scripts/apply-liquid-blur-rendering.py
+          rm -f .github/scripts/apply-liquid-blur-rendering.py \
+                .github/scripts/apply-liquid-blur-task1.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add advanced material liquid blur rendering'
+          git push origin HEAD:api101-migration
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
