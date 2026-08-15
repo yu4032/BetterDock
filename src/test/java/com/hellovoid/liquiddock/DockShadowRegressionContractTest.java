@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /** Regression contracts for the independent Dock shadow. */
@@ -25,11 +26,13 @@ public class DockShadowRegressionContractTest {
     }
 
     @Test
-    public void dockAnimationDoesNotResyncIndependentShadowGeometry() throws IOException {
+    public void dockAnimationDefersButSettledFramesResyncIndependentShadowGeometry() throws IOException {
         String source = mainHook();
-        assertTrue("glass/stroke may track animation, but the independent shadow must remain stable",
+        assertTrue("glass/stroke may track animation, but the independent shadow must wait until settled",
                 source.contains("boolean anim = animating(bg);"));
-        assertTrue("shadow geometry sync must be gated until the Dock animation has settled",
+        assertTrue("settled Dock frames must resync independent shadow position",
+                source.contains("if (!anim)"));
+        assertFalse("shadow position must not be gated only by a width change",
                 source.contains("if (!anim && bgW != lastShadowW)"));
         assertTrue("shadow corner geometry must not follow transient radius animation frames",
                 source.contains("if (!animating(v)) strokeR = Math.max(0f, systemRadius + co);"));
