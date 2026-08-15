@@ -1,4 +1,4 @@
-name: Merge API101 safely
+name: Verify workstation mode detection fix
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  merge:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,81 +22,173 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Stage merge resolver outside target tree
-        run: |
-          cp tools/resolve_api101_merge.py /tmp/resolve_api101_merge.py
-          python3 tools/patch_api101_merge_resolver.py
-          python3 -m py_compile /tmp/resolve_api101_merge.py
-
-      - name: Merge exact refs and resolve known conflicts
+      - name: Checkout exact API101 baseline
         shell: bash
         run: |
           set -euo pipefail
-          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
-          expected_head=38d43ba6594373643a9982746854c4817d5e7568
-          git fetch origin api101-migration test/capture-rebuild-8ee84ed
-          actual_base=$(git rev-parse origin/api101-migration)
-          actual_head=$(git rev-parse origin/test/capture-rebuild-8ee84ed)
-          test "$actual_base" = "$expected_base" || { echo "api101 moved: $actual_base"; exit 2; }
-          test "$actual_head" = "$expected_head" || { echo "source moved: $actual_head"; exit 2; }
+          expected_base=ea3a444161e0693dcdd9f53e6a7ebbcee050b936
+          git fetch origin api101-migration
+          actual=$(git rev-parse origin/api101-migration)
+          test "$actual" = "$expected_base" || { echo "api101 moved: $actual"; exit 2; }
+          git checkout -B workstation-mode-fix "$expected_base"
+          chmod +x ./gradlew
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B merge-work "$expected_base"
+      - name: Inject regression contract
+        shell: bash
+        run: |
+          cat > src/test/java/com/hellovoid/liquiddock/WorkstationModeDetectionContractTest.java <<'EOF'
+          package com.hellovoid.liquiddock;
 
+          import org.junit.Test;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import static org.junit.Assert.assertFalse;
+          import static org.junit.Assert.assertTrue;
+
+          public class WorkstationModeDetectionContractTest {
+              private static String source() throws Exception {
+                  return Files.readString(Path.of(
+                          "src/main/java/com/hellovoid/liquiddock/MainHook.java"));
+              }
+
+              @Test public void initialLaptopModeReadIsNullSafe() throws Exception {
+                  String s = source();
+                  assertTrue(s.contains("private static volatile boolean workstationModeHookConfirmed;"));
+                  assertTrue(s.contains("Object laptopResult = HookUtil.invokeStatic("));
+                  assertTrue(s.contains("workstationMode = laptopResult instanceof Boolean && (Boolean) laptopResult;"));
+                  assertFalse(s.contains("workstationMode = (Boolean) HookUtil.invokeStatic("));
+              }
+
+              @Test public void laptopModeHookMarksStateAuthoritative() throws Exception {
+                  String s = source();
+                  int hook = s.indexOf("HookUtil.hookMethod(sm, \"onLaptopModeChanged\"");
+                  int setMode = s.indexOf("setWorkstationMode(entering);", hook);
+                  int confirmed = s.indexOf("workstationModeHookConfirmed = true;", hook);
+                  assertTrue(hook >= 0 && confirmed > hook && confirmed < setMode);
+              }
+
+              @Test public void startupRecheckFallsBackToDeviceConfig() throws Exception {
+                  String s = source();
+                  assertTrue(s.contains("new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() ->"));
+                  assertTrue(s.contains("if (workstationModeHookConfirmed) return;"));
+                  assertTrue(s.contains("Object recheck = HookUtil.invokeStatic("));
+                  assertTrue(s.contains("if (recheck == null)"));
+                  assertTrue(s.contains("\"com.miui.home.launcher.DeviceConfig\", \"isMingouLaptopPcModeEnabled\""));
+                  assertTrue(s.contains("if (actual != workstationMode) setWorkstationMode(actual);"));
+                  assertTrue(s.contains("}, 2000L);"));
+              }
+          }
+          EOF
+
+      - name: Verify RED before implementation
+        shell: bash
+        run: |
           set +e
-          git merge --no-commit --no-ff "$expected_head"
-          merge_status=$?
+          ./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.WorkstationModeDetectionContractTest --stacktrace
+          status=$?
           set -e
-          echo "native merge status=$merge_status"
-          git diff --name-only --diff-filter=U
+          test "$status" -ne 0 || { echo "Expected RED but contract already passed"; exit 3; }
+          echo "RED confirmed: workstation mode detection contract fails on baseline"
 
-          python3 /tmp/resolve_api101_merge.py
-          git add -A
+      - name: Apply minimal MainHook fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-          unresolved=$(git diff --name-only --diff-filter=U)
-          test -z "$unresolved" || { echo "unresolved conflicts:"; echo "$unresolved"; exit 3; }
-          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src/main src/test; then
-            echo "merge marker remains"
-            exit 4
-          fi
-          git diff --cached --check
-          git status --short
+          p = Path('src/main/java/com/hellovoid/liquiddock/MainHook.java')
+          s = p.read_text()
 
-      - run: chmod +x ./gradlew
+          def replace_once(old, new):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, found {count}: {old!r}')
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              '    private static volatile boolean workstationMode;\n'
+              '    private static boolean dockDragHooksInstalled;\n',
+              '    private static volatile boolean workstationMode;\n'
+              '    private static volatile boolean workstationModeHookConfirmed;\n'
+              '    private static boolean dockDragHooksInstalled;\n')
+
+          replace_once(
+              '            workstationMode = (Boolean) HookUtil.invokeStatic(\n'
+              '                    "com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");\n',
+              '            Object laptopResult = HookUtil.invokeStatic(\n'
+              '                    "com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");\n'
+              '            workstationMode = laptopResult instanceof Boolean && (Boolean) laptopResult;\n')
+
+          replace_once(
+              '                    chain -> {\n'
+              '                        boolean entering = (Boolean) chain.getArgs().get(0);\n'
+              '                        if (entering) backupNormalHomeLayout();\n',
+              '                    chain -> {\n'
+              '                        boolean entering = (Boolean) chain.getArgs().get(0);\n'
+              '                        workstationModeHookConfirmed = true;\n'
+              '                        if (entering) backupNormalHomeLayout();\n')
+
+          replace_once(
+              '            log("[DC] workstation guard uses LauncherModeController; active=" + workstationMode);\n',
+              '            log("[DC] workstation guard uses LauncherModeController; active=" + workstationMode);\n'
+              '            // isLaptopMode() may still be null while Launcher is binding. Re-check after\n'
+              '            // initialization unless onLaptopModeChanged already supplied authoritative state.\n'
+              '            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {\n'
+              '                if (workstationModeHookConfirmed) return;\n'
+              '                try {\n'
+              '                    Object recheck = HookUtil.invokeStatic(\n'
+              '                            "com.miui.home.launcher.allapps.LauncherModeController",\n'
+              '                            "isLaptopMode");\n'
+              '                    boolean actual = recheck instanceof Boolean && (Boolean) recheck;\n'
+              '                    if (recheck == null) {\n'
+              '                        try {\n'
+              '                            Object dcResult = HookUtil.invokeStatic(\n'
+              '                                    "com.miui.home.launcher.DeviceConfig",\n'
+              '                                    "isMingouLaptopPcModeEnabled");\n'
+              '                            actual = dcResult instanceof Boolean && (Boolean) dcResult;\n'
+              '                        } catch (Throwable ignored) {}\n'
+              '                    }\n'
+              '                    if (actual != workstationMode) setWorkstationMode(actual);\n'
+              '                } catch (Throwable ignored) {}\n'
+              '            }, 2000L);\n')
+
+          p.write_text(s)
+          PY
+          git diff --check
+
+      - name: Verify GREEN contract
+        run: ./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.WorkstationModeDetectionContractTest --stacktrace
+
       - name: Run full unit suite
         run: ./gradlew testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Create and verify dual-parent merge commit
+      - name: Commit only MainHook and update API101
         shell: bash
         run: |
           set -euo pipefail
-          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
-          expected_head=38d43ba6594373643a9982746854c4817d5e7568
-          test -f .git/MERGE_HEAD || { echo "MERGE_HEAD missing"; exit 5; }
-          test "$(cat .git/MERGE_HEAD)" = "$expected_head" || { echo "unexpected MERGE_HEAD"; exit 5; }
-          git commit -m "Merge test/capture-rebuild-8ee84ed into api101-migration"
-          parents=$(git show -s --format=%P HEAD)
-          echo "merge parents=$parents"
-          case " $parents " in *" $expected_base "*) ;; *) echo "base parent missing"; exit 6;; esac
-          case " $parents " in *" $expected_head "*) ;; *) echo "source parent missing"; exit 6;; esac
-          echo "MERGE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-
-      - name: Recheck target ref and push merge
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
+          expected_base=ea3a444161e0693dcdd9f53e6a7ebbcee050b936
+          rm src/test/java/com/hellovoid/liquiddock/WorkstationModeDetectionContractTest.java
+          git diff --check
+          changed=$(git diff --name-only)
+          echo "final changed files: $changed"
+          test "$changed" = "src/main/java/com/hellovoid/liquiddock/MainHook.java" || exit 4
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/MainHook.java
+          git commit -m "fix: stabilize workstation mode detection"
           git fetch origin api101-migration
-          actual_base=$(git rev-parse origin/api101-migration)
-          test "$actual_base" = "$expected_base" || { echo "api101 moved during validation: $actual_base"; exit 7; }
+          actual=$(git rev-parse origin/api101-migration)
+          test "$actual" = "$expected_base" || { echo "api101 moved during verification: $actual"; exit 5; }
           git push origin HEAD:api101-migration
+          echo "FIX_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-api101-merged-debug
+          name: LiquidDock-workstation-mode-fix-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
