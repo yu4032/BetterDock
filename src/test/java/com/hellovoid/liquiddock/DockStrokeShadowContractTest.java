@@ -31,8 +31,9 @@ public class DockStrokeShadowContractTest {
     @Test public void shadowUsesSharedStrokeGeometryWithoutIndependentView() throws IOException {
         String source = source();
         assertTrue(source.contains("drawStrokeShadow(canvas, s);"));
-        assertTrue(source.contains("buildShape(shadowOuter"));
-        assertTrue(source.contains("buildShape(shadowInner"));
+        assertTrue(source.contains("buildInterpolatedContour(shadowOuter"));
+        assertTrue(source.contains("buildInterpolatedContour(shadowInner"));
+        assertTrue(source.contains("buildShape(out, shadowRect"));
         assertTrue(source.contains("outerRect"));
         assertTrue(source.contains("innerRect"));
         assertFalse(source.contains("Path.Op."));
