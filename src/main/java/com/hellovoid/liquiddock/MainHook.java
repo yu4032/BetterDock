@@ -446,15 +446,37 @@ public class MainHook {
             Object paused = HookUtil.invoke(launcher, "isPause");
             Object visible = HookUtil.invoke(launcher, "isVisible");
             Object focused = HookUtil.invoke(launcher, "isWindowFocus");
-            if (paused instanceof Boolean && !((Boolean) paused)) {
+            int windowingMode = foregroundTaskWindowingMode(launcher);
+            if (paused instanceof Boolean) {
                 launcherLifecycleKnown = true;
-                launcherResumed = true;
+                launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                        !((Boolean) paused), windowingMode);
             }
             log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
                 + " resumed=" + launcherResumed + " paused=" + paused
-                + " visible=" + visible + " focus=" + focused);
+                + " visible=" + visible + " focus=" + focused
+                + " windowingMode=" + windowingMode);
         } catch (Throwable e) {
             log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+        }
+    }
+
+    /** Windowing mode of the current top task. HyperOS small windows are freeform tasks;
+     * they may pause / defocus Launcher while the Launcher surface remains the owning scene. */
+    private static int foregroundTaskWindowingMode(Object launcher) {
+        if (!(launcher instanceof Activity)) return -1;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager)
+                    ((Activity) launcher).getSystemService(Activity.ACTIVITY_SERVICE);
+            if (am == null) return -1;
+            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
+                    am.getRunningTasks(1);
+            if (tasks == null || tasks.isEmpty()) return -1;
+            Object mode = HookUtil.invoke(tasks.get(0), "getWindowingMode");
+            return mode instanceof Integer ? (Integer) mode : -1;
+        } catch (Throwable e) {
+            log("[DC] foreground task windowing mode unavailable: " + e);
+            return -1;
         }
     }
 
@@ -497,20 +519,24 @@ public class MainHook {
                             return r;
                         }
                         launcherLifecycleKnown = true;
-                        launcherResumed = hasFocus;
-                        log("[DC] liquid focus: " + hasFocus);
+                        int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
+                        boolean launcherOwnsScene = LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                                hasFocus, windowingMode);
+                        launcherResumed = launcherOwnsScene;
+                        log("[DC] liquid focus: " + hasFocus
+                                + " windowingMode=" + windowingMode
+                                + " launcherOwnsScene=" + launcherOwnsScene);
                         if (glass != null) {
-                            if (!hasFocus) {
-                                // Resolve the APP/layer before requesting the APP scene. Previously
-                                // setLauncherState() dirtied capture first, but the collapsed Dock
-                                // visibility gate blocked it and left the HOME wallpaper installed.
+                            if (!launcherOwnsScene) {
+                                // Resolve the APP/layer before requesting the APP scene. A fullscreen
+                                // task owns the backdrop; a freeform task does not demote Launcher.
                                 glass.onLauncherFocusLost();
                                 glass.refreshForegroundAppLayer();
                                 glass.setLauncherState(true, false);
                                 glass.prearmAppBackdrop("focus-loss");
                             } else {
                                 glass.setLauncherState(true, true);
-                                glass.onLauncherFocused();
+                                if (hasFocus) glass.onLauncherFocused();
                             }
                         }
                         return r;
@@ -606,14 +632,18 @@ public class MainHook {
                         });
                 HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0],
                         chain -> {
+                            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                             if (launcherClass.isInstance(chain.getThisObject())) {
                                 launcherLifecycleKnown = true;
-                                launcherResumed = false;
-                                log("[DC] liquid lifecycle fallback: onPause");
+                                int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
+                                launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                                        false, windowingMode);
+                                log("[DC] liquid lifecycle fallback: onPause windowingMode="
+                                        + windowingMode + " launcherOwnsScene=" + launcherResumed);
                                 DockLiquidGlassView g = liquidGlassView;
-                                if (g != null) g.setLauncherState(true, false);
+                                if (g != null) g.setLauncherState(true, launcherResumed);
                             }
-                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            return result;
                         });
             } catch (Throwable fallbackError) {
                 log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
