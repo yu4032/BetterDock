@@ -34,6 +34,7 @@ public class MainHook {
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
     private static volatile boolean workstationModeHookConfirmed;
+    private static volatile boolean workstationAllAppsOpen;
     private static boolean dockDragHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
@@ -513,9 +514,12 @@ public class MainHook {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
                         DockLiquidGlassView glass = liquidGlassView;
-                        // Stock laptop All Apps opens a focusable LauncherOverlayWindow named
-                        // "Laptop overlay". That focus transfer is still Launcher-owned and
-                        // must not be classified as an external APP scene.
+                        if (workstationMode && workstationAllAppsOpen) {
+                            log("[DC] liquid focus ignored while workstation All Apps overlay owns focus: "
+                                    + hasFocus);
+                            return r;
+                        }
+                        // Normal All Apps also owns Launcher focus while its overlay is active.
                         if (glass != null && glass.isAllAppsActive()) {
                             log("[DC] liquid focus ignored while stock All Apps overlay owns focus: " + hasFocus);
                             return r;
@@ -693,14 +697,22 @@ public class MainHook {
     // ── helpers ──────────────────────────────────────────────────────
 
     private static void installAllAppsCaptureHooks(ClassLoader cl) {
-        // Stock laptop/workstation All Apps lives in LauncherOverlayWindow("Laptop overlay")
-        // and calls enableFocus(true). Mark the launcher-owned scene BEFORE the original call
-        // so nested onWindowFocusChanged(false) cannot be mistaken for an external app.
+        // Workstation All Apps is UI-only for the Dock backdrop. The laptop overlay still
+        // owns Launcher focus while open, but it must never enter the Dock capture state.
         try {
             Class<?> laptop = Class.forName(
                     "com.miui.home.launcher.laptop.AllAppsController", false, cl);
             HookUtil.hookMethod(laptop, "showAllApps", new Class<?>[]{boolean.class},
                     chain -> {
+                        if (workstationMode) {
+                            workstationAllAppsOpen = true;
+                            try {
+                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            } catch (Throwable error) {
+                                workstationAllAppsOpen = false;
+                                throw error;
+                            }
+                        }
                         DockLiquidGlassView glass = liquidGlassView;
                         if (glass != null) glass.setAllAppsActive(
                                 true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
@@ -712,6 +724,13 @@ public class MainHook {
                     });
             HookUtil.hookMethod(laptop, "closeAllApps", new Class<?>[]{boolean.class},
                     chain -> {
+                        if (workstationMode) {
+                            try {
+                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            } finally {
+                                workstationAllAppsOpen = false;
+                            }
+                        }
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         DockLiquidGlassView glass = liquidGlassView;
                         if (glass != null) glass.setAllAppsActive(false, null);
@@ -731,6 +750,7 @@ public class MainHook {
                     "com.miui.home.launcher.LauncherState", false, cl);
             HookUtil.hookMethod(transition, "setState", new Class<?>[]{launcherState},
                     chain -> {
+                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
                         boolean entering = isStockAllAppsState(chain.getArgs().get(0));
                         DockLiquidGlassView glass = liquidGlassView;
                         if (entering && glass != null) glass.setAllAppsActive(
@@ -748,6 +768,7 @@ public class MainHook {
             HookUtil.hookMethod(transition, "setStateWithAnimation",
                     new Class<?>[]{launcherState, launcherState, builder, animationConfig},
                     chain -> {
+                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
                         // Official DEX: the second LauncherState is the destination whose
                         // getAllAppsVerticalProgress() drives this animation.
                         boolean entering = isStockAllAppsState(chain.getArgs().get(1));
@@ -1103,6 +1124,7 @@ public class MainHook {
 
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
+        if (!enabled) workstationAllAppsOpen = false;
         HomeGridHook.setWorkstationMode(enabled);
         WorkstationDockGeometryHook.onWorkstationModeChanged(enabled);
         log("[DC] Mingou workstation mode changed=" + enabled);
