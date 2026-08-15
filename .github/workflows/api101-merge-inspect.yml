@@ -1,30 +1,41 @@
-name: Inspect API101 merge conflicts
+name: Merge API101 safely
 
 on:
   push:
     branches: [ agent/api101-merge-helper ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  inspect:
+  merge:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
 
-      - name: Reproduce merge
-        id: merge
+      - name: Stage merge resolver outside target tree
+        run: cp tools/resolve_api101_merge.py /tmp/resolve_api101_merge.py
+
+      - name: Merge exact refs and resolve known conflicts
         shell: bash
         run: |
-          set -u
-          git fetch origin api101-migration test/capture-rebuild-8ee84ed
+          set -euo pipefail
           expected_base=6c48c21e84162dad2a055071330598cadd5f86db
           expected_head=38d43ba6594373643a9982746854c4817d5e7568
+          git fetch origin api101-migration test/capture-rebuild-8ee84ed
           actual_base=$(git rev-parse origin/api101-migration)
           actual_head=$(git rev-parse origin/test/capture-rebuild-8ee84ed)
           test "$actual_base" = "$expected_base" || { echo "api101 moved: $actual_base"; exit 2; }
-          test "$actual_head" = "$expected_head" || { echo "test branch moved: $actual_head"; exit 2; }
+          test "$actual_head" = "$expected_head" || { echo "source moved: $actual_head"; exit 2; }
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -32,30 +43,57 @@ jobs:
 
           set +e
           git merge --no-commit --no-ff "$expected_head"
-          status=$?
+          merge_status=$?
           set -e
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "native merge status=$merge_status"
+          git diff --name-only --diff-filter=U
 
-          mkdir -p /tmp/api101-merge-conflicts
-          git diff --name-only --diff-filter=U | tee /tmp/api101-merge-conflicts/CONFLICTS.txt
-          git status --short > /tmp/api101-merge-conflicts/STATUS.txt
+          python3 /tmp/resolve_api101_merge.py
+          git add -A
 
-          while IFS= read -r file; do
-            test -n "$file" || continue
-            mkdir -p "/tmp/api101-merge-conflicts/$(dirname "$file")"
-            cp "$file" "/tmp/api101-merge-conflicts/$file"
-            git show ":1:$file" > "/tmp/api101-merge-conflicts/$file.base" 2>/dev/null || true
-            git show ":2:$file" > "/tmp/api101-merge-conflicts/$file.ours" 2>/dev/null || true
-            git show ":3:$file" > "/tmp/api101-merge-conflicts/$file.theirs" 2>/dev/null || true
-          done < /tmp/api101-merge-conflicts/CONFLICTS.txt
+          unresolved=$(git diff --name-only --diff-filter=U)
+          test -z "$unresolved" || { echo "unresolved conflicts:"; echo "$unresolved"; exit 3; }
+          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src/main src/test; then
+            echo "merge marker remains"
+            exit 4
+          fi
+          git diff --cached --check
+          git status --short
+
+      - run: chmod +x ./gradlew
+      - name: Run full unit suite
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Create and verify dual-parent merge commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
+          expected_head=38d43ba6594373643a9982746854c4817d5e7568
+          test -f .git/MERGE_HEAD || { echo "MERGE_HEAD missing"; exit 5; }
+          test "$(cat .git/MERGE_HEAD)" = "$expected_head" || { echo "unexpected MERGE_HEAD"; exit 5; }
+          git commit -m "Merge test/capture-rebuild-8ee84ed into api101-migration"
+          parents=$(git show -s --format=%P HEAD)
+          echo "merge parents=$parents"
+          case " $parents " in *" $expected_base "*) ;; *) echo "base parent missing"; exit 6;; esac
+          case " $parents " in *" $expected_head "*) ;; *) echo "source parent missing"; exit 6;; esac
+          echo "MERGE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Recheck target ref and push merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
+          git fetch origin api101-migration
+          actual_base=$(git rev-parse origin/api101-migration)
+          test "$actual_base" = "$expected_base" || { echo "api101 moved during validation: $actual_base"; exit 7; }
+          git push origin HEAD:api101-migration
 
       - uses: actions/upload-artifact@v4
         with:
-          name: api101-merge-conflicts
-          path: /tmp/api101-merge-conflicts
+          name: LiquidDock-api101-merged-debug
+          path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 2
-
-      - name: Require explicit resolution
-        if: steps.merge.outputs.status != '0'
-        run: exit 1
+          retention-days: 7
