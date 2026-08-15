@@ -163,6 +163,9 @@ final class DockStrokeRenderer {
         final float squircleCp;
         final float radiusDeltaPx;
         final int color;
+        final boolean shadowEnabled;
+        final float shadowRadiusPx;
+        final int shadowAlpha;
 
         Style(boolean squircle,
               boolean fillDiff,
@@ -170,7 +173,10 @@ final class DockStrokeRenderer {
               float squircleOffsetPx,
               float squircleCp,
               float radiusDeltaPx,
-              int color) {
+              int color,
+              boolean shadowEnabled,
+              float shadowRadiusPx,
+              int shadowAlpha) {
             this.squircle = squircle;
             this.fillDiff = fillDiff;
             this.widthPx = widthPx;
@@ -178,6 +184,9 @@ final class DockStrokeRenderer {
             this.squircleCp = squircleCp;
             this.radiusDeltaPx = radiusDeltaPx;
             this.color = color;
+            this.shadowEnabled = shadowEnabled;
+            this.shadowRadiusPx = shadowRadiusPx;
+            this.shadowAlpha = shadowAlpha;
         }
 
         static Style from(LiquidDockConfig.Dock config, View host) {
@@ -219,7 +228,10 @@ final class DockStrokeRenderer {
                             effectiveAlpha,
                             config.strokeR,
                             config.strokeG,
-                            config.strokeB));
+                            config.strokeB),
+                    config.strokeShadow,
+                    Math.max(0f, config.strokeShadowRadius * dimensionScale),
+                    Math.max(0, Math.min(255, config.strokeShadowAlpha)));
         }
     }
 
@@ -228,11 +240,18 @@ final class DockStrokeRenderer {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path outer = new Path();
         private final Path inner = new Path();
+        private final Path shadowOuter = new Path();
+        private final Path shadowInner = new Path();
         private final RectF outerRect = new RectF();
         private final RectF innerRect = new RectF();
+        private final RectF shadowRect = new RectF();
 
         private Style style;
         private float radius;
+        private float geometryThickness;
+        private float outerRadius;
+        private float innerRadius;
+        private float innerCp;
         private boolean geometryDirty = true;
         private boolean geometryValid;
         private int drawableAlpha = 255;
@@ -282,6 +301,8 @@ final class DockStrokeRenderer {
 
             if (!ensureGeometry(s, bounds)) return;
 
+            drawStrokeShadow(canvas, s);
+
             int alpha = Math.round(
                     Color.alpha(s.color) * drawableAlpha / 255f);
             paint.setShader(null);
@@ -302,6 +323,64 @@ final class DockStrokeRenderer {
             canvas.restoreToCount(save);
         }
 
+
+        private void drawStrokeShadow(Canvas canvas, Style s) {
+            if (!s.shadowEnabled
+                    || s.shadowRadiusPx <= 0f
+                    || s.shadowAlpha <= 0
+                    || geometryThickness <= 0f) {
+                return;
+            }
+
+            // The historical stroke shadow faded inward from the outer contour. Keep that
+            // visual model, but clamp it to the current border ring so the Dock body remains
+            // geometrically excluded just like the foreground stroke.
+            float reach = Math.min(s.shadowRadiusPx, geometryThickness);
+            int steps = Math.max(1, Math.min(40, (int) Math.ceil(reach)));
+
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColorFilter(colorFilter);
+
+            for (int i = steps; i >= 1; i--) {
+                float outerDistance = reach * (i - 1f) / steps;
+                float innerDistance = reach * i / steps;
+                float outerT = Math.min(1f, outerDistance / geometryThickness);
+                float innerT = Math.min(1f, innerDistance / geometryThickness);
+
+                buildInterpolatedContour(shadowOuter, outerT, s);
+                buildInterpolatedContour(shadowInner, innerT, s);
+
+                float strength = 1f - (i - 1f) / steps;
+                int alpha = Math.round(
+                        s.shadowAlpha * strength * strength * drawableAlpha / 255f);
+                if (alpha <= 0) continue;
+                paint.setColor(Color.argb(alpha, 0, 0, 0));
+
+                int save = canvas.save();
+                canvas.clipPath(shadowOuter);
+                canvas.clipOutPath(shadowInner);
+                canvas.drawPath(shadowOuter, paint);
+                canvas.restoreToCount(save);
+            }
+        }
+
+        private void buildInterpolatedContour(Path out, float t, Style s) {
+            float clamped = Math.max(0f, Math.min(1f, t));
+            shadowRect.set(
+                    lerp(outerRect.left, innerRect.left, clamped),
+                    lerp(outerRect.top, innerRect.top, clamped),
+                    lerp(outerRect.right, innerRect.right, clamped),
+                    lerp(outerRect.bottom, innerRect.bottom, clamped));
+            float contourRadius = lerp(outerRadius, innerRadius, clamped);
+            float contourCp = lerp(s.squircleCp, innerCp, clamped);
+            out.rewind();
+            buildShape(out, shadowRect, contourRadius, s.squircle, contourCp);
+        }
+
+        private static float lerp(float start, float end, float t) {
+            return start + (end - start) * t;
+        }
 
         private boolean ensureGeometry(Style s, Rect bounds) {
             if (!geometryDirty) return geometryValid;
@@ -356,6 +435,11 @@ final class DockStrokeRenderer {
                     || innerRect.height() < height * MIN_INTERIOR_FRACTION) {
                 return false;
             }
+
+            geometryThickness = thickness;
+            this.outerRadius = outerRadius;
+            this.innerRadius = innerRadius;
+            this.innerCp = innerCp;
 
             outer.rewind();
             inner.rewind();
