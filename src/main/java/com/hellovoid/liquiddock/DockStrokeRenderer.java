@@ -381,6 +381,7 @@ final class DockStrokeRenderer {
         private static float lerp(float start, float end, float t) {
             return start + (end - start) * t;
         }
+
         private boolean ensureGeometry(Style s, Rect bounds) {
             if (!geometryDirty) return geometryValid;
             geometryDirty = false;
@@ -439,6 +440,7 @@ final class DockStrokeRenderer {
             this.outerRadius = outerRadius;
             this.innerRadius = innerRadius;
             this.innerCp = innerCp;
+
             outer.rewind();
             inner.rewind();
             buildShape(outer, outerRect, outerRadius, s.squircle, s.squircleCp);

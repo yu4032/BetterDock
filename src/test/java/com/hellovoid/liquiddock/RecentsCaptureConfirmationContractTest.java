@@ -17,7 +17,7 @@ public class RecentsCaptureConfirmationContractTest {
     @Test public void gestureTargetDoesNotClaimConfirmedOverview() throws Exception {
         String glass = source("DockLiquidGlassView.java");
         int start = glass.indexOf("void setGestureCaptureTarget(String target)");
-        int end = glass.indexOf("void setForegroundOwnership(ForegroundOwnership ownership)", start);
+        int end = glass.indexOf("/** Never render a HOME wallpaper frame", start);
         assertTrue(start >= 0 && end > start);
         String gestureMethod = glass.substring(start, end);
         assertFalse("gesture construction must remain prearm-only",
@@ -45,7 +45,7 @@ public class RecentsCaptureConfirmationContractTest {
         String startCapture = glass.substring(start, end);
         assertTrue(startCapture.contains("CaptureSourcePolicy.sourceFor("));
         assertTrue("runtime source selection must still pass confirmed Overview state explicitly",
-                startCapture.contains("requestScene, false, isRecentsVisible(), liveHomeBehindFreeform"));
+                startCapture.contains("requestScene, localCaptureSurface != null, isRecentsVisible(),"));
         assertTrue("freeform HOME live-capture flag must remain a separate source input",
                 startCapture.contains("liveHomeBehindFreeform"));
     }

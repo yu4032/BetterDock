@@ -18,9 +18,9 @@ public class WorkstationLiveBackdropContractTest {
                 StandardCharsets.UTF_8);
     }
 
-    private static String recentsHooksSource() throws IOException {
+    private static String mainHookSource() throws IOException {
         return Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/RecentsStateHooks.java"),
+                Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
                 StandardCharsets.UTF_8);
     }
 
@@ -53,10 +53,12 @@ public class WorkstationLiveBackdropContractTest {
     }
 
     @Test public void exactOverviewLifecycleIsForwardedInWorkstationMode() throws IOException {
-        String source = recentsHooksSource();
-        assertFalse("workstation must not suppress exact Overview callbacks",
-                source.contains("glass != null && !workstationModeProvider.getAsBoolean()"));
+        String source = mainHookSource();
+        assertFalse("workstation must not suppress exact Enter/ExitOverviewStateEvent callbacks",
+                source.contains("if (glass != null && !workstationMode)\n"
+                        + "                        glass.setOverviewActive(active, eventName);"));
         assertTrue("overview lifecycle must reach DockLiquidGlassView in every mode",
-                source.contains("if (glass != null) glass.setOverviewActive(active, eventName);"));
+                source.contains("if (glass != null)\n"
+                        + "                        glass.setOverviewActive(active, eventName);"));
     }
 }

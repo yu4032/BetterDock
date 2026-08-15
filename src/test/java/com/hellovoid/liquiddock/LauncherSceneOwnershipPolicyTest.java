@@ -13,23 +13,21 @@ public class LauncherSceneOwnershipPolicyTest {
     @Test public void freeformForegroundKeepsLauncherSceneWhenLifecyclePauses() {
         assertTrue(LauncherSceneOwnershipPolicy.launcherOwnsScene(false, 5));
     }
+
     @Test public void fullscreenForegroundStillMovesCaptureToApp() {
         assertFalse(LauncherSceneOwnershipPolicy.launcherOwnsScene(false, 1));
     }
+
     @Test public void resumedLauncherAlwaysOwnsItsScene() {
         assertTrue(LauncherSceneOwnershipPolicy.launcherOwnsScene(true, 1));
     }
-    @Test public void sceneControllerRoutesTaskWindowingModeThroughOwnershipPolicy()
+
+    @Test public void mainHookRoutesLifecycleOwnershipThroughWindowingModePolicy()
             throws IOException {
-        String resolver = Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/ForegroundTaskResolver.java"),
+        String source = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
                 StandardCharsets.UTF_8);
-        String controller = Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/LauncherSceneController.java"),
-                StandardCharsets.UTF_8);
-        assertTrue(resolver.contains("getWindowingMode"));
-        assertTrue(resolver.contains("LauncherSceneOwnershipPolicy.launcherOwnsScene"));
-        assertTrue(controller.contains("observation.windowingMode"));
-        assertTrue(controller.contains("LauncherSceneOwnershipPolicy.launcherOwnsScene"));
+        assertTrue(source.contains("foregroundTaskWindowingMode"));
+        assertTrue(source.contains("LauncherSceneOwnershipPolicy.launcherOwnsScene"));
     }
 }
