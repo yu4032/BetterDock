@@ -8,7 +8,6 @@ final class CaptureSceneState {
     private long revision;
     private boolean workstationSuspended;
     private boolean allAppsActive;
-    private boolean allAppsUsesHomeBackdrop;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
@@ -47,26 +46,11 @@ final class CaptureSceneState {
         return true;
     }
 
-    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow. It can make the
-     * main Launcher window lose focus without an external app taking the foreground.
-     * In workstation mode the All Apps UI remains observable, but it aliases HOME for
-     * Dock backdrop/capture semantics. */
-    void setAllAppsActive(boolean active, boolean useHomeBackdrop) {
-        boolean nextUsesHomeBackdrop = active && useHomeBackdrop;
-        if (allAppsActive == active && allAppsUsesHomeBackdrop == nextUsesHomeBackdrop) return;
+    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow.  It can make the
+     * main Launcher window lose focus without an external app taking the foreground. */
+    void setAllAppsActive(boolean active) {
+        if (allAppsActive == active) return;
         allAppsActive = active;
-        allAppsUsesHomeBackdrop = nextUsesHomeBackdrop;
-
-        if (useHomeBackdrop) {
-            // Opening/closing workstation All Apps is not a capture-scene transition.
-            // Preserve the current HOME backdrop and do not invalidate in-flight HOME frames.
-            if (active && desired == CaptureScene.ALL_APPS) {
-                desired = CaptureScene.HOME;
-                revision++;
-            }
-            return;
-        }
-
         revision++;
         if (active) {
             desired = CaptureScene.ALL_APPS;
@@ -81,9 +65,7 @@ final class CaptureSceneState {
                          boolean lifecycleKnown, boolean launcherResumed) {
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (recentsVisible) return CaptureScene.RECENTS;
-        if (allAppsActive) {
-            return allAppsUsesHomeBackdrop ? CaptureScene.HOME : CaptureScene.ALL_APPS;
-        }
+        if (allAppsActive) return CaptureScene.ALL_APPS;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
         return CaptureScene.APP;
     }
