@@ -2,7 +2,7 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ api101-migration, refactor/modular-architecture, test/capture-rebuild-8ee84ed ]
+    branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
 
 jobs:
