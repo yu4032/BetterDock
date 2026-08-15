@@ -1204,8 +1204,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     void onDockGestureMotion(int action, float rawY) {
+        onDockGestureMotion(action, rawY, false);
+    }
+
+    void onDockGestureMotion(int action, float rawY,
+                             boolean externalAppForegroundConfirmed) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(() -> onDockGestureMotion(action, rawY));
+            mainHandler.post(() -> onDockGestureMotion(
+                    action, rawY, externalAppForegroundConfirmed));
             return;
         }
         // Workstation has no swipe-to-Recents path; only Launcher.showOrHideRecent()
@@ -1220,7 +1226,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // cadence. If the Dock pull starts over an external app, keep the whole
             // pre-haptic interaction in the live APP/RECENTS domain until Launcher HOME
             // is authoritatively confirmed.
-            boolean externalAppInteraction = launcherLifecycleKnown && !launcherResumed
+            if (externalAppForegroundConfirmed) {
+                sceneState.setExternalAppForegroundConfirmed(externalAppForegroundConfirmed);
+            }
+            boolean externalAppInteraction = (externalAppForegroundConfirmed ||
+                    (launcherLifecycleKnown && !launcherResumed))
                     && !overviewActive && !sceneState.allAppsActive();
             sceneState.setExternalAppDockInteraction(externalAppInteraction);
             if (externalAppInteraction) {
@@ -1808,7 +1818,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private void armAppBackdropForGestureDown() {
         updateDesiredScene();
-        if (sceneState.desired() != CaptureScene.APP || launcherResumed
+        if (sceneState.desired() != CaptureScene.APP
                 || workstationMode || systemUiPanelExpanded || !isDisplayInteractive()) return;
         final int token = ++appBackdropPrearmToken;
         appBackdropPrearmActive = true;
@@ -1816,6 +1826,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         mainHandler.postDelayed(() -> {
             if (token == appBackdropPrearmToken) appBackdropPrearmActive = false;
         }, 350L);
+    }
+
+    /** A HOME transition is authoritative only after the controller confirms
+     * com.miui.home as the actual top task. Clear both external-app latches before the
+     * subsequent Launcher resumed state is applied. */
+    void onAuthoritativeHomeConfirmed() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::onAuthoritativeHomeConfirmed);
+            return;
+        }
+        sceneState.setExternalAppForegroundConfirmed(false);
+        sceneState.setExternalAppDockInteraction(false);
+        updateDesiredScene();
     }
 
     /** Launcher genuinely lost window focus (an app came to the front).  This is the

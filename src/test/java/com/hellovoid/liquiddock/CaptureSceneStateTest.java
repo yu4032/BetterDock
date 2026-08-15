@@ -15,6 +15,17 @@ public class CaptureSceneStateTest {
         }
     }
 
+    private static void setExternalAppForegroundConfirmed(CaptureSceneState state, boolean active) {
+        try {
+            state.getClass().getDeclaredMethod("setExternalAppForegroundConfirmed", boolean.class)
+                    .invoke(state, active);
+        } catch (NoSuchMethodException e) {
+            fail("CaptureSceneState must expose setExternalAppForegroundConfirmed(boolean)");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     @Test public void lifecycleAndRecentsResolveDeterministically() {
         CaptureSceneState state = new CaptureSceneState();
         assertEquals(CaptureScene.APP, state.resolve(1L, false, false, false));
@@ -27,8 +38,6 @@ public class CaptureSceneStateTest {
         state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
                 .invoke(state, true);
         assertEquals("ALL_APPS", state.desired().name());
-        // Official Laptop overlay enables focus when All Apps opens, so Launcher main focus
-        // may be false. That must not demote the scene to external APP.
         assertEquals("ALL_APPS", state.resolve(1L, false, true, false).name());
         state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
                 .invoke(state, false);
@@ -68,13 +77,31 @@ public class CaptureSceneStateTest {
                 CaptureSourcePolicy.sourceFor(state.resolve(2_000L, false, true, false)));
     }
 
-    @Test public void authoritativeHomeCanTakeOwnershipDuringExternalAppDockInteraction() {
+    @Test public void externalAppDockInteractionIgnoresStaleLauncherResumedUntilExplicitRelease() {
         CaptureSceneState state = new CaptureSceneState();
         setExternalAppDockInteraction(state, true);
 
-        assertEquals(CaptureScene.HOME, state.resolve(2_000L, false, true, true));
-        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
+        assertEquals(CaptureScene.APP, state.resolve(2_000L, false, true, true));
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
                 CaptureSourcePolicy.sourceFor(state.resolve(2_000L, false, true, true)));
+
+        setExternalAppDockInteraction(state, false);
+        assertEquals(CaptureScene.HOME, state.resolve(3_000L, false, true, true));
+    }
+
+    @Test public void confirmedExternalForegroundSurvivesGestureReleaseUntilHomeIsAuthoritative() {
+        CaptureSceneState state = new CaptureSceneState();
+        setExternalAppForegroundConfirmed(state, true);
+        setExternalAppDockInteraction(state, true);
+
+        assertEquals(CaptureScene.APP, state.resolve(2_000L, false, true, true));
+        setExternalAppDockInteraction(state, false);
+        assertEquals(CaptureScene.APP, state.resolve(3_000L, false, true, true));
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+                CaptureSourcePolicy.sourceFor(state.resolve(3_000L, false, true, true)));
+
+        setExternalAppForegroundConfirmed(state, false);
+        assertEquals(CaptureScene.HOME, state.resolve(4_000L, false, true, true));
     }
 
     @Test public void releasingExternalAppDockInteractionDoesNotReviveUnconfirmedHomeHint() {

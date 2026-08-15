@@ -597,12 +597,22 @@ public class MainHook {
         return null;
     }
 
+    private static boolean isExternalAppForeground(DockLiquidGlassView glass) {
+        LauncherSceneController controller = launcherSceneController;
+        return controller != null && glass != null
+                && controller.isExternalAppForeground(glass.getContext());
+    }
+
     private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
         try {
             if (dockRoot == null || dockRoot.getWidth() <= 0 || dockRoot.getHeight() <= 0) return;
             dockRoot.setOnTouchListener((v, ev) -> {
                 switch (ev.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN:
+                        glass.onDockTouchEvent();
+                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY(),
+                                isExternalAppForeground(glass));
+                        break;
                     case android.view.MotionEvent.ACTION_MOVE:
                         glass.onDockTouchEvent();
                         glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
@@ -623,6 +633,12 @@ public class MainHook {
             launcherRoot.setOnTouchListener((v, ev) -> {
                 switch (ev.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN:
+                        if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
+                            glass.onDockTouchEvent();
+                            glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY(),
+                                    isExternalAppForeground(glass));
+                        }
+                        break;
                     case android.view.MotionEvent.ACTION_MOVE:
                         if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
                             glass.onDockTouchEvent();

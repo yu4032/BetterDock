@@ -40,6 +40,22 @@ final class LauncherSceneController {
     boolean launcherResumed() { return launcherResumed; }
     boolean systemUiPanelExpanded() { return systemUiPanelExpanded; }
 
+    /**
+     * Foreground task ownership is stronger evidence than Launcher focus/lifecycle state.
+     * A positive external result also repairs a stale resumed hint immediately so later
+     * scene synchronization cannot reintroduce HOME while the app still owns foreground.
+     */
+    boolean isExternalAppForeground(Context context) {
+        String topPackage = foregroundTaskResolver.resolveTopPackage(context);
+        boolean external = topPackage != null && !"com.miui.home".equals(topPackage);
+        if (external) {
+            launcherLifecycleKnown = true;
+            launcherResumed = false;
+            logger.accept("[DC] foreground authority external pkg=" + topPackage);
+        }
+        return external;
+    }
+
     void seed(Object launcher) {
         if (launcher == null) return;
         try {
@@ -219,6 +235,7 @@ final class LauncherSceneController {
         launcherLifecycleKnown = true;
         launcherResumed = true;
         if (glass != null) {
+            glass.onAuthoritativeHomeConfirmed();
             glass.setLauncherState(true, true);
             glass.onLauncherFocused();
         }

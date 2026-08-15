@@ -8,6 +8,7 @@ final class CaptureSceneState {
     private long revision;
     private boolean workstationSuspended;
     private boolean allAppsActive;
+    private boolean externalAppForegroundConfirmed;
     private boolean externalAppDockInteraction;
 
     CaptureScene desired() { return desired; }
@@ -45,6 +46,21 @@ final class CaptureSceneState {
         gestureTarget = null;
         gestureTargetUntilNanos = 0L;
         return true;
+    }
+
+    /**
+     * Foreground-task ownership is stronger evidence than Launcher focus/lifecycle hints.
+     * Once a real external top task is observed, keep the scene in the live APP/RECENTS
+     * domain until an explicit authoritative HOME confirmation clears this latch.
+     */
+    void setExternalAppForegroundConfirmed(boolean active) {
+        if (externalAppForegroundConfirmed == active) return;
+        externalAppForegroundConfirmed = active;
+        if (active && gestureTarget == CaptureScene.HOME) {
+            gestureTarget = null;
+            gestureTargetUntilNanos = 0L;
+        }
+        revision++;
     }
 
     /**
@@ -91,11 +107,13 @@ final class CaptureSceneState {
         if (recentsVisible) return CaptureScene.RECENTS;
         if (allAppsActive) return CaptureScene.ALL_APPS;
 
+        if (externalAppForegroundConfirmed) {
+            if (gestureTarget == CaptureScene.RECENTS
+                    && nowNanos < gestureTargetUntilNanos) return CaptureScene.RECENTS;
+            return CaptureScene.APP;
+        }
+
         if (externalAppDockInteraction) {
-            // A real HOME foreground transition may take ownership even before the finger is
-            // released. Otherwise keep this Dock pull in the live source domain. RECENTS is
-            // allowed because it uses the same FULL_DISPLAY source as APP.
-            if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
             if (gestureTarget == CaptureScene.RECENTS
                     && nowNanos < gestureTargetUntilNanos) return CaptureScene.RECENTS;
             return CaptureScene.APP;
@@ -117,6 +135,7 @@ final class CaptureSceneState {
                                      boolean launcherResumed) {
         workstationSuspended = enabled;
         gestureTarget = null;
+        externalAppForegroundConfirmed = false;
         externalAppDockInteraction = false;
         revision++;
         desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
