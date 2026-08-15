@@ -27,4 +27,13 @@ final class CaptureSourcePolicy {
         // compatibility with the 8ee84ed baseline but does not grant live capture authority.
         return Source.WALLPAPER;
     }
+
+    /** Workstation All Apps/Recents are live Launcher scenes. */
+    static Source sourceForWorkstationScene(CaptureScene scene, boolean localLayerAvailable) {
+        if (scene == CaptureScene.ALL_APPS || scene == CaptureScene.RECENTS) {
+            return localLayerAvailable ? Source.LOCAL_LAYER : Source.FULL_DISPLAY;
+        }
+        // Outside the two workstation-owned live scenes, keep the existing wallpaper baseline.
+        return Source.WALLPAPER;
+    }
 }
