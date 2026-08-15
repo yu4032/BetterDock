@@ -1,20 +1,30 @@
 package com.hellovoid.liquiddock;
 
-/** Chooses a backdrop source without ever full-display-capturing launcher-owned scenes. */
+/** Chooses a backdrop source while keeping speculative Launcher transitions wallpaper-backed. */
 final class CaptureSourcePolicy {
     enum Source { WALLPAPER, FULL_DISPLAY, LOCAL_LAYER }
 
     private CaptureSourcePolicy() {}
 
+    /** Legacy/baseline selector: RECENTS is unconfirmed and therefore remains wallpaper-backed. */
     static Source sourceFor(CaptureScene scene, boolean localLayerAvailable) {
+        return sourceFor(scene, localLayerAvailable, false);
+    }
+
+    /**
+     * RECENTS becomes a live full-display source only after the exact Overview lifecycle
+     * confirms entry. Haptic/distance/gesture prearm can select the RECENTS scene, but must
+     * pass recentsLiveConfirmed=false and therefore stay on the safe wallpaper path.
+     */
+    static Source sourceFor(CaptureScene scene, boolean localLayerAvailable,
+                            boolean recentsLiveConfirmed) {
         if (scene == null || scene == CaptureScene.HOME) return Source.WALLPAPER;
         if (scene == CaptureScene.APP) return Source.FULL_DISPLAY;
-        // Stock Launcher keeps its Dock backdrop wallpaper-only in Launcher-owned scenes.
-        // In particular, laptop All Apps renders a blurred wallpaper inside a separate
-        // translucent LauncherOverlayWindow. Capturing that ViewRoot layer in isolation can
-        // turn uncovered/transparent pixels black and then poison the persistent backdrop.
-        // RECENTS and ALL_APPS therefore follow the stock wallpaper path regardless of whether
-        // a local Launcher SurfaceControl happens to be available.
+        if (scene == CaptureScene.RECENTS) {
+            return recentsLiveConfirmed ? Source.FULL_DISPLAY : Source.WALLPAPER;
+        }
+        // All Apps stays wallpaper-backed. localLayerAvailable is retained for source/API
+        // compatibility with the 8ee84ed baseline but does not grant live capture authority.
         return Source.WALLPAPER;
     }
 }
