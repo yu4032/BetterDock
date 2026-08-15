@@ -84,9 +84,8 @@ public class CaptureSourcePolicyTest {
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", true, true));
     }
 
-    @Test public void workstationAllAppsUsesHomeWallpaperPolicy() throws Exception {
-        assertEquals("WALLPAPER", workstationSourceFor("ALL_APPS", true));
-        assertEquals("WALLPAPER", workstationSourceFor("ALL_APPS", false));
+    @Test public void workstationAllAppsPrefersLocalLayer() throws Exception {
+        assertEquals("LOCAL_LAYER", workstationSourceFor("ALL_APPS", true));
     }
 
     @Test public void workstationRecentsAlwaysUsesFullDisplayComposition() throws Exception {
@@ -94,7 +93,11 @@ public class CaptureSourcePolicyTest {
         assertEquals("FULL_DISPLAY", workstationSourceFor("RECENTS", false));
     }
 
-    @Test public void workstationNonRecentsScenesStayWallpaperBacked() throws Exception {
+    @Test public void workstationAllAppsFallsBackToFullDisplay() throws Exception {
+        assertEquals("FULL_DISPLAY", workstationSourceFor("ALL_APPS", false));
+    }
+
+    @Test public void workstationNonLauncherScenesStayWallpaperBacked() throws Exception {
         assertEquals("WALLPAPER", workstationSourceFor("APP", true));
         assertEquals("WALLPAPER", workstationSourceFor("HOME", true));
     }
