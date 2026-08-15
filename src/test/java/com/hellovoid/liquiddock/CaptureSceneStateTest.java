@@ -24,6 +24,19 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureScene.APP, state.resolve(2L, false, true, false));
     }
 
+    @Test public void confirmedLauncherStateOutranksAndClearsStaleGesturePrearm() {
+        CaptureSceneState state = new CaptureSceneState();
+
+        state.setGestureTarget("APP", 1_000L);
+        state.setAllAppsActive(true);
+        assertEquals(CaptureScene.ALL_APPS, state.resolve(2_000L, false, true, false));
+        state.setAllAppsActive(false);
+        assertEquals(CaptureScene.HOME, state.resolve(2_500L, false, true, true));
+
+        state.setGestureTarget("HOME", 3_000L);
+        assertEquals(CaptureScene.RECENTS, state.resolve(4_000L, true, true, true));
+    }
+
     @Test public void gestureTargetExpiresAndCanBeInterrupted() {
         CaptureSceneState state = new CaptureSceneState();
         state.setGestureTarget("RECENTS", 1_000L);

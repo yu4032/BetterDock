@@ -46,11 +46,6 @@ final class LiveScreenCapture {
     // There is no onCaptureComplete method on this build, so the async listener is built
     // from that constructor instead of a dynamic Proxy.
     private final Constructor<?> asyncListenerConstructor;
-    private final Constructor<?> layerCaptureBuilderConstructor;
-    private final Method layerSetSourceCrop;
-    private final Method layerSetFrameScale;
-    private final Method layerBuild;
-    private final Method captureLayers;
 
     private final Method launcherCaptureWallpaperBitmap;
     private final String[] wallpaperLayerNames;
@@ -124,29 +119,6 @@ final class LiveScreenCapture {
         capture.setAccessible(true);
         captureDisplay = capture;
 
-        Constructor<?> layerCtor = null;
-        Method layerCrop = null, layerScale = null, layerBuildMethod = null, layerCapture = null;
-        try {
-            Class<?> layerArgsClass = Class.forName(
-                    "android.window.ScreenCapture$LayerCaptureArgs");
-            Class<?> layerBuilderClass = Class.forName(
-                    "android.window.ScreenCapture$LayerCaptureArgs$Builder");
-            layerCtor = layerBuilderClass.getDeclaredConstructor(android.view.SurfaceControl.class);
-            layerCtor.setAccessible(true);
-            layerCrop = layerBuilderClass.getMethod("setSourceCrop", Rect.class);
-            layerScale = layerBuilderClass.getMethod("setFrameScale", float.class, float.class);
-            layerBuildMethod = layerBuilderClass.getMethod("build");
-            layerCapture = screenCaptureClass.getMethod(
-                    "captureLayers", layerArgsClass, listenerClass);
-            layerCapture.setAccessible(true);
-        } catch (Throwable error) {
-            Log.w(TAG, "ScreenCapture.captureLayers unavailable; launcher scenes use wallpaper fallback", error);
-        }
-        layerCaptureBuilderConstructor = layerCtor;
-        layerSetSourceCrop = layerCrop;
-        layerSetFrameScale = layerScale;
-        layerBuild = layerBuildMethod;
-        captureLayers = layerCapture;
 
         Method launcherCapture = null;
         String[] names = null;
@@ -372,45 +344,6 @@ final class LiveScreenCapture {
         }
     }
 
-    /** Capture one local Launcher-owned ViewRoot layer; Floating Dock is a separate Surface. */
-    boolean captureLayerAsync(Rect sourceCrop, float scale,
-                              android.view.SurfaceControl layer, CaptureCallback callback) {
-        if (layer == null || callback == null || asyncListenerConstructor == null
-                || layerCaptureBuilderConstructor == null || captureLayers == null) return false;
-        try {
-            Object builder = layerCaptureBuilderConstructor.newInstance(layer);
-            layerSetSourceCrop.invoke(builder, new Rect(sourceCrop));
-            layerSetFrameScale.invoke(builder, scale, scale);
-            Object args = layerBuild.invoke(builder);
-            Object listener = asyncListenerConstructor.newInstance(
-                    (java.util.function.ObjIntConsumer<Object>) (buffer, status) -> {
-                        Object hardwareBuffer = null;
-                        try {
-                            if (buffer == null) {
-                                callback.onError(new RuntimeException(
-                                        "layer capture: null buffer status=" + status));
-                                return;
-                            }
-                            Object bitmap = asBitmap.invoke(buffer);
-                            if (bitmap instanceof Bitmap) callback.onResult((Bitmap) bitmap);
-                            else callback.onError(new RuntimeException(
-                                    "layer capture: asBitmap returned non-Bitmap"));
-                            try { hardwareBuffer = getHardwareBuffer.invoke(buffer); }
-                            catch (Throwable ignored) {}
-                        } catch (Throwable error) {
-                            callback.onError(error);
-                        } finally {
-                            closeHardwareBuffer(hardwareBuffer);
-                        }
-                    });
-            captureLayers.invoke(null, args, listener);
-            logI("async launcher-layer capture submitted crop=" + sourceCrop + " scale=" + scale);
-            return true;
-        } catch (Throwable error) {
-            Log.w(TAG, "launcher-layer capture submit failed", error);
-            return false;
-        }
-    }
 
     /** Wallpaper-selector semantics (vendor captureMode 2), with compositor-side crop/scale added. */
     private Bitmap captureVendorWallpaperStrip(Rect sourceCrop, float scale, int displayId)

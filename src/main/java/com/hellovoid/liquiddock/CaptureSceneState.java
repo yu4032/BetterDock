@@ -46,13 +46,16 @@ final class CaptureSceneState {
         return true;
     }
 
-    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow.  It can make the
-     * main Launcher window lose focus without an external app taking the foreground. */
+    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow. It can make the
+     * main Launcher window lose focus without an external app taking the foreground. A
+     * confirmed drawer open also invalidates any older gesture prearm. */
     void setAllAppsActive(boolean active) {
         if (allAppsActive == active) return;
         allAppsActive = active;
         revision++;
         if (active) {
+            gestureTarget = null;
+            gestureTargetUntilNanos = 0L;
             desired = CaptureScene.ALL_APPS;
         } else if (desired == CaptureScene.ALL_APPS) {
             // The owning DockLiquidGlassView immediately refreshes against real launcher
@@ -63,9 +66,11 @@ final class CaptureSceneState {
 
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
-        if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
+        // Confirmed stock Launcher state outranks bounded gesture prearm. Gesture events exist
+        // only to cover the first transition frame before these authoritative callbacks land.
         if (recentsVisible) return CaptureScene.RECENTS;
         if (allAppsActive) return CaptureScene.ALL_APPS;
+        if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
         return CaptureScene.APP;
     }

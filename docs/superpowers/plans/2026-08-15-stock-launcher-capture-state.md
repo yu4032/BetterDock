@@ -2,18 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace inferred launcher-owned layer capture/state heuristics with the verified HyperOS Launcher wallpaper and Dock-state paths.
+**Goal:** Replace inferred launcher-owned layer capture/state heuristics with verified HyperOS Launcher state callbacks while preserving live Recents card capture.
 
-**Architecture:** Launcher-owned scenes (HOME, ALL_APPS, RECENTS) share one wallpaper capture path; only external APP uses full-display capture. Drawer and Recents stock callbacks become state authority while gestures/transitions only prearm. Transition barriers prevent an installed APP frame from surviving into a Launcher-owned scene.
+**Architecture:** HOME/ALL_APPS use wallpaper capture; APP/RECENTS use full-display capture below the Floating Dock. Drawer and Recents stock callbacks become state authority while gesture/haptic/transitions prearm first frames. Transition barriers operate only when the capture-source domain changes.
 
 **Tech Stack:** Java 17, Android API 37, libxposed API 101, JUnit 4, GitHub Actions/Gradle.
 
 ## Global Constraints
 
-- Keep external APP full-display capture behavior and Floating Dock exclusion intact.
-- Do not reintroduce Launcher ViewRoot/layer capture for HOME, ALL_APPS, or RECENTS.
+- Preserve external APP full-display capture and Floating Dock exclusion.
+- Preserve Recents full-display mode-1 live capture, including vibration/haptic prearm.
+- Do not use Launcher ViewRoot/layer capture for All Apps or Recents.
 - Do not depend on Mingou workstation APIs.
-- Preserve workstation current API: `LauncherModeController.isLaptopMode()` and `LaptopStateManager.onLaptopModeChanged(boolean)`.
+- Preserve `LauncherModeController.isLaptopMode()` and `LaptopStateManager.onLaptopModeChanged(boolean)`.
 - CI must run `testDebugUnitTest` and `assembleDebug` before publication.
 - Device-side visual correctness is not claimed by CI alone.
 
@@ -28,28 +29,29 @@
 - Modify: `src/test/java/com/hellovoid/liquiddock/CaptureSourcePolicyTest.java`
 - Create: `src/test/java/com/hellovoid/liquiddock/StockLauncherCaptureContractTest.java`
 
-**Interfaces:** `CaptureSourcePolicy.sourceFor(CaptureScene)` returns only `WALLPAPER` or `FULL_DISPLAY`; `LiveScreenCapture` exposes no layer-capture API.
+**Interfaces:** `CaptureSourcePolicy.sourceFor(CaptureScene)` returns only `WALLPAPER` or `FULL_DISPLAY`: HOME/ALL_APPS -> WALLPAPER; APP/RECENTS -> FULL_DISPLAY. `LiveScreenCapture` exposes no local-layer capture API.
 
-- [ ] Write failing tests requiring only the two sources and absence of `LOCAL_LAYER`, `captureLayers`, `LayerCaptureArgs`, `captureLayerAsync`, `resolveLauncherOwnedCaptureSurface`, `resolveViewRootSurfaceControl`, and `allAppsCaptureRoot`.
-- [ ] Run targeted tests and verify they fail for the old structure.
-- [ ] Remove the local-layer path and change policy to APP -> FULL_DISPLAY, all other scenes -> WALLPAPER.
-- [ ] Run targeted tests and verify they pass.
+- [ ] Write failing tests requiring the two-source mapping and absence of `LOCAL_LAYER`, `captureLayers`, `LayerCaptureArgs`, `captureLayerAsync`, `resolveLauncherOwnedCaptureSurface`, `resolveViewRootSurfaceControl`, and `allAppsCaptureRoot`.
+- [ ] Run tests and verify RED.
+- [ ] Remove the local-layer path; restore Recents full-display mode-1 capture with Dock/drag exclusion while keeping All Apps wallpaper-only.
+- [ ] Run targeted tests and verify GREEN.
 
-### Task 2: Make stock Drawer/Recents callbacks authoritative
+### Task 2: Make stock Drawer/Recents callbacks authoritative without weakening prearm
 
 **Files:**
 - Modify: `src/main/java/com/hellovoid/liquiddock/MainHook.java`
 - Modify: `src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java`
 - Modify: `src/test/java/com/hellovoid/liquiddock/StockLauncherCaptureContractTest.java`
 
-**Interfaces:** `setAllAppsActive(boolean)` carries state only; stock DrawerStatusService and DockStateManager callback methods drive authoritative open/close state; gestures/transitions remain prearm/fallback signals.
+**Interfaces:** `setAllAppsActive(boolean)` carries state only. Stock DrawerStatusService and DockStateManager callbacks drive authoritative open/close state. Existing gesture/haptic Recents boundaries remain early prearm and force an immediate full-display request.
 
-- [ ] Extend source-contract tests for DrawerStatusService `dispatchDrawerOpen/Close` and Dock v3 Recents `onEnterRecent/onExitRecent/onRecentViewShow/onRecentViewHide/onRecentViewAnimationComplete` hooks.
+- [ ] Extend source-contract tests for DrawerStatusService `dispatchDrawerOpen/Close/Progress`, Dock v3 Recents `onEnterRecent/onExitRecent/onRecentViewShow/onRecentViewHide/onRecentViewAnimationComplete`, and retained `onRecentsHapticTrigger`/`prearmRecentsCapture` flow.
 - [ ] Run tests and verify RED.
-- [ ] Implement those hooks and remove capture-root plumbing.
+- [ ] Implement authoritative hooks and remove All Apps capture-root plumbing.
+- [ ] Keep haptic/gesture prearm but stop treating event construction as final state authority when stock callbacks are installed.
 - [ ] Run tests and verify GREEN.
 
-### Task 3: Add symmetric backdrop barriers and focus precedence
+### Task 3: Add source-domain backdrop barriers and focus precedence
 
 **Files:**
 - Create: `src/main/java/com/hellovoid/liquiddock/BackdropTransitionPolicy.java`
@@ -57,12 +59,13 @@
 - Modify: `src/main/java/com/hellovoid/liquiddock/MainHook.java`
 - Modify: `src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java`
 
-**Interfaces:** `BackdropTransitionPolicy.shouldDropInstalled(installed, target)` returns true across APP <-> Launcher-owned boundaries.
+**Interfaces:** `BackdropTransitionPolicy.shouldDropInstalled(installed, target)` is true only when `CaptureSourcePolicy.sourceFor(installed) != CaptureSourcePolicy.sourceFor(target)`.
 
-- [ ] Write failing policy tests for APP -> HOME/ALL_APPS/RECENTS and launcher-owned -> APP.
+- [ ] Write failing tests for wallpaper <-> live source changes and same-domain continuity (`APP <-> RECENTS`, `HOME <-> ALL_APPS`).
 - [ ] Run tests and verify RED.
-- [ ] On APP -> Launcher-owned, immediately use a valid current-orientation wallpaper cache when available, otherwise drop the stale APP frame and restore native background until a fresh mode-2 frame arrives.
-- [ ] Make Launcher focus classify HOME/APP only when All Apps/Recents is not active.
+- [ ] For live -> wallpaper, install valid current-orientation wallpaper cache immediately when possible, otherwise restore native background until a fresh mode-2 frame arrives.
+- [ ] For wallpaper -> live, drop stale wallpaper and use existing APP/Recents prearm to request mode-1 immediately.
+- [ ] Make Launcher focus classify HOME/APP only when neither All Apps nor Recents is active.
 - [ ] Run targeted tests and verify GREEN.
 
 ### Task 4: Remove obsolete workstation fallback and verify

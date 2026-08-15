@@ -34,6 +34,7 @@ public class MainHook {
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
     private static boolean dockDragHooksInstalled;
+    private static boolean drawerStatusHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
@@ -495,8 +496,10 @@ public class MainHook {
                         // Stock laptop All Apps opens a focusable LauncherOverlayWindow named
                         // "Laptop overlay". That focus transfer is still Launcher-owned and
                         // must not be classified as an external APP scene.
-                        if (glass != null && glass.isAllAppsActive()) {
-                            log("[DC] liquid focus ignored while stock All Apps overlay owns focus: " + hasFocus);
+                        if (glass != null
+                                && (glass.isAllAppsActive() || glass.isOverviewActive())) {
+                            log("[DC] liquid focus ignored while Launcher-owned scene is active: "
+                                    + hasFocus);
                             return r;
                         }
                         launcherLifecycleKnown = true;
@@ -524,8 +527,12 @@ public class MainHook {
         hookDockGestureTarget(cl, "GestureToHome", "HOME");
         hookDockGestureTarget(cl, "GestureToApp", "APP");
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
-        hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
-        hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
+        boolean stockRecentsState = installStockRecentsStateHooks(cl);
+        if (!stockRecentsState) {
+            hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
+            hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
+        }
+        installDrawerStatusHooks(cl);
         installAllAppsCaptureHooks(cl);
 
         // Workstation Recents is entered from the dedicated Dock button. The system DEX
@@ -664,37 +671,34 @@ public class MainHook {
     // ── helpers ──────────────────────────────────────────────────────
 
     private static void installAllAppsCaptureHooks(ClassLoader cl) {
-        // Stock laptop/workstation All Apps lives in LauncherOverlayWindow("Laptop overlay")
-        // and calls enableFocus(true). Mark the launcher-owned scene BEFORE the original call
-        // so nested onWindowFocusChanged(false) cannot be mistaken for an external app.
+        // Laptop All Apps owns focus via LauncherOverlayWindow. Prearm before the original
+        // show call so its focus transfer cannot be mistaken for an external APP.
         try {
             Class<?> laptop = Class.forName(
                     "com.miui.home.launcher.laptop.AllAppsController", false, cl);
             HookUtil.hookMethod(laptop, "showAllApps", new Class<?>[]{boolean.class},
                     chain -> {
                         DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(
-                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
+                        if (glass != null) glass.setAllAppsActive(true);
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(
-                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
+                        if (glass != null) glass.setAllAppsActive(true);
                         return result;
                     });
             HookUtil.hookMethod(laptop, "closeAllApps", new Class<?>[]{boolean.class},
                     chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(false, null);
+                        if (glass != null) glass.setAllAppsActive(false);
                         return result;
                     });
-            log("[DC] stock laptop All Apps capture state hooked");
+            log("[DC] stock laptop All Apps state hooked");
         } catch (Throwable e) {
-            log("[DC] stock laptop All Apps capture hook unavailable: " + e);
+            log("[DC] stock laptop All Apps hook unavailable: " + e);
         }
 
-        // Normal All Apps stays in the Launcher main window. Its transition controller gives
-        // us the target LauncherState early enough to prevent a first-frame display capture.
+        // Normal All Apps transition methods are early prearm/fallback boundaries. When
+        // DrawerStatusService is available it owns the final close state.
         try {
             Class<?> transition = Class.forName(
                     "com.miui.home.launcher.allapps.AllAppsTransitionController", false, cl);
@@ -704,12 +708,11 @@ public class MainHook {
                     chain -> {
                         boolean entering = isStockAllAppsState(chain.getArgs().get(0));
                         DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(
-                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
+                        if (entering && glass != null) glass.setAllAppsActive(true);
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(entering,
-                                entering ? resolveNormalAllAppsCaptureRoot(chain.getThisObject()) : null);
+                        if (glass != null && (entering || !drawerStatusHooksInstalled))
+                            glass.setAllAppsActive(entering);
                         return result;
                     });
             Class<?> builder = Class.forName(
@@ -719,20 +722,18 @@ public class MainHook {
             HookUtil.hookMethod(transition, "setStateWithAnimation",
                     new Class<?>[]{launcherState, launcherState, builder, animationConfig},
                     chain -> {
-                        // Official DEX: the second LauncherState is the destination whose
-                        // getAllAppsVerticalProgress() drives this animation.
                         boolean entering = isStockAllAppsState(chain.getArgs().get(1));
                         DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(
-                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
+                        if (entering && glass != null) glass.setAllAppsActive(true);
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         glass = liquidGlassView;
-                        if (glass != null && !entering) glass.setAllAppsActive(false, null);
+                        if (glass != null && !entering && !drawerStatusHooksInstalled)
+                            glass.setAllAppsActive(false);
                         return result;
                     });
-            log("[DC] stock normal All Apps capture state hooked");
+            log("[DC] stock normal All Apps transition fallback hooked");
         } catch (Throwable e) {
-            log("[DC] stock normal All Apps capture hook unavailable: " + e);
+            log("[DC] stock normal All Apps transition hook unavailable: " + e);
         }
     }
 
@@ -741,24 +742,101 @@ public class MainHook {
                 .equals(state.getClass().getName());
     }
 
-    private static View resolveLaptopAllAppsCaptureRoot(Object controller) {
+    private static void installDrawerStatusHooks(ClassLoader cl) {
+        boolean installed = false;
         try {
-            Object dragLayer = HookUtil.invoke(controller, "getDragLayer");
-            if (dragLayer instanceof View) return (View) dragLayer;
-        } catch (Throwable ignored) {}
-        try {
-            Object dragLayer = HookUtil.getField(controller, "mDragLayer");
-            if (dragLayer instanceof View) return (View) dragLayer;
-        } catch (Throwable ignored) {}
-        return null;
+            Class<?> drawer = Class.forName(
+                    "com.miui.home.launcher.dock.v3.dependencies.DrawerStatusServiceImpl",
+                    false, cl);
+            HookUtil.hookMethod(drawer, "dispatchDrawerOpen", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(true);
+                        return result;
+                    });
+            HookUtil.hookMethod(drawer, "dispatchDrawerClose", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setAllAppsActive(false);
+                        return result;
+                    });
+            HookUtil.hookMethod(drawer, "dispatchDrawerProgress", new Class<?>[]{float.class},
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.requestCapture("drawer-progress");
+                        return result;
+                    });
+            installed = true;
+            log("[DC] stock DrawerStatusService state hooked");
+        } catch (Throwable e) {
+            log("[DC] stock DrawerStatusService hook unavailable: " + e);
+        }
+        drawerStatusHooksInstalled = installed;
     }
 
-    private static View resolveNormalAllAppsCaptureRoot(Object controller) {
+    private static boolean installStockRecentsStateHooks(ClassLoader cl) {
+        boolean mainObserverHooked = false;
+        boolean recentsListenerHooked = false;
         try {
-            Object appsView = HookUtil.getField(controller, "mAppsView");
-            if (appsView instanceof View) return (View) appsView;
-        } catch (Throwable ignored) {}
-        return null;
+            Class<?> observer = Class.forName(
+                    "com.miui.home.launcher.dock.v3.state.DockStateManager$mainStateObserver$1",
+                    false, cl);
+            Class<?> recentParam = Class.forName(
+                    "com.miui.home.launcher.dock.v3.state.partial.RecentParam", false, cl);
+            HookUtil.hookMethod(observer, "onEnterRecent", new Class<?>[]{recentParam},
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setOverviewActive(true, "stock-main-enter");
+                        return result;
+                    });
+            HookUtil.hookMethod(observer, "onExitRecent", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setOverviewActive(false, "stock-main-exit");
+                        return result;
+                    });
+            mainObserverHooked = true;
+        } catch (Throwable e) {
+            log("[DC] stock Recents main observer hook unavailable: " + e);
+        }
+        try {
+            Class<?> listener = Class.forName(
+                    "com.miui.home.launcher.dock.v3.state.DockStateManager$recentsListener$1",
+                    false, cl);
+            HookUtil.hookMethod(listener, "onRecentViewShow", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setOverviewActive(true, "stock-view-show");
+                        return result;
+                    });
+            HookUtil.hookMethod(listener, "onRecentViewHide", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.setOverviewActive(false, "stock-view-hide");
+                        return result;
+                    });
+            HookUtil.hookMethod(listener, "onRecentViewAnimationComplete", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        DockLiquidGlassView glass = liquidGlassView;
+                        if (glass != null) glass.requestCapture("stock-recents-animation-complete");
+                        return result;
+                    });
+            recentsListenerHooked = true;
+        } catch (Throwable e) {
+            log("[DC] stock Recents listener hook unavailable: " + e);
+        }
+        boolean installed = mainObserverHooked && recentsListenerHooked;
+        log("[DC] stock Recents authority=" + installed
+                + " main=" + mainObserverHooked + " listener=" + recentsListenerHooked);
+        return installed;
     }
 
     private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
@@ -1019,11 +1097,12 @@ public class MainHook {
     }
 
     private static void installWorkstationModeGuard(ClassLoader cl) {
-        boolean detected = false;
         try {
-            Class<?> mc = Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
-            workstationMode = (Boolean) HookUtil.invokeStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
-            Class<?> sm = Class.forName("com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
+            Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
+            workstationMode = (Boolean) HookUtil.invokeStatic(
+                    "com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+            Class<?> sm = Class.forName(
+                    "com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
             HookUtil.hookMethod(sm, "onLaptopModeChanged", new Class<?>[]{boolean.class},
                     chain -> {
                         boolean entering = (Boolean) chain.getArgs().get(0);
@@ -1034,34 +1113,17 @@ public class MainHook {
                         HomeGridHook.scheduleAllPageRefresh();
                         return r;
                     });
-            detected = true;
             log("[DC] workstation guard uses LauncherModeController; active=" + workstationMode);
         } catch (Throwable currentApiError) {
-            log("[DC] current workstation API unavailable: " + currentApiError);
-        }
-        if (!detected) try {
-            Class<?> dc = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
-            workstationMode = (Boolean) HookUtil.invokeStatic("com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
-            HookUtil.hookMethod(dc, "setMingouLaptopPcModeEnabled", new Class<?>[]{boolean.class},
-                    chain -> {
-                        setWorkstationMode((Boolean) chain.getArgs().get(0));
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-            detected = true;
-            log("[DC] workstation guard uses legacy DeviceConfig; active=" + workstationMode);
-        } catch (Throwable legacyApiError) {
-            log("[DC] legacy workstation API unavailable: " + legacyApiError);
-        }
-        if (!detected) {
             workstationMode = false;
-            log("[DC] ERROR: no supported workstation state API found");
+            log("[DC] workstation current API unavailable; mode disabled: " + currentApiError);
         }
     }
 
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
         HomeGridHook.setWorkstationMode(enabled);
-        log("[DC] Mingou workstation mode changed=" + enabled);
+        log("[DC] workstation mode changed=" + enabled);
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
                 if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
