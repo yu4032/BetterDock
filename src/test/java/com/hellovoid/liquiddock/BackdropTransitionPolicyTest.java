@@ -17,6 +17,14 @@ public class BackdropTransitionPolicyTest {
                 CaptureScene.valueOf(installed), CaptureScene.valueOf(target));
     }
 
+    private static boolean shouldRevealNativeFallback(String target) throws Exception {
+        Class<?> policy = Class.forName("com.hellovoid.liquiddock.BackdropTransitionPolicy");
+        Method method = policy.getDeclaredMethod(
+                "shouldRevealNativeFallback", CaptureScene.class);
+        method.setAccessible(true);
+        return (Boolean) method.invoke(null, CaptureScene.valueOf(target));
+    }
+
     @Test public void wallpaperToLiveTransitionsDropStaleBackdrop() throws Exception {
         assertTrue(shouldDrop("HOME", "APP"));
         assertTrue(shouldDrop("HOME", "RECENTS"));
@@ -38,5 +46,15 @@ public class BackdropTransitionPolicyTest {
         assertFalse(shouldDrop("RECENTS", "APP"));
         assertFalse(shouldDrop("APP", "APP"));
         assertFalse(shouldDrop("RECENTS", "RECENTS"));
+    }
+
+    @Test public void liveDomainNeverRevealsNativeWallpaperFallbackWhileWaiting() throws Exception {
+        assertFalse(shouldRevealNativeFallback("APP"));
+        assertFalse(shouldRevealNativeFallback("RECENTS"));
+    }
+
+    @Test public void wallpaperDomainMayUseNativeFallbackWhileWaiting() throws Exception {
+        assertTrue(shouldRevealNativeFallback("HOME"));
+        assertTrue(shouldRevealNativeFallback("ALL_APPS"));
     }
 }

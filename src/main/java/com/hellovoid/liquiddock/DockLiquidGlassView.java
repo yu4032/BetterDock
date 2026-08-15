@@ -1223,6 +1223,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             boolean externalAppInteraction = launcherLifecycleKnown && !launcherResumed
                     && !overviewActive && !sceneState.allAppsActive();
             sceneState.setExternalAppDockInteraction(externalAppInteraction);
+            if (externalAppInteraction) {
+                // ACTION_DOWN is the first deadline for a visible APP backdrop. Supersede any
+                // older HOME/APP request now instead of letting requestStateCapture coalesce
+                // behind it; its callback is invalidated by cancelPendingCaptureWork().
+                cancelPendingCaptureWork();
+            }
             // The Dock may still be fully collapsed here. Allow exactly this gesture's
             // first APP frame to bypass visibility so the backdrop is live before motion.
             armAppBackdropForGestureDown();
@@ -1580,26 +1586,44 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     private void applyBackdropTransitionBarrier(CaptureScene target, String reason) {
-        if (!BackdropTransitionPolicy.shouldDropInstalled(installedCaptureScene, target)) return;
-        CaptureScene oldScene = installedCaptureScene;
-        if (CaptureSourcePolicy.sourceFor(target) == CaptureSourcePolicy.Source.WALLPAPER
-                && tryInstallWallpaperCacheImmediately(target)) {
-            logI("capture-domain barrier replaced " + oldScene + " with wallpaper cache reason="
-                    + reason);
-            return;
+        boolean dropInstalled = BackdropTransitionPolicy.shouldDropInstalled(
+                installedCaptureScene, target);
+        if (dropInstalled) {
+            CaptureScene oldScene = installedCaptureScene;
+            if (CaptureSourcePolicy.sourceFor(target) == CaptureSourcePolicy.Source.WALLPAPER
+                    && tryInstallWallpaperCacheImmediately(target)) {
+                logI("capture-domain barrier replaced " + oldScene
+                        + " with wallpaper cache reason=" + reason);
+                return;
+            }
+            Bitmap old = capture;
+            capture = null;
+            captureShader = null;
+            installedCaptureScene = null;
+            if (old != null && old != wallpaperStripCache && !old.isRecycled()) old.recycle();
+            logI("capture-domain barrier dropped stale " + oldScene + " for " + target
+                    + " reason=" + reason);
         }
-        Bitmap old = capture;
-        capture = null;
-        captureShader = null;
-        installedCaptureScene = null;
-        if (old != null && old != wallpaperStripCache && !old.isRecycled()) old.recycle();
-        if (nativeBackgroundHiddenByGlass) {
-            geometrySource.setAlpha(1f);
-            nativeBackgroundHiddenByGlass = false;
+
+        boolean hasInstalledBackdrop = installedCaptureScene != null
+                && captureShader != null && capture != null && !capture.isRecycled();
+        if (hasInstalledBackdrop) return;
+
+        if (BackdropTransitionPolicy.shouldRevealNativeFallback(target)) {
+            if (nativeBackgroundHiddenByGlass) {
+                geometrySource.setAlpha(1f);
+                nativeBackgroundHiddenByGlass = false;
+            }
+        } else {
+            // APP/RECENTS must never reveal the wallpaper-backed native Dock while the
+            // first live mode-1 frame is pending. With no capture shader the glass body is
+            // transparent, so the actual app/Recents surface below remains visible instead.
+            if (!nativeBackgroundHiddenByGlass || geometrySource.getAlpha() != 0f) {
+                geometrySource.setAlpha(0f);
+                nativeBackgroundHiddenByGlass = true;
+            }
         }
         invalidate();
-        logI("capture-domain barrier dropped stale " + oldScene + " for " + target
-                + " reason=" + reason);
     }
 
     private boolean tryInstallWallpaperCacheImmediately(CaptureScene target) {

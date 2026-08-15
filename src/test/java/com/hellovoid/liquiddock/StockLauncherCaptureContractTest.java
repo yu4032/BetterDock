@@ -103,6 +103,31 @@ public class StockLauncherCaptureContractTest {
                 < gestureMethod.indexOf("armAppBackdropForGestureDown()"));
     }
 
+    @Test public void externalAppDockDownPreemptsOlderCaptureBeforeFirstFrameRequest() throws Exception {
+        String glass = source("DockLiquidGlassView.java");
+        int start = glass.indexOf("void onDockGestureMotion(int action, float rawY)");
+        int end = glass.indexOf("/** Called from the launcher's dedicated performEnterRecent haptic event. */", start);
+        assertTrue(start >= 0 && end > start);
+        String gestureMethod = glass.substring(start, end);
+        int lock = gestureMethod.indexOf("setExternalAppDockInteraction(externalAppInteraction)");
+        int preempt = gestureMethod.indexOf("cancelPendingCaptureWork()", lock);
+        int arm = gestureMethod.indexOf("armAppBackdropForGestureDown()", lock);
+        int request = gestureMethod.indexOf("requestStateCapture(\"dock-gesture-down\")", lock);
+        assertTrue("external APP lock must be established first", lock >= 0);
+        assertTrue("pending HOME/old APP capture must be superseded immediately", preempt > lock);
+        assertTrue("capture preemption must happen before APP first-frame arm", arm > preempt);
+        assertTrue("fresh APP request must follow the preemption", request > arm);
+    }
+
+    @Test public void liveDomainBarrierDoesNotRevealNativeWallpaperBackground() throws Exception {
+        String glass = source("DockLiquidGlassView.java");
+        int start = glass.indexOf("private void applyBackdropTransitionBarrier");
+        int end = glass.indexOf("private boolean tryInstallWallpaperCacheImmediately", start);
+        assertTrue(start >= 0 && end > start);
+        String barrier = glass.substring(start, end);
+        assertTrue(barrier.contains("BackdropTransitionPolicy.shouldRevealNativeFallback(target)"));
+    }
+
     @Test public void allAppsStateCarriesNoCaptureRoot() throws Exception {
         String glass = source("DockLiquidGlassView.java");
         String allApps = source("AllAppsStateHooks.java");
