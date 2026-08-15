@@ -1208,6 +1208,8 @@ public class MainHook {
                     hlp.height = bgH;
                     liquidGlassHostView.setLayoutParams(hlp);
                 }
+                liquidGlassHostView.setTranslationX(bg.getTranslationX());
+                liquidGlassHostView.setTranslationY(bg.getTranslationY());
                 liquidGlassHostView.setRadius(bgR);
                 liquidGlassHostView.invalidate();
             } else if (liquidGlassView != null) {
