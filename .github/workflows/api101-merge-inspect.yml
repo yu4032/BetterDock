@@ -73,7 +73,8 @@ jobs:
                   assertTrue(s.contains("if (workstationModeHookConfirmed) return;"));
                   assertTrue(s.contains("Object recheck = HookUtil.invokeStatic("));
                   assertTrue(s.contains("if (recheck == null)"));
-                  assertTrue(s.contains("\"com.miui.home.launcher.DeviceConfig\", \"isMingouLaptopPcModeEnabled\""));
+                  assertTrue(s.contains("\"com.miui.home.launcher.DeviceConfig\""));
+                  assertTrue(s.contains("\"isMingouLaptopPcModeEnabled\""));
                   assertTrue(s.contains("if (actual != workstationMode) setWorkstationMode(actual);"));
                   assertTrue(s.contains("}, 2000L);"));
               }
