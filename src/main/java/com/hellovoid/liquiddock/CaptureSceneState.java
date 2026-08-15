@@ -140,9 +140,21 @@ final class CaptureSceneState {
         // On close the owner immediately calls refresh() with real launcher/foreground state.
     }
 
+    private boolean confirmedHomeGestureActive(long nowNanos) {
+        return foregroundOwnership == ForegroundOwnership.HOME
+                && gestureTarget == CaptureScene.HOME
+                && nowNanos < gestureTargetUntilNanos;
+    }
+
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
-        if (recentsVisible) return CaptureScene.RECENTS;
+        // Recents hide callbacks can trail GestureToHome by a frame.  A bounded HOME target is
+        // allowed to beat that stale latch only after the physical top task has independently
+        // confirmed Launcher HOME.  Speculative HOME hints from external apps never qualify.
+        if (recentsVisible) {
+            if (confirmedHomeGestureActive(nowNanos)) return CaptureScene.HOME;
+            return CaptureScene.RECENTS;
+        }
         if (allAppsActive) return CaptureScene.ALL_APPS;
 
         if (foregroundOwnership == ForegroundOwnership.EXTERNAL) {
