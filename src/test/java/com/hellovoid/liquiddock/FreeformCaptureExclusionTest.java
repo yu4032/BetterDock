@@ -31,6 +31,16 @@ public class FreeformCaptureExclusionTest {
                 names);
     }
 
+    @Test public void homeUsesFullDisplayOnlyForLiveFreeformBackdrop() throws Exception {
+        Method sourceFor = CaptureSourcePolicy.class.getDeclaredMethod("sourceFor",
+                CaptureScene.class, boolean.class, boolean.class, boolean.class);
+        sourceFor.setAccessible(true);
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+                sourceFor.invoke(null, CaptureScene.HOME, false, false, true));
+        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
+                sourceFor.invoke(null, CaptureScene.HOME, false, false, false));
+    }
+
     @Test public void fullDisplayCaptureConsumesVisibleFreeformLayerNames() throws Exception {
         String source = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
