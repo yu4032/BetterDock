@@ -38,13 +38,17 @@ final class CaptureSourcePolicy {
     }
 
     /**
-     * Workstation Recents is the only scene that needs the composed live display. Workstation
-     * All Apps aliases HOME before source selection; keeping ALL_APPS wallpaper-backed here is
-     * a defensive invariant so a future caller cannot accidentally reintroduce a special
-     * All Apps capture path. localLayerAvailable is retained for API compatibility only.
+     * Workstation All Apps is a Launcher-owned overlay, so its local layer is the cleanest
+     * source. Recents is different: App -> Overview is a mixed SurfaceFlinger composition
+     * containing the app/remote-animation leash plus Launcher task views. Capturing only the
+     * Launcher ViewRoot drops the app part of that transition, so Recents must use the composed
+     * display and let DockLiquidGlassView exclude the Floating Dock surface.
      */
     static Source sourceForWorkstationScene(CaptureScene scene, boolean localLayerAvailable) {
         if (scene == CaptureScene.RECENTS) return Source.FULL_DISPLAY;
+        if (scene == CaptureScene.ALL_APPS) {
+            return localLayerAvailable ? Source.LOCAL_LAYER : Source.FULL_DISPLAY;
+        }
         return Source.WALLPAPER;
     }
 }
