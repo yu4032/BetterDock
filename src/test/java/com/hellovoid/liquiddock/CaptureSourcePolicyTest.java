@@ -6,7 +6,7 @@ import java.lang.reflect.Method;
 
 import static org.junit.Assert.assertEquals;
 
-/** Launcher-owned scenes must never fall back to full-display self-capture. */
+/** Launcher-owned scenes must use the stock wallpaper backdrop rather than capture a local root. */
 public class CaptureSourcePolicyTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static String sourceFor(String sceneName, boolean localLayerAvailable) throws Exception {
@@ -26,13 +26,13 @@ public class CaptureSourcePolicyTest {
         assertEquals("WALLPAPER", sourceFor("HOME", false));
     }
 
-    @Test public void recentsUsesLocalLauncherLayerAndFailsClosed() throws Exception {
-        assertEquals("LOCAL_LAYER", sourceFor("RECENTS", true));
+    @Test public void recentsUsesWallpaperEvenWhenLocalLauncherLayerExists() throws Exception {
+        assertEquals("WALLPAPER", sourceFor("RECENTS", true));
         assertEquals("WALLPAPER", sourceFor("RECENTS", false));
     }
 
-    @Test public void allAppsUsesLocalLauncherLayerAndFailsClosed() throws Exception {
-        assertEquals("LOCAL_LAYER", sourceFor("ALL_APPS", true));
+    @Test public void allAppsUsesWallpaperEvenWhenOverlayLayerExists() throws Exception {
+        assertEquals("WALLPAPER", sourceFor("ALL_APPS", true));
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", false));
     }
 }
