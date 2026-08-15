@@ -6,7 +6,9 @@ import android.content.Context;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** Resolves the task that physically owns the foreground; contains no scene mutation. */
+/** Samples the top task as noisy foreground evidence; contains no scene mutation.
+ * LauncherSceneController cross-validates this with focus/lifecycle boundaries before
+ * allowing it to change persistent HOME/EXTERNAL authority. */
 final class ForegroundTaskResolver {
     static final class Observation {
         final ForegroundOwnership ownership;

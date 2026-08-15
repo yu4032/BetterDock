@@ -75,7 +75,8 @@ public class StockLauncherCaptureContractTest {
         assertTrue(controller.contains("glass.isAllAppsActive() || glass.isOverviewActive()"));
         assertTrue(resolver.contains("resolveTopPackage"));
         assertTrue(controller.contains("confirmLauncherHomeFocus"));
-        assertTrue(controller.contains("external task still foreground"));
+        assertTrue(controller.contains("ForegroundAuthorityGate"));
+        assertTrue(controller.contains("foreground observation suppressed"));
         assertTrue(controller.contains("prearmGestureCaptureTarget"));
         assertTrue(controller.contains("gesture HOME kept live while external task foreground"));
         assertTrue(controller.contains("prearmAppBackdrop(\"gesture-home-unconfirmed\")"));

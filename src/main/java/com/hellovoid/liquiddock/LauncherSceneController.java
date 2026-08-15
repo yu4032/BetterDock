@@ -17,6 +17,10 @@ final class LauncherSceneController {
     private final ForegroundTaskResolver foregroundTaskResolver;
     private final RecentsStateHooks recentsStateHooks;
     private final AllAppsStateHooks allAppsStateHooks;
+    private final ForegroundAuthorityGate foregroundAuthorityGate =
+            new ForegroundAuthorityGate();
+    private volatile ForegroundOwnership foregroundOwnership =
+            ForegroundOwnership.UNKNOWN;
 
     private volatile boolean launcherResumed;
     private volatile boolean launcherLifecycleKnown;
@@ -38,48 +42,77 @@ final class LauncherSceneController {
     boolean launcherResumed() { return launcherResumed; }
     boolean systemUiPanelExpanded() { return systemUiPanelExpanded; }
 
-    /** Apply exactly one foreground snapshot; UNKNOWN never mutates existing authority. */
+    /** Apply one task snapshot through the evidence gate.  The task list is only a
+     * sample: callers must explicitly grant the boundary that is allowed to change authority. */
     private ForegroundOwnership applyForegroundObservation(
             ForegroundTaskResolver.Observation observation,
             DockLiquidGlassView glass,
-            String reason) {
-        ForegroundOwnership ownership = observation == null
+            String reason,
+            boolean allowHomeCommit,
+            boolean allowExternalCommit) {
+        ForegroundOwnership observed = observation == null
                 ? ForegroundOwnership.UNKNOWN : observation.ownership;
-        if (ownership == ForegroundOwnership.UNKNOWN) {
-            if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
-            logger.accept("[DC] foreground authority UNKNOWN; leave authority unchanged reason="
-                    + reason + " away=" + launcherAwayObserved);
-            return ownership;
+        boolean returningFromExternal = launcherAwayObserved
+                || foregroundOwnership == ForegroundOwnership.EXTERNAL
+                || (glass != null && glass.hasExternalForegroundAuthority());
+        ForegroundOwnership filtered = foregroundAuthorityGate.filter(
+                foregroundOwnership, observed, allowHomeCommit, allowExternalCommit,
+                returningFromExternal, System.nanoTime());
+
+        if (filtered == foregroundOwnership) {
+            if (observed == ForegroundOwnership.UNKNOWN) {
+                if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
+                logger.accept("[DC] foreground authority UNKNOWN; leave authority unchanged reason="
+                        + reason + " away=" + launcherAwayObserved);
+            } else if (observed != filtered) {
+                logger.accept("[DC] foreground observation suppressed observed=" + observed
+                        + " committed=" + foregroundOwnership + " reason=" + reason
+                        + " allowHome=" + allowHomeCommit
+                        + " allowExternal=" + allowExternalCommit);
+            }
+            return filtered;
         }
 
+        foregroundOwnership = filtered;
         launcherLifecycleKnown = true;
-        launcherResumed = ownership == ForegroundOwnership.HOME;
-        launcherAwayObserved = ownership == ForegroundOwnership.EXTERNAL;
+        launcherResumed = filtered == ForegroundOwnership.HOME;
+        launcherAwayObserved = filtered == ForegroundOwnership.EXTERNAL;
         if (glass != null) {
-            if (ownership == ForegroundOwnership.HOME) {
+            if (filtered == ForegroundOwnership.HOME) {
                 glass.onAuthoritativeHomeConfirmed();
-            } else {
+            } else if (filtered == ForegroundOwnership.EXTERNAL) {
                 glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
             }
             glass.setLauncherState(true, launcherResumed);
         }
-        logger.accept("[DC] foreground authority=" + ownership
-                + " pkg=" + observation.packageName + " reason=" + reason);
-        return ownership;
+        logger.accept("[DC] foreground authority=" + filtered
+                + " observed=" + observed
+                + " pkg=" + (observation == null ? null : observation.packageName)
+                + " reason=" + reason);
+        return filtered;
     }
 
-    /** Single resolution + propagation path for callers that do not already own a snapshot. */
+    private ForegroundOwnership observeForegroundOwnership(Context context,
+                                                            DockLiquidGlassView glass,
+                                                            String reason,
+                                                            boolean allowHomeCommit,
+                                                            boolean allowExternalCommit) {
+        ForegroundTaskResolver.Observation observation = foregroundTaskResolver.resolve(context);
+        return applyForegroundObservation(observation, glass, reason,
+                allowHomeCommit, allowExternalCommit);
+    }
+
+    /** Compatibility/default path: observations alone may not flip persistent authority. */
     ForegroundOwnership observeForegroundOwnership(Context context,
                                                    DockLiquidGlassView glass,
                                                    String reason) {
-        ForegroundTaskResolver.Observation observation = foregroundTaskResolver.resolve(context);
-        return applyForegroundObservation(observation, glass, reason);
+        return observeForegroundOwnership(context, glass, reason, false, false);
     }
 
     boolean isExternalAppForeground(Context context) {
         DockLiquidGlassView glass = glassProvider.get();
         ForegroundOwnership observed = observeForegroundOwnership(
-                context, glass, "dock-interaction");
+                context, glass, "dock-interaction", false, true);
         return observed == ForegroundOwnership.EXTERNAL
                 || (observed == ForegroundOwnership.UNKNOWN
                     && glass != null && glass.hasExternalForegroundAuthority());
@@ -104,7 +137,11 @@ final class LauncherSceneController {
         DockLiquidGlassView glass = glassProvider.get();
         if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
         if (launcher instanceof Context) {
-            observeForegroundOwnership((Context) launcher, glass, "seed");
+            boolean allowHomeCommit = launcherLifecycleKnown && launcherResumed
+                    && !launcherAwayObserved;
+            boolean allowExternalCommit = launcherLifecycleKnown && !launcherResumed;
+            observeForegroundOwnership((Context) launcher, glass, "seed",
+                    allowHomeCommit, allowExternalCommit);
         }
     }
 
@@ -146,8 +183,11 @@ final class LauncherSceneController {
                             launcherLifecycleKnown = true;
                             launcherResumed = false;
                             launcherAwayObserved = true;
+                            foregroundOwnership = ForegroundOwnership.EXTERNAL;
+                            foregroundAuthorityGate.resetHomeCandidate();
                             if (glass != null) {
                                 glass.onLauncherFocusLost();
+                                glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
                                 glass.setLauncherAwayHint(true);
                                 glass.refreshForegroundAppLayer();
                                 glass.setLauncherState(true, false);
@@ -236,9 +276,13 @@ final class LauncherSceneController {
                         launcherLifecycleKnown = true;
                         launcherResumed = false;
                         launcherAwayObserved = true;
+                        foregroundOwnership = ForegroundOwnership.EXTERNAL;
+                        foregroundAuthorityGate.resetHomeCandidate();
                         logger.accept("[DC] liquid lifecycle fallback: onPause");
                         DockLiquidGlassView glass = glassProvider.get();
                         if (glass != null) {
+                            glass.onLauncherFocusLost();
+                            glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
                             glass.setLauncherAwayHint(true);
                             glass.setLauncherState(true, false);
                         }
@@ -257,14 +301,22 @@ final class LauncherSceneController {
         Context context = launcher instanceof Context ? (Context) launcher : null;
         ForegroundTaskResolver.Observation observation = foregroundTaskResolver.resolve(context);
         if (observation.ownership == ForegroundOwnership.UNKNOWN) {
+            foregroundAuthorityGate.resetHomeCandidate();
             logger.accept("[DC] launcher focus pending: top task unavailable reason=" + reason);
             return false;
         }
+        if (observation.ownership != ForegroundOwnership.HOME) {
+            applyForegroundObservation(observation, glass,
+                    "focus-home-confirm-" + reason, false, false);
+            logger.accept("[DC] launcher focus rejected: observed=" + observation.ownership
+                    + " pkg=" + observation.packageName + " reason=" + reason);
+            return false;
+        }
         ForegroundOwnership ownership = applyForegroundObservation(
-                observation, glass, "focus-" + reason);
+                observation, glass, "focus-home-confirm-" + reason, true, false);
         if (ownership != ForegroundOwnership.HOME) {
-            logger.accept("[DC] launcher focus rejected: external task still foreground pkg="
-                    + observation.packageName + " reason=" + reason);
+            logger.accept("[DC] launcher HOME candidate waiting for stable confirmation reason="
+                    + reason);
             return false;
         }
         if (glass != null) glass.onLauncherFocused();
@@ -292,8 +344,9 @@ final class LauncherSceneController {
         ForegroundTaskResolver.Observation observation =
                 foregroundTaskResolver.resolve(glass.getContext());
         ForegroundOwnership ownership = observation.ownership == ForegroundOwnership.UNKNOWN
-                ? ForegroundOwnership.UNKNOWN
-                : applyForegroundObservation(observation, glass, "gesture-" + target);
+                ? foregroundOwnership
+                : applyForegroundObservation(observation, glass, "gesture-" + target,
+                        false, false);
         if ("HOME".equals(target)) {
             boolean externalConfirmed = ownership == ForegroundOwnership.EXTERNAL
                     || (ownership == ForegroundOwnership.UNKNOWN

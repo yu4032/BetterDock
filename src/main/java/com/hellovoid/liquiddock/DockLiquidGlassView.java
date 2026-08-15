@@ -367,6 +367,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // Consumed by onLauncherFocused() to distinguish HOME return (delay capture)
     // from a HOME-local Dock spring-back (keep live rendering).
     private boolean launcherWasAway;
+    // APP -> HOME is a two-phase handoff: authority/barrier changes immediately, while a
+    // fresh vendor mode-2 wallpaper readback waits for the Launcher wallpaper wrapper to settle.
+    private long homeWallpaperSettleUntilNanos;
+    private int homeWallpaperSettleToken;
+    private long homeWallpaperCaptureEpoch;
     private boolean windowVisible;
     private boolean windowFocused;
     private boolean systemUiPanelExpanded;
@@ -481,6 +486,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 // Keep the dirty bit.  Attach/setupViews commonly runs before the Launcher
                 // window acquires focus; dropping it here can lose the only initial frame.
                 logCaptureGate("kick-blocked");
+                return;
+            }
+            updateDesiredScene();
+            if (isHomeWallpaperSettleActive(sceneState.desired())) {
+                sourceDirty = true;
+                logI("capture-kick deferred by HOME wallpaper settle");
                 return;
             }
             if (capturing || !sourceDirty) return;
@@ -738,7 +749,6 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         dockWindowSurface = resolveWindowSurfaceControl();
         logOwnWindowInfo();
         refreshForegroundAppLayer();
-        logI("Liquid foreground app layer: " + appLayerName);
         observationValid = false;
         // Independent config hot-reload ticker: GUI edits to tint/highlight keys
         // apply within ~1s even when the Dock is static (no captures -> no capture-loop
@@ -1002,81 +1012,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    /** Cached foreground-app SF layer name (resolved on focus loss; used as the mode-1
-     *  include target so the capture hits exactly the app layer). */
-    private String appLayerName;
-    private String appLayerPkg;
-
-    /** Resolve + cache the foreground app's SF layer name.  Called when the launcher
-     *  loses focus (an app came to the front). */
+    /** Compatibility callback retained for LauncherSceneController.
+     * Mode-1 uses full-display capture with the Dock SurfaceControl excluded, so there is no
+     * app-layer lookup here and no dependency on the removed ISurfaceComposer$Stub API. */
     void refreshForegroundAppLayer() {
-        try {
-            android.app.ActivityManager am = (android.app.ActivityManager)
-                    getContext().getSystemService(Context.ACTIVITY_SERVICE);
-            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
-                    am.getRunningTasks(1);
-            if (tasks == null || tasks.isEmpty()) {
-                appLayerName = null;
-                return;
-            }
-            String pkg = tasks.get(0).topActivity != null
-                    ? tasks.get(0).topActivity.getPackageName() : null;
-            if (pkg == null) {
-                appLayerName = null;
-                return;
-            }
-            if (pkg.equals("com.miui.home")) {
-                appLayerName = null;
-                return;
-            }
-            if (pkg.equals(appLayerPkg) && appLayerName != null) return; // cached
-            appLayerName = resolveAppLayerByUid(pkg);
-            appLayerPkg = pkg;
-            logI("foreground app layer: pkg=" + pkg + " layer=" + appLayerName);
-        } catch (Throwable e) {
-            logW("refreshForegroundAppLayer failed: " + e);
-        }
-    }
-
-    /** Resolve the foreground app window's SF layer name (e.g. "#27820") via the
-     *  SurfaceFlinger layer tree — the low-level way to hit exactly the app layer and
-     *  avoid the Dock overlay / wallpaper layers entirely (no name-list guessing, no
-     *  exclusion).  Matches by owner uid of the foreground task. */
-    private String resolveAppLayerByUid(String pkg) {
-        try {
-            int uid;
-            try {
-                uid = getContext().getPackageManager().getPackageUid(pkg, 0);
-            } catch (Throwable e) {
-                return null;
-            }
-            Class<?> stub = Class.forName("android.view.ISurfaceComposer$Stub");
-            java.lang.reflect.Method asInterface = stub.getMethod("asInterface",
-                    android.os.IBinder.class);
-            Class<?> sm = Class.forName("android.os.ServiceManager");
-            java.lang.reflect.Method getService = sm.getMethod("getService", String.class);
-            Object binder = getService.invoke(null, "SurfaceFlinger");
-            Object composer = asInterface.invoke(null, binder);
-            java.lang.reflect.Method getLayers = composer.getClass()
-                    .getMethod("getLayerDebugInfo");
-            Object layersObj = getLayers.invoke(composer);
-            if (!(layersObj instanceof java.util.List)) return null;
-            String best = null;
-            for (Object layer : (java.util.List<?>) layersObj) {
-                try {
-                    Class<?> lc = layer.getClass();
-                    Object ownerUid = lc.getMethod("getOwnerUid").invoke(layer);
-                    if (!(ownerUid instanceof Integer) || (Integer) ownerUid != uid) continue;
-                    Object name = lc.getMethod("getName").invoke(layer);
-                    if (name != null) best = (String) name;  // last match = topmost z
-                } catch (Throwable ignored) {
-                }
-            }
-            return best;
-        } catch (Throwable e) {
-            logW("resolveForegroundAppLayerName failed: " + e);
-            return null;
-        }
+        // Intentionally empty.
     }
 
     private boolean hasValidDockWindowSurface() {
@@ -1916,10 +1856,54 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         requestStateCapture(away ? "launcher-away-hint" : "launcher-away-cleared");
     }
 
+    private boolean isHomeWallpaperSettleActive(CaptureScene scene) {
+        return scene == CaptureScene.HOME
+                && homeWallpaperSettleUntilNanos != 0L
+                && System.nanoTime() < homeWallpaperSettleUntilNanos;
+    }
+
+    private void beginHomeWallpaperSettle() {
+        long delayMs = LiquidDockConfig.load().glass.homeSettleDelayMs;
+        final int token = ++homeWallpaperSettleToken;
+        homeWallpaperCaptureEpoch++;
+        homeWallpaperSettleUntilNanos = System.nanoTime() + delayMs * 1_000_000L;
+        // A kick queued while APP was authoritative must not wake up after HOME is selected
+        // and bypass the settle gate.  Running APP attempts are rejected by scene revision.
+        mainHandler.removeCallbacks(captureKick);
+        kickScheduled = false;
+        sourceDirty = true;
+        lastCaptureStartNanos = 0L;
+        logI("HOME wallpaper settle armed delay=" + delayMs + "ms epoch="
+                + homeWallpaperCaptureEpoch);
+        mainHandler.postDelayed(() -> {
+            if (token != homeWallpaperSettleToken) return;
+            homeWallpaperSettleUntilNanos = 0L;
+            lastCaptureStartNanos = 0L;
+            requestStateCapture("home-wallpaper-settled");
+        }, delayMs);
+    }
+
+    private void cancelHomeWallpaperSettle(String reason) {
+        if (homeWallpaperSettleUntilNanos == 0L) return;
+        homeWallpaperSettleToken++;
+        homeWallpaperSettleUntilNanos = 0L;
+        homeWallpaperCaptureEpoch++;
+        logI("HOME wallpaper settle cancelled reason=" + reason);
+    }
+
+    private boolean isHomeWallpaperResultCurrent(CaptureScene scene, long requestEpoch) {
+        return scene != CaptureScene.HOME
+                || (requestEpoch == homeWallpaperCaptureEpoch
+                    && !isHomeWallpaperSettleActive(scene));
+    }
+
     void setForegroundOwnership(ForegroundOwnership ownership) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(() -> setForegroundOwnership(ownership));
             return;
+        }
+        if (ownership == ForegroundOwnership.EXTERNAL) {
+            cancelHomeWallpaperSettle("external-authority");
         }
         sceneState.setForegroundOwnership(ownership);
         updateDesiredScene();
@@ -1931,8 +1915,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return sceneState.externalAppForegroundConfirmed();
     }
 
-    /** A HOME transition is authoritative only after ForegroundTaskResolver confirms HOME. */
+    /** A HOME transition is authoritative only after the controller has passed its
+     * focus + repeated task-snapshot stability gate. */
     void onAuthoritativeHomeConfirmed() {
+        boolean returningFromExternal = launcherWasAway
+                || sceneState.externalAppForegroundConfirmed()
+                || sceneState.desired() == CaptureScene.APP;
+        if (returningFromExternal) beginHomeWallpaperSettle();
         setForegroundOwnership(ForegroundOwnership.HOME);
         sceneState.setExternalAppDockInteraction(false);
         updateDesiredScene();
@@ -1942,6 +1931,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  authoritative marker for a real HOME return later. */
     void onLauncherFocusLost() {
         launcherWasAway = true;
+        cancelHomeWallpaperSettle("launcher-focus-lost");
         sceneState.setLauncherAwayHint(true);
         // HyperOS can emit GestureToHome during an app-launch transition. That HOME target
         // otherwise outranks lifecycle for 1.5s and keeps serving wallpaper cache even after
@@ -2130,6 +2120,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         sourceDirty = true;
         updateDesiredScene();
         applyBackdropTransitionBarrier(sceneState.desired(), reason);
+        if (isHomeWallpaperSettleActive(sceneState.desired())) {
+            logI("HOME wallpaper capture deferred reason=" + reason);
+            return;
+        }
         if (!isCaptureAllowed()) {
             logCaptureGate(reason);
             return;
@@ -2282,8 +2276,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         final long generation = captureGeneration;
         updateDesiredScene();
         final CaptureScene requestScene = sceneState.desired();
+        if (isHomeWallpaperSettleActive(requestScene)) {
+            sourceDirty = true;
+            logI("startCapture deferred by HOME wallpaper settle");
+            return;
+        }
         final long requestSceneRevision = sceneState.revision();
         final long requestWallpaperTransformRevision = wallpaperTransformRevision;
+        final long requestHomeWallpaperCaptureEpoch = homeWallpaperCaptureEpoch;
         final CaptureSourcePolicy.Source requestedSource;
         if (!useFullscreen || (workstationMode && requestScene == CaptureScene.APP)) {
             requestedSource = CaptureSourcePolicy.Source.WALLPAPER;
@@ -2368,7 +2368,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         @Override public void onResult(Bitmap bmp) {
                             handleCaptureResult(bmp, req, generation, attempt,
                                     requestScene, requestSceneRevision,
-                                    requestWallpaperId, requestWallpaperTransformRevision);
+                                    requestWallpaperId, requestWallpaperTransformRevision,
+                                    requestHomeWallpaperCaptureEpoch);
                         }
                         @Override public void onError(Throwable error) {
                             mainHandler.post(() -> {
@@ -2434,6 +2435,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || !sceneState.matches(requestScene, requestSceneRevision)
                         || !isWallpaperIdentityCurrent(requestScene, requestWallpaperId)
                         || !isWallpaperTransformCurrent(requestScene, requestWallpaperTransformRevision)
+                        || !isHomeWallpaperResultCurrent(requestScene,
+                                requestHomeWallpaperCaptureEpoch)
                         || !isRequestOrientationCurrent(request) || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
                     retireCaptureAttempt(attempt);
@@ -2471,7 +2474,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                      long attempt, CaptureScene requestScene,
                                      long requestSceneRevision,
                                      int requestWallpaperId,
-                                     long requestWallpaperTransformRevision) {
+                                     long requestWallpaperTransformRevision,
+                                     long requestHomeWallpaperCaptureEpoch) {
         Bitmap cacheCandidate = null;
         try {
             if (activeCaptureAttempt != attempt) {
@@ -2494,6 +2498,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             || !isWallpaperIdentityCurrent(requestScene, requestWallpaperId)
                             || !isWallpaperTransformCurrent(requestScene,
                                     requestWallpaperTransformRevision)
+                        || !isHomeWallpaperResultCurrent(requestScene,
+                                requestHomeWallpaperCaptureEpoch)
                             || !isRequestOrientationCurrent(request)) {
                         retireCaptureAttempt(attempt);
                         requestStateCapture("stale-black-frame");
@@ -2550,6 +2556,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         || !isWallpaperIdentityCurrent(requestScene, requestWallpaperId)
                         || !isWallpaperTransformCurrent(requestScene,
                                 requestWallpaperTransformRevision)
+                        || !isHomeWallpaperResultCurrent(requestScene,
+                                requestHomeWallpaperCaptureEpoch)
                         || !isRequestOrientationCurrent(request)
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
