@@ -33,6 +33,7 @@ public class MainHook {
     private static float bgR = 30f;
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
+    private static volatile boolean workstationModeHookConfirmed;
     private static boolean dockDragHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
@@ -1038,11 +1039,13 @@ public class MainHook {
         boolean detected = false;
         try {
             Class<?> mc = Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
-            workstationMode = (Boolean) HookUtil.invokeStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+            Object laptopResult = HookUtil.invokeStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+            workstationMode = laptopResult instanceof Boolean && (Boolean) laptopResult;
             Class<?> sm = Class.forName("com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
             HookUtil.hookMethod(sm, "onLaptopModeChanged", new Class<?>[]{boolean.class},
                     chain -> {
                         boolean entering = (Boolean) chain.getArgs().get(0);
+                        workstationModeHookConfirmed = true;
                         if (entering) backupNormalHomeLayout();
                         setWorkstationMode(entering);
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
@@ -1052,6 +1055,24 @@ public class MainHook {
                     });
             detected = true;
             log("[DC] workstation guard uses LauncherModeController; active=" + workstationMode);
+            // Deferred re-check: isLaptopMode() may return null at early startup;
+            // re-query after the Launcher has finished initializing its mode state.
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (workstationModeHookConfirmed) return; // hook already confirmed the state
+                try {
+                    Object recheck = HookUtil.invokeStatic(
+                            "com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
+                    boolean actual = recheck instanceof Boolean && (Boolean) recheck;
+                    if (recheck == null) {
+                        try {
+                            Object dcResult = HookUtil.invokeStatic(
+                                    "com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
+                            actual = dcResult instanceof Boolean && (Boolean) dcResult;
+                        } catch (Throwable ignored) {}
+                    }
+                    if (actual != workstationMode) setWorkstationMode(actual);
+                } catch (Throwable ignored) {}
+            }, 2000L);
         } catch (Throwable currentApiError) {
             log("[DC] current workstation API unavailable: " + currentApiError);
         }
