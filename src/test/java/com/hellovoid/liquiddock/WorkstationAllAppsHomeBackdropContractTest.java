@@ -7,69 +7,52 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Contracts that keep workstation All Apps capture-equivalent to HOME. */
+/** Contracts that keep workstation All Apps invisible to the Dock capture state machine. */
 public class WorkstationAllAppsHomeBackdropContractTest {
-    private static String dockLiquidGlassView() throws IOException {
-        return Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"),
+    private static String installAllAppsCaptureHooks() throws IOException {
+        String source = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
                 StandardCharsets.UTF_8);
-    }
-
-    private static String setAllAppsActiveMethod() throws IOException {
-        String source = dockLiquidGlassView();
-        int start = source.indexOf("void setAllAppsActive(boolean active, View captureRoot)");
-        int end = source.indexOf("/** Exact Overview lifecycle", start);
-        assertTrue("setAllAppsActive method must remain present", start >= 0 && end > start);
+        int start = source.indexOf("private static void installAllAppsCaptureHooks(ClassLoader cl)");
+        int end = source.indexOf("private static boolean isStockAllAppsState", start);
+        assertTrue("installAllAppsCaptureHooks must remain present", start >= 0 && end > start);
         return source.substring(start, end);
     }
 
-    @Test
-    public void workstationAllAppsUpdatesUiStateThenReturnsBeforeCaptureScheduling()
-            throws IOException {
-        String method = setAllAppsActiveMethod();
-        int stateUpdate = method.indexOf(
-                "sceneState.setAllAppsActive(active, workstationMode);");
-        int workstationBranch = method.indexOf("if (workstationMode)", stateUpdate);
-        int workstationReturn = method.indexOf("return;", workstationBranch);
-        int observationReset = method.indexOf("observationValid = false;");
-
-        assertTrue("scene state must receive the workstation HOME-backdrop policy",
-                stateUpdate >= 0);
-        assertTrue("workstation All Apps must return before capture state is dirtied",
-                workstationBranch > stateUpdate
-                        && workstationReturn > workstationBranch
-                        && observationReset > workstationReturn);
-        assertFalse("workstation All Apps must not start its own capture burst",
-                method.substring(workstationBranch, observationReset)
-                        .contains("startWorkstationCaptureBurst"));
+    private static int count(String source, String needle) {
+        int count = 0;
+        for (int at = 0; (at = source.indexOf(needle, at)) >= 0; at += needle.length()) {
+            count++;
+        }
+        return count;
     }
 
     @Test
-    public void workstationAllAppsHasNoHiddenCapturePrivileges() throws IOException {
-        String source = dockLiquidGlassView();
-        assertFalse("pre-draw must not restart workstation capture merely for All Apps",
-                source.contains(
-                        "workstationMode && (sceneState.allAppsActive() || isRecentsVisible())"));
-        assertFalse("capture permission must not bypass normal HOME visibility for All Apps",
-                source.contains(
-                        "|| sceneState.allAppsActive() || workstationRecentsActive"));
-        assertFalse("burst settling must not treat All Apps as a live-capture scene",
-                source.contains(
-                        "if (sceneState.allAppsActive() || isRecentsVisible()) return;"));
+    public void workstationLaptopAllAppsDoesNotEnterDockCaptureState() throws IOException {
+        String method = installAllAppsCaptureHooks();
+        int normalStart = method.indexOf("// Normal All Apps stays in the Launcher main window.");
+        assertTrue("normal All Apps section must remain present", normalStart > 0);
+        String laptop = method.substring(0, normalStart);
+
+        assertEquals("show/close laptop callbacks must both bypass capture-state forwarding",
+                2, count(laptop, "if (workstationMode) return chain.proceed("));
+        assertEquals("non-workstation laptop compatibility path must retain its three state updates",
+                3, count(laptop, "glass.setAllAppsActive("));
     }
 
     @Test
-    public void normalAllAppsKeepsExistingCaptureRefreshPath() throws IOException {
-        String method = setAllAppsActiveMethod();
-        int workstationBranch = method.indexOf("if (workstationMode)");
-        int workstationReturn = method.indexOf("return;", workstationBranch);
-        int request = method.indexOf(
-                "requestStateCapture(active ? \"all-apps-enter\" : \"all-apps-exit\");");
+    public void normalAllAppsCaptureStatePathRemainsUnchanged() throws IOException {
+        String method = installAllAppsCaptureHooks();
+        int normalStart = method.indexOf("// Normal All Apps stays in the Launcher main window.");
+        String normal = method.substring(normalStart);
 
-        assertTrue("normal All Apps must retain its existing capture refresh",
-                workstationReturn >= 0 && request > workstationReturn);
+        assertTrue("normal All Apps must still forward capture-state transitions",
+                count(normal, "glass.setAllAppsActive(") >= 3);
+        assertFalse("workstation bypass belongs only to the laptop section",
+                normal.contains("if (workstationMode) return chain.proceed("));
     }
 }
