@@ -244,6 +244,24 @@ final class LiveScreenCapture {
         return null;
     }
 
+    static final class CaptureStatusException extends RuntimeException {
+        final int status;
+        CaptureStatusException(int status) {
+            super("async capture SurfaceFlinger status=" + status);
+            this.status = status;
+        }
+    }
+
+    static boolean isInvalidArgumentStatus(Throwable error) {
+        for (Throwable cursor = error; cursor != null; cursor = cursor.getCause()) {
+            if (cursor instanceof CaptureStatusException) {
+                return ((CaptureStatusException) cursor).status == -22;
+            }
+        }
+        String message = error == null ? null : error.getMessage();
+        return message != null && message.contains("status=-22");
+    }
+
     /** Result sink for async captures; called on the SurfaceFlinger callback thread. */
     interface CaptureCallback {
         void onResult(Bitmap bitmap);
@@ -314,9 +332,13 @@ final class LiveScreenCapture {
                         logI("async capture callback: buffer=" + buffer + " status=" + status);
                         Object hardwareBuffer = null;
                         try {
+                            if (status != 0) {
+                                callback.onError(new CaptureStatusException(status));
+                                return;
+                            }
                             if (buffer == null) {
                                 callback.onError(new RuntimeException(
-                                        "async capture: null buffer status=" + status));
+                                        "async capture: null buffer status=0"));
                                 return;
                             }
                             Object bitmap = asBitmap.invoke(buffer);

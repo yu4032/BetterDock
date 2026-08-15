@@ -11,6 +11,7 @@ import java.util.function.Supplier;
 
 /** Owns Launcher scene arbitration and stock scene hooks. */
 final class LauncherSceneController {
+    private static final String MODULE_PACKAGE = "com.hellovoid.liquiddock";
     private final Supplier<DockLiquidGlassView> glassProvider;
     private final BooleanSupplier workstationModeProvider;
     private final Consumer<String> logger;
@@ -42,6 +43,19 @@ final class LauncherSceneController {
     boolean launcherResumed() { return launcherResumed; }
     boolean systemUiPanelExpanded() { return systemUiPanelExpanded; }
 
+    private void updateModuleSettingsForeground(
+            ForegroundTaskResolver.Observation observation,
+            DockLiquidGlassView glass,
+            String reason) {
+        if (glass == null || observation == null || observation.packageName == null) return;
+        boolean foreground = MODULE_PACKAGE.equals(observation.packageName);
+        glass.setModuleSettingsForeground(foreground);
+        if (foreground) {
+            logger.accept("[DC] module settings foreground; FULL_DISPLAY capture paused reason="
+                    + reason);
+        }
+    }
+
     /** Apply one task snapshot through the evidence gate.  The task list is only a
      * sample: callers must explicitly grant the boundary that is allowed to change authority. */
     private ForegroundOwnership applyForegroundObservation(
@@ -52,6 +66,7 @@ final class LauncherSceneController {
             boolean allowExternalCommit) {
         ForegroundOwnership observed = observation == null
                 ? ForegroundOwnership.UNKNOWN : observation.ownership;
+        updateModuleSettingsForeground(observation, glass, reason);
         boolean returningFromExternal = launcherAwayObserved
                 || foregroundOwnership == ForegroundOwnership.EXTERNAL
                 || (glass != null && glass.hasExternalForegroundAuthority());
@@ -179,6 +194,12 @@ final class LauncherSceneController {
                             return r;
                         }
                         logger.accept("[DC] liquid focus hint: " + hasFocus);
+                        if (!hasFocus && chain.getThisObject() instanceof Context) {
+                            updateModuleSettingsForeground(
+                                    foregroundTaskResolver.resolve(
+                                            (Context) chain.getThisObject()),
+                                    glass, "focus-loss");
+                        }
                         if (!hasFocus) {
                             launcherLifecycleKnown = true;
                             launcherResumed = false;

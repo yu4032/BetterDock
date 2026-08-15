@@ -377,6 +377,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean systemUiPanelExpanded;
     private android.view.SurfaceControl dockWindowSurface;
     private String dockWindowLayerName;
+    private final DockExcludeRecovery dockExcludeRecovery = new DockExcludeRecovery();
+    private boolean moduleSettingsForeground;
     private boolean capturing;
     private boolean sourceDirty;
     private boolean nullFrameLogged;
@@ -683,6 +685,34 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
+    /** The module settings Activity is not a useful live-Dock capture target.  It can also
+     * destroy/recreate the Floating Dock root, so pause mode-1 until another known top task
+     * replaces it. UNKNOWN observations deliberately leave this latch unchanged. */
+    void setModuleSettingsForeground(boolean foreground) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setModuleSettingsForeground(foreground));
+            return;
+        }
+        if (moduleSettingsForeground == foreground) return;
+        moduleSettingsForeground = foreground;
+        if (foreground) {
+            appBackdropPrearmActive = false;
+            appBackdropPrearmToken++;
+            mainHandler.removeCallbacks(cancelGrace);
+            cancelPendingCaptureWork();
+            invalidateDockWindowSurfaceCache();
+            logI("Liquid capture paused: module settings foreground");
+            return;
+        }
+        invalidateDockWindowSurfaceCache();
+        resetCaptureCircuit("module-settings-exit");
+        sourceDirty = true;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("module-settings-exit");
+        logI("Liquid capture resumed: module settings left foreground");
+    }
+
     /** Called from WallpaperManager wallpaper-transform hooks in this process. */
     private void invalidateWallpaperTransform() {
         wallpaperTransformRevision++;
@@ -746,7 +776,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         beginObservationBurst();
         windowVisible = getWindowVisibility() == View.VISIBLE;
         windowFocused = hasWindowFocus();
-        dockWindowSurface = resolveWindowSurfaceControl();
+        refreshDockWindowSurfaceCache("attach");
         logOwnWindowInfo();
         refreshForegroundAppLayer();
         observationValid = false;
@@ -1019,31 +1049,35 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Intentionally empty.
     }
 
-    private boolean hasValidDockWindowSurface() {
-        android.view.SurfaceControl sc = dockWindowSurface;
-        if (sc == null) return false;
-        try {
-            return sc.isValid();
-        } catch (Throwable ignored) {
-            // Old vendor builds may not expose isValid reliably; keep the cached handle and
-            // invalidate it on window/rotation/capture-error events instead.
-            return true;
+    private static final class DockWindowSurfaceSnapshot {
+        final android.view.SurfaceControl surface;
+        final String layerName;
+        final int rootIndex;
+
+        DockWindowSurfaceSnapshot(android.view.SurfaceControl surface,
+                                  String layerName, int rootIndex) {
+            this.surface = surface;
+            this.layerName = layerName;
+            this.rootIndex = rootIndex;
         }
     }
 
-    private void invalidateDockWindowSurfaceCache() {
-        dockWindowSurface = null;
-        dockWindowLayerName = null;
+    private String readSurfaceControlLayerName(android.view.SurfaceControl sc) {
+        if (sc == null) return null;
+        try {
+            java.lang.reflect.Field nameField = sc.getClass().getDeclaredField("mName");
+            nameField.setAccessible(true);
+            Object value = nameField.get(sc);
+            if (value instanceof String && !((String) value).isEmpty()) return (String) value;
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
-    /** The Dock's own window layer, resolved once at attach, so full-display captures can
-     * exclude it (matching the native blur-behind which blurs only layers below the Dock).
-     *
-     * The Dock is hosted in a dedicated overlay window ("Floating Dock", type 2997), NOT in
-     * the Launcher main window.  We scan WindowManagerGlobal's roots for that window type and
-     * return its SurfaceControl; excluding the wrong window (e.g. the Launcher window our view
-     * tree happens to live in) would leave the Dock icons in the captured frame. */
-    private android.view.SurfaceControl resolveWindowSurfaceControl() {
+    /** Resolve the newest live type-2997 root.  HyperOS can retain the retired root in
+     * WindowManagerGlobal while the rebuilt Floating Dock root is appended after it, so
+     * returning the first match can resurrect an old SurfaceControl forever. */
+    private DockWindowSurfaceSnapshot resolveDockWindowSurfaceSnapshot() {
         try {
             Class<?> wmgClass = Class.forName("android.view.WindowManagerGlobal");
             java.lang.reflect.Method getInstance = wmgClass.getDeclaredMethod("getInstance");
@@ -1054,44 +1088,104 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             Object roots = rootsField.get(wmg);
             if (!(roots instanceof java.util.ArrayList)) return null;
             java.util.ArrayList<?> list = (java.util.ArrayList<?>) roots;
-            for (Object root : list) {
+            DockWindowSurfaceSnapshot best = null;
+            for (int i = 0; i < list.size(); i++) {
+                Object root = list.get(i);
                 if (root == null) continue;
                 try {
                     Class<?> vriClass = Class.forName("android.view.ViewRootImpl");
-                    java.lang.reflect.Field attrsField = vriClass.getDeclaredField("mWindowAttributes");
+                    java.lang.reflect.Field attrsField =
+                            vriClass.getDeclaredField("mWindowAttributes");
                     attrsField.setAccessible(true);
                     Object attrs = attrsField.get(root);
                     if (!(attrs instanceof android.view.WindowManager.LayoutParams)) continue;
                     android.view.WindowManager.LayoutParams lp =
                             (android.view.WindowManager.LayoutParams) attrs;
-                    // Dock overlay window type 2997 (HyperOS Floating Dock).
-                    if (lp.type == 2997) {
-                        java.lang.reflect.Method getSc = vriClass.getDeclaredMethod("getSurfaceControl");
-                        getSc.setAccessible(true);
-                        Object sc = getSc.invoke(root);
-                        if (sc instanceof android.view.SurfaceControl) {
-                            try {
-                                java.lang.reflect.Field nameField = sc.getClass().getDeclaredField("mName");
-                                nameField.setAccessible(true);
-                                Object nm = nameField.get(sc);
-                                if (nm instanceof String) dockWindowLayerName = (String) nm;
-                            } catch (Throwable ignored) {
-                            }
-                            logI("Liquid capture dock window surface resolved from root["
-                                    + list.indexOf(root) + "] type=" + lp.type
-                                    + " title=" + lp.getTitle() + " sc=" + sc
-                                    + " layerName=" + dockWindowLayerName);
-                            return (android.view.SurfaceControl) sc;
-                        }
+                    if (lp.type != 2997) continue;
+
+                    java.lang.reflect.Method getSc =
+                            vriClass.getDeclaredMethod("getSurfaceControl");
+                    getSc.setAccessible(true);
+                    Object value = getSc.invoke(root);
+                    if (!(value instanceof android.view.SurfaceControl)) continue;
+                    android.view.SurfaceControl sc = (android.view.SurfaceControl) value;
+                    String name = readSurfaceControlLayerName(sc);
+                    if (name == null || name.isEmpty()) {
+                        CharSequence title = lp.getTitle();
+                        name = title == null ? null : title.toString();
+                    }
+                    DockWindowSurfaceSnapshot candidate =
+                            new DockWindowSurfaceSnapshot(sc, name, i);
+                    if (best == null
+                            || DockLayerIdentity.isNewerGeneration(name, best.layerName)
+                            || (DockLayerIdentity.layerId(name) < 0L
+                                && DockLayerIdentity.layerId(best.layerName) < 0L
+                                && i > best.rootIndex)) {
+                        best = candidate;
                     }
                 } catch (Throwable ignored) {
                 }
             }
-            logW("dock window surface: no root with type 2997 found (roots=" + list.size() + ")");
+            if (best == null) {
+                logW("dock window surface: no root with type 2997 found (roots="
+                        + list.size() + ")");
+            }
+            return best;
         } catch (Throwable e) {
             logW("dock window surface resolve failed: " + e);
+            return null;
         }
-        return null;
+    }
+
+    private boolean hasValidDockWindowSurface() {
+        android.view.SurfaceControl cached = dockWindowSurface;
+        String cachedName = dockWindowLayerName;
+        if (cached == null || cachedName == null) return false;
+        DockWindowSurfaceSnapshot current = resolveDockWindowSurfaceSnapshot();
+        if (current == null
+                || !DockLayerIdentity.sameGeneration(cachedName, current.layerName)) return false;
+        try {
+            return cached.isValid();
+        } catch (Throwable ignored) {
+            // Vendor isValid() is not authoritative.  A matching current WMG generation is.
+            return current.surface != null;
+        }
+    }
+
+    private boolean refreshDockWindowSurfaceCache(String reason) {
+        DockWindowSurfaceSnapshot current = resolveDockWindowSurfaceSnapshot();
+        if (current == null || current.surface == null || current.layerName == null) {
+            dockWindowSurface = null;
+            logW("dock window surface unavailable reason=" + reason
+                    + " cachedLayer=" + dockWindowLayerName);
+            return false;
+        }
+        String oldName = dockWindowLayerName;
+        android.view.SurfaceControl oldSurface = dockWindowSurface;
+        boolean generationChanged = oldName != null
+                && (!DockLayerIdentity.sameGeneration(oldName, current.layerName)
+                    || (DockLayerIdentity.layerId(oldName) < 0L
+                        && oldSurface != null && oldSurface != current.surface));
+        dockWindowSurface = current.surface;
+        dockWindowLayerName = current.layerName;
+        if (generationChanged) {
+            dockExcludeRecovery.onSurfaceGenerationChanged();
+            logW("Floating Dock surface generation changed old=" + oldName
+                    + " new=" + current.layerName + " reason=" + reason);
+        }
+        logI("Liquid capture dock window surface root[" + current.rootIndex
+                + "] layerName=" + current.layerName + " reason=" + reason);
+        return true;
+    }
+
+    private void invalidateDockWindowSurfaceHandle() {
+        dockWindowSurface = null;
+    }
+
+    private void invalidateDockWindowSurfaceCache() {
+        dockWindowSurface = null;
+        dockWindowLayerName = null;
+        dockExcludeRecovery.onSurfaceGenerationChanged();
     }
 
     /** Recents/multitasking view to watch for background motion (set via reflection by
@@ -1759,6 +1853,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     private boolean isCaptureAllowed() {
         if (!runtimeGlassEnabled) return false;
+        if (moduleSettingsForeground) return false;
         if (captureCircuitOpen) return false;
         // Workstation/laptop Dock has an independent background. The normal Dock glass
         // must not capture or render while that container is active.
@@ -2290,6 +2385,26 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } else {
             requestedSource = CaptureSourcePolicy.sourceFor(requestScene);
         }
+        if (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY) {
+            if (!refreshDockWindowSurfaceCache("capture")) {
+                sourceDirty = true;
+                scheduleCaptureFailureRetry("dock-surface-unavailable", generation);
+                return;
+            }
+            if (dockExcludeRecovery.suspended()) {
+                sourceDirty = true;
+                logW("FULL_DISPLAY capture suspended after repeated Dock exclude EINVAL; "
+                        + "waiting for a new Floating Dock generation");
+                return;
+            }
+            if (dockExcludeRecovery.includeSurfaceControl()
+                    && !hasValidDockWindowSurface()) {
+                dockExcludeRecovery.onInvalidArgument();
+                invalidateDockWindowSurfaceHandle();
+                logW("Dock SurfaceControl failed freshness/validity check; "
+                        + "using fresh layer-name-only exclusion");
+            }
+        }
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
         final long attempt = ++captureAttemptSeq;
@@ -2328,12 +2443,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // input matches the stock background-blur semantics: only compositor content below it.
         boolean needsDockExclude = useFullscreen
                 && requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY;
-        if (needsDockExclude && !hasValidDockWindowSurface()) {
-            dockWindowSurface = resolveWindowSurfaceControl();
-        }
         final float requestCaptureScale = captureScale;
         final android.view.SurfaceControl requestDockWindowSurface =
-                requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                needsDockExclude && dockExcludeRecovery.includeSurfaceControl()
                         ? dockWindowSurface : null;
         final String requestDockWindowLayerName = dockWindowLayerName;
         final String requestDragLayerName = dragLayerName;
@@ -2376,6 +2488,25 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                 if (generation != captureGeneration
                                         || activeCaptureAttempt != attempt) return;
                                 liveCapture = null;
+                                if (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                                        && LiveScreenCapture.isInvalidArgumentStatus(error)) {
+                                    dockExcludeRecovery.onInvalidArgument();
+                                    invalidateDockWindowSurfaceHandle();
+                                    retireCaptureAttempt(attempt);
+                                    Log.e(TAG, "async FULL_DISPLAY exclude rejected; layer="
+                                            + requestDockWindowLayerName
+                                            + " surfaceHandle="
+                                            + (requestDockWindowSurface != null), error);
+                                    sourceDirty = true;
+                                    lastCaptureStartNanos = 0L;
+                                    if (dockExcludeRecovery.suspended()) {
+                                        logW("Dock exclude name-only retry also returned EINVAL; "
+                                                + "suspending FULL_DISPLAY until layer generation changes");
+                                        return;
+                                    }
+                                    requestStateCapture("dock-exclude-einval-name-only");
+                                    return;
+                                }
                                 invalidateDockWindowSurfaceCache();
                                 retireCaptureAttempt(attempt);
                                 Log.e(TAG, "async capture failed source=" + requestedSource, error);
