@@ -1216,6 +1216,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             beginObservationBurst();
             gestureDownRawY = rawY;
             recentsPrearmed = false;
+            // Source correctness is independent of the optional continuous APP capture
+            // cadence. If the Dock pull starts over an external app, keep the whole
+            // pre-haptic interaction in the live APP/RECENTS domain until Launcher HOME
+            // is authoritatively confirmed.
+            boolean externalAppInteraction = launcherLifecycleKnown && !launcherResumed
+                    && !overviewActive && !sceneState.allAppsActive();
+            sceneState.setExternalAppDockInteraction(externalAppInteraction);
             // The Dock may still be fully collapsed here. Allow exactly this gesture's
             // first APP frame to bypass visibility so the backdrop is live before motion.
             armAppBackdropForGestureDown();
@@ -1233,9 +1240,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (action == android.view.MotionEvent.ACTION_UP
                 || action == android.view.MotionEvent.ACTION_CANCEL) {
             gestureDownRawY = Float.NaN;
+            sceneState.setExternalAppDockInteraction(false);
+            updateDesiredScene();
             // Keep the haptic/gesture prearm alive until an authoritative Recents callback,
             // a HOME/APP gesture target, or the bounded gesture-target timeout clears it.
             if (sceneState.desired() != CaptureScene.RECENTS) recentsPrearmed = false;
+            requestStateCapture("dock-gesture-end");
         }
     }
 

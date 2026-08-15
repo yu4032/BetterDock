@@ -90,6 +90,19 @@ public class StockLauncherCaptureContractTest {
         assertFalse(hook.contains("launcherResumed = hasFocus;"));
     }
 
+    @Test public void appDockPullInteractionLatchIsIndependentOfDynamicCapture() throws Exception {
+        String glass = source("DockLiquidGlassView.java");
+        int start = glass.indexOf("void onDockGestureMotion(int action, float rawY)");
+        int end = glass.indexOf("/** Called from the launcher's dedicated performEnterRecent haptic event. */", start);
+        assertTrue(start >= 0 && end > start);
+        String gestureMethod = glass.substring(start, end);
+        assertTrue(gestureMethod.contains("setExternalAppDockInteraction(externalAppInteraction)"));
+        assertTrue(gestureMethod.contains("setExternalAppDockInteraction(false)"));
+        assertFalse(gestureMethod.contains("dynamicAppCapture"));
+        assertTrue(gestureMethod.indexOf("setExternalAppDockInteraction(externalAppInteraction)")
+                < gestureMethod.indexOf("armAppBackdropForGestureDown()"));
+    }
+
     @Test public void allAppsStateCarriesNoCaptureRoot() throws Exception {
         String glass = source("DockLiquidGlassView.java");
         String allApps = source("AllAppsStateHooks.java");

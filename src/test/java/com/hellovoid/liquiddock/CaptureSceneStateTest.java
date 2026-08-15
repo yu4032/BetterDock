@@ -4,6 +4,17 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class CaptureSceneStateTest {
+    private static void setExternalAppDockInteraction(CaptureSceneState state, boolean active) {
+        try {
+            state.getClass().getDeclaredMethod("setExternalAppDockInteraction", boolean.class)
+                    .invoke(state, active);
+        } catch (NoSuchMethodException e) {
+            fail("CaptureSceneState must expose setExternalAppDockInteraction(boolean)");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     @Test public void lifecycleAndRecentsResolveDeterministically() {
         CaptureSceneState state = new CaptureSceneState();
         assertEquals(CaptureScene.APP, state.resolve(1L, false, false, false));
@@ -35,6 +46,45 @@ public class CaptureSceneStateTest {
 
         state.setGestureTarget("HOME", 3_000L);
         assertEquals(CaptureScene.RECENTS, state.resolve(4_000L, true, true, true));
+    }
+
+    @Test public void externalAppDockInteractionRejectsStaleHomeGestureBeforeHaptic() {
+        CaptureSceneState state = new CaptureSceneState();
+        state.setGestureTarget("HOME", 1_000L);
+        setExternalAppDockInteraction(state, true);
+
+        assertEquals(CaptureScene.APP, state.resolve(2_000L, false, true, false));
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+                CaptureSourcePolicy.sourceFor(state.resolve(2_000L, false, true, false)));
+    }
+
+    @Test public void externalAppDockInteractionStillAllowsRecentsLiveDomain() {
+        CaptureSceneState state = new CaptureSceneState();
+        setExternalAppDockInteraction(state, true);
+        state.setGestureTarget("RECENTS", 1_000L);
+
+        assertEquals(CaptureScene.RECENTS, state.resolve(2_000L, false, true, false));
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+                CaptureSourcePolicy.sourceFor(state.resolve(2_000L, false, true, false)));
+    }
+
+    @Test public void authoritativeHomeCanTakeOwnershipDuringExternalAppDockInteraction() {
+        CaptureSceneState state = new CaptureSceneState();
+        setExternalAppDockInteraction(state, true);
+
+        assertEquals(CaptureScene.HOME, state.resolve(2_000L, false, true, true));
+        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
+                CaptureSourcePolicy.sourceFor(state.resolve(2_000L, false, true, true)));
+    }
+
+    @Test public void releasingExternalAppDockInteractionDoesNotReviveUnconfirmedHomeHint() {
+        CaptureSceneState state = new CaptureSceneState();
+        setExternalAppDockInteraction(state, true);
+        state.setGestureTarget("HOME", 1_000L);
+        assertEquals(CaptureScene.APP, state.resolve(2_000L, false, true, false));
+
+        setExternalAppDockInteraction(state, false);
+        assertEquals(CaptureScene.APP, state.resolve(3_000L, false, true, false));
     }
 
     @Test public void gestureTargetExpiresAndCanBeInterrupted() {

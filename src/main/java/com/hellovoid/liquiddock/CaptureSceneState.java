@@ -8,6 +8,7 @@ final class CaptureSceneState {
     private long revision;
     private boolean workstationSuspended;
     private boolean allAppsActive;
+    private boolean externalAppDockInteraction;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
@@ -46,6 +47,25 @@ final class CaptureSceneState {
         return true;
     }
 
+    /**
+     * A Dock touch that begins while an external app owns foreground creates a temporary
+     * source-domain lock. Until Launcher HOME is authoritatively confirmed, this interaction
+     * must stay in the live APP/RECENTS domain even if a speculative GestureToHome object
+     * has already been constructed. Source correctness is intentionally independent of the
+     * optional dynamic-app continuous-capture cadence.
+     */
+    void setExternalAppDockInteraction(boolean active) {
+        if (externalAppDockInteraction == active) return;
+        externalAppDockInteraction = active;
+        // A HOME constructor seen before/during an app Dock pull is only a navigation hint.
+        // Never allow that stale hint to revive after ACTION_UP/CANCEL either.
+        if (gestureTarget == CaptureScene.HOME) {
+            gestureTarget = null;
+            gestureTargetUntilNanos = 0L;
+        }
+        revision++;
+    }
+
     /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow. It can make the
      * main Launcher window lose focus without an external app taking the foreground. A
      * confirmed drawer open also invalidates any older gesture prearm. */
@@ -70,6 +90,17 @@ final class CaptureSceneState {
         // only to cover the first transition frame before these authoritative callbacks land.
         if (recentsVisible) return CaptureScene.RECENTS;
         if (allAppsActive) return CaptureScene.ALL_APPS;
+
+        if (externalAppDockInteraction) {
+            // A real HOME foreground transition may take ownership even before the finger is
+            // released. Otherwise keep this Dock pull in the live source domain. RECENTS is
+            // allowed because it uses the same FULL_DISPLAY source as APP.
+            if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
+            if (gestureTarget == CaptureScene.RECENTS
+                    && nowNanos < gestureTargetUntilNanos) return CaptureScene.RECENTS;
+            return CaptureScene.APP;
+        }
+
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
         return CaptureScene.APP;
@@ -86,6 +117,7 @@ final class CaptureSceneState {
                                      boolean launcherResumed) {
         workstationSuspended = enabled;
         gestureTarget = null;
+        externalAppDockInteraction = false;
         revision++;
         desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
     }
