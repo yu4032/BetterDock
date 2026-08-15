@@ -134,10 +134,10 @@ final class RecentsStateHooks {
                 HookUtil.hook(ctor, chain -> {
                     Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                     DockLiquidGlassView glass = glassProvider.get();
-                    if (glass != null && !workstationModeProvider.getAsBoolean())
-                        glass.setOverviewActive(active, eventName);
-                    if (!workstationModeProvider.getAsBoolean())
-                        logger.accept("[DC] liquid overview active=" + active + " event=" + eventName);
+                    if (glass != null) glass.setOverviewActive(active, eventName);
+                    logger.accept("[DC] liquid overview active=" + active
+                            + " event=" + eventName
+                            + " workstation=" + workstationModeProvider.getAsBoolean());
                     return r;
                 });
             }

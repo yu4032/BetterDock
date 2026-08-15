@@ -58,6 +58,7 @@ public class MainHook {
             if (glass != null && !workstationMode) glass.onRecentsHapticTrigger();
         });
         installWorkstationDockHooks(classLoader, config.workstation);
+        WorkstationDockGeometryHook.install(classLoader, config.workstation);
         if (!config.dock.resizeAnimation)
             installDockResizeAnimationBypass(classLoader, config.dock.smoothResizeAnimation);
         if (workstationMode)
@@ -268,7 +269,7 @@ public class MainHook {
                         if (!workstationMode) {
                             View v = (View) chain.getThisObject();
                             float systemRadius = (Float) args[0];
-                            strokeR = Math.max(0f, systemRadius + co);
+                            if (!animating(v)) strokeR = Math.max(0f, systemRadius + co);
                             args[0] = Math.max(0f, systemRadius + blurCo);
                         }
                         Object r = chain.proceed(args);
@@ -450,6 +451,7 @@ public class MainHook {
         glass.setSystemUiPanelExpanded(controller.systemUiPanelExpanded());
         controller.bindRecentsView(glass, launcher);
     }
+
 
     private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
         Class<?> launcherClass;
@@ -763,20 +765,8 @@ public class MainHook {
         if (!config.dockEnabled) return;
         float scale = config.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int widthOffset = Math.round(config.dockWidthOffset * scale);
         int iconTopOffset = Math.round(config.iconTopOffset * scale);
         int iconBottomOffset = Math.round(config.iconBottomOffset * scale);
-        try {
-            HookUtil.hookMethod(cl,
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    "setBackgroundWidth",
-                    chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        if (workstationMode && widthOffset != 0) args[0] = (Integer) args[0] + widthOffset;
-                        return chain.proceed(args);
-                    }, int.class);
-            log("[DC] workstation Dock width hook offset=" + widthOffset);
-        } catch (Throwable e) { log("[DC] workstation Dock hook unavailable: " + e); }
         try {
             Class<?> recyclerView = Class.forName("androidx.recyclerview.widget.RecyclerView", false, cl);
             Class<?> recyclerState = Class.forName("androidx.recyclerview.widget.RecyclerView$State", false, cl);
@@ -823,6 +813,7 @@ public class MainHook {
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
         HomeGridHook.setWorkstationMode(enabled);
+        WorkstationDockGeometryHook.onWorkstationModeChanged(enabled);
         log("[DC] workstation mode changed=" + enabled);
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
@@ -913,7 +904,7 @@ public class MainHook {
         final int blurRadius = Math.min(Math.max(1, radius), maxDistance);
         final int spread = Math.max(0, maxDistance - blurRadius);
         shadowPad = Math.max(4, maxDistance + Math.abs(offsetY) + 4);
-        return new View(oldBg.getContext()) {
+        View view = new View(oldBg.getContext()) {
             @Override protected void onDraw(Canvas canvas) {
                 if (bgW <= 0 || bgH <= 0) return;
                 float left = shadowPad, top = shadowPad;
@@ -939,6 +930,8 @@ public class MainHook {
                 super.onDetachedFromWindow();
             }
         };
+        view.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        return view;
     }
 
     private static void syncShadowGeometry() {
@@ -958,6 +951,7 @@ public class MainHook {
         if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
         if (liquidGlassHostView == null && liquidGlassView == null && shadowView == null) return;
+        boolean anim = animating(bg);
         try {
             bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
             Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
@@ -970,6 +964,8 @@ public class MainHook {
                     hlp.height = bgH;
                     liquidGlassHostView.setLayoutParams(hlp);
                 }
+                liquidGlassHostView.setTranslationX(bg.getTranslationX());
+                liquidGlassHostView.setTranslationY(bg.getTranslationY());
                 liquidGlassHostView.setRadius(bgR);
                 liquidGlassHostView.invalidate();
             } else if (liquidGlassView != null) {
@@ -985,10 +981,14 @@ public class MainHook {
             }
             if (shadowView != null) {
                 if (workstationMode) { shadowView.setVisibility(View.GONE); return; }
-                if (bgW != lastShadowW) {
+                if (!anim) {
+                    boolean sizeChanged = bgW != lastShadowW;
                     lastShadowW = bgW;
+                    // Position can change without a width change (startup/translation/layout).
+                    // Always align X/Y once the Dock settles; only size changes need a posted
+                    // second pass after LayoutParams are applied.
                     syncShadowGeometry();
-                    shadowView.post(MainHook::syncShadowGeometry);
+                    if (sizeChanged) shadowView.post(MainHook::syncShadowGeometry);
                 }
             }
         } catch (Throwable ignored) {}

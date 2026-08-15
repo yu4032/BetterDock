@@ -135,27 +135,33 @@ final class LauncherSceneController {
 
     void seed(Object launcher) {
         if (launcher == null) return;
+        DockLiquidGlassView glass = glassProvider.get();
+        ForegroundTaskResolver.Observation observation = launcher instanceof Context
+                ? foregroundTaskResolver.resolve((Context) launcher)
+                : new ForegroundTaskResolver.Observation(ForegroundOwnership.UNKNOWN, null, -1);
         try {
             Object paused = HookUtil.invoke(launcher, "isPause");
             Object visible = HookUtil.invoke(launcher, "isVisible");
             Object focused = HookUtil.invoke(launcher, "isWindowFocus");
-            if (paused instanceof Boolean && !((Boolean) paused)) {
+            if (paused instanceof Boolean) {
                 launcherLifecycleKnown = true;
-                if (!launcherAwayObserved) launcherResumed = true;
+                launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                        !((Boolean) paused), observation.windowingMode);
+                if (launcherResumed) launcherAwayObserved = false;
             }
             logger.accept("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
                     + " resumed=" + launcherResumed + " paused=" + paused
-                    + " visible=" + visible + " focus=" + focused);
+                    + " visible=" + visible + " focus=" + focused
+                    + " windowingMode=" + observation.windowingMode);
         } catch (Throwable e) {
             logger.accept("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
         }
-        DockLiquidGlassView glass = glassProvider.get();
         if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
         if (launcher instanceof Context) {
             boolean allowHomeCommit = launcherLifecycleKnown && launcherResumed
                     && !launcherAwayObserved;
             boolean allowExternalCommit = launcherLifecycleKnown && !launcherResumed;
-            observeForegroundOwnership((Context) launcher, glass, "seed",
+            applyForegroundObservation(observation, glass, "seed",
                     allowHomeCommit, allowExternalCommit);
         }
     }
@@ -194,13 +200,27 @@ final class LauncherSceneController {
                             return r;
                         }
                         logger.accept("[DC] liquid focus hint: " + hasFocus);
-                        if (!hasFocus && chain.getThisObject() instanceof Context) {
-                            updateModuleSettingsForeground(
-                                    foregroundTaskResolver.resolve(
-                                            (Context) chain.getThisObject()),
-                                    glass, "focus-loss");
-                        }
-                        if (!hasFocus) {
+                        ForegroundTaskResolver.Observation observation =
+                                chain.getThisObject() instanceof Context
+                                        ? foregroundTaskResolver.resolve((Context) chain.getThisObject())
+                                        : new ForegroundTaskResolver.Observation(
+                                                ForegroundOwnership.UNKNOWN, null, -1);
+                        updateModuleSettingsForeground(observation, glass,
+                                hasFocus ? "focus-gain" : "focus-loss");
+                        if (!hasFocus && LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                                false, observation.windowingMode)) {
+                            launcherLifecycleKnown = true;
+                            launcherResumed = true;
+                            launcherAwayObserved = false;
+                            foregroundOwnership = ForegroundOwnership.HOME;
+                            foregroundAuthorityGate.resetHomeCandidate();
+                            if (glass != null) {
+                                glass.onAuthoritativeHomeConfirmed();
+                                glass.setLauncherState(true, true);
+                            }
+                            logger.accept("[DC] liquid focus freeform-owned windowingMode="
+                                    + observation.windowingMode);
+                        } else if (!hasFocus) {
                             launcherLifecycleKnown = true;
                             launcherResumed = false;
                             launcherAwayObserved = true;
@@ -293,22 +313,40 @@ final class LauncherSceneController {
                     return r;
                 });
                 HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0], chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                     if (launcherClass.isInstance(chain.getThisObject())) {
-                        launcherLifecycleKnown = true;
-                        launcherResumed = false;
-                        launcherAwayObserved = true;
-                        foregroundOwnership = ForegroundOwnership.EXTERNAL;
-                        foregroundAuthorityGate.resetHomeCandidate();
-                        logger.accept("[DC] liquid lifecycle fallback: onPause");
                         DockLiquidGlassView glass = glassProvider.get();
-                        if (glass != null) {
-                            glass.onLauncherFocusLost();
-                            glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
-                            glass.setLauncherAwayHint(true);
-                            glass.setLauncherState(true, false);
+                        ForegroundTaskResolver.Observation observation =
+                                foregroundTaskResolver.resolve((Context) chain.getThisObject());
+                        launcherLifecycleKnown = true;
+                        if (LauncherSceneOwnershipPolicy.launcherOwnsScene(
+                                false, observation.windowingMode)) {
+                            launcherResumed = true;
+                            launcherAwayObserved = false;
+                            foregroundOwnership = ForegroundOwnership.HOME;
+                            foregroundAuthorityGate.resetHomeCandidate();
+                            if (glass != null) {
+                                glass.onAuthoritativeHomeConfirmed();
+                                glass.setLauncherState(true, true);
+                            }
+                            logger.accept("[DC] liquid lifecycle fallback: onPause freeform "
+                                    + "windowingMode=" + observation.windowingMode);
+                        } else {
+                            launcherResumed = false;
+                            launcherAwayObserved = true;
+                            foregroundOwnership = ForegroundOwnership.EXTERNAL;
+                            foregroundAuthorityGate.resetHomeCandidate();
+                            logger.accept("[DC] liquid lifecycle fallback: onPause external "
+                                    + "windowingMode=" + observation.windowingMode);
+                            if (glass != null) {
+                                glass.onLauncherFocusLost();
+                                glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
+                                glass.setLauncherAwayHint(true);
+                                glass.setLauncherState(true, false);
+                            }
                         }
                     }
-                    return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    return result;
                 });
             } catch (Throwable fallbackError) {
                 logger.accept("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
