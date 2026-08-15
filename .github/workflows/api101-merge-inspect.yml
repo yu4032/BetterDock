@@ -158,6 +158,33 @@ jobs:
           PY
           git diff --check
 
+      - name: Align stock contract with read-only DeviceConfig fallback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/test/java/com/hellovoid/liquiddock/StockLauncherCaptureContractTest.java')
+          s = p.read_text()
+          old = '''    @Test public void mingouLegacyWorkstationFallbackIsGone() throws Exception {
+              String hook = source("MainHook.java");
+              assertFalse(hook.contains("isMingouLaptopPcModeEnabled"));
+              assertFalse(hook.contains("setMingouLaptopPcModeEnabled"));
+              assertFalse(hook.contains("Mingou workstation"));
+          }
+          '''
+          new = '''    @Test public void mingouLegacyWorkstationMutationIsGone() throws Exception {
+              String hook = source("MainHook.java");
+              assertTrue(hook.contains("isMingouLaptopPcModeEnabled"));
+              assertFalse(hook.contains("setMingouLaptopPcModeEnabled"));
+              assertFalse(hook.contains("Mingou workstation"));
+          }
+          '''
+          if s.count(old) != 1:
+              raise SystemExit('obsolete workstation contract block not found exactly once')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git diff --check
+
       - name: Verify GREEN contract
         run: ./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.WorkstationModeDetectionContractTest --stacktrace
 
@@ -167,19 +194,21 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Commit only MainHook and update API101
+      - name: Commit verified API101 fix
         shell: bash
         run: |
           set -euo pipefail
           expected_base=ea3a444161e0693dcdd9f53e6a7ebbcee050b936
           rm src/test/java/com/hellovoid/liquiddock/WorkstationModeDetectionContractTest.java
           git diff --check
-          changed=$(git diff --name-only)
-          echo "final changed files: $changed"
-          test "$changed" = "src/main/java/com/hellovoid/liquiddock/MainHook.java" || exit 4
+          changed=$(git diff --name-only | sort)
+          printf 'final changed files:\n%s\n' "$changed"
+          expected=$'src/main/java/com/hellovoid/liquiddock/MainHook.java\nsrc/test/java/com/hellovoid/liquiddock/StockLauncherCaptureContractTest.java'
+          test "$changed" = "$expected" || exit 4
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/main/java/com/hellovoid/liquiddock/MainHook.java
+          git add src/main/java/com/hellovoid/liquiddock/MainHook.java \
+                  src/test/java/com/hellovoid/liquiddock/StockLauncherCaptureContractTest.java
           git commit -m "fix: stabilize workstation mode detection"
           git fetch origin api101-migration
           actual=$(git rev-parse origin/api101-migration)
