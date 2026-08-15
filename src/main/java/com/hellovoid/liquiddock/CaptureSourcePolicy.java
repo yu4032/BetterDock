@@ -18,7 +18,16 @@ final class CaptureSourcePolicy {
      */
     static Source sourceFor(CaptureScene scene, boolean localLayerAvailable,
                             boolean recentsLiveConfirmed) {
-        if (scene == null || scene == CaptureScene.HOME) return Source.WALLPAPER;
+        return sourceFor(scene, localLayerAvailable, recentsLiveConfirmed, false);
+    }
+
+    /** HOME stays wallpaper-backed unless a visible freeform task requires a live desktop. */
+    static Source sourceFor(CaptureScene scene, boolean localLayerAvailable,
+                            boolean recentsLiveConfirmed, boolean homeLiveBackdrop) {
+        if (scene == null) return Source.WALLPAPER;
+        if (scene == CaptureScene.HOME) {
+            return homeLiveBackdrop ? Source.FULL_DISPLAY : Source.WALLPAPER;
+        }
         if (scene == CaptureScene.APP) return Source.FULL_DISPLAY;
         if (scene == CaptureScene.RECENTS) {
             return recentsLiveConfirmed ? Source.FULL_DISPLAY : Source.WALLPAPER;

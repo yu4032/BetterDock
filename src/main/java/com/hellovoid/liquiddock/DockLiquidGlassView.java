@@ -359,6 +359,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private volatile long activeCaptureAttempt;
     private Runnable captureTimeout;
     private LiveScreenCapture liveCapture;
+    private final SurfaceLayerNameResolver surfaceLayerNameResolver;
+    private final FreeformLayerResolver freeformLayerResolver;
     private ViewTreeObserver observedTree;
 
     private boolean attached;
@@ -522,6 +524,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 .getDisplayMetrics().density * 8f;
         this.chromaticAberration = chromaticAberration;
         this.captureCadence = new CaptureCadence(captureFps);
+        this.surfaceLayerNameResolver = new SurfaceLayerNameResolver();
+        this.freeformLayerResolver = new FreeformLayerResolver(
+                getContext(), surfaceLayerNameResolver);
         this.powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
         this.displayDensity = getResources().getDisplayMetrics().density;
 
@@ -621,6 +626,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> setLauncherState(known, resumed));
             return;
         }
+        // Focus/lifecycle callbacks are also the freeform enter/exit boundary. HyperOS may
+        // report the same logical Launcher state on both sides, so always invalidate the
+        // short task/layer cache and request a fresh scene sample below.
+        freeformLayerResolver.invalidate();
         boolean changed = launcherLifecycleKnown != known || launcherResumed != resumed;
         launcherLifecycleKnown = known;
         launcherResumed = resumed;
@@ -636,9 +645,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (changed) {
             logI("Liquid capture lifecycle=" + (known ? "RESUMED" : "UNKNOWN")
                     + "; window gate will decide capture");
-            observationValid = false;
-            requestStateCapture("lifecycle");
         }
+        // Even when (known,resumed) is unchanged, a freeform task may just have appeared or
+        // disappeared. Force the boundary frame so HOME switches between wallpaper and the
+        // live full-display-with-exclusions path immediately.
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture(changed ? "lifecycle" : "lifecycle-scene-refresh");
     }
 
     void setLauncherResumed(boolean resumed) {
@@ -1032,44 +1045,41 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    /** Resolve the foreground app window's SF layer name (e.g. "#27820") via the
-     *  SurfaceFlinger layer tree — the low-level way to hit exactly the app layer and
-     *  avoid the Dock overlay / wallpaper layers entirely (no name-list guessing, no
-     *  exclusion).  Matches by owner uid of the foreground task. */
+    /** Resolve the foreground app window's topmost SF layer by owner uid. */
     private String resolveAppLayerByUid(String pkg) {
         try {
-            int uid;
-            try {
-                uid = getContext().getPackageManager().getPackageUid(pkg, 0);
-            } catch (Throwable e) {
-                return null;
-            }
-            Class<?> stub = Class.forName("android.view.ISurfaceComposer$Stub");
-            java.lang.reflect.Method asInterface = stub.getMethod("asInterface",
-                    android.os.IBinder.class);
-            Class<?> sm = Class.forName("android.os.ServiceManager");
-            java.lang.reflect.Method getService = sm.getMethod("getService", String.class);
-            Object binder = getService.invoke(null, "SurfaceFlinger");
-            Object composer = asInterface.invoke(null, binder);
-            java.lang.reflect.Method getLayers = composer.getClass()
-                    .getMethod("getLayerDebugInfo");
-            Object layersObj = getLayers.invoke(composer);
-            if (!(layersObj instanceof java.util.List)) return null;
-            String best = null;
-            for (Object layer : (java.util.List<?>) layersObj) {
-                try {
-                    Class<?> lc = layer.getClass();
-                    Object ownerUid = lc.getMethod("getOwnerUid").invoke(layer);
-                    if (!(ownerUid instanceof Integer) || (Integer) ownerUid != uid) continue;
-                    Object name = lc.getMethod("getName").invoke(layer);
-                    if (name != null) best = (String) name;  // last match = topmost z
-                } catch (Throwable ignored) {
-                }
-            }
-            return best;
+            int uid = getContext().getPackageManager().getPackageUid(pkg, 0);
+            return surfaceLayerNameResolver.resolveTopmostByOwnerUid(uid);
         } catch (Throwable e) {
             logW("resolveForegroundAppLayerName failed: " + e);
             return null;
+        }
+    }
+
+    private FullDisplayExclusions resolveFullDisplayExclusions() {
+        boolean freeformActive = freeformLayerResolver.hasVisibleFreeformTasks();
+        java.util.Collection<String> freeformLayers =
+                freeformLayerResolver.resolveVisibleLayerNames();
+        String[] names = CaptureExclusionNames.merge(
+                dockWindowLayerName, dragLayerName, freeformLayers);
+        boolean safe = !freeformActive || !freeformLayers.isEmpty();
+        if (freeformActive) {
+            logI("freeform capture exclusion: resolved=" + freeformLayers.size()
+                    + " names=" + java.util.Arrays.toString(names));
+        }
+        return new FullDisplayExclusions(names, safe);
+    }
+
+    private static final class FullDisplayExclusions {
+        static final FullDisplayExclusions NONE =
+                new FullDisplayExclusions(null, true);
+
+        final String[] layerNames;
+        final boolean safe;
+
+        FullDisplayExclusions(String[] layerNames, boolean safe) {
+            this.layerNames = layerNames;
+            this.safe = safe;
         }
     }
 
@@ -2178,6 +2188,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         updateDesiredScene();
         final CaptureScene requestScene = sceneState.desired();
         final long requestSceneRevision = sceneState.revision();
+        final boolean liveHomeBehindFreeform = useFullscreen
+                && !workstationMode
+                && requestScene == CaptureScene.HOME
+                && freeformLayerResolver.hasVisibleFreeformTasks();
         final android.view.SurfaceControl localCaptureSurface = useFullscreen
                 ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
         CaptureSourcePolicy.Source selectedSource;
@@ -2188,7 +2202,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     requestScene, localCaptureSurface != null);
         } else {
             selectedSource = CaptureSourcePolicy.sourceFor(
-                    requestScene, localCaptureSurface != null, isRecentsVisible());
+                    requestScene, localCaptureSurface != null, isRecentsVisible(),
+                    liveHomeBehindFreeform);
         }
         if (workstationMode && selectedSource == CaptureSourcePolicy.Source.FULL_DISPLAY) {
             if (!hasValidDockWindowSurface()) dockWindowSurface = resolveWindowSurfaceControl();
@@ -2259,6 +2274,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     liveCapture = client;
                 }
                 if (useFullscreen) {
+                    final FullDisplayExclusions fullDisplayExclusions =
+                            (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                                    || (workstationMode
+                                        && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
+                                    ? resolveFullDisplayExclusions()
+                                    : FullDisplayExclusions.NONE;
                     android.view.SurfaceControl[] excludes = null;
                     if ((requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
                             || (workstationMode
@@ -2300,12 +2321,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                         && (hasValidDockWindowSurface() || dockWindowLayerName != null)) {
                                     logW("local launcher-layer capture failed; safe full-display fallback: "
                                             + error);
+                                    if (!fullDisplayExclusions.safe) {
+                                        logW("local launcher-layer capture failed; unresolved freeform "
+                                                + "surface, wallpaper fallback");
+                                        captureClient.captureScreenAsync(req.stripRect, captureScale,
+                                                req.displayId, null, null, 2, captureCb);
+                                        return;
+                                    }
                                     android.view.SurfaceControl[] fallbackExcludes = dockWindowSurface != null
                                             ? new android.view.SurfaceControl[]{dockWindowSurface} : null;
-                                    String[] fallbackNames = dockWindowLayerName != null
-                                            ? new String[]{dockWindowLayerName} : null;
                                     captureClient.captureScreenAsync(req.stripRect, captureScale,
-                                            req.displayId, fallbackExcludes, fallbackNames, 1, captureCb);
+                                            req.displayId, fallbackExcludes,
+                                            fullDisplayExclusions.layerNames, 1, captureCb);
                                 } else {
                                     logW("local launcher-layer capture failed; wallpaper fallback: " + error);
                                     captureClient.captureScreenAsync(req.stripRect, captureScale,
@@ -2319,7 +2346,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             return;
                         }
                         if (workstationMode
-                                && (hasValidDockWindowSurface() || dockWindowLayerName != null)) {
+                                && (hasValidDockWindowSurface() || dockWindowLayerName != null)
+                                && fullDisplayExclusions.safe) {
                             logW("local launcher-layer API unavailable; safe full-display fallback scene="
                                     + requestScene);
                             actualSource = CaptureSourcePolicy.Source.FULL_DISPLAY;
@@ -2330,13 +2358,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                         }
                     }
 
-                    boolean wallpaperMode = actualSource == CaptureSourcePolicy.Source.WALLPAPER;
-                    String[] excludeNames = null;
-                    if (actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY) {
-                        excludeNames = dockWindowLayerName != null
-                                ? new String[]{dockWindowLayerName, dragLayerName}
-                                : (dragLayerName != null ? new String[]{dragLayerName} : null);
+                    if (actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                            && !fullDisplayExclusions.safe) {
+                        logW("full-display capture blocked: visible freeform task has no "
+                                + "resolvable SurfaceFlinger layer; wallpaper fallback");
+                        actualSource = CaptureSourcePolicy.Source.WALLPAPER;
                     }
+                    boolean wallpaperMode = actualSource == CaptureSourcePolicy.Source.WALLPAPER;
+                    String[] excludeNames = actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                            ? fullDisplayExclusions.layerNames : null;
                     if (wallpaperMode
                             && !(workstationMode && workstationCaptureBurst.isActive())
                             && tryServeWallpaperFromCache(
