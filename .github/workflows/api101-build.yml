@@ -2,7 +2,7 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ api101-migration, refactor/modular-architecture ]
+    branches: [ api101-migration, refactor/modular-architecture, test/capture-rebuild-8ee84ed ]
   workflow_dispatch:
 
 jobs:
@@ -25,4 +25,4 @@ jobs:
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      # Keep this workflow limited to the API101 migration/refactor branches until device-verified.
+      # Test branch is temporarily included for RED/GREEN verification of the Recents scene fix.
