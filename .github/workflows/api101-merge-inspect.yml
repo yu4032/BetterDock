@@ -23,7 +23,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Stage merge resolver outside target tree
-        run: cp tools/resolve_api101_merge.py /tmp/resolve_api101_merge.py
+        run: |
+          cp tools/resolve_api101_merge.py /tmp/resolve_api101_merge.py
+          python3 tools/patch_api101_merge_resolver.py
+          python3 -m py_compile /tmp/resolve_api101_merge.py
 
       - name: Merge exact refs and resolve known conflicts
         shell: bash
