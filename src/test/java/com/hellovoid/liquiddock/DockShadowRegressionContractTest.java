@@ -34,4 +34,13 @@ public class DockShadowRegressionContractTest {
         assertTrue("shadow corner geometry must not follow transient radius animation frames",
                 source.contains("if (!animating(v)) strokeR = Math.max(0f, systemRadius + co);"));
     }
+
+    @Test
+    public void liquidGlassHostTracksDockTranslationDuringStartupAnimation() throws IOException {
+        String source = mainHook();
+        assertTrue("glass host must inherit Dock translationX on transient startup frames",
+                source.contains("liquidGlassHostView.setTranslationX(bg.getTranslationX());"));
+        assertTrue("glass host must inherit Dock translationY on transient startup frames",
+                source.contains("liquidGlassHostView.setTranslationY(bg.getTranslationY());"));
+    }
 }
