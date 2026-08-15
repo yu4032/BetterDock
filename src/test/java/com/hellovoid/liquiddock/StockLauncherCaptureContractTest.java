@@ -76,6 +76,14 @@ public class StockLauncherCaptureContractTest {
         assertFalse(hook.contains("launcherResumed = hasFocus;"));
     }
 
+    @Test public void homeGestureConstructorCannotForceWallpaperOverExternalApp() throws Exception {
+        String hook = source("MainHook.java");
+        assertTrue(hook.contains("prearmGestureCaptureTarget"));
+        assertTrue(hook.contains("gesture HOME kept live while external task foreground"));
+        assertTrue(hook.contains("prearmAppBackdrop(\"gesture-home-unconfirmed\")"));
+        assertTrue(hook.contains("prearmGestureCaptureTarget(glass, target)"));
+    }
+
     @Test public void allAppsStateCarriesNoCaptureRoot() throws Exception {
         String glass = source("DockLiquidGlassView.java");
         String hook = source("MainHook.java");

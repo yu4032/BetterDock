@@ -899,6 +899,27 @@ public class MainHook {
         return installed;
     }
 
+    /** Gesture objects are prearm hints, not proof that navigation completed. HOME is the
+     * only gesture target that crosses from the live APP/RECENTS capture domain into the
+     * wallpaper domain, so never let its constructor do that while an external task is still
+     * foreground (or HOME has not yet been confirmed). */
+    private static void prearmGestureCaptureTarget(DockLiquidGlassView glass, String target) {
+        if (glass == null || workstationMode) return;
+        if ("HOME".equals(target)) {
+            String topPackage = resolveTopTaskPackage(glass.getContext());
+            boolean externalConfirmed = topPackage != null && !"com.miui.home".equals(topPackage);
+            boolean homeUnconfirmed = topPackage == null && !launcherResumed;
+            if (externalConfirmed || homeUnconfirmed) {
+                glass.prearmAppBackdrop("gesture-home-unconfirmed");
+                glass.requestCapture("gesture-home-live-prearm");
+                log("[DC] gesture HOME kept live while external task foreground/unconfirmed pkg="
+                        + topPackage);
+                return;
+            }
+        }
+        glass.setGestureCaptureTarget(target);
+    }
+
     private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
         try {
             Class<?> eventClass = Class.forName("com.miui.home.launcher.dock.v3." + eventName, false, cl);
@@ -907,8 +928,8 @@ public class MainHook {
                     Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                     DockLiquidGlassView glass = liquidGlassView;
                     if (glass != null && !workstationMode)
-                        glass.setGestureCaptureTarget(target);
-                    if (!workstationMode) log("[DC] liquid gesture target=" + target);
+                        prearmGestureCaptureTarget(glass, target);
+                    if (!workstationMode) log("[DC] liquid gesture prearm=" + target);
                     return r;
                 });
             }
