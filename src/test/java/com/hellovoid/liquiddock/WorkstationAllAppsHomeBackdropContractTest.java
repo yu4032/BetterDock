@@ -12,10 +12,14 @@ import static org.junit.Assert.assertTrue;
 
 /** Contracts that keep workstation All Apps capture-equivalent to HOME. */
 public class WorkstationAllAppsHomeBackdropContractTest {
-    private static String setAllAppsActiveMethod() throws IOException {
-        String source = Files.readString(
+    private static String dockLiquidGlassView() throws IOException {
+        return Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"),
                 StandardCharsets.UTF_8);
+    }
+
+    private static String setAllAppsActiveMethod() throws IOException {
+        String source = dockLiquidGlassView();
         int start = source.indexOf("void setAllAppsActive(boolean active, View captureRoot)");
         int end = source.indexOf("/** Exact Overview lifecycle", start);
         assertTrue("setAllAppsActive method must remain present", start >= 0 && end > start);
@@ -41,6 +45,20 @@ public class WorkstationAllAppsHomeBackdropContractTest {
         assertFalse("workstation All Apps must not start its own capture burst",
                 method.substring(workstationBranch, observationReset)
                         .contains("startWorkstationCaptureBurst"));
+    }
+
+    @Test
+    public void workstationAllAppsHasNoHiddenCapturePrivileges() throws IOException {
+        String source = dockLiquidGlassView();
+        assertFalse("pre-draw must not restart workstation capture merely for All Apps",
+                source.contains(
+                        "workstationMode && (sceneState.allAppsActive() || isRecentsVisible())"));
+        assertFalse("capture permission must not bypass normal HOME visibility for All Apps",
+                source.contains(
+                        "|| sceneState.allAppsActive() || workstationRecentsActive"));
+        assertFalse("burst settling must not treat All Apps as a live-capture scene",
+                source.contains(
+                        "if (sceneState.allAppsActive() || isRecentsVisible()) return;"));
     }
 
     @Test
