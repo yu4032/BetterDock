@@ -5,6 +5,9 @@ on:
     branches: [ api101-migration, refactor/modular-architecture, test/capture-rebuild-8ee84ed ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,9 +19,26 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
+      - name: Apply freeform capture exclusion implementation
+        if: github.ref_name == 'test/capture-rebuild-8ee84ed'
+        run: python tools/apply_freeform_capture_exclusion_patch.py
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
+      - name: Commit verified freeform capture exclusion
+        if: github.ref_name == 'test/capture-rebuild-8ee84ed'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/FreeformCapturePolicy.java \
+                  src/main/java/com/hellovoid/liquiddock/CaptureExclusionNames.java \
+                  src/main/java/com/hellovoid/liquiddock/SurfaceLayerNameResolver.java \
+                  src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java \
+                  src/main/java/com/hellovoid/liquiddock/CaptureSourcePolicy.java \
+                  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+          git diff --cached --check
+          git commit -m "feat: exclude freeform windows from desktop capture [skip ci]"
+          git push origin HEAD:${GITHUB_REF_NAME}
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
