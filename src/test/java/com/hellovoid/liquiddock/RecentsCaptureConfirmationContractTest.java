@@ -44,7 +44,9 @@ public class RecentsCaptureConfirmationContractTest {
         assertTrue(start >= 0 && end > start);
         String startCapture = glass.substring(start, end);
         assertTrue(startCapture.contains("CaptureSourcePolicy.sourceFor("));
-        assertTrue("runtime source selection must include confirmed Overview state",
-                startCapture.contains("requestScene, localCaptureSurface != null, isRecentsVisible())"));
+        assertTrue("runtime source selection must still pass confirmed Overview state explicitly",
+                startCapture.contains("requestScene, localCaptureSurface != null, isRecentsVisible(),"));
+        assertTrue("freeform HOME live-capture flag must remain a separate source input",
+                startCapture.contains("liveHomeBehindFreeform"));
     }
 }
