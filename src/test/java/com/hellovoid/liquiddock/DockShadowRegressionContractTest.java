@@ -31,5 +31,7 @@ public class DockShadowRegressionContractTest {
                 source.contains("boolean anim = animating(bg);"));
         assertTrue("shadow geometry sync must be gated until the Dock animation has settled",
                 source.contains("if (!anim && bgW != lastShadowW)"));
+        assertTrue("shadow corner geometry must not follow transient radius animation frames",
+                source.contains("if (!animating(v)) strokeR = Math.max(0f, systemRadius + co);"));
     }
 }
