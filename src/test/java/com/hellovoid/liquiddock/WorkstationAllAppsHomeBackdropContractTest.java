@@ -69,7 +69,8 @@ public class WorkstationAllAppsHomeBackdropContractTest {
     }
 
     @Test
-    public void normalAllAppsCapturePathAndWorkstationRecentsRemainIndependent() throws IOException {
+    public void everyAllAppsCaptureEntryBypassesWorkstationButNormalModeRemainsIntact()
+            throws IOException {
         String source = mainHook();
         String allAppsHooks = method(source,
                 "private static void installAllAppsCaptureHooks(ClassLoader cl)",
@@ -78,9 +79,11 @@ public class WorkstationAllAppsHomeBackdropContractTest {
                 "// Normal All Apps stays in the Launcher main window.");
         String normal = allAppsHooks.substring(normalStart);
 
-        assertTrue("normal All Apps must still forward capture-state transitions",
+        assertEquals("both generic All Apps callbacks must bypass capture state in workstation",
+                2, count(normal, "if (workstationMode) return chain.proceed("));
+        assertTrue("normal mode must still forward the existing All Apps capture transitions",
                 count(normal, "glass.setAllAppsActive(") >= 3);
-        assertFalse("workstation ownership latch belongs only to laptop All Apps",
+        assertFalse("workstation ownership latch belongs only to the laptop overlay",
                 normal.contains("workstationAllAppsOpen"));
         assertTrue("workstation Recents path must remain installed",
                 source.contains("glass.onWorkstationRecentsButton();"));
