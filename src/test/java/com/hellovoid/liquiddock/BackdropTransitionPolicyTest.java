@@ -17,6 +17,15 @@ public class BackdropTransitionPolicyTest {
                 CaptureScene.valueOf(installed), CaptureScene.valueOf(target));
     }
 
+    private static boolean shouldHoldUntilReplacement(String installed, String target) throws Exception {
+        Class<?> policy = Class.forName("com.hellovoid.liquiddock.BackdropTransitionPolicy");
+        Method method = policy.getDeclaredMethod(
+                "shouldHoldInstalledUntilReplacement", CaptureScene.class, CaptureScene.class);
+        method.setAccessible(true);
+        return (Boolean) method.invoke(null,
+                CaptureScene.valueOf(installed), CaptureScene.valueOf(target));
+    }
+
     private static boolean shouldRevealNativeFallback(String target) throws Exception {
         Class<?> policy = Class.forName("com.hellovoid.liquiddock.BackdropTransitionPolicy");
         Method method = policy.getDeclaredMethod(
@@ -37,6 +46,13 @@ public class BackdropTransitionPolicyTest {
         assertTrue(shouldDrop("APP", "ALL_APPS"));
         assertTrue(shouldDrop("RECENTS", "HOME"));
         assertTrue(shouldDrop("RECENTS", "ALL_APPS"));
+    }
+
+    @Test public void appToHomeKeepsInstalledFrameUntilCleanReplacementExists() throws Exception {
+        assertTrue(shouldHoldUntilReplacement("APP", "HOME"));
+        assertFalse(shouldHoldUntilReplacement("HOME", "APP"));
+        assertFalse(shouldHoldUntilReplacement("APP", "ALL_APPS"));
+        assertFalse(shouldHoldUntilReplacement("RECENTS", "HOME"));
     }
 
     @Test public void transitionsWithinSameCaptureDomainDoNotDrop() throws Exception {
