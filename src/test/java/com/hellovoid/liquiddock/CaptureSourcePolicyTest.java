@@ -7,7 +7,7 @@ import java.lang.reflect.Method;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-/** Launcher-owned scenes stay wallpaper-backed until Recents is explicitly confirmed live. */
+/** Launcher-owned scenes stay wallpaper-backed until their exact live boundary is confirmed. */
 public class CaptureSourcePolicyTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static String sourceFor(String sceneName, boolean localLayerAvailable) throws Exception {
@@ -38,6 +38,24 @@ public class CaptureSourcePolicyTest {
                 null, sceneValue, localLayerAvailable, recentsLiveConfirmed)).name();
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static String workstationSourceFor(String sceneName, boolean localLayerAvailable)
+            throws Exception {
+        Class<?> policy = Class.forName("com.hellovoid.liquiddock.CaptureSourcePolicy");
+        Class<?> scene = Class.forName("com.hellovoid.liquiddock.CaptureScene");
+        final Method sourceFor;
+        try {
+            sourceFor = policy.getDeclaredMethod(
+                    "sourceForWorkstationScene", scene, boolean.class);
+        } catch (NoSuchMethodException e) {
+            fail("CaptureSourcePolicy must expose workstation live-scene source selection");
+            return null;
+        }
+        sourceFor.setAccessible(true);
+        Object sceneValue = Enum.valueOf((Class<? extends Enum>) scene, sceneName);
+        return ((Enum<?>) sourceFor.invoke(null, sceneValue, localLayerAvailable)).name();
+    }
+
     @Test public void externalAppStillUsesFullDisplay() throws Exception {
         assertEquals("FULL_DISPLAY", sourceFor("APP", false));
         assertEquals("FULL_DISPLAY", sourceFor("APP", false, false));
@@ -64,5 +82,20 @@ public class CaptureSourcePolicyTest {
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", true));
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", false));
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", true, true));
+    }
+
+    @Test public void workstationLauncherScenesPreferLocalLayer() throws Exception {
+        assertEquals("LOCAL_LAYER", workstationSourceFor("ALL_APPS", true));
+        assertEquals("LOCAL_LAYER", workstationSourceFor("RECENTS", true));
+    }
+
+    @Test public void workstationLauncherScenesFallBackToFullDisplay() throws Exception {
+        assertEquals("FULL_DISPLAY", workstationSourceFor("ALL_APPS", false));
+        assertEquals("FULL_DISPLAY", workstationSourceFor("RECENTS", false));
+    }
+
+    @Test public void workstationNonLauncherScenesStayWallpaperBacked() throws Exception {
+        assertEquals("WALLPAPER", workstationSourceFor("APP", true));
+        assertEquals("WALLPAPER", workstationSourceFor("HOME", true));
     }
 }
