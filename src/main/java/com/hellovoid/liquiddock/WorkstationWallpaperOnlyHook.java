@@ -24,10 +24,66 @@ final class WorkstationWallpaperOnlyHook {
     private WorkstationWallpaperOnlyHook() {}
 
     static void install(ClassLoader classLoader) {
+        installLiquidBackdropFallback();
         installLiquidRecentsBlock();
         installNativeSnapshotLock(classLoader);
         installAllAppsSnapshotTriggers(classLoader);
         installRecentsSnapshotTrigger(classLoader);
+    }
+
+    /**
+     * MainHook and DockLiquidGlassView historically both hid the normal HotSeats
+     * background when workstation mode was active, assuming a separate vendor
+     * DockContainer background would always remain visible. That assumption does
+     * not hold on every HyperOS workstation build. When the LiquidDock glass is
+     * suspended, restore the native Dock background as the stable fallback.
+     *
+     * Live glass remains authoritative while it is actually visible, so this guard
+     * does not create a double background during a real capture burst.
+     */
+    private static void installLiquidBackdropFallback() {
+        try {
+            HookUtil.hookMethod(DockLiquidGlassView.class,
+                    "setWorkstationMode", new Class<?>[]{boolean.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (MainHook.isWorkstationMode()
+                                && Boolean.TRUE.equals(chain.getArgs().get(0))) {
+                            Object glass = chain.getThisObject();
+                            if (glass instanceof View
+                                    && ((View) glass).getVisibility() != View.VISIBLE) {
+                                revealNativeBackdrop(glass, "workstation-mode");
+                            }
+                        }
+                        return result;
+                    });
+
+            HookUtil.hookMethod(DockLiquidGlassView.class,
+                    "suspendWorkstationGlass", new Class<?>[]{String.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (MainHook.isWorkstationMode()) {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            String reason = args.length > 0 ? String.valueOf(args[0]) : "unknown";
+                            revealNativeBackdrop(chain.getThisObject(), reason);
+                        }
+                        return result;
+                    });
+            MainHook.log("[DC] workstation native backdrop fallback installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation native backdrop fallback unavailable: " + error);
+        }
+    }
+
+    private static void revealNativeBackdrop(Object glass, String reason) {
+        try {
+            Object geometrySource = HookUtil.getField(glass, "geometrySource");
+            if (geometrySource instanceof View) {
+                ((View) geometrySource).setAlpha(1f);
+            }
+            HookUtil.setField(glass, "nativeBackgroundHiddenByGlass", false);
+            MainHook.log("[DC] workstation native backdrop restored reason=" + reason);
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation native backdrop restore failed: " + error);
+        }
     }
 
     /**
