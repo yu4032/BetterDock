@@ -37,12 +37,18 @@ final class CaptureSourcePolicy {
         return Source.WALLPAPER;
     }
 
-    /** Workstation All Apps/Recents are live Launcher scenes. */
+    /**
+     * Workstation All Apps is a Launcher-owned overlay, so its local layer is the cleanest
+     * source. Recents is different: App -> Overview is a mixed SurfaceFlinger composition
+     * containing the app/remote-animation leash plus Launcher task views. Capturing only the
+     * Launcher ViewRoot drops the app part of that transition, so Recents must use the composed
+     * display and let DockLiquidGlassView exclude the Floating Dock surface.
+     */
     static Source sourceForWorkstationScene(CaptureScene scene, boolean localLayerAvailable) {
-        if (scene == CaptureScene.ALL_APPS || scene == CaptureScene.RECENTS) {
+        if (scene == CaptureScene.RECENTS) return Source.FULL_DISPLAY;
+        if (scene == CaptureScene.ALL_APPS) {
             return localLayerAvailable ? Source.LOCAL_LAYER : Source.FULL_DISPLAY;
         }
-        // Outside the two workstation-owned live scenes, keep the existing wallpaper baseline.
         return Source.WALLPAPER;
     }
 }

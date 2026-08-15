@@ -812,10 +812,10 @@ public class MainHook {
                 HookUtil.hook(ctor, chain -> {
                     Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                     DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null && !workstationMode)
+                    if (glass != null)
                         glass.setOverviewActive(active, eventName);
-                    if (!workstationMode) log("[DC] liquid overview active=" + active
-                            + " event=" + eventName);
+                    log("[DC] liquid overview active=" + active
+                            + " event=" + eventName + " workstation=" + workstationMode);
                     return r;
                 });
             }
