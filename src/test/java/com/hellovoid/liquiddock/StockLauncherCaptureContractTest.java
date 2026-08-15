@@ -149,9 +149,9 @@ public class StockLauncherCaptureContractTest {
         assertFalse(hook.contains("DockStateManager$recentsListener$1"));
     }
 
-    @Test public void mingouLegacyWorkstationFallbackIsGone() throws Exception {
+    @Test public void mingouLegacyWorkstationMutationIsGone() throws Exception {
         String hook = source("MainHook.java");
-        assertFalse(hook.contains("isMingouLaptopPcModeEnabled"));
+        assertTrue(hook.contains("isMingouLaptopPcModeEnabled"));
         assertFalse(hook.contains("setMingouLaptopPcModeEnabled"));
         assertFalse(hook.contains("Mingou workstation"));
     }
