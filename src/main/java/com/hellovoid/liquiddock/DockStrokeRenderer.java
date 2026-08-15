@@ -233,6 +233,8 @@ final class DockStrokeRenderer {
 
         private Style style;
         private float radius;
+        private boolean geometryDirty = true;
+        private boolean geometryValid;
         private int drawableAlpha = 255;
         private ColorFilter colorFilter;
 
@@ -247,6 +249,7 @@ final class DockStrokeRenderer {
 
         void setStyle(Style style) {
             this.style = style;
+            geometryDirty = true;
             invalidateSelf();
         }
 
@@ -257,6 +260,7 @@ final class DockStrokeRenderer {
                 return;
             }
             this.radius = radius;
+            geometryDirty = true;
             invalidateSelf();
         }
 
@@ -276,91 +280,7 @@ final class DockStrokeRenderer {
                 return;
             }
 
-            float width = bounds.width();
-            float height = bounds.height();
-            float minDim = Math.min(width, height);
-
-            // A user-configured border is never allowed to consume the Dock body.
-            float thickness = Math.min(
-                    s.widthPx,
-                    Math.max(1f, minDim * MAX_THICKNESS_FRACTION));
-            if (!(thickness > 0f)) return;
-
-            float effectiveRadius = Math.max(0f, radius + s.radiusDeltaPx);
-
-            float outerInset;
-            float innerInset;
-            float outerRadius;
-            float innerRadius;
-            float innerCp;
-
-            if (s.squircle) {
-                // Preserve the old squircle offset semantics: the outer contour may
-                // extend outside the host and is naturally clipped by the View.
-                outerInset = -s.squircleOffsetPx;
-                innerInset = outerInset + thickness;
-                outerRadius =
-                        Math.max(0f, effectiveRadius + s.squircleOffsetPx);
-                innerRadius =
-                        Math.max(0f, outerRadius - thickness * 0.5f);
-                innerCp = 0.65f;
-            } else if (s.fillDiff) {
-                // Legacy fillDiff occupied the edge-to-width interval.
-                outerInset = 0f;
-                innerInset = thickness;
-                outerRadius = Math.max(0f, effectiveRadius - 1f);
-                innerRadius = Math.max(0f, outerRadius - thickness);
-                innerCp = s.squircleCp;
-            } else {
-                // Legacy standard stroke was centered ~1 px inside the View edge.
-                float half = thickness * 0.5f;
-                outerInset = 1f - half;
-                innerInset = 1f + half;
-                float centerRadius = Math.max(0f, effectiveRadius - 1f);
-                outerRadius = centerRadius + half;
-                innerRadius = Math.max(0f, centerRadius - half);
-                innerCp = s.squircleCp;
-            }
-
-            outerRect.set(
-                    bounds.left + outerInset,
-                    bounds.top + outerInset,
-                    bounds.right - outerInset,
-                    bounds.bottom - outerInset);
-
-            innerRect.set(
-                    bounds.left + innerInset,
-                    bounds.top + innerInset,
-                    bounds.right - innerInset,
-                    bounds.bottom - innerInset);
-
-            // Fail closed.  If animation-time geometry is bad, skip this border
-            // frame.  Never fall back to painting the outer shape alone.
-            if (outerRect.width() <= 1f
-                    || outerRect.height() <= 1f
-                    || innerRect.width() <= 1f
-                    || innerRect.height() <= 1f
-                    || innerRect.width()
-                            < width * MIN_INTERIOR_FRACTION
-                    || innerRect.height()
-                            < height * MIN_INTERIOR_FRACTION) {
-                return;
-            }
-
-            outer.rewind();
-            inner.rewind();
-            buildShape(
-                    outer,
-                    outerRect,
-                    outerRadius,
-                    s.squircle,
-                    s.squircleCp);
-            buildShape(
-                    inner,
-                    innerRect,
-                    innerRadius,
-                    s.squircle,
-                    innerCp);
+            if (!ensureGeometry(s, bounds)) return;
 
             int alpha = Math.round(
                     Color.alpha(s.color) * drawableAlpha / 255f);
@@ -380,6 +300,69 @@ final class DockStrokeRenderer {
             canvas.clipOutPath(inner);
             canvas.drawPath(outer, paint);
             canvas.restoreToCount(save);
+        }
+
+
+        private boolean ensureGeometry(Style s, Rect bounds) {
+            if (!geometryDirty) return geometryValid;
+            geometryDirty = false;
+            geometryValid = false;
+
+            float width = bounds.width();
+            float height = bounds.height();
+            float minDim = Math.min(width, height);
+            float thickness = Math.min(
+                    s.widthPx,
+                    Math.max(1f, minDim * MAX_THICKNESS_FRACTION));
+            if (!(thickness > 0f)) return false;
+
+            float effectiveRadius = Math.max(0f, radius + s.radiusDeltaPx);
+            float outerInset;
+            float innerInset;
+            float outerRadius;
+            float innerRadius;
+            float innerCp;
+
+            if (s.squircle) {
+                outerInset = -s.squircleOffsetPx;
+                innerInset = outerInset + thickness;
+                outerRadius = Math.max(0f, effectiveRadius + s.squircleOffsetPx);
+                innerRadius = Math.max(0f, outerRadius - thickness * 0.5f);
+                innerCp = 0.65f;
+            } else if (s.fillDiff) {
+                outerInset = 0f;
+                innerInset = thickness;
+                outerRadius = Math.max(0f, effectiveRadius - 1f);
+                innerRadius = Math.max(0f, outerRadius - thickness);
+                innerCp = s.squircleCp;
+            } else {
+                float half = thickness * 0.5f;
+                outerInset = 1f - half;
+                innerInset = 1f + half;
+                float centerRadius = Math.max(0f, effectiveRadius - 1f);
+                outerRadius = centerRadius + half;
+                innerRadius = Math.max(0f, centerRadius - half);
+                innerCp = s.squircleCp;
+            }
+
+            outerRect.set(bounds.left + outerInset, bounds.top + outerInset,
+                    bounds.right - outerInset, bounds.bottom - outerInset);
+            innerRect.set(bounds.left + innerInset, bounds.top + innerInset,
+                    bounds.right - innerInset, bounds.bottom - innerInset);
+
+            if (outerRect.width() <= 1f || outerRect.height() <= 1f
+                    || innerRect.width() <= 1f || innerRect.height() <= 1f
+                    || innerRect.width() < width * MIN_INTERIOR_FRACTION
+                    || innerRect.height() < height * MIN_INTERIOR_FRACTION) {
+                return false;
+            }
+
+            outer.rewind();
+            inner.rewind();
+            buildShape(outer, outerRect, outerRadius, s.squircle, s.squircleCp);
+            buildShape(inner, innerRect, innerRadius, s.squircle, innerCp);
+            geometryValid = true;
+            return true;
         }
 
         private static void buildShape(
@@ -446,6 +429,7 @@ final class DockStrokeRenderer {
 
         @Override
         protected void onBoundsChange(Rect bounds) {
+            geometryDirty = true;
             if (baseForeground != null) {
                 baseForeground.setBounds(bounds);
             }

@@ -411,20 +411,17 @@ public class MainHook {
                 config.glass, config.dock, squircle, squircleCp);
         glass.setId(View.generateViewId());
 
-        DockStrokeOverlayView overlay = new DockStrokeOverlayView(parent.getContext());
-        overlay.setId(View.generateViewId());
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
         host.setId(View.generateViewId());
-        host.setLayers(glass, overlay);
+        host.setLayers(glass);
 
         float radius = bgR;
         try {
             Object value = HookUtil.getField(background, "mCornerRadius");
             if (value instanceof Float) radius = (Float) value;
         } catch (Throwable ignored) {}
-        overlay.reload(config.dock, config.glass, radius);
         host.setGeometry(radius, squircle, squircleCp);
-        overlay.setGeometry(radius, squircle, squircleCp);
+        host.reloadOverlay(config.dock, config.glass);
 
         parent.addView(host, insertIndex,
                 new FrameLayout.LayoutParams(1, 1, gravity));
