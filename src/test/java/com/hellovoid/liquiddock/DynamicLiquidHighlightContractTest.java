@@ -32,74 +32,71 @@ public class DynamicLiquidHighlightContractTest {
     }
 
     @Test
-    public void activeBackendIsForwardedToSharpOverlay() throws IOException {
+    public void activeBackendIsForwardedToSharpHost() throws IOException {
         String glass = source("DockLiquidGlassView.java");
         String host = source("DockLiquidGlassHostView.java");
         assertTrue("glass must publish active backend changes",
                 glass.contains("ActiveBlurBackendListener"));
         assertTrue("glass must notify its backend listener",
                 glass.contains("onActiveBlurBackendChanged(activeBlurBackend)"));
-        assertTrue("host must route the active backend to the overlay",
-                host.contains("overlayView.setActiveBlurBackend(mode)"));
+        assertTrue("host must receive backend changes without a second child View",
+                host.contains("glass.setActiveBlurBackendListener(this::setActiveBlurBackend)"));
     }
 
     @Test
-    public void advancedOverlayUsesRealtimeGeometricHighlightShader() throws IOException {
-        String overlay = source("DockStrokeOverlayView.java");
+    public void advancedHostUsesRealtimeGeometricHighlightShader() throws IOException {
+        String host = source("DockLiquidGlassHostView.java");
         assertTrue("advanced highlight must be computed with RuntimeShader",
-                overlay.contains("RuntimeShader"));
+                host.contains("RuntimeShader"));
         assertTrue("sharp highlight must use additive PLUS compositing",
-                overlay.contains("BlendMode.PLUS"));
-        assertTrue("highlight must be clipped to the shared Dock shape",
-                overlay.contains("DockShapePath.build"));
-        assertTrue("highlight draw must clip before drawing the shader rectangle",
-                overlay.contains("canvas.clipPath(shape)"));
-        assertTrue("overlay must compute specular lighting",
-                overlay.contains("specP"));
-        assertTrue("overlay must compute rim lighting",
-                overlay.contains("rimLitSide"));
-        assertTrue("overlay must compute caustics",
-                overlay.contains("caust"));
-        assertTrue("overlay must expose dynamic highlight parameters",
-                overlay.contains("setHighlightParams"));
+                host.contains("BlendMode.PLUS"));
+        assertTrue("host must own the final shared Dock shape clip",
+                host.contains("DockShapePath.build") && host.contains("canvas.clipPath(clipPath)"));
+        assertTrue("highlight must draw after the glass child inside the host clip",
+                host.indexOf("super.dispatchDraw(canvas)") < host.indexOf("drawAdvancedHighlight(canvas)"));
+        assertTrue("host must compute specular lighting", host.contains("specP"));
+        assertTrue("host must compute rim lighting", host.contains("rimLitSide"));
+        assertTrue("host must compute caustics", host.contains("caust"));
+        assertTrue("host must expose dynamic highlight parameters",
+                host.contains("setHighlightParams"));
         assertFalse("static Canvas gradient is replaced by the realtime shader",
-                overlay.contains("LinearGradient"));
+                host.contains("LinearGradient"));
     }
 
     @Test
     public void dynamicHighlightParametersFollowGlassHotReload() throws IOException {
-        String overlay = source("DockStrokeOverlayView.java");
-        assertTrue(overlay.contains("glass.normalStrength"));
-        assertTrue(overlay.contains("glass.dome"));
-        assertTrue(overlay.contains("glass.specularSharp"));
-        assertTrue(overlay.contains("glass.specularStrength"));
-        assertTrue(overlay.contains("glass.rimLight"));
-        assertTrue(overlay.contains("glass.caustics"));
-        assertTrue(overlay.contains("glass.edgeBand"));
-        assertTrue(overlay.contains("glass.highlightAlpha"));
+        String host = source("DockLiquidGlassHostView.java");
+        assertTrue(host.contains("glass.normalStrength"));
+        assertTrue(host.contains("glass.dome"));
+        assertTrue(host.contains("glass.specularSharp"));
+        assertTrue(host.contains("glass.specularStrength"));
+        assertTrue(host.contains("glass.rimLight"));
+        assertTrue(host.contains("glass.caustics"));
+        assertTrue(host.contains("glass.edgeBand"));
+        assertTrue(host.contains("glass.highlightAlpha"));
         assertTrue("reload must forward the dynamic model in one setter call",
-                overlay.contains("setHighlightParams(glass.normalStrength, glass.dome"));
+                host.contains("setHighlightParams(glass.normalStrength, glass.dome"));
     }
 
     @Test
     public void squircleHighlightUsesSharedBezierGeometryAndStableRimBand() throws IOException {
-        String overlay = source("DockStrokeOverlayView.java");
+        String host = source("DockLiquidGlassHostView.java");
         assertTrue("shader must know whether the shared Dock shape is a squircle",
-                overlay.contains("uniform float squircleEnabled;"));
+                host.contains("uniform float squircleEnabled;"));
         assertTrue("shader must receive the same cubic control-point ratio as DockShapePath",
-                overlay.contains("uniform float squircleCp;"));
+                host.contains("uniform float squircleCp;"));
         assertTrue("squircle distance must follow the cubic corner rather than sdRound only",
-                overlay.contains("sdBezierSquircle"));
+                host.contains("sdBezierSquircle"));
         assertTrue("all highlight geometry must route through the selected shape distance",
-                overlay.contains("sdShape"));
+                host.contains("sdShape"));
         assertTrue("runtime must pass squircle mode to the highlight shader",
-                overlay.contains("setFloatUniform(\"squircleEnabled\""));
+                host.contains("setFloatUniform(\"squircleEnabled\""));
         assertTrue("runtime must pass the shared squircle control point to the highlight shader",
-                overlay.contains("setFloatUniform(\"squircleCp\""));
+                host.contains("setFloatUniform(\"squircleCp\""));
         assertTrue("highlight width must actually scale the advanced rim band",
-                overlay.contains("uniform float highlightWidth;")
-                        && overlay.contains("max(0.1,highlightWidth)"));
+                host.contains("uniform float highlightWidth;")
+                        && host.contains("max(0.1,highlightWidth)"));
         assertFalse("reverse-edge smoothstep causes a hard/undefined corner transition",
-                overlay.contains("smoothstep(bandR,bandR*0.06,edgeDist)"));
+                host.contains("smoothstep(bandR,bandR*0.06,edgeDist)"));
     }
 }
