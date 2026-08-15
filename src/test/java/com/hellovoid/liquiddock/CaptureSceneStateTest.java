@@ -11,17 +11,33 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureScene.RECENTS, state.resolve(1L, true, true, true));
     }
 
-    @Test public void allAppsOwnsSceneEvenWhenLauncherOverlayStealsFocus() throws Exception {
+    @Test public void allAppsOwnsSceneEvenWhenLauncherOverlayStealsFocus() {
         CaptureSceneState state = new CaptureSceneState();
-        state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
-                .invoke(state, true);
-        assertEquals("ALL_APPS", state.desired().name());
+        state.setAllAppsActive(true, false);
+        assertEquals(CaptureScene.ALL_APPS, state.desired());
         // Official Laptop overlay enables focus when All Apps opens, so Launcher main focus
-        // may be false. That must not demote the scene to external APP.
-        assertEquals("ALL_APPS", state.resolve(1L, false, true, false).name());
-        state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
-                .invoke(state, false);
+        // may be false. Normal mode must still keep All Apps as the owning scene.
+        assertEquals(CaptureScene.ALL_APPS, state.resolve(1L, false, true, false));
+        state.setAllAppsActive(false, false);
         assertEquals(CaptureScene.APP, state.resolve(2L, false, true, false));
+    }
+
+    @Test public void workstationAllAppsAliasesHomeWithoutBackdropRevision() {
+        CaptureSceneState state = new CaptureSceneState();
+        assertTrue(state.refresh(1L, false, true, true));
+        assertEquals(CaptureScene.HOME, state.desired());
+        long homeRevision = state.revision();
+
+        state.setAllAppsActive(true, true);
+        assertTrue(state.allAppsActive());
+        assertEquals(CaptureScene.HOME, state.desired());
+        assertEquals(CaptureScene.HOME, state.resolve(2L, false, true, false));
+        assertEquals(homeRevision, state.revision());
+
+        state.setAllAppsActive(false, true);
+        assertFalse(state.allAppsActive());
+        assertEquals(CaptureScene.HOME, state.desired());
+        assertEquals(homeRevision, state.revision());
     }
 
     @Test public void gestureTargetExpiresAndCanBeInterrupted() {
