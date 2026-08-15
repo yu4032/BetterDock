@@ -1205,7 +1205,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     /** Exact Overview lifecycle supplied by launcher Enter/ExitOverviewStateEvent hooks.
-     * Gesture target hooks also update this latch early so the first transition frame is live. */
+     * This is the confirmed live-Recents boundary; gesture target hooks remain prearm-only. */
     void setOverviewActive(boolean active, String reason) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(() -> setOverviewActive(active, reason));
@@ -1581,9 +1581,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         if (workstationMode) return;
-        // Gesture events are earlier than Overview enter/exit events and therefore provide
-        // the first-frame latch. HOME/APP immediately clear a cancelled/closing Recents path.
-        overviewActive = "RECENTS".equals(target);
+        // Gesture events are prearm-only. Exact Overview enter/exit callbacks own the
+        // confirmed live-Recents boundary; HOME/APP still replace a cancelled path immediately.
         sceneState.setGestureTarget(target, System.nanoTime());
         updateDesiredScene();
         if ("APP".equals(target)) {
@@ -2124,7 +2123,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             requestedSource = CaptureSourcePolicy.Source.WALLPAPER;
         } else {
             requestedSource = CaptureSourcePolicy.sourceFor(
-                    requestScene, localCaptureSurface != null);
+                    requestScene, localCaptureSurface != null, isRecentsVisible());
         }
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
@@ -2160,8 +2159,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }, backoff);
         };
         mainHandler.postDelayed(captureTimeout, 600L);
-        // Only a genuine external APP uses full-display mode-1. Launcher-owned Recents
-        // and All Apps capture their own root layer and never depend on Dock exclusion.
+        // APP and confirmed RECENTS use full-display mode-1. Unconfirmed RECENTS remains
+        // wallpaper-backed, so only confirmed live capture enters the Dock exclusion path.
         boolean needsDockExclude = useFullscreen
                 && requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
                 && !workstationMode;
@@ -2320,9 +2319,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 return;
             }
             // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
-            // returns status=0 with a PURE BLACK buffer while a non-home app is in front
-            // (verified: Dock pull-up over an app).  Installing such a frame freezes a
-            // black backdrop forever; discard it and keep the previous frame.
+            // returns status=0 with a valid-sized but PURE BLACK buffer while a non-home app
+            // is in front (verified: Dock pull-up over an app).  Installing such a frame
+            // freezes a black backdrop forever; discard it and keep the previous frame.
             VisualProbe visualProbe = probeBitmap(strip, blackFrameThreshold);
             logI("frame " + strip.getWidth() + "x" + strip.getHeight()
                     + " stripRect=" + request.stripRect
