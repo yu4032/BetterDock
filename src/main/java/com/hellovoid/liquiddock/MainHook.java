@@ -1040,7 +1040,13 @@ public class MainHook {
         try {
             Class<?> mc = Class.forName("com.miui.home.launcher.allapps.LauncherModeController", false, cl);
             Object laptopResult = HookUtil.invokeStatic("com.miui.home.launcher.allapps.LauncherModeController", "isLaptopMode");
-            workstationMode = laptopResult instanceof Boolean && (Boolean) laptopResult;
+            if (laptopResult instanceof Boolean) {
+                workstationMode = (Boolean) laptopResult;
+            } else {
+                Object dcResult = HookUtil.invokeStatic(
+                        "com.miui.home.launcher.DeviceConfig", "isMingouLaptopPcModeEnabled");
+                workstationMode = dcResult instanceof Boolean && (Boolean) dcResult;
+            }
             Class<?> sm = Class.forName("com.miui.home.launcher.laptop.LaptopStateManager", false, cl);
             HookUtil.hookMethod(sm, "onLaptopModeChanged", new Class<?>[]{boolean.class},
                     chain -> {
