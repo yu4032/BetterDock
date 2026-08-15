@@ -2,11 +2,8 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ api101-migration, refactor/modular-architecture, test/capture-rebuild-8ee84ed ]
+    branches: [ api101-migration, refactor/modular-architecture ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -19,23 +16,9 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
-      - name: Apply workstation live-backdrop implementation
-        if: github.ref_name == 'test/capture-rebuild-8ee84ed'
-        run: python tools/apply_workstation_live_backdrop_patch.py
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
-      - name: Commit verified workstation implementation
-        if: github.ref_name == 'test/capture-rebuild-8ee84ed'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/main/java/com/hellovoid/liquiddock/WorkstationCaptureBurst.java \
-                  src/main/java/com/hellovoid/liquiddock/CaptureSourcePolicy.java \
-                  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
-          git diff --cached --check
-          git commit -m "feat: add adaptive workstation live backdrop [skip ci]"
-          git push origin HEAD:${GITHUB_REF_NAME}
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
