@@ -84,14 +84,17 @@ public class CaptureSourcePolicyTest {
         assertEquals("WALLPAPER", sourceFor("ALL_APPS", true, true));
     }
 
-    @Test public void workstationLauncherScenesPreferLocalLayer() throws Exception {
+    @Test public void workstationAllAppsPrefersLocalLayer() throws Exception {
         assertEquals("LOCAL_LAYER", workstationSourceFor("ALL_APPS", true));
-        assertEquals("LOCAL_LAYER", workstationSourceFor("RECENTS", true));
     }
 
-    @Test public void workstationLauncherScenesFallBackToFullDisplay() throws Exception {
-        assertEquals("FULL_DISPLAY", workstationSourceFor("ALL_APPS", false));
+    @Test public void workstationRecentsAlwaysUsesFullDisplayComposition() throws Exception {
+        assertEquals("FULL_DISPLAY", workstationSourceFor("RECENTS", true));
         assertEquals("FULL_DISPLAY", workstationSourceFor("RECENTS", false));
+    }
+
+    @Test public void workstationAllAppsFallsBackToFullDisplay() throws Exception {
+        assertEquals("FULL_DISPLAY", workstationSourceFor("ALL_APPS", false));
     }
 
     @Test public void workstationNonLauncherScenesStayWallpaperBacked() throws Exception {
