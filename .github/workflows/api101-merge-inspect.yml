@@ -1,0 +1,61 @@
+name: Inspect API101 merge conflicts
+
+on:
+  push:
+    branches: [ agent/api101-merge-helper ]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reproduce merge
+        id: merge
+        shell: bash
+        run: |
+          set -u
+          git fetch origin api101-migration test/capture-rebuild-8ee84ed
+          expected_base=6c48c21e84162dad2a055071330598cadd5f86db
+          expected_head=38d43ba6594373643a9982746854c4817d5e7568
+          actual_base=$(git rev-parse origin/api101-migration)
+          actual_head=$(git rev-parse origin/test/capture-rebuild-8ee84ed)
+          test "$actual_base" = "$expected_base" || { echo "api101 moved: $actual_base"; exit 2; }
+          test "$actual_head" = "$expected_head" || { echo "test branch moved: $actual_head"; exit 2; }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B merge-work "$expected_base"
+
+          set +e
+          git merge --no-commit --no-ff "$expected_head"
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+          mkdir -p /tmp/api101-merge-conflicts
+          git diff --name-only --diff-filter=U | tee /tmp/api101-merge-conflicts/CONFLICTS.txt
+          git status --short > /tmp/api101-merge-conflicts/STATUS.txt
+
+          while IFS= read -r file; do
+            test -n "$file" || continue
+            mkdir -p "/tmp/api101-merge-conflicts/$(dirname "$file")"
+            cp "$file" "/tmp/api101-merge-conflicts/$file"
+            git show ":1:$file" > "/tmp/api101-merge-conflicts/$file.base" 2>/dev/null || true
+            git show ":2:$file" > "/tmp/api101-merge-conflicts/$file.ours" 2>/dev/null || true
+            git show ":3:$file" > "/tmp/api101-merge-conflicts/$file.theirs" 2>/dev/null || true
+          done < /tmp/api101-merge-conflicts/CONFLICTS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api101-merge-conflicts
+          path: /tmp/api101-merge-conflicts
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Require explicit resolution
+        if: steps.merge.outputs.status != '0'
+        run: exit 1
