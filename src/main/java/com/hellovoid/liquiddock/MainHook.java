@@ -273,7 +273,7 @@ public class MainHook {
                         if (!workstationMode) {
                             View v = (View) chain.getThisObject();
                             float systemRadius = (Float) args[0];
-                            strokeR = Math.max(0f, systemRadius + co);
+                            if (!animating(v)) strokeR = Math.max(0f, systemRadius + co);
                             args[0] = Math.max(0f, systemRadius + blurCo);
                         }
                         Object r = chain.proceed(args);
@@ -1148,7 +1148,7 @@ public class MainHook {
         final int blurRadius = Math.min(Math.max(1, radius), maxDistance);
         final int spread = Math.max(0, maxDistance - blurRadius);
         shadowPad = Math.max(4, maxDistance + Math.abs(offsetY) + 4);
-        return new View(oldBg.getContext()) {
+        View view = new View(oldBg.getContext()) {
             @Override protected void onDraw(Canvas canvas) {
                 if (bgW <= 0 || bgH <= 0) return;
                 float left = shadowPad, top = shadowPad;
@@ -1174,6 +1174,8 @@ public class MainHook {
                 super.onDetachedFromWindow();
             }
         };
+        view.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        return view;
     }
 
     private static void syncShadowGeometry() {
@@ -1193,6 +1195,7 @@ public class MainHook {
         if (bg == null) return;
         if (workstationMode && liquidGlassView == null) return;
         if (liquidGlassHostView == null && liquidGlassView == null && shadowView == null) return;
+        boolean anim = animating(bg);
         try {
             bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
             Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
@@ -1220,7 +1223,7 @@ public class MainHook {
             }
             if (shadowView != null) {
                 if (workstationMode) { shadowView.setVisibility(View.GONE); return; }
-                if (bgW != lastShadowW) {
+                if (!anim && bgW != lastShadowW) {
                     lastShadowW = bgW;
                     syncShadowGeometry();
                     shadowView.post(MainHook::syncShadowGeometry);
