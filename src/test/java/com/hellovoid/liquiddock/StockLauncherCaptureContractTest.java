@@ -68,6 +68,14 @@ public class StockLauncherCaptureContractTest {
         assertTrue(hook.contains("glass.isAllAppsActive() || glass.isOverviewActive()"));
     }
 
+    @Test public void launcherFocusGainCannotOverrideExternalAppTopTask() throws Exception {
+        String hook = source("MainHook.java");
+        assertTrue(hook.contains("resolveTopTaskPackage"));
+        assertTrue(hook.contains("confirmLauncherHomeFocus"));
+        assertTrue(hook.contains("external task still foreground"));
+        assertFalse(hook.contains("launcherResumed = hasFocus;"));
+    }
+
     @Test public void allAppsStateCarriesNoCaptureRoot() throws Exception {
         String glass = source("DockLiquidGlassView.java");
         String hook = source("MainHook.java");

@@ -462,6 +462,66 @@ public class MainHook {
         }
     }
 
+    /** Window focus is only a HOME/APP hint. HyperOS can transiently focus Launcher while
+     * an external task still owns the foreground, so confirm the top task before promoting
+     * the capture scene from live APP to wallpaper HOME. */
+    private static String resolveTopTaskPackage(Object launcher) {
+        if (!(launcher instanceof android.content.Context)) return null;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager)
+                    ((android.content.Context) launcher).getSystemService(
+                            android.content.Context.ACTIVITY_SERVICE);
+            if (am == null) return null;
+            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
+                    am.getRunningTasks(1);
+            if (tasks == null || tasks.isEmpty() || tasks.get(0).topActivity == null) return null;
+            return tasks.get(0).topActivity.getPackageName();
+        } catch (Throwable e) {
+            log("[DC] top task resolve unavailable: " + e);
+            return null;
+        }
+    }
+
+    private static boolean confirmLauncherHomeFocus(Object launcher,
+                                                     DockLiquidGlassView glass,
+                                                     String reason) {
+        String topPackage = resolveTopTaskPackage(launcher);
+        if (!"com.miui.home".equals(topPackage)) {
+            if (topPackage != null) {
+                launcherLifecycleKnown = true;
+                launcherResumed = false;
+                if (glass != null) glass.setLauncherState(true, false);
+                log("[DC] launcher focus rejected: external task still foreground pkg="
+                        + topPackage + " reason=" + reason);
+            } else {
+                log("[DC] launcher focus pending: top task unavailable reason=" + reason);
+            }
+            return false;
+        }
+        launcherLifecycleKnown = true;
+        launcherResumed = true;
+        if (glass != null) {
+            glass.setLauncherState(true, true);
+            glass.onLauncherFocused();
+        }
+        log("[DC] launcher focus confirmed HOME reason=" + reason);
+        return true;
+    }
+
+    private static void scheduleLauncherHomeFocusRecheck(Object launcher,
+                                                          DockLiquidGlassView glass) {
+        if (!(launcher instanceof Activity) || glass == null) return;
+        View decor = ((Activity) launcher).getWindow().getDecorView();
+        for (long delay : new long[]{120L, 420L}) {
+            decor.postDelayed(() -> {
+                if (liquidGlassView != glass || launcherResumed || workstationMode
+                        || glass.isAllAppsActive() || glass.isOverviewActive()
+                        || !decor.hasWindowFocus()) return;
+                confirmLauncherHomeFocus(launcher, glass, "focus-recheck-" + delay);
+            }, delay);
+        }
+    }
+
     private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
         Class<?> launcherClass;
         try {
@@ -486,7 +546,8 @@ public class MainHook {
                     });
         } catch (Throwable e) { log("[DC] SystemUI panel capture gate unavailable: " + e); }
 
-        // Window focus: the authoritative HOME/APP signal
+        // Window focus only distinguishes HOME from an external APP after the current
+        // top task agrees. Launcher-owned ALL_APPS/RECENTS state remains higher priority.
         try {
             HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
                     chain -> {
@@ -502,22 +563,21 @@ public class MainHook {
                                     + hasFocus);
                             return r;
                         }
-                        launcherLifecycleKnown = true;
-                        launcherResumed = hasFocus;
-                        log("[DC] liquid focus: " + hasFocus);
-                        if (glass != null) {
-                            if (!hasFocus) {
-                                // Resolve the APP/layer before requesting the APP scene. Previously
-                                // setLauncherState() dirtied capture first, but the collapsed Dock
-                                // visibility gate blocked it and left the HOME wallpaper installed.
+                        log("[DC] liquid focus hint: " + hasFocus);
+                        if (!hasFocus) {
+                            launcherLifecycleKnown = true;
+                            launcherResumed = false;
+                            if (glass != null) {
                                 glass.onLauncherFocusLost();
                                 glass.refreshForegroundAppLayer();
                                 glass.setLauncherState(true, false);
                                 glass.prearmAppBackdrop("focus-loss");
-                            } else {
-                                glass.setLauncherState(true, true);
-                                glass.onLauncherFocused();
                             }
+                        } else if (!confirmLauncherHomeFocus(
+                                chain.getThisObject(), glass, "focus-gain")) {
+                            // ActivityTaskManager can publish HOME a few frames after the focus
+                            // callback. Recheck briefly instead of guessing HOME immediately.
+                            scheduleLauncherHomeFocusRecheck(chain.getThisObject(), glass);
                         }
                         return r;
                     });
