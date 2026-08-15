@@ -31,6 +31,7 @@ public class MainHook {
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
     private static boolean dockDragHooksInstalled;
+    private static volatile boolean dockDragHooksReady;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
@@ -541,35 +542,61 @@ public class MainHook {
 
     // ── helpers ──────────────────────────────────────────────────────
 
-    /** Install DragController hooks once; callback reads liquidGlassView each time. */
+    /** Install DragController hooks once. Persistent drag state requires a complete pair. */
     private static void installDockDragHooks(ClassLoader cl) {
         if (dockDragHooksInstalled) return;
-        dockDragHooksInstalled = true;
+        boolean startHooked = false;
+        boolean endHooked = false;
         try {
             Class<?> dc = Class.forName("com.miui.home.launcher.DragController", false, cl);
-            HookUtil.hookMethod(dc, "startDrag",
-                    new Class<?>[]{
-                        android.graphics.drawable.Drawable.class, boolean.class,
-                        Class.forName("com.miui.home.launcher.ItemInfo", false, cl),
-                        int.class, int.class, float.class,
-                        Class.forName("com.miui.home.launcher.DragSource", false, cl),
-                        int.class
-                    },
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.setDockDragging(true, resolveDragSurfaceLayerName(chain.getThisObject()));
-                        return r;
-                    });
-            HookUtil.hookMethod(dc, "endDrag", new Class<?>[0],
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.setDockDragging(false, null);
-                        return r;
-                    });
-            log("[DC] dock drag controller hooked");
-        } catch (Throwable e) { log("[DC] drag controller hook failed: " + e); }
+            try {
+                HookUtil.hookMethod(dc, "startDrag",
+                        new Class<?>[]{
+                            android.graphics.drawable.Drawable.class, boolean.class,
+                            Class.forName("com.miui.home.launcher.ItemInfo", false, cl),
+                            int.class, int.class, float.class,
+                            Class.forName("com.miui.home.launcher.DragSource", false, cl),
+                            int.class
+                        },
+                        chain -> {
+                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            DockLiquidGlassView g = liquidGlassView;
+                            if (g != null) {
+                                if (dockDragHooksReady) {
+                                    g.setDockDragging(true,
+                                            resolveDragSurfaceLayerName(chain.getThisObject()));
+                                } else {
+                                    g.requestCapture("drag-start-partial-hook");
+                                }
+                            }
+                            return r;
+                        });
+                startHooked = true;
+            } catch (Throwable e) {
+                log("[DC] drag start hook unavailable: " + e);
+            }
+            try {
+                HookUtil.hookMethod(dc, "endDrag", new Class<?>[0],
+                        chain -> {
+                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            DockLiquidGlassView g = liquidGlassView;
+                            if (g != null) {
+                                if (dockDragHooksReady) g.setDockDragging(false, null);
+                                else g.requestCapture("drag-end-partial-hook");
+                            }
+                            return r;
+                        });
+                endHooked = true;
+            } catch (Throwable e) {
+                log("[DC] drag end hook unavailable: " + e);
+            }
+        } catch (Throwable e) {
+            log("[DC] drag controller unavailable: " + e);
+        }
+        dockDragHooksReady = startHooked && endHooked;
+        dockDragHooksInstalled = true;
+        log("[DC] dock drag authority ready=" + dockDragHooksReady
+                + " start=" + startHooked + " end=" + endHooked);
     }
 
     private static String resolveDragSurfaceLayerName(Object dragController) {

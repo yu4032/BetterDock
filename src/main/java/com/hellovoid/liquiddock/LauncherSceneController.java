@@ -9,10 +9,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/**
- * Owns Launcher scene arbitration and stock scene hooks. MainHook only composes this
- * controller with the current DockLiquidGlassView.
- */
+/** Owns Launcher scene arbitration and stock scene hooks. */
 final class LauncherSceneController {
     private final Supplier<DockLiquidGlassView> glassProvider;
     private final BooleanSupplier workstationModeProvider;
@@ -23,6 +20,7 @@ final class LauncherSceneController {
 
     private volatile boolean launcherResumed;
     private volatile boolean launcherLifecycleKnown;
+    private volatile boolean launcherAwayObserved;
     private volatile boolean systemUiPanelExpanded;
 
     LauncherSceneController(Supplier<DockLiquidGlassView> glassProvider,
@@ -40,20 +38,51 @@ final class LauncherSceneController {
     boolean launcherResumed() { return launcherResumed; }
     boolean systemUiPanelExpanded() { return systemUiPanelExpanded; }
 
-    /**
-     * Foreground task ownership is stronger evidence than Launcher focus/lifecycle state.
-     * A positive external result also repairs a stale resumed hint immediately so later
-     * scene synchronization cannot reintroduce HOME while the app still owns foreground.
-     */
-    boolean isExternalAppForeground(Context context) {
-        String topPackage = foregroundTaskResolver.resolveTopPackage(context);
-        boolean external = topPackage != null && !"com.miui.home".equals(topPackage);
-        if (external) {
-            launcherLifecycleKnown = true;
-            launcherResumed = false;
-            logger.accept("[DC] foreground authority external pkg=" + topPackage);
+    /** Apply exactly one foreground snapshot; UNKNOWN never mutates existing authority. */
+    private ForegroundOwnership applyForegroundObservation(
+            ForegroundTaskResolver.Observation observation,
+            DockLiquidGlassView glass,
+            String reason) {
+        ForegroundOwnership ownership = observation == null
+                ? ForegroundOwnership.UNKNOWN : observation.ownership;
+        if (ownership == ForegroundOwnership.UNKNOWN) {
+            if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
+            logger.accept("[DC] foreground authority UNKNOWN; leave authority unchanged reason="
+                    + reason + " away=" + launcherAwayObserved);
+            return ownership;
         }
-        return external;
+
+        launcherLifecycleKnown = true;
+        launcherResumed = ownership == ForegroundOwnership.HOME;
+        launcherAwayObserved = ownership == ForegroundOwnership.EXTERNAL;
+        if (glass != null) {
+            if (ownership == ForegroundOwnership.HOME) {
+                glass.onAuthoritativeHomeConfirmed();
+            } else {
+                glass.setForegroundOwnership(ForegroundOwnership.EXTERNAL);
+            }
+            glass.setLauncherState(true, launcherResumed);
+        }
+        logger.accept("[DC] foreground authority=" + ownership
+                + " pkg=" + observation.packageName + " reason=" + reason);
+        return ownership;
+    }
+
+    /** Single resolution + propagation path for callers that do not already own a snapshot. */
+    ForegroundOwnership observeForegroundOwnership(Context context,
+                                                   DockLiquidGlassView glass,
+                                                   String reason) {
+        ForegroundTaskResolver.Observation observation = foregroundTaskResolver.resolve(context);
+        return applyForegroundObservation(observation, glass, reason);
+    }
+
+    boolean isExternalAppForeground(Context context) {
+        DockLiquidGlassView glass = glassProvider.get();
+        ForegroundOwnership observed = observeForegroundOwnership(
+                context, glass, "dock-interaction");
+        return observed == ForegroundOwnership.EXTERNAL
+                || (observed == ForegroundOwnership.UNKNOWN
+                    && glass != null && glass.hasExternalForegroundAuthority());
     }
 
     void seed(Object launcher) {
@@ -64,13 +93,18 @@ final class LauncherSceneController {
             Object focused = HookUtil.invoke(launcher, "isWindowFocus");
             if (paused instanceof Boolean && !((Boolean) paused)) {
                 launcherLifecycleKnown = true;
-                launcherResumed = true;
+                if (!launcherAwayObserved) launcherResumed = true;
             }
             logger.accept("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
                     + " resumed=" + launcherResumed + " paused=" + paused
                     + " visible=" + visible + " focus=" + focused);
         } catch (Throwable e) {
             logger.accept("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+        }
+        DockLiquidGlassView glass = glassProvider.get();
+        if (glass != null && launcherAwayObserved) glass.setLauncherAwayHint(true);
+        if (launcher instanceof Context) {
+            observeForegroundOwnership((Context) launcher, glass, "seed");
         }
     }
 
@@ -95,8 +129,6 @@ final class LauncherSceneController {
             logger.accept("[DC] SystemUI panel capture gate unavailable: " + e);
         }
 
-        // Window focus only distinguishes HOME from an external APP after the current
-        // top task agrees. Launcher-owned ALL_APPS/RECENTS state remains higher priority.
         try {
             HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
                     chain -> {
@@ -113,8 +145,10 @@ final class LauncherSceneController {
                         if (!hasFocus) {
                             launcherLifecycleKnown = true;
                             launcherResumed = false;
+                            launcherAwayObserved = true;
                             if (glass != null) {
                                 glass.onLauncherFocusLost();
+                                glass.setLauncherAwayHint(true);
                                 glass.refreshForegroundAppLayer();
                                 glass.setLauncherState(true, false);
                                 glass.prearmAppBackdrop("focus-loss");
@@ -157,28 +191,24 @@ final class LauncherSceneController {
     void installLifecycleHooks(Class<?> launcherClass) {
         boolean directLifecycleHooked = false;
         try {
-            HookUtil.hookMethod(launcherClass, "onResume", new Class<?>[0],
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        logger.accept("[DC] liquid lifecycle: onResume (focus decides)");
-                        return r;
-                    });
-            HookUtil.hookMethod(launcherClass, "onPause", new Class<?>[0],
-                    chain -> {
-                        logger.accept("[DC] liquid lifecycle: onPause (focus decides)");
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-            HookUtil.hookMethod(launcherClass, "onStart", new Class<?>[0],
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        logger.accept("[DC] liquid lifecycle: onStart (visibility decides)");
-                        return r;
-                    });
-            HookUtil.hookMethod(launcherClass, "onStop", new Class<?>[0],
-                    chain -> {
-                        logger.accept("[DC] liquid lifecycle: onStop (visibility decides)");
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
+            HookUtil.hookMethod(launcherClass, "onResume", new Class<?>[0], chain -> {
+                Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                logger.accept("[DC] liquid lifecycle: onResume (focus decides)");
+                return r;
+            });
+            HookUtil.hookMethod(launcherClass, "onPause", new Class<?>[0], chain -> {
+                logger.accept("[DC] liquid lifecycle: onPause (focus decides)");
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            });
+            HookUtil.hookMethod(launcherClass, "onStart", new Class<?>[0], chain -> {
+                Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                logger.accept("[DC] liquid lifecycle: onStart (visibility decides)");
+                return r;
+            });
+            HookUtil.hookMethod(launcherClass, "onStop", new Class<?>[0], chain -> {
+                logger.accept("[DC] liquid lifecycle: onStop (visibility decides)");
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            });
             directLifecycleHooked = true;
         } catch (Throwable directError) {
             logger.accept("[DC] Launcher lifecycle direct hook unavailable: " + directError);
@@ -186,29 +216,35 @@ final class LauncherSceneController {
 
         if (!directLifecycleHooked) {
             try {
-                HookUtil.hookMethod(Activity.class, "onResume", new Class<?>[0],
-                        chain -> {
-                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                launcherResumed = true;
-                                logger.accept("[DC] liquid lifecycle fallback: onResume");
-                                DockLiquidGlassView glass = glassProvider.get();
-                                if (glass != null) glass.setLauncherState(true, true);
+                HookUtil.hookMethod(Activity.class, "onResume", new Class<?>[0], chain -> {
+                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    if (launcherClass.isInstance(chain.getThisObject())) {
+                        DockLiquidGlassView glass = glassProvider.get();
+                        if (chain.getThisObject() instanceof Context) {
+                            ForegroundOwnership ownership = observeForegroundOwnership(
+                                    (Context) chain.getThisObject(), glass, "fallback-resume");
+                            if (ownership == ForegroundOwnership.UNKNOWN) {
+                                // Unknown is not proof of HOME; preserve the last authority.
+                                logger.accept("[DC] lifecycle fallback resume unresolved");
                             }
-                            return r;
-                        });
-                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0],
-                        chain -> {
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                launcherResumed = false;
-                                logger.accept("[DC] liquid lifecycle fallback: onPause");
-                                DockLiquidGlassView glass = glassProvider.get();
-                                if (glass != null) glass.setLauncherState(true, false);
-                            }
-                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        });
+                        }
+                    }
+                    return r;
+                });
+                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0], chain -> {
+                    if (launcherClass.isInstance(chain.getThisObject())) {
+                        launcherLifecycleKnown = true;
+                        launcherResumed = false;
+                        launcherAwayObserved = true;
+                        logger.accept("[DC] liquid lifecycle fallback: onPause");
+                        DockLiquidGlassView glass = glassProvider.get();
+                        if (glass != null) {
+                            glass.setLauncherAwayHint(true);
+                            glass.setLauncherState(true, false);
+                        }
+                    }
+                    return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                });
             } catch (Throwable fallbackError) {
                 logger.accept("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
             }
@@ -219,26 +255,19 @@ final class LauncherSceneController {
                                              DockLiquidGlassView glass,
                                              String reason) {
         Context context = launcher instanceof Context ? (Context) launcher : null;
-        String topPackage = foregroundTaskResolver.resolveTopPackage(context);
-        if (!"com.miui.home".equals(topPackage)) {
-            if (topPackage != null) {
-                launcherLifecycleKnown = true;
-                launcherResumed = false;
-                if (glass != null) glass.setLauncherState(true, false);
-                logger.accept("[DC] launcher focus rejected: external task still foreground pkg="
-                        + topPackage + " reason=" + reason);
-            } else {
-                logger.accept("[DC] launcher focus pending: top task unavailable reason=" + reason);
-            }
+        ForegroundTaskResolver.Observation observation = foregroundTaskResolver.resolve(context);
+        if (observation.ownership == ForegroundOwnership.UNKNOWN) {
+            logger.accept("[DC] launcher focus pending: top task unavailable reason=" + reason);
             return false;
         }
-        launcherLifecycleKnown = true;
-        launcherResumed = true;
-        if (glass != null) {
-            glass.onAuthoritativeHomeConfirmed();
-            glass.setLauncherState(true, true);
-            glass.onLauncherFocused();
+        ForegroundOwnership ownership = applyForegroundObservation(
+                observation, glass, "focus-" + reason);
+        if (ownership != ForegroundOwnership.HOME) {
+            logger.accept("[DC] launcher focus rejected: external task still foreground pkg="
+                    + observation.packageName + " reason=" + reason);
+            return false;
         }
+        if (glass != null) glass.onLauncherFocused();
         logger.accept("[DC] launcher focus confirmed HOME reason=" + reason);
         return true;
     }
@@ -260,15 +289,21 @@ final class LauncherSceneController {
     /** Gesture objects are prearm hints, not proof that navigation completed. */
     private void prearmGestureCaptureTarget(DockLiquidGlassView glass, String target) {
         if (glass == null || workstationModeProvider.getAsBoolean()) return;
+        ForegroundTaskResolver.Observation observation =
+                foregroundTaskResolver.resolve(glass.getContext());
+        ForegroundOwnership ownership = observation.ownership == ForegroundOwnership.UNKNOWN
+                ? ForegroundOwnership.UNKNOWN
+                : applyForegroundObservation(observation, glass, "gesture-" + target);
         if ("HOME".equals(target)) {
-            String topPackage = foregroundTaskResolver.resolveTopPackage(glass.getContext());
-            boolean externalConfirmed = topPackage != null && !"com.miui.home".equals(topPackage);
-            boolean homeUnconfirmed = topPackage == null && !launcherResumed;
+            boolean externalConfirmed = ownership == ForegroundOwnership.EXTERNAL
+                    || (ownership == ForegroundOwnership.UNKNOWN
+                        && glass.hasExternalForegroundAuthority());
+            boolean homeUnconfirmed = ownership == ForegroundOwnership.UNKNOWN && !launcherResumed;
             if (externalConfirmed || homeUnconfirmed) {
                 glass.prearmAppBackdrop("gesture-home-unconfirmed");
                 glass.requestCapture("gesture-home-live-prearm");
                 logger.accept("[DC] gesture HOME kept live while external task foreground/unconfirmed pkg="
-                        + topPackage);
+                        + observation.packageName);
                 return;
             }
         }

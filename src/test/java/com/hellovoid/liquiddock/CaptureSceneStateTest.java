@@ -89,7 +89,7 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureScene.HOME, state.resolve(3_000L, false, true, true));
     }
 
-    @Test public void confirmedExternalForegroundSurvivesGestureReleaseUntilHomeIsAuthoritative() {
+    @Test public void confirmedExternalForegroundSurvivesUntilExplicitHomeAuthority() {
         CaptureSceneState state = new CaptureSceneState();
         setExternalAppForegroundConfirmed(state, true);
         setExternalAppDockInteraction(state, true);
@@ -100,8 +100,12 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
                 CaptureSourcePolicy.sourceFor(state.resolve(3_000L, false, true, true)));
 
+        // Losing EXTERNAL proof is UNKNOWN, not proof of HOME.
         setExternalAppForegroundConfirmed(state, false);
-        assertEquals(CaptureScene.HOME, state.resolve(4_000L, false, true, true));
+        assertEquals(CaptureScene.APP, state.resolve(4_000L, false, true, true));
+
+        state.setForegroundOwnership(ForegroundOwnership.HOME);
+        assertEquals(CaptureScene.HOME, state.resolve(5_000L, false, true, true));
     }
 
     @Test public void releasingExternalAppDockInteractionDoesNotReviveUnconfirmedHomeHint() {

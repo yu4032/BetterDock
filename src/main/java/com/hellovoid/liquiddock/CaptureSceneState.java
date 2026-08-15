@@ -2,19 +2,29 @@ package com.hellovoid.liquiddock;
 
 /** Owns scene transitions and revisioning used to reject stale asynchronous frames. */
 final class CaptureSceneState {
+    private static final long ALL_APPS_PREARM_NANOS = 900_000_000L;
+
     private CaptureScene desired = CaptureScene.APP;
     private CaptureScene gestureTarget;
     private long gestureTargetUntilNanos;
+    /** Revision changes only when the effective capture scene changes. */
     private long revision;
     private boolean workstationSuspended;
     private boolean allAppsActive;
-    private boolean externalAppForegroundConfirmed;
+    private long allAppsPrearmUntilNanos;
+    private ForegroundOwnership foregroundOwnership = ForegroundOwnership.UNKNOWN;
+    private boolean launcherAwayHint;
     private boolean externalAppDockInteraction;
 
     CaptureScene desired() { return desired; }
     long revision() { return revision; }
     boolean workstationSuspended() { return workstationSuspended; }
     boolean allAppsActive() { return allAppsActive; }
+    boolean externalAppForegroundConfirmed() {
+        return foregroundOwnership == ForegroundOwnership.EXTERNAL;
+    }
+    ForegroundOwnership foregroundOwnership() { return foregroundOwnership; }
+    boolean launcherAwayHint() { return launcherAwayHint; }
     boolean matches(CaptureScene scene, long expectedRevision) {
         return desired == scene && revision == expectedRevision;
     }
@@ -22,13 +32,36 @@ final class CaptureSceneState {
     void prearmRecents(long nowNanos) {
         gestureTarget = CaptureScene.RECENTS;
         gestureTargetUntilNanos = nowNanos + 700_000_000L;
-        setDesired(CaptureScene.RECENTS);
+        if (!allAppsActive) setDesired(CaptureScene.RECENTS);
+    }
+
+    void prearmAllApps(long nowNanos) {
+        allAppsPrearmUntilNanos = nowNanos + ALL_APPS_PREARM_NANOS;
+        if (!allAppsActive
+                && foregroundOwnership != ForegroundOwnership.EXTERNAL
+                && !externalAppDockInteraction) {
+            setDesired(CaptureScene.ALL_APPS);
+        }
+    }
+
+    boolean allAppsPrearmExpired(long nowNanos) {
+        return allAppsPrearmUntilNanos != 0L && nowNanos >= allAppsPrearmUntilNanos;
+    }
+
+    void clearAllAppsPrearm() {
+        allAppsPrearmUntilNanos = 0L;
     }
 
     void setGestureTarget(String target, long nowNanos) {
         gestureTarget = "HOME".equals(target) ? CaptureScene.HOME
                 : "RECENTS".equals(target) ? CaptureScene.RECENTS : CaptureScene.APP;
         gestureTargetUntilNanos = nowNanos + 1_500_000_000L;
+        if (allAppsActive) return;
+        if (foregroundOwnership == ForegroundOwnership.EXTERNAL || externalAppDockInteraction) {
+            setDesired(gestureTarget == CaptureScene.RECENTS
+                    ? CaptureScene.RECENTS : CaptureScene.APP);
+            return;
+        }
         setDesired(gestureTarget);
     }
 
@@ -36,78 +69,89 @@ final class CaptureSceneState {
         return gestureTarget != null && nowNanos >= gestureTargetUntilNanos;
     }
 
-    void clearGestureTarget() { gestureTarget = null; }
-
-    /** Launcher focus loss proves a pending HOME target is stale: an app has actually
-     * taken the foreground. Do not clear APP/RECENTS because those targets are still
-     * useful before lifecycle/focus catches up. */
-    boolean clearGestureTargetIfHome() {
-        if (gestureTarget != CaptureScene.HOME) return false;
+    void clearGestureTarget() {
         gestureTarget = null;
         gestureTargetUntilNanos = 0L;
+    }
+
+    /** Launcher focus loss proves a pending HOME target is stale. */
+    boolean clearGestureTargetIfHome() {
+        if (gestureTarget != CaptureScene.HOME) return false;
+        clearGestureTarget();
         return true;
     }
 
-    /**
-     * Foreground-task ownership is stronger evidence than Launcher focus/lifecycle hints.
-     * Once a real external top task is observed, keep the scene in the live APP/RECENTS
-     * domain until an explicit authoritative HOME confirmation clears this latch.
-     */
-    void setExternalAppForegroundConfirmed(boolean active) {
-        if (externalAppForegroundConfirmed == active) return;
-        externalAppForegroundConfirmed = active;
-        if (active && gestureTarget == CaptureScene.HOME) {
-            gestureTarget = null;
-            gestureTargetUntilNanos = 0L;
+    void setForegroundOwnership(ForegroundOwnership ownership) {
+        ForegroundOwnership next = ownership == null ? ForegroundOwnership.UNKNOWN : ownership;
+        if (foregroundOwnership == next) return;
+        foregroundOwnership = next;
+        if (next == ForegroundOwnership.EXTERNAL) {
+            launcherAwayHint = true;
+            clearAllAppsPrearm();
+            if (gestureTarget == CaptureScene.HOME) clearGestureTarget();
+        } else if (next == ForegroundOwnership.HOME) {
+            launcherAwayHint = false;
+            externalAppDockInteraction = false;
         }
-        revision++;
+        // Do not increment revision here. The owner immediately calls refresh(); only an
+        // effective scene transition is allowed to invalidate an in-flight frame.
     }
 
-    /**
-     * A Dock touch that begins while an external app owns foreground creates a temporary
-     * source-domain lock. Until Launcher HOME is authoritatively confirmed, this interaction
-     * must stay in the live APP/RECENTS domain even if a speculative GestureToHome object
-     * has already been constructed. Source correctness is intentionally independent of the
-     * optional dynamic-app continuous-capture cadence.
-     */
+    /** Focus/lifecycle evidence that Launcher left foreground. UNKNOWN cannot clear it. */
+    void setLauncherAwayHint(boolean active) {
+        if (launcherAwayHint == active) return;
+        launcherAwayHint = active;
+        if (active) {
+            clearAllAppsPrearm();
+            if (gestureTarget == CaptureScene.HOME) clearGestureTarget();
+        }
+        // refresh() owns revisioning; changing this hint alone is not frame identity.
+    }
+
+    /** Compatibility setter retained for existing tests/callers. */
+    void setExternalAppForegroundConfirmed(boolean active) {
+        if (active) {
+            setForegroundOwnership(ForegroundOwnership.EXTERNAL);
+        } else if (foregroundOwnership == ForegroundOwnership.EXTERNAL) {
+            setForegroundOwnership(ForegroundOwnership.UNKNOWN);
+        }
+    }
+
     void setExternalAppDockInteraction(boolean active) {
         if (externalAppDockInteraction == active) return;
         externalAppDockInteraction = active;
-        // A HOME constructor seen before/during an app Dock pull is only a navigation hint.
-        // Never allow that stale hint to revive after ACTION_UP/CANCEL either.
-        if (gestureTarget == CaptureScene.HOME) {
-            gestureTarget = null;
-            gestureTargetUntilNanos = 0L;
-        }
-        revision++;
+        if (gestureTarget == CaptureScene.HOME) clearGestureTarget();
+        // Interaction release is not a capture-identity change when persistent external
+        // ownership still resolves to APP. refresh() owns revisioning.
     }
 
-    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow. It can make the
-     * main Launcher window lose focus without an external app taking the foreground. A
-     * confirmed drawer open also invalidates any older gesture prearm. */
+    /** Confirmed drawer state; normal transition callbacks use prearmAllApps instead. */
     void setAllAppsActive(boolean active) {
-        if (allAppsActive == active) return;
-        allAppsActive = active;
-        revision++;
-        if (active) {
-            gestureTarget = null;
-            gestureTargetUntilNanos = 0L;
-            desired = CaptureScene.ALL_APPS;
-        } else if (desired == CaptureScene.ALL_APPS) {
-            // The owning DockLiquidGlassView immediately refreshes against real launcher
-            // lifecycle/overview state. APP is only a neutral interim value here.
-            desired = CaptureScene.APP;
+        if (allAppsActive == active) {
+            if (active) clearAllAppsPrearm();
+            return;
         }
+        allAppsActive = active;
+        clearAllAppsPrearm();
+        if (active) {
+            clearGestureTarget();
+            setDesired(CaptureScene.ALL_APPS);
+        }
+        // On close the owner immediately calls refresh() with real launcher/foreground state.
     }
 
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
                          boolean lifecycleKnown, boolean launcherResumed) {
-        // Confirmed stock Launcher state outranks bounded gesture prearm. Gesture events exist
-        // only to cover the first transition frame before these authoritative callbacks land.
         if (recentsVisible) return CaptureScene.RECENTS;
         if (allAppsActive) return CaptureScene.ALL_APPS;
 
-        if (externalAppForegroundConfirmed) {
+        if (foregroundOwnership == ForegroundOwnership.EXTERNAL) {
+            if (gestureTarget == CaptureScene.RECENTS
+                    && nowNanos < gestureTargetUntilNanos) return CaptureScene.RECENTS;
+            return CaptureScene.APP;
+        }
+
+        if (launcherAwayHint) {
             if (gestureTarget == CaptureScene.RECENTS
                     && nowNanos < gestureTargetUntilNanos) return CaptureScene.RECENTS;
             return CaptureScene.APP;
@@ -119,26 +163,30 @@ final class CaptureSceneState {
             return CaptureScene.APP;
         }
 
+        if (allAppsPrearmUntilNanos != 0L && nowNanos < allAppsPrearmUntilNanos) {
+            return CaptureScene.ALL_APPS;
+        }
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
+        if (foregroundOwnership == ForegroundOwnership.HOME) return CaptureScene.HOME;
         if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
         return CaptureScene.APP;
     }
 
     boolean refresh(long nowNanos, boolean recentsVisible,
                     boolean lifecycleKnown, boolean launcherResumed) {
-        CaptureScene next = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
-        return setDesired(next);
+        return setDesired(resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed));
     }
 
     void setWorkstationSuspended(boolean enabled, long nowNanos,
-                                     boolean recentsVisible, boolean lifecycleKnown,
-                                     boolean launcherResumed) {
+                                 boolean recentsVisible, boolean lifecycleKnown,
+                                 boolean launcherResumed) {
         workstationSuspended = enabled;
-        gestureTarget = null;
-        externalAppForegroundConfirmed = false;
+        clearGestureTarget();
+        clearAllAppsPrearm();
+        foregroundOwnership = ForegroundOwnership.UNKNOWN;
+        launcherAwayHint = false;
         externalAppDockInteraction = false;
-        revision++;
-        desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
+        setDesired(resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed));
     }
 
     private boolean setDesired(CaptureScene next) {

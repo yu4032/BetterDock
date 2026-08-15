@@ -8,23 +8,45 @@ import java.util.function.Consumer;
 
 /** Resolves the task that physically owns the foreground; contains no scene mutation. */
 final class ForegroundTaskResolver {
+    static final class Observation {
+        final ForegroundOwnership ownership;
+        final String packageName;
+
+        Observation(ForegroundOwnership ownership, String packageName) {
+            this.ownership = ownership;
+            this.packageName = packageName;
+        }
+    }
+
     private final Consumer<String> logger;
 
     ForegroundTaskResolver(Consumer<String> logger) {
         this.logger = logger;
     }
 
-    String resolveTopPackage(Context context) {
-        if (context == null) return null;
+    Observation resolve(Context context) {
+        if (context == null) return new Observation(ForegroundOwnership.UNKNOWN, null);
         try {
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-            if (am == null) return null;
+            if (am == null) return new Observation(ForegroundOwnership.UNKNOWN, null);
             List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(1);
-            if (tasks == null || tasks.isEmpty() || tasks.get(0).topActivity == null) return null;
-            return tasks.get(0).topActivity.getPackageName();
+            if (tasks == null || tasks.isEmpty() || tasks.get(0).topActivity == null) {
+                return new Observation(ForegroundOwnership.UNKNOWN, null);
+            }
+            String pkg = tasks.get(0).topActivity.getPackageName();
+            if (pkg == null || pkg.isEmpty()) {
+                return new Observation(ForegroundOwnership.UNKNOWN, null);
+            }
+            return new Observation("com.miui.home".equals(pkg)
+                    ? ForegroundOwnership.HOME : ForegroundOwnership.EXTERNAL, pkg);
         } catch (Throwable e) {
             logger.accept("[DC] top task resolve unavailable: " + e);
-            return null;
+            return new Observation(ForegroundOwnership.UNKNOWN, null);
         }
+    }
+
+    /** Compatibility probe retained for source contracts; scene code uses resolve(). */
+    String resolveTopPackage(Context context) {
+        return resolve(context).packageName;
     }
 }
