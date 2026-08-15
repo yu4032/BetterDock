@@ -18,6 +18,12 @@ public class WorkstationLiveBackdropContractTest {
                 StandardCharsets.UTF_8);
     }
 
+    private static String mainHookSource() throws IOException {
+        return Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
+                StandardCharsets.UTF_8);
+    }
+
     @Test public void workstationUsesDedicatedLiveSceneSourcePolicy() throws IOException {
         String source = source();
         assertTrue(source.contains("CaptureSourcePolicy.sourceForWorkstationScene("));
@@ -44,5 +50,15 @@ public class WorkstationLiveBackdropContractTest {
         assertTrue(source.contains("workstationCaptureBurst.onFrame(visualProbe.signature)"));
         assertTrue(source.contains("requestStateCapture(\"workstation-background-changing\")"));
         assertTrue(source.contains("finishWorkstationCaptureBurstIfSettled()"));
+    }
+
+    @Test public void exactOverviewLifecycleIsForwardedInWorkstationMode() throws IOException {
+        String source = mainHookSource();
+        assertFalse("workstation must not suppress exact Enter/ExitOverviewStateEvent callbacks",
+                source.contains("if (glass != null && !workstationMode)\n"
+                        + "                        glass.setOverviewActive(active, eventName);"));
+        assertTrue("overview lifecycle must reach DockLiquidGlassView in every mode",
+                source.contains("if (glass != null)\n"
+                        + "                        glass.setOverviewActive(active, eventName);"));
     }
 }
