@@ -60,6 +60,7 @@ public class MainHook {
             if (glass != null && !workstationMode) glass.onRecentsHapticTrigger();
         });
         installWorkstationDockHooks(classLoader, config.workstation);
+        WorkstationDockGeometryHook.install(classLoader, config.workstation);
         if (!config.dock.resizeAnimation)
             installDockResizeAnimationBypass(classLoader, config.dock.smoothResizeAnimation);
         if (workstationMode)
@@ -1012,20 +1013,8 @@ public class MainHook {
         if (!config.dockEnabled) return;
         float scale = config.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-        int widthOffset = Math.round(config.dockWidthOffset * scale);
         int iconTopOffset = Math.round(config.iconTopOffset * scale);
         int iconBottomOffset = Math.round(config.iconBottomOffset * scale);
-        try {
-            HookUtil.hookMethod(cl,
-                    "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                    "setBackgroundWidth",
-                    chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        if (workstationMode && widthOffset != 0) args[0] = (Integer) args[0] + widthOffset;
-                        return chain.proceed(args);
-                    }, int.class);
-            log("[DC] workstation Dock width hook offset=" + widthOffset);
-        } catch (Throwable e) { log("[DC] workstation Dock hook unavailable: " + e); }
         try {
             Class<?> recyclerView = Class.forName("androidx.recyclerview.widget.RecyclerView", false, cl);
             Class<?> recyclerState = Class.forName("androidx.recyclerview.widget.RecyclerView$State", false, cl);
@@ -1088,6 +1077,7 @@ public class MainHook {
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
         HomeGridHook.setWorkstationMode(enabled);
+        WorkstationDockGeometryHook.onWorkstationModeChanged(enabled);
         log("[DC] Mingou workstation mode changed=" + enabled);
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
@@ -1255,10 +1245,14 @@ public class MainHook {
             }
             if (shadowView != null) {
                 if (workstationMode) { shadowView.setVisibility(View.GONE); return; }
-                if (!anim && bgW != lastShadowW) {
+                if (!anim) {
+                    boolean sizeChanged = bgW != lastShadowW;
                     lastShadowW = bgW;
+                    // Position can change without a width change (startup/translation/layout).
+                    // Always align X/Y once the Dock settles; only size changes need a posted
+                    // second pass after LayoutParams are applied.
                     syncShadowGeometry();
-                    shadowView.post(MainHook::syncShadowGeometry);
+                    if (sizeChanged) shadowView.post(MainHook::syncShadowGeometry);
                 }
             }
         } catch (Throwable ignored) {}
