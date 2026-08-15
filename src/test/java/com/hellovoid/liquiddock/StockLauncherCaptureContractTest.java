@@ -32,23 +32,27 @@ public class StockLauncherCaptureContractTest {
         }
     }
 
-    @Test public void mainHookUsesStockDrawerAuthority() throws Exception {
+    @Test public void stockDrawerAuthorityLivesOutsideMainHook() throws Exception {
         String hook = source("MainHook.java");
-        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.dependencies.DrawerStatusServiceImpl"));
-        assertTrue(hook.contains("dispatchDrawerOpen"));
-        assertTrue(hook.contains("dispatchDrawerClose"));
-        assertTrue(hook.contains("dispatchDrawerProgress"));
+        String allApps = source("AllAppsStateHooks.java");
+        assertTrue(allApps.contains("com.miui.home.launcher.dock.v3.dependencies.DrawerStatusServiceImpl"));
+        assertTrue(allApps.contains("dispatchDrawerOpen"));
+        assertTrue(allApps.contains("dispatchDrawerClose"));
+        assertTrue(allApps.contains("dispatchDrawerProgress"));
+        assertFalse(hook.contains("installDrawerStatusHooks"));
     }
 
-    @Test public void mainHookUsesStockRecentsAuthority() throws Exception {
+    @Test public void stockRecentsAuthorityLivesOutsideMainHook() throws Exception {
         String hook = source("MainHook.java");
-        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.state.DockStateManager$mainStateObserver$1"));
-        assertTrue(hook.contains("onEnterRecent"));
-        assertTrue(hook.contains("onExitRecent"));
-        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.state.DockStateManager$recentsListener$1"));
-        assertTrue(hook.contains("onRecentViewShow"));
-        assertTrue(hook.contains("onRecentViewHide"));
-        assertTrue(hook.contains("onRecentViewAnimationComplete"));
+        String recents = source("RecentsStateHooks.java");
+        assertTrue(recents.contains("com.miui.home.launcher.dock.v3.state.DockStateManager$mainStateObserver$1"));
+        assertTrue(recents.contains("onEnterRecent"));
+        assertTrue(recents.contains("onExitRecent"));
+        assertTrue(recents.contains("com.miui.home.launcher.dock.v3.state.DockStateManager$recentsListener$1"));
+        assertTrue(recents.contains("onRecentViewShow"));
+        assertTrue(recents.contains("onRecentViewHide"));
+        assertTrue(recents.contains("onRecentViewAnimationComplete"));
+        assertFalse(hook.contains("installStockRecentsStateHooks"));
     }
 
     @Test public void recentsHapticPrearmIsPreserved() throws Exception {
@@ -61,35 +65,49 @@ public class StockLauncherCaptureContractTest {
         assertTrue(glass.contains("dockDragging || recentsPrearmed || isRecentsVisible()"));
     }
 
-    @Test public void launcherFocusDoesNotOverrideLauncherOwnedScenes() throws Exception {
+    @Test public void launcherSceneArbitrationLivesOutsideMainHook() throws Exception {
         String hook = source("MainHook.java");
+        String controller = source("LauncherSceneController.java");
+        String resolver = source("ForegroundTaskResolver.java");
         String glass = source("DockLiquidGlassView.java");
+
         assertTrue(glass.contains("boolean isOverviewActive()"));
-        assertTrue(hook.contains("glass.isAllAppsActive() || glass.isOverviewActive()"));
-    }
+        assertTrue(controller.contains("glass.isAllAppsActive() || glass.isOverviewActive()"));
+        assertTrue(resolver.contains("resolveTopPackage"));
+        assertTrue(controller.contains("confirmLauncherHomeFocus"));
+        assertTrue(controller.contains("external task still foreground"));
+        assertTrue(controller.contains("prearmGestureCaptureTarget"));
+        assertTrue(controller.contains("gesture HOME kept live while external task foreground"));
+        assertTrue(controller.contains("prearmAppBackdrop(\"gesture-home-unconfirmed\")"));
 
-    @Test public void launcherFocusGainCannotOverrideExternalAppTopTask() throws Exception {
-        String hook = source("MainHook.java");
-        assertTrue(hook.contains("resolveTopTaskPackage"));
-        assertTrue(hook.contains("confirmLauncherHomeFocus"));
-        assertTrue(hook.contains("external task still foreground"));
+        for (String forbidden : new String[]{
+                "resolveTopTaskPackage", "confirmLauncherHomeFocus",
+                "scheduleLauncherHomeFocusRecheck", "prearmGestureCaptureTarget",
+                "hookDockGestureTarget", "hookOverviewStateEvent"}) {
+            assertFalse("scene implementation remains in MainHook: " + forbidden,
+                    hook.contains(forbidden));
+        }
         assertFalse(hook.contains("launcherResumed = hasFocus;"));
-    }
-
-    @Test public void homeGestureConstructorCannotForceWallpaperOverExternalApp() throws Exception {
-        String hook = source("MainHook.java");
-        assertTrue(hook.contains("prearmGestureCaptureTarget"));
-        assertTrue(hook.contains("gesture HOME kept live while external task foreground"));
-        assertTrue(hook.contains("prearmAppBackdrop(\"gesture-home-unconfirmed\")"));
-        assertTrue(hook.contains("prearmGestureCaptureTarget(glass, target)"));
     }
 
     @Test public void allAppsStateCarriesNoCaptureRoot() throws Exception {
         String glass = source("DockLiquidGlassView.java");
-        String hook = source("MainHook.java");
+        String allApps = source("AllAppsStateHooks.java");
         assertTrue(glass.contains("void setAllAppsActive(boolean active)"));
         assertFalse(glass.contains("setAllAppsActive(boolean active, View"));
-        assertFalse(hook.contains("setAllAppsActive(\n                                true,"));
+        assertFalse(allApps.contains("captureRoot"));
+    }
+
+    @Test public void mainHookIsOnlyCompositionRootForLauncherSceneModules() throws Exception {
+        String hook = source("MainHook.java");
+        source("ForegroundTaskResolver.java");
+        source("LauncherSceneController.java");
+        source("AllAppsStateHooks.java");
+        source("RecentsStateHooks.java");
+        assertTrue(hook.contains("LauncherSceneController"));
+        assertFalse(hook.contains("DrawerStatusServiceImpl"));
+        assertFalse(hook.contains("DockStateManager$mainStateObserver$1"));
+        assertFalse(hook.contains("DockStateManager$recentsListener$1"));
     }
 
     @Test public void mingouLegacyWorkstationFallbackIsGone() throws Exception {

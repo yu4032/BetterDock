@@ -14,7 +14,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import io.github.libxposed.api.XposedInterface;
@@ -26,15 +25,12 @@ public class MainHook {
     private static int lastShadowW;
     private static DockLiquidGlassView liquidGlassView;
     private static DockLiquidGlassHostView liquidGlassHostView;
-    private static volatile boolean launcherResumed;
-    private static volatile boolean launcherLifecycleKnown;
-    private static volatile boolean systemUiPanelExpanded;
+    private static LauncherSceneController launcherSceneController;
     private static int bgW, bgH, shadowPad;
     private static float bgR = 30f;
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
     private static boolean dockDragHooksInstalled;
-    private static boolean drawerStatusHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
@@ -148,10 +144,7 @@ public class MainHook {
                             int bgIndex = parent.indexOfChild(vBg);
                             liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIndex), gv,
                                     vBg, workspace, config, false, 0.58f);
-                            seedLauncherLifecycleState(chain.getThisObject());
-                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                            bindRecentsView(liquidGlassView, chain.getThisObject());
+                            syncLauncherSceneState(chain.getThisObject(), liquidGlassView);
                             installDockTouchListener(liquidGlassView, vBg.getRootView());
                             liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, vBg.getRootView()));
                             try {
@@ -369,10 +362,7 @@ public class MainHook {
                                 int bgIdx = parent.indexOfChild(oldBg);
                                 liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIdx), gv,
                                         oldBg, workspace, current, c2.squircle, sqCp);
-                                seedLauncherLifecycleState(chain.getThisObject());
-                                liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
-                                liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                                bindRecentsView(liquidGlassView, chain.getThisObject());
+                                syncLauncherSceneState(chain.getThisObject(), liquidGlassView);
                                 installDockTouchListener(liquidGlassView, oldBg.getRootView());
                                 liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, oldBg.getRootView()));
                                 try {
@@ -444,82 +434,23 @@ public class MainHook {
 
     // ── lifecycle / capture hooks ────────────────────────────────────
 
-    private static void seedLauncherLifecycleState(Object launcher) {
-        if (launcher == null) return;
-        try {
-            Object paused = HookUtil.invoke(launcher, "isPause");
-            Object visible = HookUtil.invoke(launcher, "isVisible");
-            Object focused = HookUtil.invoke(launcher, "isWindowFocus");
-            if (paused instanceof Boolean && !((Boolean) paused)) {
-                launcherLifecycleKnown = true;
-                launcherResumed = true;
-            }
-            log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
-                + " resumed=" + launcherResumed + " paused=" + paused
-                + " visible=" + visible + " focus=" + focused);
-        } catch (Throwable e) {
-            log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
+    private static LauncherSceneController launcherSceneController() {
+        LauncherSceneController controller = launcherSceneController;
+        if (controller == null) {
+            controller = new LauncherSceneController(
+                    () -> liquidGlassView, () -> workstationMode, MainHook::log);
+            launcherSceneController = controller;
         }
+        return controller;
     }
 
-    /** Window focus is only a HOME/APP hint. HyperOS can transiently focus Launcher while
-     * an external task still owns the foreground, so confirm the top task before promoting
-     * the capture scene from live APP to wallpaper HOME. */
-    private static String resolveTopTaskPackage(Object launcher) {
-        if (!(launcher instanceof android.content.Context)) return null;
-        try {
-            android.app.ActivityManager am = (android.app.ActivityManager)
-                    ((android.content.Context) launcher).getSystemService(
-                            android.content.Context.ACTIVITY_SERVICE);
-            if (am == null) return null;
-            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
-                    am.getRunningTasks(1);
-            if (tasks == null || tasks.isEmpty() || tasks.get(0).topActivity == null) return null;
-            return tasks.get(0).topActivity.getPackageName();
-        } catch (Throwable e) {
-            log("[DC] top task resolve unavailable: " + e);
-            return null;
-        }
-    }
-
-    private static boolean confirmLauncherHomeFocus(Object launcher,
-                                                     DockLiquidGlassView glass,
-                                                     String reason) {
-        String topPackage = resolveTopTaskPackage(launcher);
-        if (!"com.miui.home".equals(topPackage)) {
-            if (topPackage != null) {
-                launcherLifecycleKnown = true;
-                launcherResumed = false;
-                if (glass != null) glass.setLauncherState(true, false);
-                log("[DC] launcher focus rejected: external task still foreground pkg="
-                        + topPackage + " reason=" + reason);
-            } else {
-                log("[DC] launcher focus pending: top task unavailable reason=" + reason);
-            }
-            return false;
-        }
-        launcherLifecycleKnown = true;
-        launcherResumed = true;
-        if (glass != null) {
-            glass.setLauncherState(true, true);
-            glass.onLauncherFocused();
-        }
-        log("[DC] launcher focus confirmed HOME reason=" + reason);
-        return true;
-    }
-
-    private static void scheduleLauncherHomeFocusRecheck(Object launcher,
-                                                          DockLiquidGlassView glass) {
-        if (!(launcher instanceof Activity) || glass == null) return;
-        View decor = ((Activity) launcher).getWindow().getDecorView();
-        for (long delay : new long[]{120L, 420L}) {
-            decor.postDelayed(() -> {
-                if (liquidGlassView != glass || launcherResumed || workstationMode
-                        || glass.isAllAppsActive() || glass.isOverviewActive()
-                        || !decor.hasWindowFocus()) return;
-                confirmLauncherHomeFocus(launcher, glass, "focus-recheck-" + delay);
-            }, delay);
-        }
+    private static void syncLauncherSceneState(Object launcher, DockLiquidGlassView glass) {
+        if (glass == null) return;
+        LauncherSceneController controller = launcherSceneController();
+        controller.seed(launcher);
+        glass.setLauncherState(controller.lifecycleKnown(), controller.launcherResumed());
+        glass.setSystemUiPanelExpanded(controller.systemUiPanelExpanded());
+        controller.bindRecentsView(glass, launcher);
     }
 
     private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
@@ -531,86 +462,11 @@ public class MainHook {
             return;
         }
 
-        // SystemUI panel expansion → toggle capture gate
-        try {
-            Class<?> deviceConfig = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
-            HookUtil.hookMethod(deviceConfig, "setControlPanelExpanded", new Class<?>[]{boolean.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        boolean expanded = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        systemUiPanelExpanded = expanded;
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setSystemUiPanelExpanded(expanded);
-                        log("[DC] liquid SystemUI panel expanded=" + expanded);
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] SystemUI panel capture gate unavailable: " + e); }
+        LauncherSceneController sceneController = launcherSceneController();
 
-        // Window focus only distinguishes HOME from an external APP after the current
-        // top task agrees. Launcher-owned ALL_APPS/RECENTS state remains higher priority.
-        try {
-            HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        // Stock laptop All Apps opens a focusable LauncherOverlayWindow named
-                        // "Laptop overlay". That focus transfer is still Launcher-owned and
-                        // must not be classified as an external APP scene.
-                        if (glass != null
-                                && (glass.isAllAppsActive() || glass.isOverviewActive())) {
-                            log("[DC] liquid focus ignored while Launcher-owned scene is active: "
-                                    + hasFocus);
-                            return r;
-                        }
-                        log("[DC] liquid focus hint: " + hasFocus);
-                        if (!hasFocus) {
-                            launcherLifecycleKnown = true;
-                            launcherResumed = false;
-                            if (glass != null) {
-                                glass.onLauncherFocusLost();
-                                glass.refreshForegroundAppLayer();
-                                glass.setLauncherState(true, false);
-                                glass.prearmAppBackdrop("focus-loss");
-                            }
-                        } else if (!confirmLauncherHomeFocus(
-                                chain.getThisObject(), glass, "focus-gain")) {
-                            // ActivityTaskManager can publish HOME a few frames after the focus
-                            // callback. Recheck briefly instead of guessing HOME immediately.
-                            scheduleLauncherHomeFocusRecheck(chain.getThisObject(), glass);
-                        }
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] onWindowFocusChanged hook failed: " + e); }
+        sceneController.installFocusAndPanelHooks(cl, launcherClass);
 
-        // Dock gesture target events (resolve before focus/lifecycle catches up)
-        hookDockGestureTarget(cl, "GestureToHome", "HOME");
-        hookDockGestureTarget(cl, "GestureToApp", "APP");
-        hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
-        boolean stockRecentsState = installStockRecentsStateHooks(cl);
-        if (!stockRecentsState) {
-            hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
-            hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
-        }
-        installDrawerStatusHooks(cl);
-        installAllAppsCaptureHooks(cl);
-
-        // Workstation Recents is entered from the dedicated Dock button. The system DEX
-        // routes HotSeatsListContentAdapter's laptop branch to Launcher.showOrHideRecent().
-        // Hook before the original call so the very first transition frame is mode-1 live.
-        try {
-            HookUtil.hookMethod(launcherClass, "showOrHideRecent", new Class<?>[0],
-                    chain -> {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (workstationMode && glass != null) {
-                            glass.onWorkstationRecentsButton();
-                            log("[DC] workstation Recents button boundary");
-                        }
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-        } catch (Throwable e) {
-            log("[DC] workstation showOrHideRecent hook unavailable: " + e);
-        }
+        sceneController.installStateHooks(cl, launcherClass);
 
         // Configuration changes (rotation)
         try {
@@ -643,52 +499,7 @@ public class MainHook {
             HookUtil.hookMethod(Activity.class, "onWindowVisibilityChanged", new Class<?>[]{int.class}, visibilityHook);
         } catch (Throwable e) { log("[DC] onWindowVisibilityChanged hook failed: " + e); }
 
-        // Direct lifecycle hooks (log only; focus/visibility drive decisions)
-        boolean directLifecycleHooked = false;
-        try {
-            HookUtil.hookMethod(launcherClass, "onResume", new Class<?>[0],
-                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onResume (focus decides)"); return r; });
-            HookUtil.hookMethod(launcherClass, "onPause", new Class<?>[0],
-                    chain -> { log("[DC] liquid lifecycle: onPause (focus decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
-            HookUtil.hookMethod(launcherClass, "onStart", new Class<?>[0],
-                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onStart (visibility decides)"); return r; });
-            HookUtil.hookMethod(launcherClass, "onStop", new Class<?>[0],
-                    chain -> { log("[DC] liquid lifecycle: onStop (visibility decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
-            directLifecycleHooked = true;
-        } catch (Throwable directError) {
-            log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
-        }
-
-        // Fallback lifecycle if Launcher doesn't declare onResume/onPause/onStart/onStop
-        if (!directLifecycleHooked) {
-            try {
-                HookUtil.hookMethod(Activity.class, "onResume", new Class<?>[0],
-                        chain -> {
-                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                launcherResumed = true;
-                                log("[DC] liquid lifecycle fallback: onResume");
-                                DockLiquidGlassView g = liquidGlassView;
-                                if (g != null) g.setLauncherState(true, true);
-                            }
-                            return r;
-                        });
-                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0],
-                        chain -> {
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                launcherResumed = false;
-                                log("[DC] liquid lifecycle fallback: onPause");
-                                DockLiquidGlassView g = liquidGlassView;
-                                if (g != null) g.setLauncherState(true, false);
-                            }
-                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        });
-            } catch (Throwable fallbackError) {
-                log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
-            }
-        }
+        sceneController.installLifecycleHooks(launcherClass);
 
         // Wallpaper offsets / zoom → notify glass
         try {
@@ -729,238 +540,6 @@ public class MainHook {
     }
 
     // ── helpers ──────────────────────────────────────────────────────
-
-    private static void installAllAppsCaptureHooks(ClassLoader cl) {
-        // Laptop All Apps owns focus via LauncherOverlayWindow. Prearm before the original
-        // show call so its focus transfer cannot be mistaken for an external APP.
-        try {
-            Class<?> laptop = Class.forName(
-                    "com.miui.home.launcher.laptop.AllAppsController", false, cl);
-            HookUtil.hookMethod(laptop, "showAllApps", new Class<?>[]{boolean.class},
-                    chain -> {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(true);
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(true);
-                        return result;
-                    });
-            HookUtil.hookMethod(laptop, "closeAllApps", new Class<?>[]{boolean.class},
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(false);
-                        return result;
-                    });
-            log("[DC] stock laptop All Apps state hooked");
-        } catch (Throwable e) {
-            log("[DC] stock laptop All Apps hook unavailable: " + e);
-        }
-
-        // Normal All Apps transition methods are early prearm/fallback boundaries. When
-        // DrawerStatusService is available it owns the final close state.
-        try {
-            Class<?> transition = Class.forName(
-                    "com.miui.home.launcher.allapps.AllAppsTransitionController", false, cl);
-            Class<?> launcherState = Class.forName(
-                    "com.miui.home.launcher.LauncherState", false, cl);
-            HookUtil.hookMethod(transition, "setState", new Class<?>[]{launcherState},
-                    chain -> {
-                        boolean entering = isStockAllAppsState(chain.getArgs().get(0));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(true);
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null && (entering || !drawerStatusHooksInstalled))
-                            glass.setAllAppsActive(entering);
-                        return result;
-                    });
-            Class<?> builder = Class.forName(
-                    "com.miui.home.launcher.anim.AnimatorSetBuilder", false, cl);
-            Class<?> animationConfig = Class.forName(
-                    "com.miui.home.launcher.LauncherStateManager$AnimationConfig", false, cl);
-            HookUtil.hookMethod(transition, "setStateWithAnimation",
-                    new Class<?>[]{launcherState, launcherState, builder, animationConfig},
-                    chain -> {
-                        boolean entering = isStockAllAppsState(chain.getArgs().get(1));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(true);
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null && !entering && !drawerStatusHooksInstalled)
-                            glass.setAllAppsActive(false);
-                        return result;
-                    });
-            log("[DC] stock normal All Apps transition fallback hooked");
-        } catch (Throwable e) {
-            log("[DC] stock normal All Apps transition hook unavailable: " + e);
-        }
-    }
-
-    private static boolean isStockAllAppsState(Object state) {
-        return state != null && "com.miui.home.launcher.uioverrides.AllAppsState"
-                .equals(state.getClass().getName());
-    }
-
-    private static void installDrawerStatusHooks(ClassLoader cl) {
-        boolean installed = false;
-        try {
-            Class<?> drawer = Class.forName(
-                    "com.miui.home.launcher.dock.v3.dependencies.DrawerStatusServiceImpl",
-                    false, cl);
-            HookUtil.hookMethod(drawer, "dispatchDrawerOpen", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(true);
-                        return result;
-                    });
-            HookUtil.hookMethod(drawer, "dispatchDrawerClose", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(false);
-                        return result;
-                    });
-            HookUtil.hookMethod(drawer, "dispatchDrawerProgress", new Class<?>[]{float.class},
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.requestCapture("drawer-progress");
-                        return result;
-                    });
-            installed = true;
-            log("[DC] stock DrawerStatusService state hooked");
-        } catch (Throwable e) {
-            log("[DC] stock DrawerStatusService hook unavailable: " + e);
-        }
-        drawerStatusHooksInstalled = installed;
-    }
-
-    private static boolean installStockRecentsStateHooks(ClassLoader cl) {
-        boolean mainObserverHooked = false;
-        boolean recentsListenerHooked = false;
-        try {
-            Class<?> observer = Class.forName(
-                    "com.miui.home.launcher.dock.v3.state.DockStateManager$mainStateObserver$1",
-                    false, cl);
-            Class<?> recentParam = Class.forName(
-                    "com.miui.home.launcher.dock.v3.state.partial.RecentParam", false, cl);
-            HookUtil.hookMethod(observer, "onEnterRecent", new Class<?>[]{recentParam},
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setOverviewActive(true, "stock-main-enter");
-                        return result;
-                    });
-            HookUtil.hookMethod(observer, "onExitRecent", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setOverviewActive(false, "stock-main-exit");
-                        return result;
-                    });
-            mainObserverHooked = true;
-        } catch (Throwable e) {
-            log("[DC] stock Recents main observer hook unavailable: " + e);
-        }
-        try {
-            Class<?> listener = Class.forName(
-                    "com.miui.home.launcher.dock.v3.state.DockStateManager$recentsListener$1",
-                    false, cl);
-            HookUtil.hookMethod(listener, "onRecentViewShow", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setOverviewActive(true, "stock-view-show");
-                        return result;
-                    });
-            HookUtil.hookMethod(listener, "onRecentViewHide", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setOverviewActive(false, "stock-view-hide");
-                        return result;
-                    });
-            HookUtil.hookMethod(listener, "onRecentViewAnimationComplete", new Class<?>[0],
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.requestCapture("stock-recents-animation-complete");
-                        return result;
-                    });
-            recentsListenerHooked = true;
-        } catch (Throwable e) {
-            log("[DC] stock Recents listener hook unavailable: " + e);
-        }
-        boolean installed = mainObserverHooked && recentsListenerHooked;
-        log("[DC] stock Recents authority=" + installed
-                + " main=" + mainObserverHooked + " listener=" + recentsListenerHooked);
-        return installed;
-    }
-
-    /** Gesture objects are prearm hints, not proof that navigation completed. HOME is the
-     * only gesture target that crosses from the live APP/RECENTS capture domain into the
-     * wallpaper domain, so never let its constructor do that while an external task is still
-     * foreground (or HOME has not yet been confirmed). */
-    private static void prearmGestureCaptureTarget(DockLiquidGlassView glass, String target) {
-        if (glass == null || workstationMode) return;
-        if ("HOME".equals(target)) {
-            String topPackage = resolveTopTaskPackage(glass.getContext());
-            boolean externalConfirmed = topPackage != null && !"com.miui.home".equals(topPackage);
-            boolean homeUnconfirmed = topPackage == null && !launcherResumed;
-            if (externalConfirmed || homeUnconfirmed) {
-                glass.prearmAppBackdrop("gesture-home-unconfirmed");
-                glass.requestCapture("gesture-home-live-prearm");
-                log("[DC] gesture HOME kept live while external task foreground/unconfirmed pkg="
-                        + topPackage);
-                return;
-            }
-        }
-        glass.setGestureCaptureTarget(target);
-    }
-
-    private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
-        try {
-            Class<?> eventClass = Class.forName("com.miui.home.launcher.dock.v3." + eventName, false, cl);
-            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null && !workstationMode)
-                        prearmGestureCaptureTarget(glass, target);
-                    if (!workstationMode) log("[DC] liquid gesture prearm=" + target);
-                    return r;
-                });
-            }
-        } catch (Throwable e) { log("[DC] " + eventName + " capture hook unavailable: " + e); }
-    }
-
-    private static void hookOverviewStateEvent(ClassLoader cl, String eventName, boolean active) {
-        try {
-            Class<?> eventClass = Class.forName("com.miui.home.recents.event." + eventName, false, cl);
-            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null && !workstationMode)
-                        glass.setOverviewActive(active, eventName);
-                    if (!workstationMode) log("[DC] liquid overview active=" + active
-                            + " event=" + eventName);
-                    return r;
-                });
-            }
-        } catch (Throwable e) {
-            log("[DC] " + eventName + " capture state hook unavailable: " + e);
-        }
-    }
-
-    private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
-        try {
-            Object panel = HookUtil.getField(launcher, "mOverviewPanel");
-            if (panel instanceof View) glass.setRecentsView((View) panel);
-        } catch (Throwable e) { log("[DC] recents bind failed: " + e); }
-    }
 
     /** Install DragController hooks once; callback reads liquidGlassView each time. */
     private static void installDockDragHooks(ClassLoader cl) {
