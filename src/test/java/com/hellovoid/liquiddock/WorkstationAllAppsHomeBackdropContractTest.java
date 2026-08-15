@@ -11,15 +11,18 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Contracts that keep workstation All Apps invisible to the Dock capture state machine. */
+/** Contracts that keep workstation All Apps out of the Dock capture state machine. */
 public class WorkstationAllAppsHomeBackdropContractTest {
-    private static String installAllAppsCaptureHooks() throws IOException {
-        String source = Files.readString(
+    private static String mainHook() throws IOException {
+        return Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
                 StandardCharsets.UTF_8);
-        int start = source.indexOf("private static void installAllAppsCaptureHooks(ClassLoader cl)");
-        int end = source.indexOf("private static boolean isStockAllAppsState", start);
-        assertTrue("installAllAppsCaptureHooks must remain present", start >= 0 && end > start);
+    }
+
+    private static String method(String source, String startMarker, String endMarker) {
+        int start = source.indexOf(startMarker);
+        int end = source.indexOf(endMarker, start);
+        assertTrue("expected method markers must remain present", start >= 0 && end > start);
         return source.substring(start, end);
     }
 
@@ -32,27 +35,54 @@ public class WorkstationAllAppsHomeBackdropContractTest {
     }
 
     @Test
-    public void workstationLaptopAllAppsDoesNotEnterDockCaptureState() throws IOException {
-        String method = installAllAppsCaptureHooks();
-        int normalStart = method.indexOf("// Normal All Apps stays in the Launcher main window.");
+    public void workstationAllAppsUsesUiOwnershipLatchInsteadOfCaptureState() throws IOException {
+        String source = mainHook();
+        String allAppsHooks = method(source,
+                "private static void installAllAppsCaptureHooks(ClassLoader cl)",
+                "private static boolean isStockAllAppsState");
+        int normalStart = allAppsHooks.indexOf(
+                "// Normal All Apps stays in the Launcher main window.");
         assertTrue("normal All Apps section must remain present", normalStart > 0);
-        String laptop = method.substring(0, normalStart);
+        String laptop = allAppsHooks.substring(0, normalStart);
 
-        assertEquals("show/close laptop callbacks must both bypass capture-state forwarding",
-                2, count(laptop, "if (workstationMode) return chain.proceed("));
-        assertEquals("non-workstation laptop compatibility path must retain its three state updates",
+        assertTrue("workstation All Apps ownership must be a MainHook UI fact",
+                source.contains("private static volatile boolean workstationAllAppsOpen;"));
+        assertTrue("workstation show must claim overlay focus ownership before original code",
+                laptop.contains("workstationAllAppsOpen = true;"));
+        assertTrue("workstation close must release overlay focus ownership",
+                laptop.contains("workstationAllAppsOpen = false;"));
+        assertEquals("only the non-workstation compatibility path may forward laptop All Apps",
                 3, count(laptop, "glass.setAllAppsActive("));
+        assertTrue("workstation laptop callbacks must bypass capture-state forwarding",
+                count(laptop, "if (workstationMode)") >= 2);
     }
 
     @Test
-    public void normalAllAppsCaptureStatePathRemainsUnchanged() throws IOException {
-        String method = installAllAppsCaptureHooks();
-        int normalStart = method.indexOf("// Normal All Apps stays in the Launcher main window.");
-        String normal = method.substring(normalStart);
+    public void workstationAllAppsFocusTransferStaysLauncherOwned() throws IOException {
+        String source = mainHook();
+        String captureHooks = method(source,
+                "private static void installLiquidGlassCaptureHooks(ClassLoader cl)",
+                "// ── helpers ──────────────────────────────────────────────────────");
+
+        assertTrue("focus loss from the workstation All Apps overlay must be ignored",
+                captureHooks.contains("if (workstationMode && workstationAllAppsOpen)"));
+    }
+
+    @Test
+    public void normalAllAppsCapturePathAndWorkstationRecentsRemainIndependent() throws IOException {
+        String source = mainHook();
+        String allAppsHooks = method(source,
+                "private static void installAllAppsCaptureHooks(ClassLoader cl)",
+                "private static boolean isStockAllAppsState");
+        int normalStart = allAppsHooks.indexOf(
+                "// Normal All Apps stays in the Launcher main window.");
+        String normal = allAppsHooks.substring(normalStart);
 
         assertTrue("normal All Apps must still forward capture-state transitions",
                 count(normal, "glass.setAllAppsActive(") >= 3);
-        assertFalse("workstation bypass belongs only to the laptop section",
-                normal.contains("if (workstationMode) return chain.proceed("));
+        assertFalse("workstation ownership latch belongs only to laptop All Apps",
+                normal.contains("workstationAllAppsOpen"));
+        assertTrue("workstation Recents path must remain installed",
+                source.contains("glass.onWorkstationRecentsButton();"));
     }
 }
