@@ -6,6 +6,8 @@ import android.os.IBinder;
 final class FreeformLeashProtocol {
     static final String BROKER_DESCRIPTOR =
             "com.hellovoid.liquiddock.IFreeformLeashBroker";
+    static final String BROKER_PROVIDER_CALLBACK_DESCRIPTOR =
+            "com.hellovoid.liquiddock.IFreeformLeashBrokerProviderCallback";
     static final String PROVIDER_DESCRIPTOR =
             "com.hellovoid.liquiddock.IFreeformLeashProvider";
     static final String CALLBACK_DESCRIPTOR =
@@ -13,6 +15,8 @@ final class FreeformLeashProtocol {
 
     static final int TRANSACTION_REGISTER_PROVIDER = IBinder.FIRST_CALL_TRANSACTION;
     static final int TRANSACTION_GET_PROVIDER = IBinder.FIRST_CALL_TRANSACTION + 1;
+    static final int TRANSACTION_WATCH_PROVIDER = IBinder.FIRST_CALL_TRANSACTION + 2;
+    static final int TRANSACTION_PROVIDER_CHANGED = IBinder.FIRST_CALL_TRANSACTION;
 
     // Legacy per-task wire codes are intentionally left reserved. Reusing them with a new
     // payload would let old/new Launcher and SystemUI processes misinterpret each other.
