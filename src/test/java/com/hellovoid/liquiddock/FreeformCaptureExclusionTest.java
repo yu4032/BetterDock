@@ -32,11 +32,11 @@ public class FreeformCaptureExclusionTest {
         assertArrayEquals(new String[]{"Floating Dock", "drag-layer"}, names);
     }
 
-    @Test public void homeUsesFullDisplayOnlyForLiveFreeformBackdrop() throws Exception {
+    @Test public void homeAlwaysReturnsToWallpaperEvenWithVisibleFreeform() throws Exception {
         Method sourceFor = CaptureSourcePolicy.class.getDeclaredMethod("sourceFor",
                 CaptureScene.class, boolean.class, boolean.class, boolean.class);
         sourceFor.setAccessible(true);
-        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
                 sourceFor.invoke(null, CaptureScene.HOME, false, false, true));
         assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
                 sourceFor.invoke(null, CaptureScene.HOME, false, false, false));
