@@ -13,14 +13,16 @@ import java.util.WeakHashMap;
 /**
  * Opt-in material adapter for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
  *
- * The native MiuiBlurUiHelper remains the blur owner. LiquidDock only adds a lightweight
- * highlight and the existing foreground stroke, and intentionally installs no capture state.
+ * The native MiuiBlurUiHelper remains the blur owner. LiquidDock adds a lightweight
+ * GPU-backed refraction/highlight overlay and the existing foreground stroke. The overlay
+ * owns only its local backdrop sampler; no legacy capture scene state is installed.
  */
 final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
-    private static final WeakHashMap<View, Miuix307HighlightView> OVERLAYS = new WeakHashMap<>();
+    private static final WeakHashMap<View, Miuix307RefractionView> OVERLAYS = new WeakHashMap<>();
+    private static ClassLoader launcherClassLoader;
     private static boolean installed;
 
     private Miuix307MaterialPipeline() {}
@@ -36,6 +38,7 @@ final class Miuix307MaterialPipeline {
         }
 
         try {
+            launcherClassLoader = classLoader;
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
@@ -99,23 +102,24 @@ final class Miuix307MaterialPipeline {
                 ? (ViewGroup) background.getParent() : null;
         if (parent == null) return;
 
-        Miuix307HighlightView overlay = OVERLAYS.get(background);
+        Miuix307RefractionView overlay = OVERLAYS.get(background);
         if (overlay == null || overlay.getParent() != parent) {
             if (overlay != null && overlay.getParent() instanceof ViewGroup) {
                 ((ViewGroup) overlay.getParent()).removeView(overlay);
             }
-            overlay = new Miuix307HighlightView(background.getContext());
+            overlay = new Miuix307RefractionView(
+                    background.getContext(), launcherClassLoader, config);
             OVERLAYS.put(background, overlay);
             int index = Math.max(0, parent.indexOfChild(background));
             parent.addView(overlay, Math.min(parent.getChildCount(), index + 1), copyLayoutParams(background));
-            MainHook.log("[DC] MiuiX 307 material overlay attached");
+            MainHook.log("[DC] MiuiX 307 refraction overlay attached");
         }
         sync(background, config, true);
     }
 
     private static void sync(View background, LiquidDockConfig config, boolean refreshBlur) {
         if (background == null || MainHook.isWorkstationMode()) return;
-        Miuix307HighlightView overlay = OVERLAYS.get(background);
+        Miuix307RefractionView overlay = OVERLAYS.get(background);
         if (overlay == null) {
             bind(background, config);
             return;
