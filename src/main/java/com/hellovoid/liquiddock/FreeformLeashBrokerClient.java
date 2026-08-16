@@ -257,31 +257,34 @@ final class FreeformLeashBrokerClient {
             // Mixed generations may not understand the watcher transaction. Keep the old
             // GET_PROVIDER path as a one-shot compatibility fallback; current generations
             // recover event-driven through providerWatcherCallback.
-            if (!accepted) mainHandler.post(FreeformLeashBrokerClient.this::refreshLauncherProviderAsync);
+            if (!accepted) discoverLauncherProvider(b);
         });
     }
 
     private void refreshLauncherProviderAsync() {
         if (role != Role.LAUNCHER || launcherProvider != null) return;
-        runIo(() -> {
-            IBinder b = broker;
-            if (b == null) return;
-            Parcel data = Parcel.obtain();
-            Parcel reply = Parcel.obtain();
-            try {
-                data.writeInterfaceToken(FreeformLeashProtocol.BROKER_DESCRIPTOR);
-                b.transact(FreeformLeashProtocol.TRANSACTION_GET_PROVIDER, data, reply, 0);
-                reply.readException();
-                IBinder next = reply.readStrongBinder();
-                if (next != null) setLauncherProvider(next);
-            } catch (Throwable error) {
-                Log.w(TAG, "freeform provider discovery unavailable", error);
-                unbindAndReconnect();
-            } finally {
-                reply.recycle();
-                data.recycle();
-            }
-        });
+        runIo(() -> discoverLauncherProvider(broker));
+    }
+
+    private void discoverLauncherProvider(IBinder b) {
+        if (b == null || launcherProvider != null) return;
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        try {
+            data.writeInterfaceToken(FreeformLeashProtocol.BROKER_DESCRIPTOR);
+            boolean accepted = b.transact(
+                    FreeformLeashProtocol.TRANSACTION_GET_PROVIDER, data, reply, 0);
+            if (!accepted) return;
+            reply.readException();
+            IBinder next = reply.readStrongBinder();
+            if (next != null) setLauncherProvider(next);
+        } catch (Throwable error) {
+            Log.w(TAG, "freeform provider discovery unavailable", error);
+            unbindAndReconnect();
+        } finally {
+            reply.recycle();
+            data.recycle();
+        }
     }
 
     private void setLauncherProvider(IBinder next) {
