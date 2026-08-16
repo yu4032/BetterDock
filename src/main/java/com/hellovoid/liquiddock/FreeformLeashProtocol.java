@@ -13,6 +13,8 @@ final class FreeformLeashProtocol {
     static final String CALLBACK_DESCRIPTOR =
             "com.hellovoid.liquiddock.IFreeformLeashCallback";
 
+    // Broker transaction codes live on the broker Binder only. The +2 watcher therefore does
+    // not reuse the diagnostic HOME request tombstone at +2 on the separate provider Binder.
     static final int TRANSACTION_REGISTER_PROVIDER = IBinder.FIRST_CALL_TRANSACTION;
     static final int TRANSACTION_GET_PROVIDER = IBinder.FIRST_CALL_TRANSACTION + 1;
     static final int TRANSACTION_WATCH_PROVIDER = IBinder.FIRST_CALL_TRANSACTION + 2;
