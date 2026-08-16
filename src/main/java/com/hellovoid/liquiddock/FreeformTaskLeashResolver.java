@@ -25,7 +25,7 @@ final class FreeformTaskLeashResolver {
     FreeformTaskLeashResolver(Context context) {
         Context app = context.getApplicationContext();
         Context safeContext = app != null ? app : context;
-        this.brokerClient = new FreeformLeashBrokerClient(
+        this.brokerClient = FreeformLeashBrokerClient.shared(
                 safeContext, FreeformLeashBrokerClient.Role.LAUNCHER);
     }
 
