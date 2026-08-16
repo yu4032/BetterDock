@@ -2,7 +2,7 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/app-home-animation-handoff, fix/app-home-animation-icon-exclusion ]
+    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/app-home-animation-handoff, fix/app-home-animation-icon-exclusion, fix/app-home-activity-leash-exclusion ]
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-app-home-icon-exclusion
+          name: LiquidDock-app-home-activity-leash-exclusion
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
