@@ -12,6 +12,7 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -23,6 +24,7 @@ final class SystemUiFreeformLeashProvider {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static final FreeformBridgePolicy.CircuitBreaker BREAKER =
             new FreeformBridgePolicy.CircuitBreaker();
+    private static final SurfaceControl[] NO_SURFACES = new SurfaceControl[0];
 
     private static volatile ListenerState currentState;
     private static volatile FreeformLeashBrokerClient brokerClient;
@@ -30,7 +32,8 @@ final class SystemUiFreeformLeashProvider {
     private static Field contextField;
     private static Field organizerField;
     private static Field tasksField;
-    private static volatile Field leashField;
+    private static Field taskInfoField;
+    private static Field leashField;
 
     private SystemUiFreeformLeashProvider() {}
 
@@ -39,11 +42,18 @@ final class SystemUiFreeformLeashProvider {
         try {
             Class<?> listenerClass = Class.forName(
                     "com.android.wm.shell.freeform.FreeformTaskListener", false, classLoader);
+            Class<?> stateClass = Class.forName(
+                    "com.android.wm.shell.freeform.FreeformTaskListener$State", false, classLoader);
             contextField = HookUtil.findField(listenerClass, "mContext");
             organizerField = HookUtil.findField(listenerClass, "mShellTaskOrganizer");
             tasksField = HookUtil.findField(listenerClass, "mTasks");
+            taskInfoField = HookUtil.findField(stateClass, "mTaskInfo");
+            leashField = HookUtil.findField(stateClass, "mLeash");
             if (!SparseArray.class.isAssignableFrom(tasksField.getType())) {
                 throw new IllegalStateException("FreeformTaskListener#mTasks is not SparseArray");
+            }
+            if (!SurfaceControl.class.isAssignableFrom(leashField.getType())) {
+                throw new IllegalStateException("FreeformTaskListener.State#mLeash is not SurfaceControl");
             }
             Constructor<?>[] constructors = listenerClass.getDeclaredConstructors();
             if (constructors.length == 0) throw new IllegalStateException("no FreeformTaskListener ctor");
@@ -105,7 +115,7 @@ final class SystemUiFreeformLeashProvider {
     private static final Binder PROVIDER_BINDER = new Binder() {
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                 throws RemoteException {
-            if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_LEASHES) {
+            if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT) {
                 return super.onTransact(code, data, reply, flags);
             }
             ListenerState state = currentState;
@@ -113,33 +123,39 @@ final class SystemUiFreeformLeashProvider {
             try {
                 data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
                 long requestId = data.readLong();
-                int[] taskIds = readTaskIds(data);
+                int displayId = data.readInt();
                 IBinder callback = data.readStrongBinder();
                 if (callback == null) return true;
+                if (displayId < 0) {
+                    sendSnapshotResult(callback, requestId,
+                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
+                    return true;
+                }
                 if (BREAKER.isDisabled()) {
-                    sendUniform(callback, requestId, taskIds,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
+                    sendSnapshotResult(callback, requestId,
+                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
                     return true;
                 }
                 if (state.listener.get() == null) {
-                    sendUniform(callback, requestId, taskIds,
-                            FreeformLeashProtocol.STATUS_UNAVAILABLE);
+                    sendSnapshotResult(callback, requestId,
+                            FreeformLeashProtocol.STATUS_UNAVAILABLE, NO_SURFACES);
                     return true;
                 }
                 try {
                     state.executor.execute(() -> {
                         try {
-                            resolveOnShellExecutor(state, callback, requestId, taskIds);
+                            resolveSnapshotOnShellExecutor(state, callback, requestId, displayId);
                         } catch (Throwable error) {
-                            recordInfrastructureFailure("resolve freeform leash", error);
-                            sendUniform(callback, requestId, taskIds,
-                                    FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
+                            recordInfrastructureFailure("resolve freeform snapshot", error);
+                            sendSnapshotResult(callback, requestId,
+                                    FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE,
+                                    NO_SURFACES);
                         }
                     });
                 } catch (Throwable error) {
-                    recordInfrastructureFailure("schedule freeform leash lookup", error);
-                    sendUniform(callback, requestId, taskIds,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
+                    recordInfrastructureFailure("schedule freeform snapshot lookup", error);
+                    sendSnapshotResult(callback, requestId,
+                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
                 }
                 return true;
             } catch (SecurityException | IllegalArgumentException malformedRequest) {
@@ -151,70 +167,96 @@ final class SystemUiFreeformLeashProvider {
         }
     };
 
-    private static void resolveOnShellExecutor(ListenerState state, IBinder callback,
-                                               long requestId, int[] taskIds) throws Exception {
+    private static void resolveSnapshotOnShellExecutor(ListenerState state, IBinder callback,
+                                                       long requestId, int displayId)
+            throws Exception {
         Object listener = state.listener.get();
         if (listener == null) {
-            sendUniform(callback, requestId, taskIds, FreeformLeashProtocol.STATUS_UNAVAILABLE);
+            sendSnapshotResult(callback, requestId,
+                    FreeformLeashProtocol.STATUS_UNAVAILABLE, NO_SURFACES);
             return;
         }
         Object tasksValue = tasksField.get(listener);
         if (!(tasksValue instanceof SparseArray)) {
             throw new IllegalStateException("mTasks changed type");
         }
+
         SparseArray<?> tasks = (SparseArray<?>) tasksValue;
-        int[] statuses = new int[taskIds.length];
-        SurfaceControl[] surfaces = new SurfaceControl[taskIds.length];
-        for (int i = 0; i < taskIds.length; i++) {
-            Object taskState = tasks.get(taskIds[i]);
-            if (taskState == null) {
-                statuses[i] = FreeformLeashProtocol.STATUS_UNAVAILABLE;
+        ArrayList<SurfaceControl> included = new ArrayList<>();
+        for (int i = 0; i < tasks.size(); i++) {
+            Object taskState = tasks.valueAt(i);
+            if (taskState == null) continue;
+
+            Object taskInfo = taskInfoField.get(taskState);
+            Integer taskDisplayId = reflectedDisplayId(taskInfo);
+            Boolean visible = reflectedVisibility(taskInfo);
+            if (!FreeformBridgePolicy.shouldIncludeFreeformCandidate(
+                    taskDisplayId, visible, displayId)) {
                 continue;
             }
-            Field field = leashField;
-            if (field == null || !field.getDeclaringClass().isAssignableFrom(taskState.getClass())) {
-                field = HookUtil.findField(taskState.getClass(), "mLeash");
-                if (!SurfaceControl.class.isAssignableFrom(field.getType())) {
-                    throw new IllegalStateException("freeform state mLeash is not SurfaceControl");
-                }
-                leashField = field;
+
+            Object leashValue = leashField.get(taskState);
+            if (!(leashValue instanceof SurfaceControl)
+                    || !((SurfaceControl) leashValue).isValid()) {
+                throw new IllegalStateException("candidate freeform leash unavailable");
             }
-            Object value = field.get(taskState);
-            if (value instanceof SurfaceControl && ((SurfaceControl) value).isValid()) {
-                statuses[i] = FreeformLeashProtocol.STATUS_OK;
-                surfaces[i] = (SurfaceControl) value;
-            } else {
-                statuses[i] = FreeformLeashProtocol.STATUS_UNAVAILABLE;
+            included.add((SurfaceControl) leashValue);
+            if (included.size() > FreeformLeashProtocol.MAX_TASKS) {
+                throw new IllegalStateException("too many visible freeform tasks");
             }
         }
-        sendResult(callback, requestId, taskIds, statuses, surfaces);
+
+        sendSnapshotResult(callback, requestId, FreeformLeashProtocol.STATUS_OK,
+                included.toArray(new SurfaceControl[0]));
     }
 
-    private static void sendUniform(IBinder callback, long requestId, int[] taskIds, int status) {
+    private static Integer reflectedDisplayId(Object taskInfo) {
+        if (taskInfo == null) return null;
+        try {
+            Field field = HookUtil.findField(taskInfo.getClass(), "displayId");
+            Object value = field.get(taskInfo);
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        try {
+            Object value = HookUtil.invoke(taskInfo, "getDisplayId");
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static Boolean reflectedVisibility(Object taskInfo) {
+        if (taskInfo == null) return null;
+        try {
+            Field field = HookUtil.findField(taskInfo.getClass(), "isVisible");
+            Object value = field.get(taskInfo);
+            if (value instanceof Boolean) return (Boolean) value;
+        } catch (Throwable ignored) {}
+        try {
+            Object value = HookUtil.invoke(taskInfo, "isVisible");
+            if (value instanceof Boolean) return (Boolean) value;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static void sendSnapshotResult(IBinder callback, long requestId, int overallStatus,
+                                           SurfaceControl[] surfaces) {
         if (callback == null) return;
-        int[] statuses = new int[taskIds.length];
-        java.util.Arrays.fill(statuses, status);
-        sendResult(callback, requestId, taskIds, statuses, new SurfaceControl[taskIds.length]);
-    }
-
-    private static void sendResult(IBinder callback, long requestId, int[] taskIds,
-                                   int[] statuses, SurfaceControl[] surfaces) {
+        SurfaceControl[] safeSurfaces = surfaces != null ? surfaces : NO_SURFACES;
         Parcel out = Parcel.obtain();
         try {
             out.writeInterfaceToken(FreeformLeashProtocol.CALLBACK_DESCRIPTOR);
             out.writeLong(requestId);
-            out.writeInt(taskIds.length);
-            for (int i = 0; i < taskIds.length; i++) {
-                out.writeInt(taskIds[i]);
-                out.writeInt(statuses[i]);
-                out.writeTypedObject(surfaces[i], 0);
+            out.writeInt(overallStatus);
+            out.writeInt(safeSurfaces.length);
+            for (int i = 0; i < safeSurfaces.length; i++) {
+                out.writeTypedObject(safeSurfaces[i], 0);
             }
-            callback.transact(FreeformLeashProtocol.TRANSACTION_LEASH_RESULT,
+            callback.transact(FreeformLeashProtocol.TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
         } catch (RemoteException remoteGone) {
             // Normal Launcher process death; never count against SystemUI bridge health.
         } catch (Throwable error) {
-            recordInfrastructureFailure("send freeform leash callback", error);
+            recordInfrastructureFailure("send freeform snapshot callback", error);
         } finally {
             out.recycle();
         }
@@ -228,16 +270,6 @@ final class SystemUiFreeformLeashProvider {
         } catch (Throwable error) {
             return false;
         }
-    }
-
-    private static int[] readTaskIds(Parcel data) {
-        int count = data.readInt();
-        if (count < 0 || count > FreeformLeashProtocol.MAX_TASKS) {
-            throw new IllegalArgumentException("invalid freeform task count=" + count);
-        }
-        int[] raw = new int[count];
-        for (int i = 0; i < count; i++) raw[i] = data.readInt();
-        return FreeformBridgePolicy.deduplicateTaskIds(raw);
     }
 
     private static void recordInfrastructureFailure(String where, Throwable error) {
