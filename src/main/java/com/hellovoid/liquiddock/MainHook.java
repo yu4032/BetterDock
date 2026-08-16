@@ -26,8 +26,6 @@ public class MainHook {
     private static int lastShadowW;
     private static DockLiquidGlassView liquidGlassView;
     private static DockLiquidGlassHostView liquidGlassHostView;
-    private static volatile boolean launcherResumed;
-    private static volatile boolean launcherLifecycleKnown;
     private static volatile boolean systemUiPanelExpanded;
     private static int bgW, bgH, shadowPad;
     private static float bgR = 30f;
@@ -150,8 +148,7 @@ public class MainHook {
                             int bgIndex = parent.indexOfChild(vBg);
                             liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIndex), gv,
                                     vBg, workspace, config, false, 0.58f);
-                            seedLauncherLifecycleState(chain.getThisObject());
-                            liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                            HomeOwnershipRuntime.bind(liquidGlassView, liquidGlassView.getContext());
                             liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                             bindRecentsView(liquidGlassView, chain.getThisObject());
                             installDockTouchListener(liquidGlassView, vBg.getRootView());
@@ -371,8 +368,7 @@ public class MainHook {
                                 int bgIdx = parent.indexOfChild(oldBg);
                                 liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIdx), gv,
                                         oldBg, workspace, current, c2.squircle, sqCp);
-                                seedLauncherLifecycleState(chain.getThisObject());
-                                liquidGlassView.setLauncherState(launcherLifecycleKnown, launcherResumed);
+                                HomeOwnershipRuntime.bind(liquidGlassView, liquidGlassView.getContext());
                                 liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
                                 bindRecentsView(liquidGlassView, chain.getThisObject());
                                 installDockTouchListener(liquidGlassView, oldBg.getRootView());
@@ -443,46 +439,6 @@ public class MainHook {
 
     // ── lifecycle / capture hooks ────────────────────────────────────
 
-    private static void seedLauncherLifecycleState(Object launcher) {
-        if (launcher == null) return;
-        try {
-            Object paused = HookUtil.invoke(launcher, "isPause");
-            Object visible = HookUtil.invoke(launcher, "isVisible");
-            Object focused = HookUtil.invoke(launcher, "isWindowFocus");
-            int windowingMode = foregroundTaskWindowingMode(launcher);
-            if (paused instanceof Boolean) {
-                launcherLifecycleKnown = true;
-                launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                        !((Boolean) paused), windowingMode);
-            }
-            log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
-                + " resumed=" + launcherResumed + " paused=" + paused
-                + " visible=" + visible + " focus=" + focused
-                + " windowingMode=" + windowingMode);
-        } catch (Throwable e) {
-            log("[DC] liquid lifecycle seed unavailable; using window gate: " + e);
-        }
-    }
-
-    /** Windowing mode of the current top task. HyperOS small windows are freeform tasks;
-     * they may pause / defocus Launcher while the Launcher surface remains the owning scene. */
-    private static int foregroundTaskWindowingMode(Object launcher) {
-        if (!(launcher instanceof Activity)) return -1;
-        try {
-            android.app.ActivityManager am = (android.app.ActivityManager)
-                    ((Activity) launcher).getSystemService(Activity.ACTIVITY_SERVICE);
-            if (am == null) return -1;
-            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
-                    am.getRunningTasks(1);
-            if (tasks == null || tasks.isEmpty()) return -1;
-            Object mode = HookUtil.invoke(tasks.get(0), "getWindowingMode");
-            return mode instanceof Integer ? (Integer) mode : -1;
-        } catch (Throwable e) {
-            log("[DC] foreground task windowing mode unavailable: " + e);
-            return -1;
-        }
-    }
-
     private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
         Class<?> launcherClass;
         try {
@@ -507,49 +463,19 @@ public class MainHook {
                     });
         } catch (Throwable e) { log("[DC] SystemUI panel capture gate unavailable: " + e); }
 
-        // Window focus: the authoritative HOME/APP signal
+        // Launcher focus is a refresh boundary only. SystemUI owns HOME/APP classification.
         try {
             HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (workstationMode && workstationAllAppsOpen) {
-                            log("[DC] liquid focus ignored while workstation All Apps overlay owns focus: "
-                                    + hasFocus);
-                            return r;
-                        }
-                        // Normal All Apps also owns Launcher focus while its overlay is active.
-                        if (glass != null && glass.isAllAppsActive()) {
-                            log("[DC] liquid focus ignored while stock All Apps overlay owns focus: " + hasFocus);
-                            return r;
-                        }
-                        launcherLifecycleKnown = true;
-                        int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
-                        boolean launcherOwnsScene = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                                hasFocus, windowingMode);
-                        launcherResumed = launcherOwnsScene;
-                        log("[DC] liquid focus: " + hasFocus
-                                + " windowingMode=" + windowingMode
-                                + " launcherOwnsScene=" + launcherOwnsScene);
-                        if (glass != null) {
-                            if (!launcherOwnsScene) {
-                                // Resolve the APP/layer before requesting the APP scene. A fullscreen
-                                // task owns the backdrop; a freeform task does not demote Launcher.
-                                glass.onLauncherFocusLost();
-                                glass.refreshForegroundAppLayer();
-                                glass.setLauncherState(true, false);
-                                glass.prearmAppBackdrop("focus-loss");
-                            } else {
-                                glass.setLauncherState(true, true);
-                                if (hasFocus) glass.onLauncherFocused();
-                            }
-                        }
+                        log("[DC] liquid focus boundary=" + hasFocus + "; querying SystemUI ownership");
+                        HomeOwnershipRuntime.request("focus");
                         return r;
                     });
         } catch (Throwable e) { log("[DC] onWindowFocusChanged hook failed: " + e); }
 
-        // Dock gesture target events (resolve before focus/lifecycle catches up)
+        // Dock gesture target events (resolve before SystemUI baseline catches up)
         hookDockGestureTarget(cl, "GestureToHome", "HOME");
         hookDockGestureTarget(cl, "GestureToApp", "APP");
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
@@ -581,6 +507,7 @@ public class MainHook {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         DockLiquidGlassView glass = liquidGlassView;
                         if (glass != null) {
+                            HomeOwnershipRuntime.request("configuration");
                             glass.requestCapture("launcher-configuration-changed");
                             glass.beginRotationStabilize();
                             glass.postDelayed(() -> glass.requestCapture("launcher-configuration-settled"), 220L);
@@ -604,57 +531,6 @@ public class MainHook {
         try {
             HookUtil.hookMethod(Activity.class, "onWindowVisibilityChanged", new Class<?>[]{int.class}, visibilityHook);
         } catch (Throwable e) { log("[DC] onWindowVisibilityChanged hook failed: " + e); }
-
-        // Direct lifecycle hooks (log only; focus/visibility drive decisions)
-        boolean directLifecycleHooked = false;
-        try {
-            HookUtil.hookMethod(launcherClass, "onResume", new Class<?>[0],
-                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onResume (focus decides)"); return r; });
-            HookUtil.hookMethod(launcherClass, "onPause", new Class<?>[0],
-                    chain -> { log("[DC] liquid lifecycle: onPause (focus decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
-            HookUtil.hookMethod(launcherClass, "onStart", new Class<?>[0],
-                    chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); log("[DC] liquid lifecycle: onStart (visibility decides)"); return r; });
-            HookUtil.hookMethod(launcherClass, "onStop", new Class<?>[0],
-                    chain -> { log("[DC] liquid lifecycle: onStop (visibility decides)"); return chain.proceed(chain.getArgs().toArray(new Object[0])); });
-            directLifecycleHooked = true;
-        } catch (Throwable directError) {
-            log("[DC] Launcher lifecycle direct hook unavailable: " + directError);
-        }
-
-        // Fallback lifecycle if Launcher doesn't declare onResume/onPause/onStart/onStop
-        if (!directLifecycleHooked) {
-            try {
-                HookUtil.hookMethod(Activity.class, "onResume", new Class<?>[0],
-                        chain -> {
-                            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                launcherResumed = true;
-                                log("[DC] liquid lifecycle fallback: onResume");
-                                DockLiquidGlassView g = liquidGlassView;
-                                if (g != null) g.setLauncherState(true, true);
-                            }
-                            return r;
-                        });
-                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0],
-                        chain -> {
-                            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            if (launcherClass.isInstance(chain.getThisObject())) {
-                                launcherLifecycleKnown = true;
-                                int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
-                                launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                                        false, windowingMode);
-                                log("[DC] liquid lifecycle fallback: onPause windowingMode="
-                                        + windowingMode + " launcherOwnsScene=" + launcherResumed);
-                                DockLiquidGlassView g = liquidGlassView;
-                                if (g != null) g.setLauncherState(true, launcherResumed);
-                            }
-                            return result;
-                        });
-            } catch (Throwable fallbackError) {
-                log("[DC] Launcher lifecycle fallback hook unavailable: " + fallbackError);
-            }
-        }
 
         // Wallpaper offsets / zoom → notify glass
         try {

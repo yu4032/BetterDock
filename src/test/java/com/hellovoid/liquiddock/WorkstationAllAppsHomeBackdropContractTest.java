@@ -58,14 +58,20 @@ public class WorkstationAllAppsHomeBackdropContractTest {
     }
 
     @Test
-    public void workstationAllAppsFocusTransferStaysLauncherOwned() throws IOException {
+    public void launcherFocusRefreshesOnlySystemUiOrdinaryBaseline() throws IOException {
         String source = mainHook();
-        String captureHooks = method(source,
-                "private static void installLiquidGlassCaptureHooks(ClassLoader cl)",
-                "// ── helpers ──────────────────────────────────────────────────────");
+        String focusHook = method(source,
+                "// Launcher focus is a refresh boundary only. SystemUI owns HOME/APP classification.",
+                "// Dock gesture target events (resolve before SystemUI baseline catches up)");
 
-        assertTrue("focus loss from the workstation All Apps overlay must be ignored",
-                captureHooks.contains("if (workstationMode && workstationAllAppsOpen)"));
+        assertTrue("focus changes must refresh the authoritative SystemUI baseline",
+                focusHook.contains("HomeOwnershipRuntime.request(\"focus\")"));
+        assertFalse("focus must not write Launcher HOME/APP state directly",
+                focusHook.contains("glass.setLauncherState("));
+        assertFalse("retired Launcher lifecycle ownership must not return",
+                focusHook.contains("launcherLifecycleKnown"));
+        assertFalse("retired Launcher lifecycle ownership must not return",
+                focusHook.contains("launcherResumed"));
     }
 
     @Test

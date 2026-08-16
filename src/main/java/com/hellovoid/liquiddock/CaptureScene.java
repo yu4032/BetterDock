@@ -1,3 +1,3 @@
 package com.hellovoid.liquiddock;
 
-enum CaptureScene { HOME, APP, RECENTS, ALL_APPS }
+enum CaptureScene { UNKNOWN, HOME, APP, RECENTS, ALL_APPS }

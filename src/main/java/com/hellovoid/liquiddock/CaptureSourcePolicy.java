@@ -1,6 +1,6 @@
 package com.hellovoid.liquiddock;
 
-/** Chooses a backdrop source while keeping speculative Launcher transitions wallpaper-backed. */
+/** Chooses a backdrop source while keeping speculative or unknown transitions wallpaper-backed. */
 final class CaptureSourcePolicy {
     enum Source { WALLPAPER, FULL_DISPLAY, LOCAL_LAYER }
 
@@ -21,13 +21,15 @@ final class CaptureSourcePolicy {
         return sourceFor(scene, localLayerAvailable, recentsLiveConfirmed, false);
     }
 
-    /** HOME stays wallpaper-backed unless a visible freeform task requires a live desktop. */
+    /**
+     * HOME and UNKNOWN are always wallpaper-backed. The homeLiveBackdrop parameter is retained
+     * only for call-site/API compatibility with the existing Dock path; freeform task leashes
+     * affect APP full-display exclusion, not HOME source ownership.
+     */
     static Source sourceFor(CaptureScene scene, boolean localLayerAvailable,
                             boolean recentsLiveConfirmed, boolean homeLiveBackdrop) {
-        if (scene == null) return Source.WALLPAPER;
-        if (scene == CaptureScene.HOME) {
-            return homeLiveBackdrop ? Source.FULL_DISPLAY : Source.WALLPAPER;
-        }
+        if (scene == null || scene == CaptureScene.UNKNOWN) return Source.WALLPAPER;
+        if (scene == CaptureScene.HOME) return Source.WALLPAPER;
         if (scene == CaptureScene.APP) return Source.FULL_DISPLAY;
         if (scene == CaptureScene.RECENTS) {
             return recentsLiveConfirmed ? Source.FULL_DISPLAY : Source.WALLPAPER;

@@ -1,16 +1,18 @@
 # LiquidDock architecture
 
-This document describes the **current `api101-migration` implementation**, not the final target architecture.
+This document describes the **current implementation on this branch**, not an aspirational target architecture.
 
-The 2026-08-14 refactor completed **Phase 1: configuration convergence**. It did not yet split every runtime subsystem into independent modules. In particular, `MainHook`, `HomeGridHook`, and `DockLiquidGlassView` still own multiple responsibilities and remain explicit follow-up targets.
+The 2026-08-14 refactor completed **Phase 1: configuration convergence**. Later capture work moved freeform task ownership and the ordinary HOME/APP baseline into SystemUI/WMShell without pretending that the remaining large Launcher-side classes are fully modular. `MainHook`, `HomeGridHook`, and `DockLiquidGlassView` still own multiple responsibilities and remain explicit follow-up targets.
 
 ## Process and configuration boundaries
 
-LiquidDock has two relevant processes and one API 101 configuration boundary:
+LiquidDock now has three relevant runtime boundaries in addition to the settings UI:
 
-- The settings application owns local preferences, UI, import/export, presets, and settings-side compatibility migration.
-- The injected runtime executes inside `com.miui.home` and installs libxposed API 101 hooks.
-- API 101 Remote Preferences group `config` is the persisted cross-process boundary.
+- The settings application owns local preferences, UI, import/export, presets, the exported broker service, and settings-side compatibility migration.
+- The injected Launcher runtime executes inside `com.miui.home` and owns Launcher-only gesture/Overview/All Apps/workstation signals plus Dock rendering/capture orchestration.
+- The injected SystemUI runtime executes inside `com.android.systemui` and observes existing WMShell task state for ordinary HOME/APP ownership and visible freeform task leashes.
+- `FreeformLeashBrokerService` is only a Binder rendezvous. It stores the current SystemUI provider token and one Launcher provider watcher; it stores no task, HOME/APP, SurfaceControl, or capture state.
+- API 101 Remote Preferences group `config` is the persisted cross-process configuration boundary.
 - `ConfigReader` snapshots that boundary, and `LiquidDockConfig` converts the snapshot into immutable typed runtime configuration.
 
 The normal settings flow is:
@@ -25,7 +27,7 @@ Settings SharedPreferences
     -> hooks / views / renderers
 ```
 
-A separate one-time compatibility path exists for pre-API101 installs:
+A separate one-time compatibility path exists for pre-API101 Launcher installs:
 
 ```text
 ModuleMain.onPackageReady(com.miui.home)
@@ -35,7 +37,7 @@ ModuleMain.onPackageReady(com.miui.home)
     -> WorkstationWallpaperOnlyHook.install()
 ```
 
-`LegacyConfigMigration` probes the historical JSON locations and copies existing values into Remote Preferences before the first runtime snapshot is loaded. Failure is non-fatal. Ordinary `ConfigReader.load()` / `LiquidDockConfig.load()` are deliberately read-only and do not perform migration writes.
+`LegacyConfigMigration` probes the historical JSON locations and copies existing values into Remote Preferences before the first Launcher runtime snapshot is loaded. Failure is non-fatal. Ordinary `ConfigReader.load()` / `LiquidDockConfig.load()` are deliberately read-only and do not perform migration writes.
 
 ## Phase 1 configuration ownership
 
@@ -106,7 +108,16 @@ Owns the current default preset values and the dynamic iPad-style preset calcula
 
 ## Current runtime installation
 
-`ModuleMain` is the libxposed API 101 entry point.
+`ModuleMain` is the libxposed API 101 entry point and deliberately has separate SystemUI and Launcher branches.
+
+For `com.android.systemui`, `onPackageReady()` currently performs:
+
+1. `SystemUiTaskExecutorSource.install(classLoader)`;
+2. `SystemUiHomeOwnershipSource.install(classLoader)`;
+3. `SystemUiFreeformLeashProvider.install(classLoader)`;
+4. returns before all Launcher hooks.
+
+The first two components only observe existing WMShell objects. They never instantiate a `TaskOrganizer`, never register a second organizer, and never mirror the task map.
 
 For `com.miui.home`, `onPackageReady()` currently performs:
 
@@ -114,7 +125,7 @@ For `com.miui.home`, `onPackageReady()` currently performs:
 2. `new MainHook().install(classLoader)`;
 3. `WorkstationWallpaperOnlyHook.install(classLoader)`.
 
-`MainHook.install()` currently performs several module-install responsibilities itself, including:
+`MainHook.install()` currently performs several Launcher-side module-install responsibilities itself, including:
 
 - workstation mode guard/state installation
 - top-level config snapshot loading
@@ -124,8 +135,10 @@ For `com.miui.home`, `onPackageReady()` currently performs:
 - Dock resize behavior
 - Divider hook installation
 - `HomeGridHook` installation/configuration
-- Liquid Glass capture hooks
+- Liquid Glass scene/capture hooks
 - Dock geometry/background/shadow hooks
+
+It no longer infers ordinary HOME/APP ownership from Launcher lifecycle, window focus, `getRunningTasks()`, or foreground windowing mode. Launcher focus/configuration changes only request a fresh SystemUI baseline.
 
 This is the **current implementation**, not the desired end state.
 
@@ -133,17 +146,26 @@ This is the **current implementation**, not the desired end state.
 
 The current master switch is not yet a true zero-hook gate:
 
+- the SystemUI observer hooks are installed at package-ready independently of Launcher config;
 - `MainHook` installs the workstation mode guard before testing `config.enabled`;
 - `WorkstationWallpaperOnlyHook` is invoked independently from `ModuleMain`.
 
-A later phase should move top-level config gating to the composition boundary so disabled optional modules install no hooks.
+A later phase should move top-level config gating to the composition boundary so disabled optional modules install no unnecessary hooks.
 
 ## Runtime components
 
-- `ModuleMain` — API 101 process entry and process-start legacy migration boundary.
+- `ModuleMain` — API 101 process entry; splits SystemUI and Launcher installation paths.
 - `Api101Bridge` — process-local libxposed API bridge for module access, logging and Remote Preferences.
 - `HookUtil` — unified reflection/hook compatibility layer; superclass-aware exact-method lookup is used for HyperOS variation.
-- `MainHook` — current large runtime composition/ownership point; still contains Dock, workstation and lifecycle state.
+- `MainHook` — current large Launcher composition point; still contains Dock, workstation and special-scene hook installation, but no longer owns ordinary HOME/APP inference.
+- `SystemUiTaskExecutorSource` — passively publishes the existing `ShellTaskOrganizer` executor used by WMShell task callbacks.
+- `SystemUiHomeOwnershipSource` — read-only observer of the existing Xiaomi `MultiTaskingTaskRepository`; classifies only HOME / APP / UNKNOWN on the task-state executor.
+- `SystemUiTaskStateProvider` — one shared SystemUI Binder provider that multiplexes HOME ownership and freeform snapshot transactions without owning task state.
+- `HomeOwnershipPolicy` / `HomeOwnershipProtocol` — pure classification and versioned production wire contract.
+- `HomeOwnershipResolver` / `HomeOwnershipRuntime` — asynchronous Launcher consumer of SystemUI HOME/APP/UNKNOWN; never blocks capture and never falls back to Launcher task inference.
+- `FreeformLeashBrokerService` / `FreeformLeashBrokerClient` — package-checked provider-token rendezvous and recovery transport; provider recovery is event-driven through a Launcher watcher.
+- `SystemUiFreeformLeashProvider` — read-only `FreeformTaskListener.mTasks` snapshot handler; freeform health remains independent from HOME ownership health.
+- `FreeformCaptureLeashHook` — final mode-1 safety gate that merges the SystemUI-provided visible freeform `SurfaceControl[]` into capture exclusions and falls back safely when the snapshot is unavailable.
 - `HomeGridHook` — current 8×4/4×8 count, geometry, rotation, widget sizing, indicator and folder alignment implementation.
 - `WidgetGridSizing` — shared widget allocation geometry. It is not yet pure because it still owns a static adaptation flag.
 - `DockDividerHook` — independent workstation Divider view adaptation.
@@ -153,7 +175,7 @@ A later phase should move top-level config gating to the composition boundary so
 - `DockLiquidGlassView` — capture lifecycle + recovery + dynamic detection + refraction body; selects Shader or MIUI self-blur at runtime.
 - `DockStrokeOverlayView` — crisp Canvas highlight + `DockStrokeRenderer` layer above the glass body.
 - `MiBlurBridge` / `LiquidBlurBackendPolicy` — cached MIUI `View.setMi*` self-blur bridge and fail-closed runtime backend policy.
-- `CaptureSceneState` — pure HOME/APP/RECENTS state and stale-frame revision policy.
+- `CaptureSceneState` — pure `UNKNOWN` / HOME / APP / RECENTS / ALL_APPS scene and stale-frame revision policy. Gesture, exact Overview, and All Apps remain Launcher-owned overlays on the ordinary SystemUI baseline.
 - `CaptureCadence` — pure capture cadence/power policy.
 - `LiveScreenCapture` — hidden SurfaceFlinger compatibility layer.
 - `RecentsHapticHook` — version-tolerant semantic adapter for recents haptic entry.
@@ -207,9 +229,40 @@ In active advanced mode the AGSL `blurred()` function bypasses its 40-sample ker
 
 ## Capture architecture
 
-Scene state is expressed as HOME / APP / RECENTS, but capture mode is not a simple fixed scene-to-mode table.
+### Ordinary HOME/APP authority
 
-The current hidden `liquid_capture_fullscreen` compatibility setting defaults to true. With fullscreen capture enabled, SurfaceFlinger full-display capture is used; non-HOME normal scenes additionally require Dock/drag-layer exclusion where appropriate. When fullscreen capture is disabled, the implementation falls back to the vendor wallpaper capture mode.
+Ordinary HOME versus APP ownership has one production authority: the existing WMShell `MultiTaskingTaskRepository` observed inside SystemUI.
+
+The classification is intentionally small:
+
+```text
+missing repository/executor/home-task structure -> UNKNOWN
+homeVisible == false                         -> APP
+homeVisible + no non-HOME top fullscreen     -> HOME
+homeVisible + non-HOME top fullscreen        -> conflict
+```
+
+An initial conflict returns `UNKNOWN` and recommends exactly one confirmation after 160 ms. If the same conflict persists on that confirmation it resolves APP; structural/transport failure remains UNKNOWN. There is no recurring polling, Launcher task-query fallback, or last-good HOME/APP capture fallback.
+
+Launcher owns only higher-level/special scene signals that are earlier or more precise than ordinary task ownership: gesture targets, exact Overview/Recents state, All Apps, workstation state, Dock interaction, and capture revision/generation. Launcher `onWindowFocusChanged` and `onConfigurationChanged` are refresh triggers for the SystemUI query, not ownership evidence.
+
+Provider death immediately clears ordinary ownership to UNKNOWN. The broker's provider watcher pushes SystemUI provider replacement/death events so a restarted SystemUI can trigger a fresh `provider-ready` ownership request even if the user remains in the same stable scene.
+
+### Scene/source policy
+
+`CaptureSceneState` carries `UNKNOWN`, HOME, APP, RECENTS, and ALL_APPS with revision tokens. Gesture targets, exact Recents, and All Apps can temporarily outrank the ordinary SystemUI baseline; stale asynchronous frames are rejected when scene/revision/attempt tokens no longer match.
+
+The normal source policy is fail-closed:
+
+- `UNKNOWN` -> wallpaper;
+- HOME -> wallpaper;
+- APP -> full-display capture;
+- RECENTS -> wallpaper until exact Overview lifecycle confirms live Recents, then full display;
+- normal All Apps -> wallpaper.
+
+The hidden `liquid_capture_fullscreen` compatibility setting and lower-level capture/backend availability can still force a safer vendor-wallpaper fallback. Workstation mode has separate experimental source/suspension rules.
+
+For APP full-display capture, `FreeformCaptureLeashHook` requests a display-scoped snapshot of visible freeform task leashes from SystemUI immediately before mode-1 submission. A safe snapshot is merged into the existing exclusion array; unavailable/unsafe/incomplete snapshot fails the affected capture to wallpaper. HOME never becomes a live full-display source merely because a freeform task is visible.
 
 Capture safety additionally includes:
 

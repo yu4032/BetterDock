@@ -4,11 +4,13 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class CaptureSceneStateTest {
-    @Test public void lifecycleAndRecentsResolveDeterministically() {
+    @Test public void unknownBaselineFailsClosedUntilSystemUiResolvesOwnership() {
         CaptureSceneState state = new CaptureSceneState();
-        assertEquals(CaptureScene.APP, state.resolve(1L, false, false, false));
+        assertEquals(CaptureScene.UNKNOWN, state.desired());
+        assertEquals(CaptureScene.UNKNOWN, state.resolve(1L, false, false, false));
+        assertEquals(CaptureScene.APP, state.resolve(1L, false, true, false));
         assertEquals(CaptureScene.HOME, state.resolve(1L, false, true, true));
-        assertEquals(CaptureScene.RECENTS, state.resolve(1L, true, true, true));
+        assertEquals(CaptureScene.RECENTS, state.resolve(1L, true, false, false));
     }
 
     @Test public void allAppsOwnsSceneEvenWhenLauncherOverlayStealsFocus() throws Exception {
@@ -16,9 +18,7 @@ public class CaptureSceneStateTest {
         state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
                 .invoke(state, true);
         assertEquals("ALL_APPS", state.desired().name());
-        // Official Laptop overlay enables focus when All Apps opens, so Launcher main focus
-        // may be false. That must not demote the scene to external APP.
-        assertEquals("ALL_APPS", state.resolve(1L, false, true, false).name());
+        assertEquals("ALL_APPS", state.resolve(1L, false, false, false).name());
         state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
                 .invoke(state, false);
         assertEquals(CaptureScene.APP, state.resolve(2L, false, true, false));
@@ -37,7 +37,7 @@ public class CaptureSceneStateTest {
         assertTrue(state.gestureTargetExpired(1_500_003_000L));
     }
 
-    @Test public void focusLossClearInvalidatesOnlyHomeGestureTarget() {
+    @Test public void ownershipBoundaryClearInvalidatesOnlyHomeGestureTarget() {
         CaptureSceneState state = new CaptureSceneState();
 
         state.setGestureTarget("HOME", 1_000L);
@@ -59,7 +59,7 @@ public class CaptureSceneStateTest {
         assertFalse(state.workstationSuspended());
         state.setWorkstationSuspended(true, 1L, false, false, false);
         assertTrue(state.workstationSuspended());
-        assertEquals(CaptureScene.APP, state.resolve(2L, false, false, false));
+        assertEquals(CaptureScene.UNKNOWN, state.resolve(2L, false, false, false));
         state.setWorkstationSuspended(false, 3L, false, false, false);
         assertFalse(state.workstationSuspended());
     }
@@ -69,6 +69,6 @@ public class CaptureSceneStateTest {
         long oldRevision = state.revision();
         state.prearmRecents(10L);
         assertEquals(CaptureScene.RECENTS, state.desired());
-        assertFalse(state.matches(CaptureScene.APP, oldRevision));
+        assertFalse(state.matches(CaptureScene.UNKNOWN, oldRevision));
     }
 }

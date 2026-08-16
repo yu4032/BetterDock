@@ -2,7 +2,7 @@ package com.hellovoid.liquiddock;
 
 /** Owns scene transitions and revisioning used to reject stale asynchronous frames. */
 final class CaptureSceneState {
-    private CaptureScene desired = CaptureScene.APP;
+    private CaptureScene desired = CaptureScene.UNKNOWN;
     private CaptureScene gestureTarget;
     private long gestureTargetUntilNanos;
     private long revision;
@@ -36,9 +36,7 @@ final class CaptureSceneState {
 
     void clearGestureTarget() { gestureTarget = null; }
 
-    /** Launcher focus loss proves a pending HOME target is stale: an app has actually
-     * taken the foreground. Do not clear APP/RECENTS because those targets are still
-     * useful before lifecycle/focus catches up. */
+    /** A confirmed APP ownership boundary proves a pending HOME target is stale. */
     boolean clearGestureTargetIfHome() {
         if (gestureTarget != CaptureScene.HOME) return false;
         gestureTarget = null;
@@ -46,8 +44,7 @@ final class CaptureSceneState {
         return true;
     }
 
-    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow.  It can make the
-     * main Launcher window lose focus without an external app taking the foreground. */
+    /** Stock laptop All Apps lives in a focusable LauncherOverlayWindow. */
     void setAllAppsActive(boolean active) {
         if (allAppsActive == active) return;
         allAppsActive = active;
@@ -55,34 +52,34 @@ final class CaptureSceneState {
         if (active) {
             desired = CaptureScene.ALL_APPS;
         } else if (desired == CaptureScene.ALL_APPS) {
-            // The owning DockLiquidGlassView immediately refreshes against real launcher
-            // lifecycle/overview state. APP is only a neutral interim value here.
-            desired = CaptureScene.APP;
+            // The owning DockLiquidGlassView immediately refreshes against the current
+            // SystemUI baseline. UNKNOWN is the neutral fail-closed interim value.
+            desired = CaptureScene.UNKNOWN;
         }
     }
 
     CaptureScene resolve(long nowNanos, boolean recentsVisible,
-                         boolean lifecycleKnown, boolean launcherResumed) {
+                         boolean ownershipKnown, boolean homeOwned) {
         if (gestureTarget != null && nowNanos < gestureTargetUntilNanos) return gestureTarget;
         if (recentsVisible) return CaptureScene.RECENTS;
         if (allAppsActive) return CaptureScene.ALL_APPS;
-        if (lifecycleKnown && launcherResumed) return CaptureScene.HOME;
-        return CaptureScene.APP;
+        if (!ownershipKnown) return CaptureScene.UNKNOWN;
+        return homeOwned ? CaptureScene.HOME : CaptureScene.APP;
     }
 
     boolean refresh(long nowNanos, boolean recentsVisible,
-                    boolean lifecycleKnown, boolean launcherResumed) {
-        CaptureScene next = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
+                    boolean ownershipKnown, boolean homeOwned) {
+        CaptureScene next = resolve(nowNanos, recentsVisible, ownershipKnown, homeOwned);
         return setDesired(next);
     }
 
     void setWorkstationSuspended(boolean enabled, long nowNanos,
-                                     boolean recentsVisible, boolean lifecycleKnown,
-                                     boolean launcherResumed) {
+                                 boolean recentsVisible, boolean ownershipKnown,
+                                 boolean homeOwned) {
         workstationSuspended = enabled;
         gestureTarget = null;
         revision++;
-        desired = resolve(nowNanos, recentsVisible, lifecycleKnown, launcherResumed);
+        desired = resolve(nowNanos, recentsVisible, ownershipKnown, homeOwned);
     }
 
     private boolean setDesired(CaptureScene next) {
