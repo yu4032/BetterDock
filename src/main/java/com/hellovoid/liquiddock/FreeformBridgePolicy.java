@@ -26,6 +26,12 @@ final class FreeformBridgePolicy {
         return result;
     }
 
+    static boolean shouldIncludeFreeformCandidate(
+            Integer taskDisplayId, Boolean visible, int requestedDisplayId) {
+        if (Boolean.FALSE.equals(visible)) return false;
+        return taskDisplayId == null || taskDisplayId == requestedDisplayId;
+    }
+
     static final class CircuitBreaker {
         private int infrastructureFailures;
         private boolean disabled;
