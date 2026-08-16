@@ -51,29 +51,9 @@ final class HomeOwnershipShadowLauncherHook {
                         return result;
                     });
 
-            if (!declaresNoArgMethod(launcherClass, "onPause")) {
-                HookUtil.hookMethod(Activity.class, "onPause", new Class<?>[0], chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    Object activity = chain.getThisObject();
-                    if (launcherClass.isInstance(activity)) {
-                        postSample("fallback-pause", activity, Boolean.FALSE);
-                    }
-                    return result;
-                });
-            }
-
             Api101Bridge.log("[DC-SHADOW] Launcher HOME ownership observer installed");
         } catch (Throwable error) {
             Api101Bridge.log("[DC-SHADOW] Launcher HOME ownership observer unavailable", error);
-        }
-    }
-
-    private static boolean declaresNoArgMethod(Class<?> type, String name) {
-        try {
-            type.getDeclaredMethod(name);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
         }
     }
 
