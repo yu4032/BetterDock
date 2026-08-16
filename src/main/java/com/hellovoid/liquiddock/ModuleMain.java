@@ -26,6 +26,12 @@ public final class ModuleMain extends XposedModule {
                 // a LiquidDock capability failure escape into the host process.
                 Api101Bridge.log("[DC] SystemUI freeform leash provider unavailable", error);
             }
+            try {
+                SystemUiHomeOwnershipShadow.install(param.getClassLoader());
+            } catch (Throwable error) {
+                // Diagnostic-only capability. It must never affect the production freeform bridge.
+                Api101Bridge.log("[DC-SHADOW] HOME ownership shadow install unavailable", error);
+            }
             return;
         }
         if (!FreeformLeashProtocol.LAUNCHER_PACKAGE.equals(packageName)) return;
