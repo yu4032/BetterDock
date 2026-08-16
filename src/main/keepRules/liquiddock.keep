@@ -9,6 +9,21 @@
     void captureScreenAsync(android.graphics.Rect,float,int,android.view.SurfaceControl[],java.lang.String[],int,com.hellovoid.liquiddock.LiveScreenCapture$CaptureCallback);
 }
 
+# Diagnostic branch only: HomeOwnershipShadowLauncherHook reads the final production
+# ownership decision after the existing MainHook callback stack returns. Keep only the
+# private members it reflects; the shadow never writes them.
+-keepclassmembers class com.hellovoid.liquiddock.MainHook {
+    boolean launcherResumed;
+    boolean launcherLifecycleKnown;
+    com.hellovoid.liquiddock.DockLiquidGlassView liquidGlassView;
+    int foregroundTaskWindowingMode(java.lang.Object);
+}
+
+# Diagnostic-only special-scene tag read by HomeOwnershipShadowLauncherHook.
+-keepclassmembers class com.hellovoid.liquiddock.DockLiquidGlassView {
+    boolean overviewActive;
+}
+
 # Android components referenced from the manifest are covered by AGP's default keep rules.
 # Miuix/Compose code is referenced normally and should rely on dependency consumer rules;
 # do not keep the whole dependency tree, otherwise R8 cannot meaningfully prune it.
