@@ -17,6 +17,10 @@ final class Miuix307MaterialPipeline {
 
     private Miuix307MaterialPipeline() {}
 
+    static boolean isInstalled() {
+        return installed;
+    }
+
     static boolean install(ClassLoader classLoader, LiquidDockConfig config) {
         if (installed) return true;
         final Class<?> backgroundClass;
