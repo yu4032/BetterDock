@@ -480,7 +480,8 @@ public class MainHook {
         hookDockGestureTarget(cl, "GestureToApp", "APP");
         hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
         hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
-        hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
+        // ExitOverviewStateEvent is emitted when the exit transition starts; the visual
+        // lifetime ends only when RecentsContainer.setIsExitRecentsAnimating(false).
         installAllAppsCaptureHooks(cl);
 
         // Workstation Recents is entered from the dedicated Dock button. The system DEX
