@@ -10,8 +10,9 @@ def replace_once(path: str, old: str, new: str) -> None:
     p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-# The preceding demo patch step has materialized the already device-validated
-# configuration/UI/MainHook edits in this checkout. Promote those edits to stored source.
+# The preceding demo patch step materializes the already device-validated
+# configuration/UI/MainHook edits. Promote only ordinary source files here;
+# the workflow is cleaned separately through the authenticated GitHub connector.
 replace_once(
     "src/main/java/com/hellovoid/liquiddock/MainHook.java",
     "Miuix307DemoPipeline.install(classLoader, config)",
@@ -57,19 +58,6 @@ test_text = test_text.replace("demoUsesNativeMiuixBlurWithoutCapturePipeline", "
 test_text = test_text.replace("demo pipeline source must exist", "material pipeline source must exist")
 new_test.write_text(test_text, encoding="utf-8")
 old_test.unlink()
-
-workflow = Path(".github/workflows/api101-build.yml")
-workflow_text = workflow.read_text(encoding="utf-8")
-begin = "      # BEGIN MIUIX307_FORMALIZE\n"
-end = "      # END MIUIX307_FORMALIZE\n"
-start = workflow_text.find(begin)
-finish = workflow_text.find(end)
-if start < 0 or finish < 0 or finish < start:
-    raise SystemExit("formalization workflow marker missing")
-finish += len(end)
-workflow_text = workflow_text[:start] + workflow_text[finish:]
-workflow_text = workflow_text.replace("\npermissions:\n  contents: write\n", "\n")
-workflow.write_text(workflow_text, encoding="utf-8")
 
 Path(".github/patch_miuix307_demo.py").unlink()
 Path(__file__).unlink()
