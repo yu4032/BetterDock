@@ -18,6 +18,10 @@ public final class FreeformLeashBrokerService extends Service {
     private final Binder binder = new Binder() {
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                 throws RemoteException {
+            if (code != FreeformLeashProtocol.TRANSACTION_REGISTER_PROVIDER
+                    && code != FreeformLeashProtocol.TRANSACTION_GET_PROVIDER) {
+                return super.onTransact(code, data, reply, flags);
+            }
             try {
                 data.enforceInterface(FreeformLeashProtocol.BROKER_DESCRIPTOR);
                 if (code == FreeformLeashProtocol.TRANSACTION_REGISTER_PROVIDER) {
@@ -33,20 +37,18 @@ public final class FreeformLeashBrokerService extends Service {
                     }
                     return true;
                 }
-                if (code == FreeformLeashProtocol.TRANSACTION_GET_PROVIDER) {
-                    if (!callerHasPackage(FreeformLeashProtocol.LAUNCHER_PACKAGE)) {
-                        if (reply != null) reply.writeException(new SecurityException("Launcher only"));
-                        return true;
-                    }
-                    IBinder current;
-                    synchronized (lock) { current = provider; }
-                    if (reply != null) {
-                        reply.writeNoException();
-                        reply.writeStrongBinder(current);
-                    }
+
+                if (!callerHasPackage(FreeformLeashProtocol.LAUNCHER_PACKAGE)) {
+                    if (reply != null) reply.writeException(new SecurityException("Launcher only"));
                     return true;
                 }
-                return super.onTransact(code, data, reply, flags);
+                IBinder current;
+                synchronized (lock) { current = provider; }
+                if (reply != null) {
+                    reply.writeNoException();
+                    reply.writeStrongBinder(current);
+                }
+                return true;
             } catch (Throwable error) {
                 Log.e(TAG, "freeform broker transaction failed", error);
                 if (reply != null) {
