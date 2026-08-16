@@ -1,6 +1,5 @@
 package com.hellovoid.liquiddock;
 
-import android.app.ActivityManager;
 import android.content.Context;
 import android.os.Binder;
 import android.os.IBinder;
@@ -10,19 +9,14 @@ import android.util.Log;
 import android.view.SurfaceControl;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Resolves all visible freeform task IDs to parcel-copied WMShell task leashes. */
+/** Requests a display-scoped freeform leash snapshot from the existing SystemUI WMShell state. */
 final class FreeformTaskLeashResolver {
     private static final String TAG = "LiquidDock";
-    private static final int MAX_RUNNING_TASKS = 32;
 
-    private final Context context;
     private final FreeformLeashBrokerClient brokerClient;
     private final FreeformBridgePolicy.CircuitBreaker breaker =
             new FreeformBridgePolicy.CircuitBreaker();
@@ -30,9 +24,9 @@ final class FreeformTaskLeashResolver {
 
     FreeformTaskLeashResolver(Context context) {
         Context app = context.getApplicationContext();
-        this.context = app != null ? app : context;
+        Context safeContext = app != null ? app : context;
         this.brokerClient = new FreeformLeashBrokerClient(
-                this.context, FreeformLeashBrokerClient.Role.LAUNCHER);
+                safeContext, FreeformLeashBrokerClient.Role.LAUNCHER);
     }
 
     void setProviderDemanded(boolean demanded) {
@@ -44,47 +38,38 @@ final class FreeformTaskLeashResolver {
     }
 
     Resolution resolveVisibleLeashes(int displayId) {
-        int[] taskIds = visibleFreeformTaskIds(displayId);
-        if (taskIds == null) {
-            brokerClient.setDemanded(true);
-            return Resolution.unavailable(true);
-        }
-        if (taskIds.length == 0) {
-            brokerClient.setDemanded(false);
-            return Resolution.noFreeform();
-        }
         brokerClient.setDemanded(true);
-        if (breaker.isDisabled()) return Resolution.unavailable(true);
+        if (displayId < 0 || breaker.isDisabled()) return Resolution.unavailable(true);
 
         IBinder provider = brokerClient.launcherProvider();
         if (provider == null) return Resolution.unavailable(true);
 
         long requestId = requestIds.incrementAndGet();
-        RequestState state = new RequestState(requestId, taskIds);
+        RequestState state = new RequestState(requestId);
         Parcel request = Parcel.obtain();
         try {
             request.writeInterfaceToken(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
             request.writeLong(requestId);
-            request.writeInt(taskIds.length);
-            for (int taskId : taskIds) request.writeInt(taskId);
+            request.writeInt(displayId);
             request.writeStrongBinder(state.callback);
             boolean accepted = provider.transact(
-                    FreeformLeashProtocol.TRANSACTION_REQUEST_LEASHES,
+                    FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT,
                     request, null, IBinder.FLAG_ONEWAY);
             if (!accepted) {
-                breaker.recordInfrastructureFailure();
+                // Mixed module generations are a normal restart window. Stay fail-closed but
+                // do not poison this Launcher process; a later SystemUI restart can recover.
                 state.expire();
                 return Resolution.unavailable(true);
             }
         } catch (RemoteException remoteGone) {
-            // SystemUI/provider process death is normal lifecycle. Broker death handling will
+            // SystemUI/provider death is normal lifecycle. Broker death handling will
             // rediscover a replacement provider; do not poison the process-level breaker.
             state.expire();
             return Resolution.unavailable(true);
         } catch (Throwable error) {
             breaker.recordInfrastructureFailure();
             state.expire();
-            Log.w(TAG, "freeform leash request failed", error);
+            Log.w(TAG, "freeform snapshot request failed", error);
             return Resolution.unavailable(true);
         } finally {
             request.recycle();
@@ -100,70 +85,10 @@ final class FreeformTaskLeashResolver {
             state.expire();
             return Resolution.unavailable(true);
         }
+
         Resolution result = state.takeResolution();
         if (state.wasMalformed()) breaker.recordInfrastructureFailure();
         return result;
-    }
-
-    /** Returns null when task enumeration itself failed; callers must fail closed. */
-    private int[] visibleFreeformTaskIds(int displayId) {
-        List<Integer> ids = new ArrayList<>();
-        try {
-            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-            if (am == null) return null;
-            List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(MAX_RUNNING_TASKS);
-            if (tasks == null) return null;
-            for (ActivityManager.RunningTaskInfo task : tasks) {
-                if (task == null) continue;
-                int taskDisplayId = displayId(task);
-                // displayId is hidden from the public SDK. If reflection fails, keep the
-                // task in the candidate set so incomplete coverage falls back to wallpaper.
-                if (taskDisplayId >= 0 && taskDisplayId != displayId) continue;
-                if (!FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) continue;
-                ids.add(task.taskId);
-            }
-        } catch (Throwable error) {
-            Log.w(TAG, "visible freeform task scan failed", error);
-            return null;
-        }
-        int[] raw = new int[ids.size()];
-        for (int i = 0; i < ids.size(); i++) raw[i] = ids.get(i);
-        return FreeformBridgePolicy.deduplicateTaskIds(raw);
-    }
-
-    private static int displayId(ActivityManager.RunningTaskInfo task) {
-        try {
-            java.lang.reflect.Field field = HookUtil.findField(task.getClass(), "displayId");
-            Object value = field.get(task);
-            if (value instanceof Integer) return (Integer) value;
-        } catch (Throwable ignored) {}
-        try {
-            Object value = HookUtil.invoke(task, "getDisplayId");
-            if (value instanceof Integer) return (Integer) value;
-        } catch (Throwable ignored) {}
-        return -1;
-    }
-
-    private static int windowingMode(ActivityManager.RunningTaskInfo task) {
-        try {
-            Object value = HookUtil.invoke(task, "getWindowingMode");
-            return value instanceof Integer ? (Integer) value : -1;
-        } catch (Throwable ignored) {
-            return -1;
-        }
-    }
-
-    private static boolean isVisible(ActivityManager.RunningTaskInfo task) {
-        try {
-            java.lang.reflect.Field field = task.getClass().getField("isVisible");
-            Object value = field.get(task);
-            if (value instanceof Boolean) return (Boolean) value;
-        } catch (Throwable ignored) {}
-        try {
-            Object value = HookUtil.invoke(task, "isVisible");
-            if (value instanceof Boolean) return (Boolean) value;
-        } catch (Throwable ignored) {}
-        return true;
     }
 
     private static void release(SurfaceControl surface) {
@@ -174,6 +99,12 @@ final class FreeformTaskLeashResolver {
     private static void releaseAll(SurfaceControl[] surfaces) {
         if (surfaces == null) return;
         for (SurfaceControl surface : surfaces) release(surface);
+    }
+
+    private static void releaseAll(ArrayList<SurfaceControl> surfaces) {
+        if (surfaces == null) return;
+        for (SurfaceControl surface : surfaces) release(surface);
+        surfaces.clear();
     }
 
     static final class Resolution implements AutoCloseable {
@@ -213,61 +144,64 @@ final class FreeformTaskLeashResolver {
 
     private static final class RequestState {
         final long requestId;
-        final int[] requestedTaskIds;
         final CountDownLatch latch = new CountDownLatch(1);
-        final Map<Integer, SurfaceControl> received = new LinkedHashMap<>();
+        final ArrayList<SurfaceControl> received = new ArrayList<>();
+        int responseStatus = FreeformLeashProtocol.STATUS_UNAVAILABLE;
         boolean expired;
         boolean malformed;
 
         final Binder callback = new Binder() {
             @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
-                if (code != FreeformLeashProtocol.TRANSACTION_LEASH_RESULT) return false;
-                ArrayList<SurfaceControl> transferred = new ArrayList<>();
+                if (code != FreeformLeashProtocol.TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT) {
+                    return false;
+                }
+                ArrayList<SurfaceControl> parsed = new ArrayList<>();
                 try {
                     data.enforceInterface(FreeformLeashProtocol.CALLBACK_DESCRIPTOR);
                     long responseId = data.readLong();
+                    int status = data.readInt();
                     int count = data.readInt();
-                    LinkedHashMap<Integer, SurfaceControl> successful = new LinkedHashMap<>();
-                    boolean bad = responseId != requestId || count < 0
-                            || count > FreeformLeashProtocol.MAX_TASKS;
+                    boolean bad = responseId != requestId
+                            || count < 0 || count > FreeformLeashProtocol.MAX_TASKS;
                     int bounded = Math.max(0, Math.min(count, FreeformLeashProtocol.MAX_TASKS));
+
+                    if (status != FreeformLeashProtocol.STATUS_OK
+                            && status != FreeformLeashProtocol.STATUS_UNAVAILABLE
+                            && status != FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE) {
+                        bad = true;
+                    }
+                    if (status != FreeformLeashProtocol.STATUS_OK && count != 0) {
+                        bad = true;
+                    }
+
                     for (int i = 0; i < bounded; i++) {
-                        int taskId = data.readInt();
-                        int status = data.readInt();
                         SurfaceControl surface = data.readTypedObject(SurfaceControl.CREATOR);
                         if (status == FreeformLeashProtocol.STATUS_OK
                                 && surface != null && surface.isValid()) {
-                            transferred.add(surface);
-                            SurfaceControl old = successful.put(taskId, surface);
-                            if (old != null && old != surface) {
-                                transferred.remove(old);
-                                release(old);
-                                bad = true;
-                            }
+                            parsed.add(surface);
                         } else {
-                            if (status != FreeformLeashProtocol.STATUS_UNAVAILABLE
-                                    && status != FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE) {
-                                bad = true;
-                            }
-                            if (surface != null) {
-                                release(surface);
-                                bad = true;
-                            }
+                            if (surface != null) release(surface);
+                            bad = true;
                         }
                     }
+
                     synchronized (RequestState.this) {
                         if (expired || responseId != requestId) {
-                            for (SurfaceControl surface : transferred) release(surface);
+                            releaseAll(parsed);
                             return true;
                         }
                         malformed = bad;
-                        received.putAll(successful);
-                        transferred.clear(); // ownership moved to received
+                        responseStatus = status;
+                        if (!bad && status == FreeformLeashProtocol.STATUS_OK) {
+                            received.addAll(parsed);
+                            parsed.clear();
+                        }
                         latch.countDown();
                     }
+                    releaseAll(parsed);
                     return true;
                 } catch (Throwable error) {
-                    for (SurfaceControl surface : transferred) release(surface);
+                    releaseAll(parsed);
                     synchronized (RequestState.this) {
                         malformed = true;
                         if (!expired) latch.countDown();
@@ -277,9 +211,8 @@ final class FreeformTaskLeashResolver {
             }
         };
 
-        RequestState(long requestId, int[] requestedTaskIds) {
+        RequestState(long requestId) {
             this.requestId = requestId;
-            this.requestedTaskIds = requestedTaskIds.clone();
         }
 
         synchronized boolean wasMalformed() {
@@ -289,32 +222,37 @@ final class FreeformTaskLeashResolver {
         synchronized void expire() {
             if (expired) return;
             expired = true;
-            for (SurfaceControl surface : received.values()) release(surface);
-            received.clear();
+            releaseAll(received);
         }
 
         synchronized Resolution takeResolution() {
-            if (expired || malformed || received.size() != requestedTaskIds.length) {
+            if (expired || malformed) {
                 expire();
                 return Resolution.unavailable(true);
             }
-            SurfaceControl[] surfaces = new SurfaceControl[requestedTaskIds.length];
-            for (int i = 0; i < requestedTaskIds.length; i++) {
-                SurfaceControl surface = received.remove(requestedTaskIds[i]);
+            if (responseStatus == FreeformLeashProtocol.STATUS_UNAVAILABLE
+                    || responseStatus == FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE) {
+                expire();
+                return Resolution.unavailable(true);
+            }
+            if (responseStatus != FreeformLeashProtocol.STATUS_OK) {
+                malformed = true;
+                expire();
+                return Resolution.unavailable(true);
+            }
+            if (received.isEmpty()) {
+                expired = true;
+                return Resolution.noFreeform();
+            }
+
+            SurfaceControl[] surfaces = received.toArray(new SurfaceControl[0]);
+            received.clear();
+            for (SurfaceControl surface : surfaces) {
                 if (surface == null || !surface.isValid()) {
-                    if (surface != null) release(surface);
                     releaseAll(surfaces);
-                    expire();
+                    expired = true;
                     return Resolution.unavailable(true);
                 }
-                surfaces[i] = surface;
-            }
-            if (!received.isEmpty()) {
-                for (SurfaceControl surface : received.values()) release(surface);
-                received.clear();
-                releaseAll(surfaces);
-                expired = true;
-                return Resolution.unavailable(true);
             }
             expired = true;
             return new Resolution(true, true, surfaces);
