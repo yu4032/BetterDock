@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 .github/apply_wallpaper_zoom_sync.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
