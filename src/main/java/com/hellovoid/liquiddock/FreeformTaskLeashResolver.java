@@ -65,7 +65,8 @@ final class FreeformTaskLeashResolver {
         try {
             request.writeInterfaceToken(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
             request.writeLong(requestId);
-            request.writeIntArray(taskIds);
+            request.writeInt(taskIds.length);
+            for (int taskId : taskIds) request.writeInt(taskId);
             request.writeStrongBinder(state.callback);
             boolean accepted = provider.transact(
                     FreeformLeashProtocol.TRANSACTION_REQUEST_LEASHES,
