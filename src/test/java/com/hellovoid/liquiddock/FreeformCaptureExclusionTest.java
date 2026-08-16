@@ -11,17 +11,6 @@ import java.util.Collection;
 import org.junit.Test;
 
 public class FreeformCaptureExclusionTest {
-    @Test public void visibleFreeformOrUnknownModeRequiresExclusion() throws Exception {
-        Class<?> policy = load("com.hellovoid.liquiddock.FreeformCapturePolicy");
-        Method method = policy.getDeclaredMethod("shouldExclude", int.class, boolean.class);
-        method.setAccessible(true);
-        assertEquals(Boolean.TRUE, method.invoke(null, 5, true));
-        assertEquals(Boolean.TRUE, method.invoke(null, -1, true));
-        assertEquals(Boolean.FALSE, method.invoke(null, 1, true));
-        assertEquals(Boolean.FALSE, method.invoke(null, 5, false));
-        assertEquals(Boolean.FALSE, method.invoke(null, -1, false));
-    }
-
     @Test public void existingDockAndDragNamesRemainDeduplicatedAndOrdered() throws Exception {
         Class<?> helper = load("com.hellovoid.liquiddock.CaptureExclusionNames");
         Method merge = helper.getDeclaredMethod(
@@ -42,7 +31,12 @@ public class FreeformCaptureExclusionTest {
                 sourceFor.invoke(null, CaptureScene.HOME, false, false, false));
     }
 
-    @Test public void dockPreflightAndCaptureGateUseTaskLeashCapability() throws Exception {
+    @Test public void appRemainsFullDisplaySubjectToFinalLeashGate() {
+        assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
+                CaptureSourcePolicy.sourceFor(CaptureScene.APP, false, false));
+    }
+
+    @Test public void temporaryDockPreflightHasNoTaskStateAuthority() throws Exception {
         String dock = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
         String resolver = Files.readString(Path.of(
@@ -50,16 +44,17 @@ public class FreeformCaptureExclusionTest {
         String gate = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java"));
 
-        assertTrue("Dock keeps its existing fail-closed preflight boundary",
+        assertTrue("Dock still has a temporary compatibility preflight until Task 4 cleanup",
                 dock.contains("freeformLayerResolver.resolveVisibleLayerNames()"));
-        assertTrue("Preflight must depend on leash-provider readiness",
-                resolver.contains("FreeformLeashRuntime.isProviderReady()"));
+        assertFalse(resolver.contains("ActivityManager"));
+        assertFalse(resolver.contains("RunningTaskInfo"));
+        assertFalse(resolver.contains("getRunningTasks"));
+        assertFalse(resolver.contains("getWindowingMode"));
+        assertFalse(resolver.contains("displayId(task)"));
         assertTrue("Actual freeform exclusion must merge SurfaceControl task leashes",
                 gate.contains("resolution.borrowedRemoteLeashes()"));
-        assertTrue("Unsafe leash resolution must keep wallpaper fallback",
+        assertTrue("Unsafe snapshot resolution must keep wallpaper fallback",
                 gate.contains("args[5] = 2"));
-        assertFalse("Freeform resolver must not invoke the retired SF debug lookup",
-                resolver.contains("resolveAllByOwnerUids"));
     }
 
     private static Class<?> load(String name) throws Exception {
