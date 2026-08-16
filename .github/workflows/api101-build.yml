@@ -17,6 +17,7 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - run: python3 .github/patch_miuix307_demo.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
