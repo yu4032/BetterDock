@@ -18,7 +18,7 @@ visible freeform task detected
 -> FULL_DISPLAY is downgraded to WALLPAPER
 ```
 
-The production resolver historically catches its SurfaceFlinger failure and returns an empty layer list, so the device cannot distinguish hidden-API failure from UID/layer ownership mismatch.
+The production resolver historically catches its SurfaceFlinger failure and returns an empty layer list. Its per-layer `getOwnerUid()` and `getName()` helpers also collapse accessor failures to `null`. The device therefore cannot distinguish hidden-API failure, empty SF results, layer-metadata API mismatch, UID ownership mismatch, or a later exclusion/capture problem.
 
 ## Trigger
 
@@ -102,10 +102,19 @@ ServiceManager.getService("SurfaceFlinger")
 -> ISurfaceComposer.Stub.asInterface(...)
 -> getLayerDebugInfo method lookup
 -> getLayerDebugInfo invocation
+-> per-layer metadata access
 -> candidate extraction
 ```
 
-It reports the exact failing stage and underlying exception class/message.
+It reports:
+
+- exact failing stage and underlying exception class/message;
+- total returned layer count;
+- first observed layer class;
+- whether `getOwnerUid()` and `getName()` accessors are available;
+- how many layer records returned readable owner UID/name values;
+- the first layer-metadata accessor error;
+- candidate layer names/owner UIDs and optional metadata.
 
 Candidate layers are the union of:
 
@@ -143,7 +152,7 @@ Shows the independent `RunningTaskInfo` view, including which task is considered
 
 ### SF / LAYER
 
-Shows hidden SurfaceFlinger API availability, total layer count, candidate layers, owner UIDs, keyword matches, suspicious system layers, and optional id/parent/z metadata.
+Shows SurfaceFlinger API availability, total layer count, first layer class, metadata getter availability/readability, metadata errors, candidate layers, owner UIDs, keyword matches, suspicious system layers, and optional id/parent/z metadata.
 
 ### RESOLVER
 
@@ -171,6 +180,8 @@ The diagnostic classifies the evidence as one of:
 ```text
 TASK_DETECTION_FAILED
 SURFACEFLINGER_API_FAILED
+SURFACEFLINGER_EMPTY_RESULT
+LAYER_METADATA_API_FAILED
 UID_MATCH_FAILED
 PRODUCTION_RESOLVER_FAILED
 POST_RESOLUTION_CAPTURE_PATH
@@ -183,14 +194,20 @@ Interpretation examples:
 
 ```text
 SURFACEFLINGER_API_FAILED
--> service/interface/method/invocation failure; fix hidden API access/path.
+-> service/interface/getLayerDebugInfo lookup or invocation failed.
+
+SURFACEFLINGER_EMPTY_RESULT
+-> getLayerDebugInfo succeeded but returned no layers.
+
+LAYER_METADATA_API_FAILED
+-> layer list exists but getOwnerUid/getName cannot be read on this framework build.
 
 UID_MATCH_FAILED
--> SF enumeration succeeds but no layer is owned by the freeform App UID;
+-> SF metadata is readable but no layer is owned by the freeform App UID;
    inspect suspicious task/leash/system-owned candidates.
 
 PRODUCTION_RESOLVER_FAILED
--> independent SF diagnostic works/matches, but the actual production resolver threw.
+-> independent SF diagnostic works, but the actual production resolver threw.
 
 POST_RESOLUTION_CAPTURE_PATH
 -> production resolver already returned layer names; investigate mode-1 exclusion/capture later.
@@ -209,6 +226,7 @@ Source-contract tests verify:
 - an `AtomicBoolean` one-shot gate exists;
 - diagnostic code contains no visual capture calls;
 - both resolvers expose diagnostic snapshot APIs;
+- SF metadata accessor/readability evidence is retained;
 - `FreeformLayerResolver` invokes the diagnostic at its production resolution boundary;
 - the actual production resolution `Throwable` is captured for logging instead of changing control flow;
 - `DockLiquidGlassView` still contains its existing `FULL_DISPLAY && !safe -> WALLPAPER` fallback;
