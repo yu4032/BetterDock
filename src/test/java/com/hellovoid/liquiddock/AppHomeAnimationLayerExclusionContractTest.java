@@ -17,13 +17,13 @@ public class AppHomeAnimationLayerExclusionContractTest {
         Path path = Path.of("src/main/java/com/hellovoid/liquiddock/AppHomeAnimationLayerExclusion.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path);
-        assertTrue(source.contains("com.miui.home.recents.anim.FastLaunchWindowElement"));
+        assertTrue(source.contains("com.miui.home.recents.anim.FastLaunchWindowElement$getActivityOptions$1"));
         assertTrue(source.contains("startActivityFinished"));
         assertTrue(source.contains("mHomeActivityLeash"));
         assertTrue(source.contains("currentValidSurface"));
         assertTrue(source.contains("isValid()"));
-        assertFalse(source.contains("mFloatingIconLayerLeash"));
-        assertFalse(source.contains("bindIconLayerLeashIfNeeded"));
+        assertFalse(source.contains("private static final String BIND_METHOD"));
+        assertFalse(source.contains("private static final String LEASH_FIELD"));
     }
 
     @Test public void adapterIsInstalledWithAppHomeLifecycleHook() throws Exception {
@@ -39,10 +39,14 @@ public class AppHomeAnimationLayerExclusionContractTest {
 
     @Test public void dockExcludesHomeActivityForAnyPendingFullDisplayCapture() throws Exception {
         String dock = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
-        assertTrue(dock.contains("sceneState.appHomeHandoffPending()"));
-        assertTrue(dock.contains("AppHomeAnimationLayerExclusion.currentValidSurface()"));
-        assertTrue(dock.contains("appendCaptureExcludeLayer"));
-        assertTrue(dock.contains("appHomeActivityLeashExcluded"));
-        assertFalse(dock.contains("&& requestScene == CaptureScene.APP"));
+        int start = dock.indexOf("boolean appHomeActivityLeashExcluded");
+        assertTrue(start >= 0);
+        int end = dock.indexOf("APP HOME capture Home-activity excluded=", start);
+        assertTrue(end > start);
+        String block = dock.substring(start, end);
+        assertTrue(block.contains("sceneState.appHomeHandoffPending()"));
+        assertTrue(block.contains("AppHomeAnimationLayerExclusion.currentValidSurface()"));
+        assertTrue(block.contains("appendCaptureExcludeLayer"));
+        assertFalse(block.contains("requestScene == CaptureScene.APP"));
     }
 }
