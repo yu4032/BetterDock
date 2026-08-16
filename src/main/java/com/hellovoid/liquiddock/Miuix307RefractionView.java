@@ -84,7 +84,7 @@ final class Miuix307RefractionView extends View {
           + "half3 refracted=half3(redSample.r,center.g,blueSample.b);"
           + "float presence=clamp(0.18+edgeW*0.72+domeW*0.10,0.0,1.0);"
           + "float alpha=mask*refractedAlpha*presence;"
-          + "return half4(refracted,alpha);"
+          + "return half4(refracted*alpha,alpha);"
           + "}";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
