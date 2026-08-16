@@ -48,8 +48,8 @@ public class WallpaperHandoffCacheContractTest {
 
     @Test public void wallpaperCacheIsBoundToContentRevision() throws Exception {
         String source = glass();
-        assertTrue(source.contains("private long wallpaperContentRevision;"));
-        assertTrue(source.contains("private long cacheWallpaperContentRevision = -1L;"));
+        assertTrue(source.contains("private volatile long wallpaperContentRevision;"));
+        assertTrue(source.contains("private volatile long cacheWallpaperContentRevision = -1L;"));
         assertTrue(source.contains("final long wallpaperContentRevision;"));
         assertTrue(source.contains("cacheWallpaperContentRevision = req.wallpaperContentRevision;"));
 
