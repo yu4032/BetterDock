@@ -1,7 +1,6 @@
 package com.hellovoid.liquiddock;
 
 import android.content.Context;
-import android.os.Binder;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.RemoteException;
@@ -27,7 +26,6 @@ final class SystemUiFreeformLeashProvider {
     private static final SurfaceControl[] NO_SURFACES = new SurfaceControl[0];
 
     private static volatile ListenerState currentState;
-    private static volatile FreeformLeashBrokerClient brokerClient;
 
     private static Field contextField;
     private static Field organizerField;
@@ -97,75 +95,68 @@ final class SystemUiFreeformLeashProvider {
         }
 
         currentState = new ListenerState(listener, (Executor) executorValue, context);
-
-        FreeformLeashBrokerClient client = brokerClient;
-        if (client == null) {
-            synchronized (SystemUiFreeformLeashProvider.class) {
-                client = brokerClient;
-                if (client == null) {
-                    client = new FreeformLeashBrokerClient(
-                            context, FreeformLeashBrokerClient.Role.SYSTEM_UI);
-                    brokerClient = client;
-                }
-            }
+        // Fallback publication covers the unlikely case where ShellTaskOrganizer existed
+        // before our constructor observer was installed. This publishes no task state.
+        try { SystemUiTaskExecutorSource.observeExisting(organizer); }
+        catch (Throwable error) {
+            Api101Bridge.log("[DC] freeform observed organizer executor publication unavailable", error);
         }
-        client.setSystemUiProvider(PROVIDER_BINDER);
+        SystemUiTaskStateProvider.attachContext(context);
     }
 
-    private static final Binder PROVIDER_BINDER = new Binder() {
-        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
-                throws RemoteException {
-            if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT) {
-                return super.onTransact(code, data, reply, flags);
+    static boolean handles(int code) {
+        return code == FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT;
+    }
+
+    static boolean handleTransaction(int code, Parcel data) {
+        if (!handles(code)) return false;
+        ListenerState state = currentState;
+        if (state == null || !SystemUiTaskStateProvider.callerIsLauncher(state.context)) return true;
+        try {
+            data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
+            long requestId = data.readLong();
+            int displayId = data.readInt();
+            IBinder callback = data.readStrongBinder();
+            if (callback == null) return true;
+            if (displayId < 0) {
+                sendSnapshotResult(callback, requestId,
+                        FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
+                return true;
             }
-            ListenerState state = currentState;
-            if (state == null || !callerIsLauncher(state.context)) return true;
+            if (BREAKER.isDisabled()) {
+                sendSnapshotResult(callback, requestId,
+                        FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
+                return true;
+            }
+            if (state.listener.get() == null) {
+                sendSnapshotResult(callback, requestId,
+                        FreeformLeashProtocol.STATUS_UNAVAILABLE, NO_SURFACES);
+                return true;
+            }
             try {
-                data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
-                long requestId = data.readLong();
-                int displayId = data.readInt();
-                IBinder callback = data.readStrongBinder();
-                if (callback == null) return true;
-                if (displayId < 0) {
-                    sendSnapshotResult(callback, requestId,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
-                    return true;
-                }
-                if (BREAKER.isDisabled()) {
-                    sendSnapshotResult(callback, requestId,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
-                    return true;
-                }
-                if (state.listener.get() == null) {
-                    sendSnapshotResult(callback, requestId,
-                            FreeformLeashProtocol.STATUS_UNAVAILABLE, NO_SURFACES);
-                    return true;
-                }
-                try {
-                    state.executor.execute(() -> {
-                        try {
-                            resolveSnapshotOnShellExecutor(state, callback, requestId, displayId);
-                        } catch (Throwable error) {
-                            recordInfrastructureFailure("resolve freeform snapshot", error);
-                            sendSnapshotResult(callback, requestId,
-                                    FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE,
-                                    NO_SURFACES);
-                        }
-                    });
-                } catch (Throwable error) {
-                    recordInfrastructureFailure("schedule freeform snapshot lookup", error);
-                    sendSnapshotResult(callback, requestId,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
-                }
-                return true;
-            } catch (SecurityException | IllegalArgumentException malformedRequest) {
-                return true;
+                state.executor.execute(() -> {
+                    try {
+                        resolveSnapshotOnShellExecutor(state, callback, requestId, displayId);
+                    } catch (Throwable error) {
+                        recordInfrastructureFailure("resolve freeform snapshot", error);
+                        sendSnapshotResult(callback, requestId,
+                                FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE,
+                                NO_SURFACES);
+                    }
+                });
             } catch (Throwable error) {
-                recordInfrastructureFailure("SystemUI provider transaction", error);
-                return true;
+                recordInfrastructureFailure("schedule freeform snapshot lookup", error);
+                sendSnapshotResult(callback, requestId,
+                        FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE, NO_SURFACES);
             }
+            return true;
+        } catch (SecurityException | IllegalArgumentException malformedRequest) {
+            return true;
+        } catch (Throwable error) {
+            recordInfrastructureFailure("SystemUI freeform transaction", error);
+            return true;
         }
-    };
+    }
 
     private static void resolveSnapshotOnShellExecutor(ListenerState state, IBinder callback,
                                                        long requestId, int displayId)
@@ -248,8 +239,8 @@ final class SystemUiFreeformLeashProvider {
             out.writeLong(requestId);
             out.writeInt(overallStatus);
             out.writeInt(surfaces.length);
-            for (int i = 0; i < surfaces.length; i++) {
-                out.writeTypedObject(surfaces[i], 0);
+            for (SurfaceControl surface : surfaces) {
+                out.writeTypedObject(surface, 0);
             }
             callback.transact(FreeformLeashProtocol.TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
@@ -259,16 +250,6 @@ final class SystemUiFreeformLeashProvider {
             recordInfrastructureFailure("send freeform snapshot callback", error);
         } finally {
             out.recycle();
-        }
-    }
-
-    private static boolean callerIsLauncher(Context context) {
-        try {
-            String[] packages = context.getPackageManager().getPackagesForUid(Binder.getCallingUid());
-            return FreeformBridgePolicy.packageListContains(
-                    packages, FreeformLeashProtocol.LAUNCHER_PACKAGE);
-        } catch (Throwable error) {
-            return false;
         }
     }
 
