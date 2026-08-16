@@ -1,28 +1,18 @@
 package com.hellovoid.liquiddock;
 
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.WeakHashMap;
 
 /**
- * Opt-in material adapter for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
+ * Hook coordinator for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
  *
- * The native MiuiBlurUiHelper remains the blur owner. LiquidDock adds a lightweight
- * GPU-backed refraction/highlight overlay and the existing foreground stroke. The overlay
- * owns only its local backdrop sampler; no legacy capture scene state is installed.
+ * The MiuiX background stays installed and remains the backdrop-blur/gradient owner.
+ * MiuixGlassHook places the existing LiquidDock Prismal glass stack directly above it.
  */
 final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
-    private static final WeakHashMap<View, Miuix307RefractionView> OVERLAYS = new WeakHashMap<>();
-    private static ClassLoader launcherClassLoader;
     private static boolean installed;
 
     private Miuix307MaterialPipeline() {}
@@ -38,50 +28,81 @@ final class Miuix307MaterialPipeline {
         }
 
         try {
-            launcherClassLoader = classLoader;
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                         if (MainHook.isWorkstationMode()) return result;
                         try {
-                            Object hotSeats = HookUtil.getField(chain.getThisObject(), "mHotSeats");
-                            if (hotSeats instanceof View) {
-                                View background = findBackground((View) hotSeats);
-                                if (background != null) bind(background, config);
+                            Object launcher = chain.getThisObject();
+                            Object hotSeats = HookUtil.getField(launcher, "mHotSeats");
+                            View background = resolveBackground(hotSeats);
+                            if (background == null) {
+                                MainHook.log("[DC] MiuiX 307 background not found in setupViews");
+                                return result;
+                            }
+
+                            View workspace = null;
+                            try {
+                                Object value = HookUtil.getField(launcher, "mWorkspace");
+                                if (value instanceof View) workspace = (View) value;
+                            } catch (Throwable ignored) {}
+
+                            if (!MiuixGlassHook.install(
+                                    background, workspace, config, launcher, classLoader)) {
+                                MainHook.log("[DC] MiuiX 307 real glass install returned false");
                             }
                         } catch (Throwable error) {
-                            MainHook.log("[DC] MiuiX 307 material bind failed: " + error);
+                            MainHook.log("[DC] MiuiX 307 real glass bind failed: " + error);
                         }
                         return result;
                     });
 
+            // setupViews can run before the vendor has its final dimensions.  These callbacks
+            // are the authoritative geometry boundary on 307 and keep the glass host aligned.
             HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        sync((View) chain.getThisObject(), config, true);
+                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        sync((View) chain.getThisObject(), config, true);
+                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                     new Class<?>[]{float.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        sync((View) chain.getThisObject(), config, true);
+                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
                         return result;
                     });
 
             installed = true;
-            MainHook.log("[DC] MiuiX 307 material pipeline hooks installed");
+            MainHook.log("[DC] MiuiX 307 real glass pipeline hooks installed");
             return true;
         } catch (Throwable error) {
             MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
         }
+    }
+
+    private static View resolveBackground(Object hotSeats) {
+        if (hotSeats == null) return null;
+
+        // New Launcher exposes the active dock background through this accessor.  Prefer it
+        // over old field names so the 307 path never accidentally binds mBlurBackground2.
+        try {
+            Object value = HookUtil.invoke(hotSeats, "getHotSeatsBackground");
+            if (value instanceof View
+                    && BACKGROUND_CLASS.equals(value.getClass().getName())) {
+                MainHook.log("[DC] getHotSeatsBackground returned " + value.getClass().getName());
+                return (View) value;
+            }
+        } catch (Throwable ignored) {}
+
+        return hotSeats instanceof View ? findBackground((View) hotSeats) : null;
     }
 
     private static View findBackground(View root) {
@@ -94,121 +115,5 @@ final class Miuix307MaterialPipeline {
             if (found != null) return found;
         }
         return null;
-    }
-
-    private static void bind(View background, LiquidDockConfig config) {
-        if (background == null) return;
-        ViewGroup parent = background.getParent() instanceof ViewGroup
-                ? (ViewGroup) background.getParent() : null;
-        if (parent == null) return;
-
-        Miuix307RefractionView overlay = OVERLAYS.get(background);
-        if (overlay == null || overlay.getParent() != parent) {
-            if (overlay != null && overlay.getParent() instanceof ViewGroup) {
-                ((ViewGroup) overlay.getParent()).removeView(overlay);
-            }
-            overlay = new Miuix307RefractionView(
-                    background.getContext(), launcherClassLoader, config);
-            OVERLAYS.put(background, overlay);
-            int index = Math.max(0, parent.indexOfChild(background));
-            parent.addView(overlay, Math.min(parent.getChildCount(), index + 1), copyLayoutParams(background));
-            MainHook.log("[DC] MiuiX 307 refraction overlay attached");
-        }
-        sync(background, config, true);
-    }
-
-    private static void sync(View background, LiquidDockConfig config, boolean refreshBlur) {
-        if (background == null || MainHook.isWorkstationMode()) return;
-        Miuix307RefractionView overlay = OVERLAYS.get(background);
-        if (overlay == null) {
-            bind(background, config);
-            return;
-        }
-
-        ViewGroup.LayoutParams source = background.getLayoutParams();
-        ViewGroup.LayoutParams target = overlay.getLayoutParams();
-        int width = readIntField(background, "mWidth", source != null ? source.width : background.getWidth());
-        int height = readIntField(background, "mHeight", source != null ? source.height : background.getHeight());
-        if (width > 0) target.width = width;
-        if (height > 0) target.height = height;
-        if (source instanceof FrameLayout.LayoutParams && target instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams from = (FrameLayout.LayoutParams) source;
-            FrameLayout.LayoutParams to = (FrameLayout.LayoutParams) target;
-            to.gravity = from.gravity;
-            to.leftMargin = from.leftMargin;
-            to.topMargin = from.topMargin;
-            to.rightMargin = from.rightMargin;
-            to.bottomMargin = from.bottomMargin;
-        }
-        overlay.setLayoutParams(target);
-        overlay.setVisibility(background.getVisibility());
-
-        float radius = readRadius(background);
-        overlay.setMaterialGeometry(radius, config.glass.highlightAlpha, config.glass.highlightWidth);
-        DockStrokeRenderer.configure(background, config.dock, radius);
-        if (refreshBlur) refreshNativeBlur(background);
-    }
-
-    private static ViewGroup.LayoutParams copyLayoutParams(View background) {
-        ViewGroup.LayoutParams source = background.getLayoutParams();
-        if (source instanceof FrameLayout.LayoutParams) {
-            return new FrameLayout.LayoutParams((FrameLayout.LayoutParams) source);
-        }
-        int width = source != null ? source.width : ViewGroup.LayoutParams.MATCH_PARENT;
-        int height = source != null ? source.height : ViewGroup.LayoutParams.MATCH_PARENT;
-        return new FrameLayout.LayoutParams(width, height);
-    }
-
-    private static int readIntField(Object owner, String name, int fallback) {
-        try {
-            Field field = findField(owner.getClass(), name);
-            field.setAccessible(true);
-            return field.getInt(owner);
-        } catch (Throwable ignored) {
-            return fallback;
-        }
-    }
-
-    private static float readRadius(View background) {
-        try {
-            Field field = findField(background.getClass(), "mBackground");
-            field.setAccessible(true);
-            Object value = field.get(background);
-            if (value instanceof GradientDrawable) {
-                return ((GradientDrawable) value).getCornerRadius();
-            }
-        } catch (Throwable ignored) {}
-        Drawable drawable = background.getBackground();
-        if (drawable instanceof GradientDrawable) {
-            return ((GradientDrawable) drawable).getCornerRadius();
-        }
-        return Math.max(0f, Math.min(background.getWidth(), background.getHeight()) * .22f);
-    }
-
-    private static void refreshNativeBlur(View background) {
-        try {
-            Field field = findField(background.getClass(), "mBlurUiHelper");
-            field.setAccessible(true);
-            Object helper = field.get(background);
-            if (helper == null) return;
-            Method refreshBlur = helper.getClass().getDeclaredMethod("refreshBlur");
-            refreshBlur.setAccessible(true);
-            refreshBlur.invoke(helper);
-            MainHook.log("[DC] MiuiX 307 native refreshBlur");
-        } catch (Throwable error) {
-            MainHook.log("[DC] MiuiX 307 refreshBlur unavailable: " + error);
-        }
-    }
-
-    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                return current.getDeclaredField(name);
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException(name);
     }
 }
