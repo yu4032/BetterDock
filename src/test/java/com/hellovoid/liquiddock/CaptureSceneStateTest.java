@@ -77,7 +77,6 @@ public class CaptureSceneStateTest {
         state.setGestureTarget("APP", 1_000L);
         state.setGestureTarget("HOME", 2_000L);
 
-        // SystemUI may already report HOME while Launcher is still rendering CLOSE_TO_HOME.
         assertEquals(CaptureScene.APP, state.desired());
         assertEquals(CaptureScene.APP, state.resolve(500_000_000L, false, true, true));
 
@@ -97,5 +96,19 @@ public class CaptureSceneStateTest {
         state.setGestureTarget("HOME", 11_000L);
         assertEquals(CaptureScene.APP, state.resolve(1_900_000_000L, false, true, true));
         assertEquals(CaptureScene.HOME, state.resolve(2_100_000_000L, false, true, true));
+    }
+
+    @Test public void closeToHomeStartClosesRaceWithRecentsPrearmAndEarlyHomeTarget() {
+        CaptureSceneState state = new CaptureSceneState();
+        state.setGestureTarget("RECENTS", 1_000L);
+        state.setGestureTarget("HOME", 2_000L); // destination can arrive before listener creation
+        assertEquals(CaptureScene.HOME, state.desired());
+
+        state.setGestureTarget("APP_HOME_ANIMATION_START", 3_000L);
+        assertEquals(CaptureScene.APP, state.desired());
+        assertEquals(CaptureScene.APP, state.resolve(4_000L, false, true, true));
+
+        state.setGestureTarget("HOME_ANIMATION_END", 5_000L);
+        assertEquals(CaptureScene.HOME, state.desired());
     }
 }
