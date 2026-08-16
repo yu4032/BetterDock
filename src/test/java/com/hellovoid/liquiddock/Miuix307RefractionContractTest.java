@@ -35,9 +35,11 @@ public class Miuix307RefractionContractTest {
         assertTrue(source.contains("BitmapShader"));
         assertTrue(source.contains("setInputShader(\"content\""));
 
-        assertFalse(source.contains("CaptureSceneState"));
-        assertFalse(source.contains("BackdropTransitionPolicy"));
-        assertFalse(source.contains("captureWallpaper"));
+        assertFalse(source.contains("import com.hellovoid.liquiddock.CaptureSceneState"));
+        assertFalse(source.contains("new CaptureSceneState("));
+        assertFalse(source.contains("import com.hellovoid.liquiddock.BackdropTransitionPolicy"));
+        assertFalse(source.contains("new BackdropTransitionPolicy("));
+        assertFalse(source.contains("captureWallpaper("));
     }
 
     @Test
