@@ -114,7 +114,11 @@ final class FreeformTaskLeashResolver {
             List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(MAX_RUNNING_TASKS);
             if (tasks == null) return null;
             for (ActivityManager.RunningTaskInfo task : tasks) {
-                if (task == null || task.displayId != displayId) continue;
+                if (task == null) continue;
+                int taskDisplayId = displayId(task);
+                // displayId is hidden from the public SDK. If reflection fails, keep the
+                // task in the candidate set so incomplete coverage falls back to wallpaper.
+                if (taskDisplayId >= 0 && taskDisplayId != displayId) continue;
                 if (!FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) continue;
                 ids.add(task.taskId);
             }
@@ -125,6 +129,19 @@ final class FreeformTaskLeashResolver {
         int[] raw = new int[ids.size()];
         for (int i = 0; i < ids.size(); i++) raw[i] = ids.get(i);
         return FreeformBridgePolicy.deduplicateTaskIds(raw);
+    }
+
+    private static int displayId(ActivityManager.RunningTaskInfo task) {
+        try {
+            java.lang.reflect.Field field = HookUtil.findField(task.getClass(), "displayId");
+            Object value = field.get(task);
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        try {
+            Object value = HookUtil.invoke(task, "getDisplayId");
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        return -1;
     }
 
     private static int windowingMode(ActivityManager.RunningTaskInfo task) {
