@@ -16,23 +16,27 @@ The implementation preserves that behavior but uses a narrower integration bound
 
 Instead:
 
-1. `FreeformLayerResolver` remains as a compatibility facade for the Dock's existing preflight API. It performs only visible-freeform presence detection and provider/capture-gate capability checking. It never resolves package UIDs, SurfaceFlinger debug layers, or freeform layer names.
-2. When a visible/possible freeform task exists but the task-leash capability is not ready, the facade preserves the existing Dock fail-closed result (`safe=false`), so capture remains wallpaper.
-3. Once the task-leash capability is ready, the final safety gate is `FreeformCaptureLeashHook`, a hook on LiquidDock's own `LiveScreenCapture.captureScreenAsync(...)` method. It is not a hook on Android's `ScreenCapture`, SurfaceFlinger, WMShell capture APIs, or any unrelated Launcher screenshot path.
-4. For each mode-1 submission the gate performs a fresh current-display freeform task scan, requests every leash in one SystemUI batch, and either:
+1. `FreeformLayerResolver` remains as a compatibility facade for the Dock's existing preflight API. It performs visible-freeform presence detection and provider/capture-gate capability checking. It never resolves package UIDs, SurfaceFlinger debug layers, or freeform task layer names.
+2. `hasVisibleFreeformTasks()` remains a truthful presence signal because the existing Dock also uses it to select HOME live-backdrop behavior.
+3. When a visible/possible freeform task exists but the task-leash capability is not ready, the facade returns no legacy exclusion names. The existing Dock therefore preserves `safe=false` and uses wallpaper.
+4. When the capability is ready, the old Dock API still requires a non-empty name collection to represent “full-display exclusions available”. The compatibility facade returns only the already-existing `"Floating Dock"` Dock exclusion. This is not a freeform layer guess and adds no new freeform name-based capture behavior; the same Dock layer is already excluded by mode 1.
+5. The final safety gate is `FreeformCaptureLeashHook`, a hook on LiquidDock's own `LiveScreenCapture.captureScreenAsync(...)` method. It is not a hook on Android's `ScreenCapture`, SurfaceFlinger, WMShell capture APIs, or any unrelated Launcher screenshot path.
+6. For each mode-1 submission the gate performs a fresh current-display freeform task scan, requests every leash in one SystemUI batch, and either:
    - merges all remote task leashes into the existing `SurfaceControl[]` exclusion array; or
    - rewrites this one LiquidDock request to mode 2 wallpaper when coverage is incomplete, timed out, unavailable, or the gate itself fails.
-5. The original capture method is invoked exactly once. Remote parcel-created `SurfaceControl` wrappers are released in `finally` after the original method returns from request submission.
+7. The original capture method is invoked exactly once. Remote parcel-created `SurfaceControl` wrappers are released in `finally` after the original method returns from request submission.
 
 ## Why this is not a second state machine
 
-The compatibility facade caches only the same short-lived visible-freeform presence fact that the previous resolver already cached. It does not cache task IDs or leashes and does not participate in the final exclusion decision once the capture gate is available.
+The compatibility facade caches only the same short-lived visible-freeform presence fact that the previous resolver already cached. It does not cache task IDs or leashes and does not make the final task-coverage decision.
 
 The capture gate has no task lifecycle state. Every mode-1 capture uses a fresh `RunningTaskInfo` scan and a fresh SystemUI leash batch. WMShell remains the sole owner of task/leash lifecycle state.
 
-## No string-state fallback
+## Compatibility marker limitation
 
-An earlier implementation draft reused the existing `"Floating Dock"` name as a non-empty readiness marker for the old Dock interface. That draft was removed during review. The production compatibility facade now returns no freeform layer names at all. Provider readiness is represented only as capability state, not as a layer-name string.
+The single existing Dock-name marker exists only because the current `DockLiquidGlassView.FullDisplayExclusions` contract derives `safe` from whether the legacy freeform-name collection is empty, while the same class separately consumes truthful freeform presence for HOME source selection.
+
+This marker must not grow into a freeform-name scheme. Production freeform exclusion is exclusively by task `SurfaceControl` leash. If the Dock preflight interface is widened in a normal local worktree, the compatibility marker should be deleted and the capability boolean passed explicitly.
 
 ## R8 safety
 
@@ -42,4 +46,4 @@ The broker component is addressed using `FreeformLeashBrokerService.class.getNam
 
 ## Future local refactor
 
-When editing through a normal local worktree, the gate can be inlined into the normal Dock/LiveScreenCapture call path without changing the Binder protocol or behavior. Such a refactor is not required for correctness and should only be done with the full test/build/device matrix available.
+When editing through a normal local worktree, the gate and explicit preflight capability can be inlined into the normal Dock/LiveScreenCapture call path without changing the Binder protocol or behavior. Such a refactor is not required for the current safety semantics and should only be done with the full test/build/device matrix available.
