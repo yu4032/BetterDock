@@ -440,10 +440,15 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 @Composable
 private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
+    var miuix307Pipeline by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.MIUIX_307_PIPELINE.name(), ConfigSchema.Glass.MIUIX_307_PIPELINE.uiDefault())) }
     var dynamicAppCapture by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(), ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_liquid)) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable),
             stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+        BooleanSetting(prefs, ConfigSchema.Glass.MIUIX_307_PIPELINE,
+            "HyperOS 3.0.307+ 新材质管线",
+            "实验：使用系统 MiuiX 实时材质模糊；关闭时完全保持旧捕获管线",
+            masterEnabled && liquidGlass) { miuix307Pipeline = it }
         StringDropdown(
             prefs,
             ConfigSchema.Glass.BLUR_MODE.name(),
@@ -453,10 +458,10 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
                 "标准 Shader 模糊" to "shader",
                 "高级材质模糊" to "advanced_material",
             ),
-            masterEnabled && liquidGlass,
+            masterEnabled && liquidGlass && !miuix307Pipeline,
         )
         BooleanSetting(prefs, ConfigSchema.Glass.DYNAMIC_APP_CAPTURE, stringResource(R.string.liquid_dynamic_capture),
-            stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass) { dynamicAppCapture = it }
+            stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass && !miuix307Pipeline) { dynamicAppCapture = it }
         liquidSpecs.forEach {
             IntSetting(prefs, it, masterEnabled && liquidGlass && (it.dependency != "liquid_dynamic_app_capture" || dynamicAppCapture))
         }

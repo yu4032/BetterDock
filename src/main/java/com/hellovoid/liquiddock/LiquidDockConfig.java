@@ -193,7 +193,7 @@ final class LiquidDockConfig {
     }
 
     static final class Glass {
-        final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture;
+        final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture, miuix307Pipeline;
         final LiquidBlurMode blurMode;
         final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
                 lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
@@ -208,6 +208,8 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.ENABLED.runtimeFallback());
             dimensionsDp = c.b(ConfigSchema.Glass.DIMENSIONS_DP.name(),
                     ConfigSchema.Glass.DIMENSIONS_DP.runtimeFallback());
+            miuix307Pipeline = c.b(ConfigSchema.Glass.MIUIX_307_PIPELINE.name(),
+                    ConfigSchema.Glass.MIUIX_307_PIPELINE.runtimeFallback());
             blurMode = LiquidBlurMode.fromPersisted(c.s(ConfigSchema.Glass.BLUR_MODE.name(),
                     ConfigSchema.Glass.BLUR_MODE.runtimeFallback()));
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());

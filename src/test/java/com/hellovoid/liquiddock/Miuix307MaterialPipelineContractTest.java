@@ -11,8 +11,8 @@ import java.nio.file.Paths;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Contract for the opt-in HyperOS 3.0.307+ MiuiX material demo pipeline. */
-public class Miuix307DemoPipelineContractTest {
+/** Contract for the opt-in HyperOS 3.0.307+ MiuiX material pipeline. */
+public class Miuix307MaterialPipelineContractTest {
     private static String read(String path) throws IOException {
         return Files.readString(Paths.get(path), StandardCharsets.UTF_8);
     }
@@ -33,14 +33,14 @@ public class Miuix307DemoPipelineContractTest {
         String hook = read("src/main/java/com/hellovoid/liquiddock/MainHook.java");
         assertTrue(config.contains("miuix307Pipeline"));
         assertTrue(hook.contains("config.glass.miuix307Pipeline"));
-        assertTrue(hook.contains("Miuix307DemoPipeline.install"));
+        assertTrue(hook.contains("Miuix307MaterialPipeline.install"));
         assertTrue(hook.contains("legacy liquid capture bypassed"));
     }
 
     @Test
-    public void demoUsesNativeMiuixBlurWithoutCapturePipeline() throws IOException {
-        Path pipeline = Paths.get("src/main/java/com/hellovoid/liquiddock/Miuix307DemoPipeline.java");
-        assertTrue("demo pipeline source must exist", Files.exists(pipeline));
+    public void materialPipelineUsesNativeMiuixBlurWithoutCapturePipeline() throws IOException {
+        Path pipeline = Paths.get("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
+        assertTrue("material pipeline source must exist", Files.exists(pipeline));
         String source = read(pipeline.toString());
         assertTrue(source.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(source.contains("mBlurUiHelper"));

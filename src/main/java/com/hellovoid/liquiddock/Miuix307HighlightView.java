@@ -9,7 +9,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.view.View;
 
-/** Lightweight highlight-only overlay for the opt-in HyperOS 3.0.307+ demo pipeline. */
+/** Lightweight highlight-only overlay for the opt-in HyperOS 3.0.307+ material pipeline. */
 final class Miuix307HighlightView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();

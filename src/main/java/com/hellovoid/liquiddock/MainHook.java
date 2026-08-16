@@ -112,6 +112,13 @@ public class MainHook {
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
+        if (liquidGlass && config.glass.miuix307Pipeline) {
+            if (Miuix307MaterialPipeline.install(classLoader, config)) {
+                log("[DC] MiuiX 307 material active; legacy liquid capture bypassed");
+                return;
+            }
+            log("[DC] MiuiX 307 material unavailable; falling back to legacy pipeline");
+        }
         if (!dockCustomization && !liquidGlass) {
             log("[DC] Dock customization and liquid glass both disabled");
             return;

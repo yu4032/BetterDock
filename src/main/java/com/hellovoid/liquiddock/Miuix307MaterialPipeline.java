@@ -11,19 +11,19 @@ import java.lang.reflect.Method;
 import java.util.WeakHashMap;
 
 /**
- * Opt-in demo adapter for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
+ * Opt-in material adapter for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
  *
  * The native MiuiBlurUiHelper remains the blur owner. LiquidDock only adds a lightweight
  * highlight and the existing foreground stroke, and intentionally installs no capture state.
  */
-final class Miuix307DemoPipeline {
+final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
     private static final WeakHashMap<View, Miuix307HighlightView> OVERLAYS = new WeakHashMap<>();
     private static boolean installed;
 
-    private Miuix307DemoPipeline() {}
+    private Miuix307MaterialPipeline() {}
 
     static boolean install(ClassLoader classLoader, LiquidDockConfig config) {
         if (installed) return true;
@@ -31,7 +31,7 @@ final class Miuix307DemoPipeline {
         try {
             backgroundClass = Class.forName(BACKGROUND_CLASS, false, classLoader);
         } catch (Throwable unavailable) {
-            MainHook.log("[DC] MiuiX 307 demo unavailable: background class missing");
+            MainHook.log("[DC] MiuiX 307 material unavailable: background class missing");
             return false;
         }
 
@@ -48,7 +48,7 @@ final class Miuix307DemoPipeline {
                                 if (background != null) bind(background, config);
                             }
                         } catch (Throwable error) {
-                            MainHook.log("[DC] MiuiX 307 demo bind failed: " + error);
+                            MainHook.log("[DC] MiuiX 307 material bind failed: " + error);
                         }
                         return result;
                     });
@@ -73,10 +73,10 @@ final class Miuix307DemoPipeline {
                     });
 
             installed = true;
-            MainHook.log("[DC] MiuiX 307 demo pipeline hooks installed");
+            MainHook.log("[DC] MiuiX 307 material pipeline hooks installed");
             return true;
         } catch (Throwable error) {
-            MainHook.log("[DC] MiuiX 307 demo hook install failed: " + error);
+            MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
         }
     }
@@ -108,7 +108,7 @@ final class Miuix307DemoPipeline {
             OVERLAYS.put(background, overlay);
             int index = Math.max(0, parent.indexOfChild(background));
             parent.addView(overlay, Math.min(parent.getChildCount(), index + 1), copyLayoutParams(background));
-            MainHook.log("[DC] MiuiX 307 demo overlay attached");
+            MainHook.log("[DC] MiuiX 307 material overlay attached");
         }
         sync(background, config, true);
     }
