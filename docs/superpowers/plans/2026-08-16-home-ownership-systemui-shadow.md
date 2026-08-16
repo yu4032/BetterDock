@@ -2,63 +2,73 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a diagnostic-only HOME/APP ownership shadow audit that compares the current Launcher decision with SystemUI/WMShell `MultiTaskingTaskRepository.isHomeVisible()` without changing any capture behavior.
+**Goal:** Build a diagnostic-only HOME/APP ownership shadow audit that compares the current Launcher decision with SystemUI/WMShell `MultiTaskingTaskRepository.isHomeVisible()` without changing capture behavior.
 
-**Architecture:** Keep the current Launcher inference fully authoritative. A separate diagnostic component observes the existing SystemUI `MultiTaskingTaskRepository`, answers one-way Binder shadow queries on its existing `mBgExecutor`, and returns only metadata. Launcher asynchronously logs MATCH/MISMATCH evidence and performs exactly one delayed recheck for an immediate mismatch. The diagnostic uses the existing broker/provider Binder identity but has its own protocol codes, state, error handling, and disable flag so it cannot trip the production freeform leash breaker.
+**Architecture:** The existing Launcher inference remains authoritative. A separate SystemUI diagnostic observes the existing `MultiTaskingTaskRepository`, samples it on its confirmed `mBgExecutor`, and answers one-way metadata-only Binder requests through the already registered SystemUI provider Binder. Launcher logs MATCH/MISMATCH evidence asynchronously and performs exactly one 160 ms recheck after an immediate mismatch. Shadow failures are isolated from the production freeform breaker.
 
-**Tech Stack:** Java 17, Android/HyperOS hidden APIs through reflection, libxposed API 101 hooks, raw Binder/Parcel IPC, JUnit 4 source-contract and pure-policy tests.
+**Tech Stack:** Java 17, Android/HyperOS hidden APIs through reflection, libxposed API 101 hooks, raw Binder/Parcel IPC, JUnit 4.
 
 ## Global Constraints
 
-- Implement diagnostic code only on `dev/home-ownership-systemui-shadow` created from the formal branch after this plan commit.
+- Diagnostic code lives only on `dev/home-ownership-systemui-shadow`, created from the formal branch after this plan commit.
 - Never merge or cherry-pick the diagnostic branch wholesale into `fix/freeform-task-leash-exclusion` or `api101-migration`.
-- Do not change `launcherResumed`, `CaptureSceneState`, capture source, gesture target, Overview, All Apps, workstation, or freeform leash behavior from shadow results.
-- Do not register another `TaskOrganizer`, task listener, repository, or task-state map in SystemUI.
-- Observe only the existing `MultiTaskingTaskRepository`; keep only a weak reference.
-- Read repository state only on the existing `mBgExecutor`; if the executor/method structure is unavailable, disable only the shadow capability.
-- Shadow IPC is one-way and asynchronous. Never block Launcher main/UI or capture threads with `CountDownLatch`, `Future.get`, sleep, or polling.
-- One immediate mismatch gets exactly one delayed recheck; no repeating monitor and no per-frame sampling.
-- Structural or runtime shadow failures must not affect the production `FreeformBridgePolicy.CircuitBreaker` or freeform provider availability.
-- Existing freeform provider/broker caller authentication remains authoritative.
+- Shadow results must never assign `launcherResumed`, mutate `CaptureSceneState`, choose a capture source, or alter gesture/Overview/All Apps/workstation/freeform behavior.
+- Do not register another `TaskOrganizer`, task listener, repository, or SystemUI task map.
+- Observe only the existing `MultiTaskingTaskRepository` and keep only a `WeakReference<Object>`.
+- Read repository state only through the confirmed `mBgExecutor`. If `mBgExecutor` or `execute(Runnable)` cannot be resolved, disable only shadow diagnostics.
+- Shadow IPC is one-way and asynchronous; no `CountDownLatch`, `Future.get`, `Thread.sleep`, polling, or UI/capture-thread waits.
+- Exactly one delayed recheck follows an immediate mismatch. No timer loop or per-frame monitor.
+- Shadow errors and disable state must never call or mutate `FreeformBridgePolicy.CircuitBreaker`.
+- Keep existing broker/provider caller authentication.
 - All commits use `[skip ci]`.
 
 ---
 
-## File Structure
+## File Map
 
-### New diagnostic files
+**Create**
 
-- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProtocol.java` — diagnostic-only Binder transaction codes, status values, descriptors, and timing bounds.
-- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicy.java` — Android-free MATCH/MISMATCH/special-scene classification helpers.
-- `src/main/java/com/hellovoid/liquiddock/SystemUiHomeOwnershipShadow.java` — observes the existing `MultiTaskingTaskRepository`, owns a separate shadow disable flag, and serves diagnostic requests on `mBgExecutor`.
-- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProbe.java` — Launcher-only asynchronous requester, bounded pending contexts, one-shot mismatch recheck, and `[DC-SHADOW]` logging.
-- `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicyTest.java` — pure Java classification tests.
-- `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java` — source contracts that enforce read-only isolation and no behavior writes.
+- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProtocol.java` — diagnostic Binder codes and bounds.
+- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicy.java` — pure comparison/special-scene rules.
+- `src/main/java/com/hellovoid/liquiddock/SystemUiHomeOwnershipShadow.java` — read-only SystemUI repository observer and transaction handler.
+- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProbe.java` — Launcher asynchronous requester, bounded pending contexts, recheck and logging.
+- `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicyTest.java`
+- `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
 
-### Narrow modifications
+**Modify narrowly**
 
-- `src/main/java/com/hellovoid/liquiddock/ModuleMain.java` — install `SystemUiHomeOwnershipShadow` only in SystemUI after the production freeform provider install attempt; shadow install failures are caught independently.
-- `src/main/java/com/hellovoid/liquiddock/SystemUiFreeformLeashProvider.java` — delegate only the reserved shadow transaction code to `SystemUiHomeOwnershipShadow`; the delegate must self-contain all shadow errors and never call the production breaker.
-- `src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java` — expose the already-discovered provider Binder through a package-private diagnostic accessor only; no new broker/service connection.
-- `src/main/java/com/hellovoid/liquiddock/FreeformLeashRuntime.java` — expose that provider Binder to the diagnostic probe without changing production capture resolution.
-- `src/main/java/com/hellovoid/liquiddock/MainHook.java` — invoke shadow sampling after existing ownership decisions and mirror only diagnostic Overview/All Apps context into the shadow probe.
+- `ModuleMain.java` — independently install shadow observer in SystemUI.
+- `SystemUiFreeformLeashProvider.java` — delegate only the reserved shadow transaction to the diagnostic component.
+- `FreeformTaskLeashResolver.java` — package-private read-only access to the already discovered provider Binder.
+- `FreeformLeashRuntime.java` — expose that Binder to diagnostics.
+- `MainHook.java` — sample only after current production decisions; mirror Overview/All Apps flags only as diagnostic metadata.
 
-No changes to `DockLiquidGlassView`, `CaptureSceneState`, `CaptureSourcePolicy`, `LauncherSceneOwnershipPolicy`, workstation behavior, or capture cadence are part of this diagnostic.
+**Must not change**
+
+- `DockLiquidGlassView.java`
+- `CaptureSceneState.java`
+- `CaptureSourcePolicy.java`
+- `LauncherSceneOwnershipPolicy.java`
+- workstation capture logic
+- freeform capture-gate semantics
 
 ---
 
-### Task 1: Add Android-Free Shadow Classification Policy
+### Task 1: Pure Shadow Classification Policy
 
 **Files:**
 - Create: `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicy.java`
 - Create: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicyTest.java`
 
-**Interfaces:**
-- Produces: `HomeOwnershipShadowPolicy.matches(boolean launcherHome, boolean systemUiHome)`
-- Produces: `HomeOwnershipShadowPolicy.baselineEligible(boolean overview, boolean allApps, boolean workstation)`
-- Produces: `HomeOwnershipShadowPolicy.recheckResult(boolean launcherHome, boolean systemUiHome)` returning `TRANSIENT_MISMATCH` or `PERSISTENT_MISMATCH`.
+**Produces:**
 
-- [ ] **Step 1: Write the failing pure-policy test**
+```java
+static boolean matches(boolean launcherHome, boolean systemUiHome)
+static boolean baselineEligible(boolean overview, boolean allApps, boolean workstation)
+static RecheckResult recheckResult(boolean launcherHome, boolean systemUiHome)
+```
+
+- [ ] **Step 1: Write the failing test**
 
 ```java
 package com.hellovoid.liquiddock;
@@ -67,21 +77,21 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class HomeOwnershipShadowPolicyTest {
-    @Test public void homeAndAppBaselinesMatchOnlyWhenBothSourcesAgree() {
+    @Test public void matchingBaselinesAgreeExactly() {
         assertTrue(HomeOwnershipShadowPolicy.matches(true, true));
         assertTrue(HomeOwnershipShadowPolicy.matches(false, false));
         assertFalse(HomeOwnershipShadowPolicy.matches(true, false));
         assertFalse(HomeOwnershipShadowPolicy.matches(false, true));
     }
 
-    @Test public void specialLauncherScenesAreNotMigrationEvidence() {
+    @Test public void specialScenesAreNotMigrationEvidence() {
         assertTrue(HomeOwnershipShadowPolicy.baselineEligible(false, false, false));
         assertFalse(HomeOwnershipShadowPolicy.baselineEligible(true, false, false));
         assertFalse(HomeOwnershipShadowPolicy.baselineEligible(false, true, false));
         assertFalse(HomeOwnershipShadowPolicy.baselineEligible(false, false, true));
     }
 
-    @Test public void recheckSeparatesTransientFromPersistentMismatch() {
+    @Test public void recheckClassifiesConvergence() {
         assertEquals(HomeOwnershipShadowPolicy.RecheckResult.TRANSIENT_MISMATCH,
                 HomeOwnershipShadowPolicy.recheckResult(true, true));
         assertEquals(HomeOwnershipShadowPolicy.RecheckResult.PERSISTENT_MISMATCH,
@@ -90,17 +100,15 @@ public class HomeOwnershipShadowPolicyTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
-
-Run:
+- [ ] **Step 2: Run RED**
 
 ```bash
 ./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.HomeOwnershipShadowPolicyTest
 ```
 
-Expected: compilation failure because `HomeOwnershipShadowPolicy` does not exist.
+Expected: compilation failure because the class does not exist.
 
-- [ ] **Step 3: Implement the minimal policy**
+- [ ] **Step 3: Implement minimally**
 
 ```java
 package com.hellovoid.liquiddock;
@@ -126,55 +134,83 @@ final class HomeOwnershipShadowPolicy {
 }
 ```
 
-- [ ] **Step 4: Run the test and verify GREEN**
+- [ ] **Step 4: Run GREEN**
 
-Run the same Gradle command. Expected: PASS.
+Use the same Gradle command. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicy.java \
         src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowPolicyTest.java
-git commit -m "test: define HOME ownership shadow classification [skip ci]"
+git commit -m "test: define HOME ownership shadow policy [skip ci]"
 ```
 
 ---
 
-### Task 2: Define an Isolated Diagnostic Binder Protocol
+### Task 2: Isolated Diagnostic Binder Protocol and Contracts
 
 **Files:**
 - Create: `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProtocol.java`
 - Create: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
 
-**Interfaces:**
-- Produces: `TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW = IBinder.FIRST_CALL_TRANSACTION + 2`
-- Produces: `TRANSACTION_HOME_OWNERSHIP_SHADOW_RESULT = IBinder.FIRST_CALL_TRANSACTION + 2`
-- Produces: request `{requestId: long, displayId: int, callback: IBinder}`.
-- Produces: response `{requestId: long, status: int, homeVisible: boolean, homeTaskId: int, topFullscreenTaskId: int, topFullscreenWindowingMode: int, sampleElapsedNanos: long}`.
-- Produces: `RECHECK_DELAY_MS = 160L`, `PENDING_TTL_MS = 1500L`, `MAX_PENDING = 16`.
+**Produces:**
 
-- [ ] **Step 1: Write source contracts before implementation**
+```java
+TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW = IBinder.FIRST_CALL_TRANSACTION + 2
+TRANSACTION_HOME_OWNERSHIP_SHADOW_RESULT = IBinder.FIRST_CALL_TRANSACTION + 2
+RECHECK_DELAY_MS = 160L
+PENDING_TTL_MS = 1500L
+MAX_PENDING = 16
+```
 
-Add tests that assert:
+Request payload:
+
+```text
+provider descriptor, requestId(long), displayId(int), callback(IBinder)
+```
+
+Response payload:
+
+```text
+shadow callback descriptor, requestId(long), status(int), homeVisible(boolean),
+homeTaskId(int), topFullscreenTaskId(int), topFullscreenWindowingMode(int), sampleElapsedNanos(long)
+```
+
+- [ ] **Step 1: Write the contract test first**
+
+The test must assert distinct transaction codes and later source isolation:
 
 ```java
 assertNotEquals(FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT,
         HomeOwnershipShadowProtocol.TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW);
 assertEquals(160L, HomeOwnershipShadowProtocol.RECHECK_DELAY_MS);
+assertEquals(1500L, HomeOwnershipShadowProtocol.PENDING_TTL_MS);
 assertEquals(16, HomeOwnershipShadowProtocol.MAX_PENDING);
 ```
 
-Also load production sources and assert the future shadow implementation contains no `SurfaceControl`, no `CountDownLatch`, no `Future.get`, no `registerTaskOrganizer`, and no call to `FreeformBridgePolicy.CircuitBreaker`.
+It must also source-scan future shadow classes for forbidden strings:
 
-- [ ] **Step 2: Run the contract test and verify RED**
+```text
+SurfaceControl
+CountDownLatch
+Future.get
+Thread.sleep
+registerTaskOrganizer
+FreeformBridgePolicy.CircuitBreaker
+launcherResumed =
+setLauncherState(
+```
+
+- [ ] **Step 2: Run RED**
 
 ```bash
 ./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.HomeOwnershipShadowContractTest
 ```
 
-Expected: compilation/source-read failure because diagnostic protocol/provider files do not exist.
+Expected: missing diagnostic classes.
 
-- [ ] **Step 3: Add the protocol constants**
+- [ ] **Step 3: Add protocol constants**
 
 ```java
 package com.hellovoid.liquiddock;
@@ -184,59 +220,67 @@ import android.os.IBinder;
 final class HomeOwnershipShadowProtocol {
     static final String CALLBACK_DESCRIPTOR =
             "com.hellovoid.liquiddock.IHomeOwnershipShadowCallback";
-
     static final int TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW =
             IBinder.FIRST_CALL_TRANSACTION + 2;
     static final int TRANSACTION_HOME_OWNERSHIP_SHADOW_RESULT =
             IBinder.FIRST_CALL_TRANSACTION + 2;
-
     static final int STATUS_OK = 0;
     static final int STATUS_UNAVAILABLE = 1;
     static final int STATUS_STRUCTURE_FAILURE = 2;
-
     static final long RECHECK_DELAY_MS = 160L;
     static final long PENDING_TTL_MS = 1500L;
     static final int MAX_PENDING = 16;
-
     private HomeOwnershipShadowProtocol() {}
 }
 ```
 
-- [ ] **Step 4: Keep the contract RED only for the not-yet-created provider/probe sources**
+- [ ] **Step 4: Run test again**
 
-Run the contract test. Expected: constants compile; source assertions for missing implementation files still fail.
+Expected: protocol assertions pass; source assertions for provider/probe remain RED until later tasks.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProtocol.java \
         src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java
-git commit -m "test: reserve isolated HOME shadow protocol [skip ci]"
+git commit -m "test: reserve HOME ownership shadow protocol [skip ci]"
 ```
 
 ---
 
-### Task 3: Observe the Existing SystemUI MultiTaskingTaskRepository
+### Task 3: Read-Only SystemUI Repository Observer
 
 **Files:**
 - Create: `src/main/java/com/hellovoid/liquiddock/SystemUiHomeOwnershipShadow.java`
 - Modify: `src/main/java/com/hellovoid/liquiddock/ModuleMain.java`
 - Modify: `src/main/java/com/hellovoid/liquiddock/SystemUiFreeformLeashProvider.java`
-- Test: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
+- Test: `HomeOwnershipShadowContractTest.java`
 
-**Interfaces:**
-- Consumes target-ROM class: `com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository`.
-- Consumes confirmed fields: `mContext`, `mBgExecutor`, `mHomeTaskInfo`.
-- Consumes confirmed methods: `isHomeVisible()`, `getHomeTask()`, `getTopFullscreenTaskInfo(int)`.
-- Produces: `SystemUiHomeOwnershipShadow.install(ClassLoader)`.
-- Produces: `SystemUiHomeOwnershipShadow.handles(int code)`.
-- Produces: `SystemUiHomeOwnershipShadow.handleTransaction(int code, Parcel data, Context authContext)`; returns `true` only for the reserved diagnostic request.
+**Confirmed target-ROM structure:**
 
-- [ ] **Step 1: Strengthen the source contract**
+```text
+com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository
+mContext : Context
+mBgExecutor : com.android.wm.shell.common.ShellExecutor
+mHomeTaskInfo : RunningTaskInfo
+isHomeVisible()
+getHomeTask()
+getTopFullscreenTaskInfo(int displayId)
+```
 
-Require the provider source to contain:
+**Produces:**
 
 ```java
+static void install(ClassLoader classLoader)
+static boolean handles(int code)
+static boolean handleTransaction(int code, Parcel data, Context authContext)
+```
+
+- [ ] **Step 1: Extend the RED contract**
+
+Require `SystemUiHomeOwnershipShadow.java` to contain:
+
+```text
 WeakReference<Object>
 MultiTaskingTaskRepository
 mBgExecutor
@@ -246,7 +290,7 @@ getTopFullscreenTaskInfo
 execute
 ```
 
-Require absence of:
+Forbid:
 
 ```text
 SurfaceControl
@@ -256,50 +300,72 @@ onTaskVanished
 FreeformBridgePolicy.CircuitBreaker
 ```
 
-Require `SystemUiFreeformLeashProvider` to delegate the shadow code before its production freeform transaction branch, with all shadow errors contained by the shadow component.
+- [ ] **Step 2: Resolve structure once at install**
 
-- [ ] **Step 2: Run the contract and verify RED**
-
-Expected: missing `SystemUiHomeOwnershipShadow` and missing delegation/install.
-
-- [ ] **Step 3: Implement install-time repository observation**
-
-Implementation rules:
+Use:
 
 ```java
 Class<?> repoClass = Class.forName(
-    "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository",
-    false, classLoader);
+        "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository",
+        false, classLoader);
 Field contextField = HookUtil.findField(repoClass, "mContext");
 Field executorField = HookUtil.findField(repoClass, "mBgExecutor");
-Method homeVisible = HookUtil.findMethodBestMatch(repoClass, "isHomeVisible", new Object[0], false);
-Method getHomeTask = HookUtil.findMethodBestMatch(repoClass, "getHomeTask", new Object[0], false);
-Method getTopFullscreen = HookUtil.findMethodBestMatch(
-    repoClass, "getTopFullscreenTaskInfo", new Object[]{0}, false);
-Method execute = HookUtil.findMethodBestMatch(
-    executorField.getType(), "execute", new Object[]{(Runnable) () -> {}}, false);
+Method isHomeVisible = HookUtil.findMethodBestMatch(
+        repoClass, "isHomeVisible", new Object[0], false);
+Method getHomeTask = HookUtil.findMethodBestMatch(
+        repoClass, "getHomeTask", new Object[0], false);
+Method getTopFullscreenTaskInfo = HookUtil.findMethodBestMatch(
+        repoClass, "getTopFullscreenTaskInfo", new Object[]{0}, false);
 ```
 
-After each original constructor succeeds, publish one immutable state containing a `WeakReference<Object>` to that repository, its context, executor object, and resolved methods. No mutation of repository fields is allowed.
+After obtaining a constructed repository instance, resolve its actual executor method once:
 
-Use a shadow-local `volatile boolean disabledForProcess`; any install-time structure mismatch sets it immediately. Runtime request failure logs and returns unavailable but does not call the freeform breaker.
+```java
+Object executor = executorField.get(repository);
+Method execute = HookUtil.findMethodBestMatch(
+        executor.getClass(), "execute", new Object[]{(Runnable) () -> {}}, false);
+```
 
-- [ ] **Step 4: Implement the one-way request handler**
+If any required structure is unavailable, set a shadow-local `disabledForProcess=true` and log one `[DC-SHADOW]` capability failure. Do not touch production freeform state.
 
-For the reserved transaction:
+- [ ] **Step 3: Observe only after original constructor succeeds**
 
-1. authenticate caller using the same Launcher UID/package check as the production provider;
-2. read `requestId`, `displayId`, callback Binder;
-3. post a `Runnable` to `mBgExecutor.execute(...)` via the resolved reflective method;
-4. on that executor call `isHomeVisible()`;
-5. call `getHomeTask()` and `getTopFullscreenTaskInfo(displayId)` only for explanatory IDs/windowing metadata;
-6. extract task IDs and top fullscreen windowing mode reflectively; unknown explanatory values are `-1` and do not invalidate `homeVisible`;
-7. reply one-way to the callback with the diagnostic metadata and `System.nanoTime()`;
-8. catch every Throwable inside the diagnostic component and reply `STATUS_UNAVAILABLE` or `STATUS_STRUCTURE_FAILURE` without touching production freeform state.
+For every repository constructor:
 
-- [ ] **Step 5: Install the observer independently in `ModuleMain`**
+```java
+HookUtil.hook(ctor, chain -> {
+    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+    try {
+        observeRepository(chain.getThisObject());
+    } catch (Throwable error) {
+        disableShadow("observe repository", error);
+    }
+    return result;
+});
+```
 
-In the SystemUI package branch, keep production setup first, then independently:
+`observeRepository` publishes one immutable state holding `WeakReference<Object> repository`, `Context context`, executor object and reflected methods.
+
+- [ ] **Step 4: Implement metadata-only request handling**
+
+`handles(code)` returns true only for `TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW`.
+
+`handleTransaction(...)`:
+
+1. returns true without action if `authContext == null` or shadow disabled;
+2. authenticates Launcher with `Binder.getCallingUid()` and `getPackagesForUid()`;
+3. enforces the production provider descriptor;
+4. reads request ID, display ID and callback;
+5. schedules one Runnable through the reflected `execute(Runnable)` on `mBgExecutor`;
+6. on that executor invokes `isHomeVisible()`;
+7. invokes `getHomeTask()` and `getTopFullscreenTaskInfo(displayId)` only for explanatory metadata;
+8. reflectively reads task ID / top fullscreen windowing mode; unknown explanatory metadata becomes `-1`;
+9. sends one-way callback with `System.nanoTime()`;
+10. catches all errors locally and returns unavailable/structure-failure without using the production breaker.
+
+- [ ] **Step 5: Install shadow independently in `ModuleMain`**
+
+In the existing SystemUI branch, after the production freeform install attempt:
 
 ```java
 try {
@@ -310,28 +376,34 @@ try {
 return;
 ```
 
-Do not let shadow install failure skip or disable the production freeform provider.
+Production freeform install failure and shadow install failure remain independent.
 
-- [ ] **Step 6: Add delegation to the existing provider Binder**
+- [ ] **Step 6: Delegate only the shadow transaction from the existing provider Binder**
 
-At the top of `PROVIDER_BINDER.onTransact`, after standard Binder/noncustom handling and before the freeform request branch:
+At the beginning of `SystemUiFreeformLeashProvider.PROVIDER_BINDER.onTransact`:
 
 ```java
+ListenerState state = currentState;
 if (SystemUiHomeOwnershipShadow.handles(code)) {
-    return SystemUiHomeOwnershipShadow.handleTransaction(code, data, stateContextIfAvailable());
+    Context authContext = state != null ? state.context : null;
+    return SystemUiHomeOwnershipShadow.handleTransaction(code, data, authContext);
+}
+if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT) {
+    return super.onTransact(code, data, reply, flags);
 }
 ```
 
-The exact helper should pass a valid SystemUI context for caller authentication; if production listener state is not yet available, the shadow handler returns unavailable rather than throwing.
+Then keep the existing production freeform branch unchanged. The diagnostic handler catches its own errors.
 
 - [ ] **Step 7: Run focused tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.HomeOwnershipShadowContractTest \
+./gradlew testDebugUnitTest \
+  --tests com.hellovoid.liquiddock.HomeOwnershipShadowContractTest \
   --tests com.hellovoid.liquiddock.FreeformTaskLeashBridgeContractTest
 ```
 
-Expected: PASS. The existing freeform contract must remain unchanged/green.
+Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
@@ -345,24 +417,25 @@ git commit -m "feat: add read-only SystemUI HOME shadow source [skip ci]"
 
 ---
 
-### Task 4: Reuse the Existing Provider Binder in Launcher
+### Task 4: Reuse the Existing Provider Binder
 
 **Files:**
-- Modify: `src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java`
-- Modify: `src/main/java/com/hellovoid/liquiddock/FreeformLeashRuntime.java`
-- Test: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
+- Modify: `FreeformTaskLeashResolver.java`
+- Modify: `FreeformLeashRuntime.java`
+- Test: `HomeOwnershipShadowContractTest.java`
 
-**Interfaces:**
-- Produces: `FreeformTaskLeashResolver.providerBinderForDiagnostics()` returning the already-discovered provider `IBinder` or null.
-- Produces: `FreeformLeashRuntime.providerBinderForDiagnostics()` returning that Binder without changing capture behavior.
+**Produces:**
 
-- [ ] **Step 1: Add a failing source contract**
+```java
+IBinder FreeformTaskLeashResolver.providerBinderForDiagnostics()
+static IBinder FreeformLeashRuntime.providerBinderForDiagnostics()
+```
 
-Assert that the diagnostic path does **not** instantiate another `FreeformLeashBrokerClient` and that `HomeOwnershipShadowProbe` later obtains the provider through `FreeformLeashRuntime.providerBinderForDiagnostics()`.
+- [ ] **Step 1: Add RED contract**
 
-- [ ] **Step 2: Add minimal accessors**
+Assert the future `HomeOwnershipShadowProbe` contains `FreeformLeashRuntime.providerBinderForDiagnostics()` and does not contain `new FreeformLeashBrokerClient`.
 
-In `FreeformTaskLeashResolver`:
+- [ ] **Step 2: Add resolver accessor**
 
 ```java
 IBinder providerBinderForDiagnostics() {
@@ -371,7 +444,9 @@ IBinder providerBinderForDiagnostics() {
 }
 ```
 
-In `FreeformLeashRuntime`:
+This accessor must not inspect or mutate the resolver's `breaker`.
+
+- [ ] **Step 3: Add runtime accessor**
 
 ```java
 static IBinder providerBinderForDiagnostics() {
@@ -380,13 +455,11 @@ static IBinder providerBinderForDiagnostics() {
 }
 ```
 
-Do not consult or mutate the freeform resolver breaker for this accessor. The diagnostic sees provider availability only.
+- [ ] **Step 4: Run freeform + shadow contracts**
 
-- [ ] **Step 3: Run freeform + shadow contracts**
+Expected: PASS and no second broker client.
 
-Expected: existing capture resolver behavior still passes its source contracts, and the shadow contract confirms no second broker client.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java \
@@ -397,18 +470,25 @@ git commit -m "refactor: expose provider binder to shadow diagnostics [skip ci]"
 
 ---
 
-### Task 5: Add the Asynchronous Launcher Shadow Probe
+### Task 5: Asynchronous Launcher Shadow Probe
 
 **Files:**
 - Create: `src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadowProbe.java`
-- Test: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
+- Test: `HomeOwnershipShadowContractTest.java`
 
-**Interfaces:**
-- Produces: `HomeOwnershipShadowProbe.sample(String reason, int displayId, Boolean focus, int topWindowingMode, boolean launcherHome, boolean overview, boolean allApps, boolean workstation)`.
-- Produces: `HomeOwnershipShadowProbe.setOverviewActive(boolean)` and `setAllAppsActive(boolean)` only if keeping these flags inside the probe simplifies MainHook call sites.
-- No method returns a scene decision.
+**Exact interface:**
 
-- [ ] **Step 1: Add source contracts for asynchronous-only behavior**
+```java
+static void setOverviewActive(boolean active)
+static void setAllAppsActive(boolean active)
+static void sample(String reason, int displayId, Boolean focus,
+                   int topWindowingMode, boolean launcherHome,
+                   boolean workstation)
+```
+
+The probe owns diagnostic-only `volatile boolean overviewActive` and `allAppsActive`. `sample(...)` snapshots them into its pending context.
+
+- [ ] **Step 1: Add asynchronous source contracts**
 
 Require:
 
@@ -419,6 +499,7 @@ RECHECK_DELAY_MS
 PENDING_TTL_MS
 MAX_PENDING
 [DC-SHADOW]
+FreeformLeashRuntime.providerBinderForDiagnostics()
 ```
 
 Forbid:
@@ -427,58 +508,80 @@ Forbid:
 CountDownLatch
 Future.get
 Thread.sleep
+new FreeformLeashBrokerClient
 launcherResumed =
-CaptureSceneState
 setLauncherState(
+CaptureSceneState
 FreeformBridgePolicy.CircuitBreaker
 ```
 
 - [ ] **Step 2: Implement bounded pending contexts**
 
-Use an `AtomicLong` request ID and a synchronized `LinkedHashMap<Long, PendingSample>` capped at `MAX_PENDING`. Before adding a request, evict expired entries older than `PENDING_TTL_MS`; if still full, remove the oldest entry. Pending state is diagnostic context only.
+Use:
 
-`PendingSample` stores:
-
-```text
-reason, displayId, focus, topWindowingMode, launcherHome,
-overview, allApps, workstation, requestElapsedNanos, phase
+```java
+private static final AtomicLong REQUEST_IDS = new AtomicLong();
+private static final LinkedHashMap<Long, PendingSample> PENDING = new LinkedHashMap<>();
+private static final Handler MAIN = new Handler(Looper.getMainLooper());
 ```
+
+Before insert, remove entries older than `PENDING_TTL_MS`. If still at `MAX_PENDING`, evict the oldest. Pending data is diagnostic only.
+
+`PendingSample` stores reason, display ID, focus, top mode, Launcher HOME result, snapshotted Overview/All Apps/workstation flags, request timestamp and phase (`IMMEDIATE` or `RECHECK`).
 
 - [ ] **Step 3: Implement nonblocking request submission**
 
-`sample(...)` obtains `FreeformLeashRuntime.providerBinderForDiagnostics()`. If null, log a rate-limited `UNAVAILABLE` and return immediately.
+`sample(...)` calls:
 
-Build a Parcel with production provider descriptor, request ID, display ID, callback Binder, and call:
+```java
+IBinder provider = FreeformLeashRuntime.providerBinderForDiagnostics();
+```
+
+If null, rate-limit an `UNAVAILABLE` log and return.
+
+Submit only:
 
 ```java
 provider.transact(
-    HomeOwnershipShadowProtocol.TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW,
-    data, null, IBinder.FLAG_ONEWAY);
+        HomeOwnershipShadowProtocol.TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW,
+        data, null, IBinder.FLAG_ONEWAY);
 ```
 
-Do not wait for a response.
+Never wait for a response.
 
-- [ ] **Step 4: Implement callback classification and one-shot recheck**
+- [ ] **Step 4: Implement callback and exactly one recheck**
 
-On callback:
+The callback validates descriptor/request ID/status, removes the pending sample, and computes:
 
-1. validate transaction code, descriptor, request ID, and status;
-2. remove the matching pending sample;
-3. calculate `eligible = baselineEligible(overview, allApps, workstation)`;
-4. if Launcher/SystemUI agree, log `MATCH` plus `eligible`/special-scene tag;
-5. if they disagree and phase is immediate, log `MISMATCH phase=immediate`, then schedule exactly one `mainHandler.postDelayed(..., RECHECK_DELAY_MS)` using the same Launcher decision/context but a fresh request ID and `phase=recheck`;
-6. on recheck, log `TRANSIENT_MISMATCH`, `PERSISTENT_MISMATCH`, or `UNAVAILABLE_RECHECK`;
-7. never mutate production state.
+```java
+boolean eligible = HomeOwnershipShadowPolicy.baselineEligible(
+        sample.overview, sample.allApps, sample.workstation);
+boolean match = HomeOwnershipShadowPolicy.matches(
+        sample.launcherHome, systemUiHomeVisible);
+```
 
-Suggested log core:
+Rules:
+
+- match → log `MATCH` with `eligible`, context and latency;
+- immediate mismatch → log `MISMATCH phase=immediate`, then schedule exactly one fresh request after `RECHECK_DELAY_MS` with the same Launcher decision/context and phase `RECHECK`;
+- recheck agreement → `TRANSIENT_MISMATCH`;
+- recheck disagreement → `PERSISTENT_MISMATCH`;
+- missing provider/failed recheck → `UNAVAILABLE_RECHECK`;
+- no result ever changes production state.
+
+Suggested record:
 
 ```text
 [DC-SHADOW] home-ownership result=MATCH reason=focus launcherHome=true systemUiHome=true focus=true topMode=1 overview=false allApps=false workstation=false eligible=true latencyMs=4
 ```
 
-- [ ] **Step 5: Run the shadow contract**
+- [ ] **Step 5: Run contract**
 
-Expected: PASS and no forbidden production-state writes.
+```bash
+./gradlew testDebugUnitTest --tests com.hellovoid.liquiddock.HomeOwnershipShadowContractTest
+```
+
+Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -490,59 +593,91 @@ git commit -m "feat: add asynchronous HOME ownership shadow probe [skip ci]"
 
 ---
 
-### Task 6: Instrument Existing Launcher Ownership Boundaries Without Changing Decisions
+### Task 6: Instrument Existing Launcher Decision Boundaries
 
 **Files:**
-- Modify: `src/main/java/com/hellovoid/liquiddock/MainHook.java`
-- Test: `src/test/java/com/hellovoid/liquiddock/HomeOwnershipShadowContractTest.java`
-- Test: `src/test/java/com/hellovoid/liquiddock/LauncherSceneOwnershipPolicyTest.java`
+- Modify: `MainHook.java`
+- Test: `HomeOwnershipShadowContractTest.java`
+- Keep: `LauncherSceneOwnershipPolicyTest.java`
 
-**Interfaces:**
-- Consumes existing `launcherOwnsScene` / `launcherResumed` values only after production code computes them.
-- Consumes `HomeOwnershipShadowProbe.sample(...)`.
+- [ ] **Step 1: Lock production ownership logic in the test**
 
-- [ ] **Step 1: Add a source contract proving shadow is post-decision only**
-
-Require the MainHook source to contain shadow calls at the three approved boundaries:
+The contract must continue asserting that `MainHook` contains:
 
 ```text
-seed
-focus
-fallback-pause
+foregroundTaskWindowingMode
+LauncherSceneOwnershipPolicy.launcherOwnsScene
 ```
 
-Keep existing assertions that `foregroundTaskWindowingMode` and `LauncherSceneOwnershipPolicy.launcherOwnsScene` are still present. Add assertions that no shadow return value is assigned to `launcherResumed`.
+and that `LauncherSceneOwnershipPolicyTest` remains present. Shadow is evidence only.
 
-- [ ] **Step 2: Instrument initial seed**
+- [ ] **Step 2: Add a small display-ID helper in MainHook**
 
-After existing seed code has computed `launcherResumed`, determine display ID from the Launcher Activity's public `Display.getDisplayId()` when available, then call:
+```java
+private static int launcherDisplayId(Object launcher) {
+    if (!(launcher instanceof Activity)) return android.view.Display.DEFAULT_DISPLAY;
+    try {
+        android.view.Display display = ((Activity) launcher).getDisplay();
+        return display != null ? display.getDisplayId() : android.view.Display.DEFAULT_DISPLAY;
+    } catch (Throwable ignored) {
+        return android.view.Display.DEFAULT_DISPLAY;
+    }
+}
+```
+
+This uses public `Display.getDisplayId()` and introduces no hidden task field.
+
+- [ ] **Step 3: Sample after `seedLauncherLifecycleState()` computes production state**
+
+After current code computes/logs `launcherResumed`, call:
 
 ```java
 HomeOwnershipShadowProbe.sample(
-    "seed", displayId, focused instanceof Boolean ? (Boolean) focused : null,
-    windowingMode, launcherResumed,
-    false, false, workstationMode);
+        "seed", launcherDisplayId(launcher),
+        focused instanceof Boolean ? (Boolean) focused : null,
+        windowingMode, launcherResumed, workstationMode);
 ```
 
-If Overview/All Apps context is already tracked in the probe, pass the probe's diagnostic flags rather than hard-coding; do not create production state for them.
+Do not use the return value; `sample` is `void`.
 
-- [ ] **Step 3: Instrument `onWindowFocusChanged`**
+- [ ] **Step 4: Sample after focus ownership is computed**
 
-After `launcherOwnsScene` is computed and logged, call `sample("focus", ...)` with the same `windowingMode` and final `launcherOwnsScene`. Do this before/after the existing glass callbacks only as needed for logging; never branch on the shadow result.
+Immediately after existing `launcherOwnsScene` calculation/logging:
 
-- [ ] **Step 4: Instrument fallback `onPause`**
+```java
+HomeOwnershipShadowProbe.sample(
+        "focus", launcherDisplayId(chain.getThisObject()), hasFocus,
+        windowingMode, launcherOwnsScene, workstationMode);
+```
 
-After current code computes `launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(false, windowingMode)`, call `sample("fallback-pause", ...)`.
+Then continue the existing `onLauncherFocusLost/setLauncherState/prearm` behavior unchanged.
 
-- [ ] **Step 5: Mirror special-scene tags only for diagnostics**
+- [ ] **Step 5: Sample after fallback `onPause` computes `launcherResumed`**
 
-In existing Overview event hook, call `HomeOwnershipShadowProbe.setOverviewActive(active)` after production Overview handling.
+```java
+HomeOwnershipShadowProbe.sample(
+        "fallback-pause", launcherDisplayId(chain.getThisObject()), Boolean.FALSE,
+        windowingMode, launcherResumed, workstationMode);
+```
 
-In existing All Apps enter/exit hooks, call `HomeOwnershipShadowProbe.setAllAppsActive(active)` after production All Apps handling.
+- [ ] **Step 6: Mirror special-scene tags for diagnostics only**
 
-These flags are diagnostic metadata only; they must never feed `CaptureSceneState` or production decisions.
+After existing Overview production handling:
 
-- [ ] **Step 6: Run focused regression tests**
+```java
+HomeOwnershipShadowProbe.setOverviewActive(active);
+```
+
+In existing All Apps enter/exit paths, after the production state update:
+
+```java
+HomeOwnershipShadowProbe.setAllAppsActive(true);
+HomeOwnershipShadowProbe.setAllAppsActive(false);
+```
+
+These diagnostic flags are never read by production capture code.
+
+- [ ] **Step 7: Run focused regression tests**
 
 ```bash
 ./gradlew testDebugUnitTest \
@@ -552,9 +687,9 @@ These flags are diagnostic metadata only; they must never feed `CaptureSceneStat
   --tests com.hellovoid.liquiddock.FreeformTaskLeashBridgeContractTest
 ```
 
-Expected: PASS. The ownership policy test must still prove the old policy is active.
+Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/main/java/com/hellovoid/liquiddock/MainHook.java \
@@ -564,14 +699,7 @@ git commit -m "diag: compare Launcher and SystemUI HOME ownership [skip ci]"
 
 ---
 
-### Task 7: Verify Isolation, Build, and Device Evidence Matrix
-
-**Files:**
-- Modify only if verification exposes a diagnostic bug. Do not broaden scope.
-- Evidence is captured from logs; do not commit generated logs to the formal branch.
-
-**Interfaces:**
-- Produces diagnostic evidence only; no production migration.
+### Task 7: Verification and Device Evidence
 
 - [ ] **Step 1: Run all unit tests**
 
@@ -581,7 +709,7 @@ git commit -m "diag: compare Launcher and SystemUI HOME ownership [skip ci]"
 
 Expected: PASS.
 
-- [ ] **Step 2: Build the diagnostic APK**
+- [ ] **Step 2: Build diagnostic APK**
 
 ```bash
 ./gradlew assembleDebug
@@ -589,42 +717,41 @@ Expected: PASS.
 
 Expected: successful APK generation.
 
-- [ ] **Step 3: Review branch diff against the formal checkpoint**
+- [ ] **Step 3: Prove policy files are untouched**
 
 ```bash
-git diff --stat fix/freeform-task-leash-exclusion...HEAD
 git diff fix/freeform-task-leash-exclusion...HEAD -- \
+  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java \
   src/main/java/com/hellovoid/liquiddock/CaptureSceneState.java \
   src/main/java/com/hellovoid/liquiddock/CaptureSourcePolicy.java \
   src/main/java/com/hellovoid/liquiddock/LauncherSceneOwnershipPolicy.java
 ```
 
-Expected: no production-policy edits to those three files.
+Expected: empty diff.
 
-- [ ] **Step 4: Verify forbidden write patterns**
+- [ ] **Step 4: Prove shadow contains no behavior writes or production breaker coupling**
 
 ```bash
-grep -R "launcherResumed =" src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadow* || true
-grep -R "setLauncherState\|CaptureSceneState\|FreeformBridgePolicy.CircuitBreaker" \
+grep -R "launcherResumed =\|setLauncherState\|CaptureSceneState\|FreeformBridgePolicy.CircuitBreaker" \
   src/main/java/com/hellovoid/liquiddock/HomeOwnershipShadow* \
   src/main/java/com/hellovoid/liquiddock/SystemUiHomeOwnershipShadow.java || true
 ```
 
-Expected: no matches for production-state writes or production freeform breaker coupling.
+Expected: no matches.
 
-- [ ] **Step 5: Device-test the evidence matrix**
+- [ ] **Step 5: Device evidence matrix**
 
-Exercise, with `[DC-SHADOW]` logs enabled:
+Exercise:
 
 ```text
 stable HOME
 stable fullscreen APP
-HOME + one freeform
-APP + one freeform
+HOME + freeform
+APP + freeform
 APP -> HOME
 HOME -> APP
-enter/exit Recents
-enter/exit normal All Apps
+Recents enter/exit
+normal All Apps enter/exit
 workstation boundaries
 HOME rotation
 APP rotation
@@ -633,16 +760,17 @@ SystemUI restart/reconnect
 
 Expected production behavior: identical to the already validated formal branch.
 
-Expected shadow evidence:
+Migration-quality shadow evidence requires:
 
-- stable HOME: eligible MATCH with `launcherHome=true/systemUiHome=true`;
-- stable APP: eligible MATCH with both false;
-- HOME + freeform: settled eligible MATCH true/true;
-- APP + freeform: settled eligible MATCH false/false;
-- transition disagreements may be immediate MISMATCH but must converge to `TRANSIENT_MISMATCH` within the one 160 ms recheck to qualify for migration;
-- Overview/All Apps/workstation samples are tagged ineligible/special and do not count as baseline evidence;
-- SystemUI restart produces only diagnostic UNAVAILABLE/recovery; freeform exclusion and capture behavior remain unaffected.
+- stable HOME → eligible MATCH true/true;
+- stable APP → eligible MATCH false/false;
+- settled HOME + freeform → eligible MATCH true/true;
+- settled APP + freeform → eligible MATCH false/false;
+- ordinary transition disagreements, if any, converge to `TRANSIENT_MISMATCH` on the single 160 ms recheck;
+- no `PERSISTENT_MISMATCH` at normal HOME/APP source-decision boundaries;
+- Overview/All Apps/workstation samples are `eligible=false` and are not migration evidence;
+- SystemUI restart produces diagnostic unavailable/recovery only, with no freeform/capture regression.
 
-- [ ] **Step 6: Do not merge the diagnostic branch**
+- [ ] **Step 6: Keep diagnostic branch isolated**
 
-Record the diagnostic branch HEAD and the observed mismatch summary. Keep the branch isolated. Any production cleanup based on this evidence gets a new formal design/plan and is reimplemented independently.
+Record its HEAD and evidence summary. Do not merge or cherry-pick the diagnostic branch. A successful audit starts a new formal design cycle for deleting `foregroundTaskWindowingMode()` and `LauncherSceneOwnershipPolicy`.
