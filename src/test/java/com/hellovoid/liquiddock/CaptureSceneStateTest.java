@@ -71,4 +71,31 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureScene.RECENTS, state.desired());
         assertFalse(state.matches(CaptureScene.UNKNOWN, oldRevision));
     }
+
+    @Test public void appToHomeGestureKeepsLiveAppUntilAnimationEnd() {
+        CaptureSceneState state = new CaptureSceneState();
+        state.setGestureTarget("APP", 1_000L);
+        state.setGestureTarget("HOME", 2_000L);
+
+        // SystemUI may already report HOME while Launcher is still rendering CLOSE_TO_HOME.
+        assertEquals(CaptureScene.APP, state.desired());
+        assertEquals(CaptureScene.APP, state.resolve(500_000_000L, false, true, true));
+
+        state.setGestureTarget("HOME_ANIMATION_END", 600_000_000L);
+        assertEquals(CaptureScene.HOME, state.desired());
+        assertEquals(CaptureScene.HOME, state.resolve(600_000_001L, false, true, true));
+    }
+
+    @Test public void appToHomeHoldCanBeInterruptedAndHasFailureWatchdog() {
+        CaptureSceneState state = new CaptureSceneState();
+        state.setGestureTarget("APP", 1_000L);
+        state.setGestureTarget("HOME", 2_000L);
+        state.setGestureTarget("RECENTS", 3_000L);
+        assertEquals(CaptureScene.RECENTS, state.resolve(4_000L, false, true, true));
+
+        state.setGestureTarget("APP", 10_000L);
+        state.setGestureTarget("HOME", 11_000L);
+        assertEquals(CaptureScene.APP, state.resolve(1_900_000_000L, false, true, true));
+        assertEquals(CaptureScene.HOME, state.resolve(2_100_000_000L, false, true, true));
+    }
 }
