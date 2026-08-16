@@ -47,6 +47,13 @@ public class HomeOwnershipShadowPolicyTest {
                 HomeOwnershipShadowPolicy.systemUiBaseline(false, 1, -1));
     }
 
+    @Test public void missingHomeTaskIdentityKeepsFullscreenEvidenceUnknown() {
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN,
+                HomeOwnershipShadowPolicy.systemUiBaseline(true, -1, 1494));
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN,
+                HomeOwnershipShadowPolicy.systemUiBaseline(false, -1, 1494));
+    }
+
     @Test public void combinedBaselineMatchesLauncherOnlyWhenKnown() {
         assertTrue(HomeOwnershipShadowPolicy.matchesLauncher(
                 true, HomeOwnershipShadowPolicy.SystemUiBaseline.HOME));
