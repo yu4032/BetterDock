@@ -34,27 +34,30 @@ final class FreeformCaptureLeashHook {
 
                 FreeformTaskLeashResolver.Resolution resolution = null;
                 try {
-                    int displayId = (Integer) args[2];
-                    resolution = FreeformLeashRuntime.resolveForCapture(displayId);
-                    if (!resolution.hasVisibleFreeformTasks()) {
-                        return chain.proceed(args);
-                    }
-                    if (!resolution.isSafe()) {
+                    try {
+                        int displayId = (Integer) args[2];
+                        resolution = FreeformLeashRuntime.resolveForCapture(displayId);
+                        if (resolution.hasVisibleFreeformTasks()) {
+                            if (!resolution.isSafe()) {
+                                args[3] = null;
+                                args[4] = null;
+                                args[5] = 2;
+                            } else {
+                                SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
+                                        ? (SurfaceControl[]) args[3] : null;
+                                args[3] = merge(existing, resolution.borrowedRemoteLeashes());
+                            }
+                        }
+                    } catch (Throwable gateError) {
+                        Api101Bridge.log(
+                                "[DC] freeform leash capture gate failed; wallpaper fallback",
+                                gateError);
                         args[3] = null;
                         args[4] = null;
                         args[5] = 2;
-                        return chain.proceed(args);
                     }
-
-                    SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
-                            ? (SurfaceControl[]) args[3] : null;
-                    args[3] = merge(existing, resolution.borrowedRemoteLeashes());
-                    return chain.proceed(args);
-                } catch (Throwable error) {
-                    Api101Bridge.log("[DC] freeform leash capture gate failed; wallpaper fallback", error);
-                    args[3] = null;
-                    args[4] = null;
-                    args[5] = 2;
+                    // The original LiquidDock capture method is invoked exactly once. Errors
+                    // from the capture implementation itself are not mistaken for gate errors.
                     return chain.proceed(args);
                 } finally {
                     if (resolution != null) {
