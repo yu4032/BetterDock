@@ -20,15 +20,14 @@ public class FreeformCaptureExclusionTest {
         assertEquals(Boolean.FALSE, method.invoke(null, 5, false));
     }
 
-    @Test public void fullDisplayExclusionNamesAreDeduplicatedAndOrdered() throws Exception {
+    @Test public void existingDockAndDragNamesRemainDeduplicatedAndOrdered() throws Exception {
         Class<?> helper = load("com.hellovoid.liquiddock.CaptureExclusionNames");
         Method merge = helper.getDeclaredMethod(
                 "merge", String.class, String.class, Collection.class);
         merge.setAccessible(true);
         String[] names = (String[]) merge.invoke(null, "Floating Dock", "drag-layer",
-                Arrays.asList("freeform-a", "Floating Dock", null, "", "freeform-b"));
-        assertArrayEquals(new String[]{"Floating Dock", "drag-layer", "freeform-a", "freeform-b"},
-                names);
+                Arrays.asList("Floating Dock", null, ""));
+        assertArrayEquals(new String[]{"Floating Dock", "drag-layer"}, names);
     }
 
     @Test public void homeUsesFullDisplayOnlyForLiveFreeformBackdrop() throws Exception {
@@ -41,13 +40,24 @@ public class FreeformCaptureExclusionTest {
                 sourceFor.invoke(null, CaptureScene.HOME, false, false, false));
     }
 
-    @Test public void fullDisplayCaptureConsumesVisibleFreeformLayerNames() throws Exception {
-        String source = Files.readString(Path.of(
+    @Test public void dockPreflightAndCaptureGateUseTaskLeashCapability() throws Exception {
+        String dock = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
-        assertTrue("FULL_DISPLAY exclusion must resolve visible freeform layers",
-                source.contains("freeformLayerResolver.resolveVisibleLayerNames()"));
-        assertTrue("Dock, drag and freeform exclusions must share one composer",
-                source.contains("CaptureExclusionNames.merge("));
+        String resolver = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java"));
+        String gate = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java"));
+
+        assertTrue("Dock keeps its existing fail-closed preflight boundary",
+                dock.contains("freeformLayerResolver.resolveVisibleLayerNames()"));
+        assertTrue("Preflight must depend on leash-provider readiness",
+                resolver.contains("FreeformLeashRuntime.isProviderReady()"));
+        assertTrue("Actual freeform exclusion must merge SurfaceControl task leashes",
+                gate.contains("resolution.borrowedRemoteLeashes()"));
+        assertTrue("Unsafe leash resolution must keep wallpaper fallback",
+                gate.contains("args[5] = 2"));
+        assertFalse("Freeform resolver must not invoke the retired SF debug lookup",
+                resolver.contains("resolveAllByOwnerUids"));
     }
 
     private static Class<?> load(String name) throws Exception {
