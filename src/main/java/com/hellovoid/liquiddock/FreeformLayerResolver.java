@@ -77,7 +77,11 @@ final class FreeformLayerResolver {
                     ? am.getRunningTasks(MAX_RUNNING_TASKS) : null;
             if (tasks != null) {
                 for (ActivityManager.RunningTaskInfo task : tasks) {
-                    if (task == null || task.displayId != displayId) continue;
+                    if (task == null) continue;
+                    int taskDisplayId = displayId(task);
+                    // displayId is hidden from the public SDK. If reflection fails, keep the
+                    // task in the candidate set so the final leash gate remains fail-closed.
+                    if (taskDisplayId >= 0 && taskDisplayId != displayId) continue;
                     if (FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) {
                         visible = true;
                         break;
@@ -100,6 +104,19 @@ final class FreeformLayerResolver {
         } catch (Throwable ignored) {
             return Display.DEFAULT_DISPLAY;
         }
+    }
+
+    private static int displayId(ActivityManager.RunningTaskInfo task) {
+        try {
+            java.lang.reflect.Field field = HookUtil.findField(task.getClass(), "displayId");
+            Object value = field.get(task);
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        try {
+            Object value = HookUtil.invoke(task, "getDisplayId");
+            if (value instanceof Integer) return (Integer) value;
+        } catch (Throwable ignored) {}
+        return -1;
     }
 
     private static int windowingMode(ActivityManager.RunningTaskInfo task) {
