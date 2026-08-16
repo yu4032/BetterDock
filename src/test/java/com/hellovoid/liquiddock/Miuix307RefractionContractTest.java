@@ -60,4 +60,12 @@ public class Miuix307RefractionContractTest {
         assertFalse(source.contains("setMiBackgroundBlurRadius"));
         assertFalse(source.contains("setPassWindowBlurEnabled"));
     }
+
+    @Test
+    public void shaderFailureKeepsHighlightOverlayAlive() throws IOException {
+        String source = read(MAIN.resolve("Miuix307RefractionView.java"));
+        assertTrue(source.contains("refraction shader unavailable; highlight-only"));
+        assertTrue(source.contains("if (refraction != null"));
+        assertTrue(source.contains("drawHighlight(canvas"));
+    }
 }
