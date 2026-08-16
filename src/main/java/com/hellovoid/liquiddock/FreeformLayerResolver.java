@@ -10,8 +10,8 @@ import java.util.List;
 
 /**
  * Compatibility facade for DockLiquidGlassView's existing freeform safety preflight.
- * It no longer resolves SurfaceFlinger layer names. Actual freeform exclusions are
- * SurfaceControl task leashes supplied by FreeformTaskLeashResolver at capture submit time.
+ * It never resolves or returns freeform layer names. Actual exclusions are WMShell task
+ * SurfaceControl leashes applied by FreeformCaptureLeashHook immediately before capture.
  */
 final class FreeformLayerResolver {
     private static final int MAX_RUNNING_TASKS = 32;
@@ -32,27 +32,27 @@ final class FreeformLayerResolver {
         cacheUntilNanos = 0L;
     }
 
+    /**
+     * DockLiquidGlassView interprets true + no resolved layers as "full display unsafe".
+     * Preserve that fail-closed boundary only while a visible/possible freeform task exists
+     * and the task-leash capture gate is not ready. Once the gate is ready, the final capture
+     * submission performs a fresh task scan and owns the all-or-nothing safety decision.
+     */
     synchronized boolean hasVisibleFreeformTasks() {
         refreshPresence();
-        // Enumeration failure is treated as unsafe/possibly-active rather than leaking a
-        // window into full-display capture.
-        return !cachedScanSucceeded || cachedVisibleFreeform;
+        if (!cachedScanSucceeded) return true;
+        if (!cachedVisibleFreeform) {
+            FreeformLeashRuntime.demandProvider(false);
+            return false;
+        }
+        FreeformLeashRuntime.demandProvider(true);
+        return !FreeformLeashRuntime.isProviderReady();
     }
 
     synchronized Collection<String> resolveVisibleLayerNames() {
-        refreshPresence();
-        if (cachedScanSucceeded && !cachedVisibleFreeform) {
-            FreeformLeashRuntime.demandProvider(false);
-            return Collections.emptyList();
-        }
-        FreeformLeashRuntime.demandProvider(true);
-        if (!cachedScanSucceeded || !FreeformLeashRuntime.isProviderReady()) {
-            return Collections.emptyList();
-        }
-        // DockLiquidGlassView currently uses collection emptiness only as its preflight
-        // safety signal. Reuse the already-existing Dock name so no new/freeform layer-name
-        // selector is introduced; direct task-leash exclusion happens at capture submission.
-        return Collections.singletonList("Floating Dock");
+        // Freeform exclusion is exclusively SurfaceControl-based. This method remains only
+        // because DockLiquidGlassView's existing preflight interface has not been widened.
+        return Collections.emptyList();
     }
 
     private void refreshPresence() {
