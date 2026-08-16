@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -12,15 +13,17 @@ public class AppHomeAnimationLayerExclusionContractTest {
         return Files.readString(Path.of(path));
     }
 
-    @Test public void vendorWindowElementLeashHasDedicatedAdapter() throws Exception {
+    @Test public void vendorFastLaunchActivityLeashHasDedicatedAdapter() throws Exception {
         Path path = Path.of("src/main/java/com/hellovoid/liquiddock/AppHomeAnimationLayerExclusion.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path);
-        assertTrue(source.contains("com.miui.home.recents.anim.WindowElement"));
-        assertTrue(source.contains("bindIconLayerLeashIfNeeded"));
-        assertTrue(source.contains("mFloatingIconLayerLeash"));
+        assertTrue(source.contains("com.miui.home.recents.anim.FastLaunchWindowElement"));
+        assertTrue(source.contains("startActivityFinished"));
+        assertTrue(source.contains("mHomeActivityLeash"));
         assertTrue(source.contains("currentValidSurface"));
         assertTrue(source.contains("isValid()"));
+        assertFalse(source.contains("mFloatingIconLayerLeash"));
+        assertFalse(source.contains("bindIconLayerLeashIfNeeded"));
     }
 
     @Test public void adapterIsInstalledWithAppHomeLifecycleHook() throws Exception {
@@ -34,12 +37,12 @@ public class AppHomeAnimationLayerExclusionContractTest {
         assertTrue(state.contains("return appHomeHandoffPending;"));
     }
 
-    @Test public void dockExcludesLauncherRootOnlyDuringPendingAppHomeCapture() throws Exception {
+    @Test public void dockExcludesHomeActivityForAnyPendingFullDisplayCapture() throws Exception {
         String dock = read("src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
-        assertTrue(dock.contains("requestScene == CaptureScene.APP"));
         assertTrue(dock.contains("sceneState.appHomeHandoffPending()"));
         assertTrue(dock.contains("AppHomeAnimationLayerExclusion.currentValidSurface()"));
         assertTrue(dock.contains("appendCaptureExcludeLayer"));
-        assertTrue(dock.contains("appHomeLauncherRootExcluded"));
+        assertTrue(dock.contains("appHomeActivityLeashExcluded"));
+        assertFalse(dock.contains("&& requestScene == CaptureScene.APP"));
     }
 }
