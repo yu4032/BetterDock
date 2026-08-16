@@ -174,11 +174,13 @@ final class HomeOwnershipResolver {
 
     private void scheduleConfirmation(Pending request) {
         cancelConfirmation();
-        Runnable action = () -> {
-            if (confirmationRunnable == null) return;
-            confirmationRunnable = null;
-            if (request.generation != generation) return;
-            submit(request.generation, request.displayId, request.reason, true);
+        Runnable action = new Runnable() {
+            @Override public void run() {
+                if (confirmationRunnable != this) return;
+                confirmationRunnable = null;
+                if (request.generation != generation) return;
+                submit(request.generation, request.displayId, request.reason, true);
+            }
         };
         confirmationRunnable = action;
         mainHandler.postDelayed(action, HomeOwnershipProtocol.RECHECK_DELAY_MS);
