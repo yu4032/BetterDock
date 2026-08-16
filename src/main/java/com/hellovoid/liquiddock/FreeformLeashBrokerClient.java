@@ -16,8 +16,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class FreeformLeashBrokerClient {
     enum Role { SYSTEM_UI, LAUNCHER }
 
+    interface ProviderListener {
+        void onProviderChanged(IBinder provider);
+    }
+
     private static final String TAG = "LiquidDock";
     private static final long[] RECONNECT_MS = {250L, 500L, 1000L, 2000L, 5000L};
+    private static volatile FreeformLeashBrokerClient sharedSystemUi;
+    private static volatile FreeformLeashBrokerClient sharedLauncher;
 
     private final Context context;
     private final Role role;
@@ -28,15 +34,41 @@ final class FreeformLeashBrokerClient {
     private volatile IBinder broker;
     private volatile IBinder launcherProvider;
     private volatile IBinder systemUiProvider;
+    private volatile ProviderListener providerListener;
     private volatile boolean demanded;
     private boolean binding;
     private boolean bound;
     private int reconnectAttempt;
 
+    static FreeformLeashBrokerClient shared(Context context, Role role) {
+        FreeformLeashBrokerClient current = role == Role.SYSTEM_UI
+                ? sharedSystemUi : sharedLauncher;
+        if (current != null) return current;
+        synchronized (FreeformLeashBrokerClient.class) {
+            current = role == Role.SYSTEM_UI ? sharedSystemUi : sharedLauncher;
+            if (current == null) {
+                current = new FreeformLeashBrokerClient(context, role);
+                if (role == Role.SYSTEM_UI) sharedSystemUi = current;
+                else sharedLauncher = current;
+            }
+        }
+        return current;
+    }
+
     FreeformLeashBrokerClient(Context context, Role role) {
         Context app = context.getApplicationContext();
         this.context = app != null ? app : context;
         this.role = role;
+    }
+
+    void setProviderListener(ProviderListener listener) {
+        providerListener = listener;
+        if (listener != null && role == Role.LAUNCHER) {
+            IBinder current = launcherProvider;
+            mainHandler.post(() -> {
+                if (providerListener == listener) listener.onProviderChanged(current);
+            });
+        }
     }
 
     void setDemanded(boolean value) {
@@ -57,6 +89,14 @@ final class FreeformLeashBrokerClient {
             refreshLauncherProviderAsync();
         }
         return current;
+    }
+
+    private void notifyProviderChanged(IBinder provider) {
+        ProviderListener listener = providerListener;
+        if (listener == null) return;
+        mainHandler.post(() -> {
+            if (providerListener == listener) listener.onProviderChanged(provider);
+        });
     }
 
     private void demandConnection() {
@@ -197,10 +237,11 @@ final class FreeformLeashBrokerClient {
     }
 
     private void setLauncherProvider(IBinder next) {
-        if (next == null) return;
+        if (next == null || launcherProvider == next) return;
         try {
             next.linkToDeath(() -> clearLauncherProvider(next), 0);
             launcherProvider = next;
+            notifyProviderChanged(next);
         } catch (Throwable error) {
             clearLauncherProvider(next);
         }
@@ -208,7 +249,11 @@ final class FreeformLeashBrokerClient {
 
     private void clearLauncherProvider(IBinder expected) {
         IBinder current = launcherProvider;
-        if (expected == null || current == expected) launcherProvider = null;
+        if (expected != null && current != expected) return;
+        if (current != null) {
+            launcherProvider = null;
+            notifyProviderChanged(null);
+        }
         if (demanded && broker != null) refreshLauncherProviderAsync();
     }
 
