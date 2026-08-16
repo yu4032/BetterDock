@@ -24,4 +24,39 @@ public class HomeOwnershipShadowPolicyTest {
         assertEquals(HomeOwnershipShadowPolicy.RecheckResult.PERSISTENT_MISMATCH,
                 HomeOwnershipShadowPolicy.recheckResult(true, false));
     }
+
+    @Test public void externalFullscreenTaskWinsOverStillVisibleHome() {
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.APP,
+                HomeOwnershipShadowPolicy.systemUiBaseline(true, 1, 1494));
+    }
+
+    @Test public void homeWithoutExternalFullscreenTaskIsHome() {
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.HOME,
+                HomeOwnershipShadowPolicy.systemUiBaseline(true, 1, -1));
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.HOME,
+                HomeOwnershipShadowPolicy.systemUiBaseline(true, 1, 1));
+    }
+
+    @Test public void externalFullscreenTaskIsAppEvenAfterHomeBecomesInvisible() {
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.APP,
+                HomeOwnershipShadowPolicy.systemUiBaseline(false, 1, 1494));
+    }
+
+    @Test public void missingHomeAndFullscreenEvidenceIsUnknown() {
+        assertEquals(HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN,
+                HomeOwnershipShadowPolicy.systemUiBaseline(false, 1, -1));
+    }
+
+    @Test public void combinedBaselineMatchesLauncherOnlyWhenKnown() {
+        assertTrue(HomeOwnershipShadowPolicy.matchesLauncher(
+                true, HomeOwnershipShadowPolicy.SystemUiBaseline.HOME));
+        assertTrue(HomeOwnershipShadowPolicy.matchesLauncher(
+                false, HomeOwnershipShadowPolicy.SystemUiBaseline.APP));
+        assertFalse(HomeOwnershipShadowPolicy.matchesLauncher(
+                true, HomeOwnershipShadowPolicy.SystemUiBaseline.APP));
+        assertFalse(HomeOwnershipShadowPolicy.matchesLauncher(
+                false, HomeOwnershipShadowPolicy.SystemUiBaseline.HOME));
+        assertFalse(HomeOwnershipShadowPolicy.matchesLauncher(
+                true, HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN));
+    }
 }
