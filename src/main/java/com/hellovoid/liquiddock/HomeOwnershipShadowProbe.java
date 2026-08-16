@@ -136,25 +136,40 @@ final class HomeOwnershipShadowProbe {
         }
     };
 
-    private static void handleResult(PendingSample sample, boolean systemUiHome,
+    private static void handleResult(PendingSample sample, boolean rawHomeVisible,
                                      int homeTaskId, int topFullscreenTaskId,
                                      int topFullscreenWindowingMode,
                                      long sampleElapsedNanos) {
         boolean eligible = HomeOwnershipShadowPolicy.baselineEligible(
                 sample.overview, sample.allApps, sample.workstation);
-        boolean match = HomeOwnershipShadowPolicy.matches(sample.launcherHome, systemUiHome);
+        boolean rawMatch = HomeOwnershipShadowPolicy.matches(
+                sample.launcherHome, rawHomeVisible);
+        HomeOwnershipShadowPolicy.SystemUiBaseline systemUiBaseline =
+                HomeOwnershipShadowPolicy.systemUiBaseline(
+                        rawHomeVisible, homeTaskId, topFullscreenTaskId);
+        boolean combinedMatch = HomeOwnershipShadowPolicy.matchesLauncher(
+                sample.launcherHome, systemUiBaseline);
         long latencyMs = Math.max(0L,
                 (System.nanoTime() - sample.requestElapsedNanos) / 1_000_000L);
 
         if (sample.phase == Phase.IMMEDIATE) {
-            if (match) {
-                logResult("MATCH", sample, systemUiHome, eligible, latencyMs,
+            if (systemUiBaseline == HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN) {
+                logResult("UNKNOWN", sample, rawHomeVisible, rawMatch,
+                        systemUiBaseline, combinedMatch, eligible, latencyMs,
+                        homeTaskId, topFullscreenTaskId, topFullscreenWindowingMode,
+                        sampleElapsedNanos);
+                return;
+            }
+            if (combinedMatch) {
+                logResult("MATCH", sample, rawHomeVisible, rawMatch,
+                        systemUiBaseline, true, eligible, latencyMs,
                         homeTaskId, topFullscreenTaskId, topFullscreenWindowingMode,
                         sampleElapsedNanos);
                 return;
             }
 
-            logResult("MISMATCH", sample, systemUiHome, eligible, latencyMs,
+            logResult("MISMATCH", sample, rawHomeVisible, rawMatch,
+                    systemUiBaseline, false, eligible, latencyMs,
                     homeTaskId, topFullscreenTaskId, topFullscreenWindowingMode,
                     sampleElapsedNanos);
             PendingSample recheck = sample.forRecheck();
@@ -163,11 +178,14 @@ final class HomeOwnershipShadowProbe {
             return;
         }
 
-        String result = HomeOwnershipShadowPolicy.recheckResult(
-                sample.launcherHome, systemUiHome)
-                == HomeOwnershipShadowPolicy.RecheckResult.TRANSIENT_MISMATCH
-                ? "TRANSIENT_MISMATCH" : "PERSISTENT_MISMATCH";
-        logResult(result, sample, systemUiHome, eligible, latencyMs,
+        String result;
+        if (systemUiBaseline == HomeOwnershipShadowPolicy.SystemUiBaseline.UNKNOWN) {
+            result = "UNKNOWN_RECHECK";
+        } else {
+            result = combinedMatch ? "TRANSIENT_MISMATCH" : "PERSISTENT_MISMATCH";
+        }
+        logResult(result, sample, rawHomeVisible, rawMatch,
+                systemUiBaseline, combinedMatch, eligible, latencyMs,
                 homeTaskId, topFullscreenTaskId, topFullscreenWindowingMode,
                 sampleElapsedNanos);
     }
@@ -208,14 +226,19 @@ final class HomeOwnershipShadowProbe {
     }
 
     private static void logResult(String result, PendingSample sample,
-                                  boolean systemUiHome, boolean eligible, long latencyMs,
+                                  boolean rawHomeVisible, boolean rawMatch,
+                                  HomeOwnershipShadowPolicy.SystemUiBaseline systemUiBaseline,
+                                  boolean combinedMatch, boolean eligible, long latencyMs,
                                   int homeTaskId, int topFullscreenTaskId,
                                   int topFullscreenWindowingMode, long sampleElapsedNanos) {
         Api101Bridge.log("[DC-SHADOW] home-ownership result=" + result
                 + " phase=" + (sample.phase == Phase.IMMEDIATE ? "immediate" : "recheck")
                 + " reason=" + sample.reason
                 + " launcherHome=" + sample.launcherHome
-                + " systemUiHome=" + systemUiHome
+                + " rawHomeVisible=" + rawHomeVisible
+                + " rawMatch=" + rawMatch
+                + " systemUiBaseline=" + systemUiBaseline
+                + " combinedMatch=" + combinedMatch
                 + " focus=" + sample.focus
                 + " topMode=" + sample.topWindowingMode
                 + " overview=" + sample.overview
