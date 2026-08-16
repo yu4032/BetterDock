@@ -22,7 +22,7 @@ replace_once(
 replace_once(
 '''        cacheDisplayHeight = -1;\n        cacheWallpaperId = -1;\n        if (old != null && old != capture && !old.isRecycled()) {\n''',
 '''        cacheDisplayHeight = -1;\n        cacheWallpaperId = -1;\n        cacheWallpaperTransformRevision = -1L;\n        if (old != null && old != capture && !old.isRecycled()) {\n''',
-'cacheWallpaperTransformRevision = -1L;')
+'cacheWallpaperId = -1;\n        cacheWallpaperTransformRevision = -1L;')
 
 replace_once(
 '''    @Override protected void onAttachedToWindow() {\n''',
