@@ -8,9 +8,9 @@ import java.lang.reflect.Method;
 /**
  * Captures HyperOS Launcher's real HOME Activity leash for APP -> HOME backdrop exclusion.
  *
- * Device logs show the FloatingIconView2 path leaves WindowElement.mFloatingIconLayerLeash
- * null. The same transition, however, delivers ActivityStartInfo.mHomeActivityLeash as a
- * valid SurfaceControl from FastLaunchWindowElement$getActivityOptions$1.startActivityFinished.
+ * Device logs show the vendor icon-layer leash remains null on the FloatingIconView2 path.
+ * The same transition, however, delivers ActivityStartInfo.mHomeActivityLeash as a valid
+ * SurfaceControl from FastLaunchWindowElement$getActivityOptions$1.startActivityFinished.
  * FloatingIconView2 is rendered inside the Launcher Activity hierarchy, so excluding that
  * Activity leash removes Launcher-drawn transition pixels without mutating the visible animation.
  */
