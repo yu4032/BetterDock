@@ -54,8 +54,10 @@ public class Miuix307GlassContractTest {
 
     @Test
     public void nativeMiuixDrawableIsPreserved() throws IOException {
-        String source = read("Miuix307MaterialPipeline.java") + read("MiBlurBridge.java");
+        Path hookPath = MAIN.resolve("MiuixGlassHook.java");
+        assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
+        String source = read("MiuixGlassHook.java");
         assertFalse(source.contains("setBackground(null)"));
-        assertTrue(read("Miuix307MaterialPipeline.java").contains("mBackground"));
+        assertTrue(source.contains("mBackground"));
     }
 }
