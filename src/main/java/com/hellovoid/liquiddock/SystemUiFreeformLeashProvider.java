@@ -63,7 +63,6 @@ final class SystemUiFreeformLeashProvider {
             Api101Bridge.log("[DC] SystemUI freeform leash provider hook installed");
         } catch (Throwable error) {
             BREAKER.recordInfrastructureFailure();
-            INSTALLED.set(true);
             Api101Bridge.log("[DC] SystemUI freeform leash provider disabled", error);
         }
     }
@@ -113,23 +112,19 @@ final class SystemUiFreeformLeashProvider {
             if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_LEASHES) {
                 return super.onTransact(code, data, reply, flags);
             }
+            Context context = appContext;
+            if (context == null || !callerIsLauncher(context)) return true;
             try {
                 data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
-                Context context = appContext;
-                if (context == null || !callerIsLauncher(context)) return true;
-                if (BREAKER.isDisabled()) {
-                    long requestId = data.readLong();
-                    int[] taskIds = boundedTaskIds(data.createIntArray());
-                    IBinder callback = data.readStrongBinder();
-                    sendUniform(callback, requestId, taskIds,
-                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
-                    return true;
-                }
-
                 long requestId = data.readLong();
                 int[] taskIds = boundedTaskIds(data.createIntArray());
                 IBinder callback = data.readStrongBinder();
                 if (callback == null) return true;
+                if (BREAKER.isDisabled()) {
+                    sendUniform(callback, requestId, taskIds,
+                            FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
+                    return true;
+                }
                 Executor executor = shellExecutor;
                 if (executor == null || listenerRef.get() == null) {
                     sendUniform(callback, requestId, taskIds,
@@ -215,10 +210,13 @@ final class SystemUiFreeformLeashProvider {
             for (int i = 0; i < taskIds.length; i++) {
                 out.writeInt(taskIds[i]);
                 out.writeInt(statuses[i]);
+                // Normal flags preserve WMShell's sender-side SurfaceControl wrapper.
                 out.writeTypedObject(surfaces[i], 0);
             }
             callback.transact(FreeformLeashProtocol.TRANSACTION_LEASH_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
+        } catch (RemoteException remoteGone) {
+            // Launcher/callback death is normal process lifecycle, not SystemUI infrastructure failure.
         } catch (Throwable error) {
             recordInfrastructureFailure("send freeform leash callback", error);
         } finally {
