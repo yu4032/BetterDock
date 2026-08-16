@@ -60,7 +60,7 @@ final class SystemUiFreeformLeashProvider {
             }
             Api101Bridge.log("[DC] SystemUI freeform leash provider hook installed");
         } catch (Throwable error) {
-            BREAKER.recordInfrastructureFailure();
+            BREAKER.disableForProcess();
             Api101Bridge.log("[DC] SystemUI freeform leash provider disabled", error);
         }
     }
@@ -86,8 +86,6 @@ final class SystemUiFreeformLeashProvider {
             throw new IllegalStateException("ShellTaskOrganizer executor unavailable");
         }
 
-        // Publish listener + executor + context as one immutable capability snapshot so a
-        // concurrent Binder request can never combine fields from two listener generations.
         currentState = new ListenerState(listener, (Executor) executorValue, context);
 
         FreeformLeashBrokerClient client = brokerClient;
@@ -145,7 +143,6 @@ final class SystemUiFreeformLeashProvider {
                 }
                 return true;
             } catch (SecurityException | IllegalArgumentException malformedRequest) {
-                // Caller input must never be able to trip a SystemUI process breaker.
                 return true;
             } catch (Throwable error) {
                 recordInfrastructureFailure("SystemUI provider transaction", error);
@@ -210,13 +207,12 @@ final class SystemUiFreeformLeashProvider {
             for (int i = 0; i < taskIds.length; i++) {
                 out.writeInt(taskIds[i]);
                 out.writeInt(statuses[i]);
-                // Normal flags preserve WMShell's sender-side SurfaceControl wrapper.
                 out.writeTypedObject(surfaces[i], 0);
             }
             callback.transact(FreeformLeashProtocol.TRANSACTION_LEASH_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
         } catch (RemoteException remoteGone) {
-            // Launcher/callback death is normal process lifecycle, not SystemUI infrastructure failure.
+            // Normal Launcher process death; never count against SystemUI bridge health.
         } catch (Throwable error) {
             recordInfrastructureFailure("send freeform leash callback", error);
         } finally {
