@@ -11,6 +11,7 @@ final class RecentsHapticHook {
 
     static void install(ClassLoader classLoader, Listener listener) {
         RecentsExitAnimationHook.install(classLoader);
+        AppHomeAnimationHook.install(classLoader);
         String[] implementations = {
                 "com.miui.home.launcher.common.HapticFeedbackCompatLinear",
                 "com.miui.home.launcher.common.HapticFeedbackCompatV2",
