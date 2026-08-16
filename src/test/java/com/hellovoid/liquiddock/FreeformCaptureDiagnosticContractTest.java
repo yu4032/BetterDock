@@ -37,12 +37,17 @@ public class FreeformCaptureDiagnosticContractTest {
         assertTrue(layers.contains("DiagnosticSnapshot"));
     }
 
-    @Test public void dockInvokesDiagnosticWithoutRemovingSafetyFallback() throws Exception {
+    @Test public void resolverBoundaryTriggersDiagnosticAndDockKeepsSafetyFallback()
+            throws Exception {
+        String resolver = read(
+                "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
         String dock = read(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
-        assertTrue(dock.contains("FreeformCaptureDiagnostic.runOnce("));
+        assertTrue(resolver.contains("FreeformCaptureDiagnostic.runOnce("));
+        assertTrue(resolver.contains("Throwable resolutionError"));
         assertTrue(dock.contains("actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY"));
         assertTrue(dock.contains("!fullDisplayExclusions.safe"));
         assertTrue(dock.contains("actualSource = CaptureSourcePolicy.Source.WALLPAPER"));
+        assertFalse(dock.contains("FreeformCaptureDiagnostic.runOnce("));
     }
 }
