@@ -405,6 +405,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int cacheDisplayWidth = -1;
     private int cacheDisplayHeight = -1;
     private int cacheWallpaperId = -1;
+    // A wallpaper bitmap is only valid for the exact screen-space transform generation
+    // that produced it.  HOME transitions animate wallpaper offset/zoom independently of
+    // the Dock, so geometry containment alone is not a valid cache identity.
+    private volatile long wallpaperContentRevision;
+    private volatile long cacheWallpaperContentRevision = -1L;
     // Rotation barrier: cache is only served after the CURRENT orientation produced a
     // real, non-black SF frame that passed the stale checks and was installed.  Cleared
     // on every configuration change — a stale strip from the previous orientation must
@@ -695,7 +700,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         wallpaperOffsetValid = true;
         wallpaperOffsetXBits = xb;
         wallpaperOffsetYBits = yb;
-        requestStateCapture();
+        invalidateWallpaperCaptureContent("offset");
+        requestStateCapture("wallpaper-offset");
     }
 
     void onWallpaperDisplayOffsetChanged(int x, int y) {
@@ -708,7 +714,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         wallpaperDisplayOffsetValid = true;
         wallpaperDisplayOffsetX = x;
         wallpaperDisplayOffsetY = y;
-        requestStateCapture();
+        invalidateWallpaperCaptureContent("display-offset");
+        requestStateCapture("wallpaper-display-offset");
     }
 
     void onWallpaperZoomChanged(float zoom) {
@@ -720,7 +727,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (wallpaperZoomValid && bits == wallpaperZoomBits) return;
         wallpaperZoomValid = true;
         wallpaperZoomBits = bits;
-        requestStateCapture();
+        invalidateWallpaperCaptureContent("zoom");
+        requestStateCapture("wallpaper-zoom");
     }
 
     @Override protected void onAttachedToWindow() {
@@ -896,9 +904,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         cacheDisplayWidth = -1;
         cacheDisplayHeight = -1;
         cacheWallpaperId = -1;
+        cacheWallpaperContentRevision = -1L;
         if (old != null && old != capture && !old.isRecycled()) {
             old.recycle();
         }
+    }
+
+    /** Mark cached mode-2 pixels stale without dropping the currently displayed frame.
+     * The old bitmap stays alive until a fresh capture replaces it, avoiding a visible
+     * blank/flicker during the live-to-wallpaper handoff. */
+    private void invalidateWallpaperCaptureContent(String reason) {
+        wallpaperContentRevision++;
+        wallpaperCacheReady = false;
+        cacheWallpaperContentRevision = -1L;
+        logI("wallpaper capture content invalidated reason=" + reason
+                + " revision=" + wallpaperContentRevision);
     }
 
     /**
@@ -1614,7 +1634,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (workstationMode) return;
         // Gesture events are prearm-only. Exact Overview enter/exit callbacks own the
         // confirmed live-Recents boundary; HOME/APP still replace a cancelled path immediately.
+        CaptureScene previousDesired = sceneState.desired();
         sceneState.setGestureTarget(target, System.nanoTime());
+        if ("HOME".equals(target) && previousDesired != CaptureScene.HOME) {
+            // GestureToHome arrives before the remote animation is fully settled. Never
+            // hand that transition back to a pre-APP/pre-Recents wallpaper cache.
+            invalidateWallpaperCaptureContent("scene-handoff-home");
+            lastCaptureStartNanos = 0L;
+        }
         updateDesiredScene();
         if ("APP".equals(target)) {
             invalidateInstalledBackdropForApp("gesture-target");
@@ -1679,11 +1706,17 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (!sceneState.refresh(System.nanoTime(), isRecentsVisible(),
                 launcherLifecycleKnown, launcherResumed)) return;
         sourceDirty = true;
-        // Recents→HOME: the scene just flipped — capture immediately for instant
-        // wallpaper transition, don't wait for the next observation cycle.
-        if (prev == CaptureScene.RECENTS && sceneState.desired() != CaptureScene.RECENTS) {
+        // A live APP/Recents composition and mode-2 wallpaper are different screen-space
+        // snapshots.  The first HOME request must therefore bypass any pre-transition cache.
+        if (prev != CaptureScene.HOME && sceneState.desired() == CaptureScene.HOME) {
+            invalidateWallpaperCaptureContent("scene-handoff-home");
             lastCaptureStartNanos = 0L;
             requestStateCapture("scene-settle-home");
+        } else if (prev == CaptureScene.RECENTS
+                && sceneState.desired() != CaptureScene.RECENTS) {
+            // Preserve the existing immediate Recents-exit boundary for non-HOME targets.
+            lastCaptureStartNanos = 0L;
+            requestStateCapture("scene-settle-non-recents");
         }
         logI("Liquid capture scene=" + sceneState.desired()
                 + " revision=" + sceneState.revision());
@@ -2406,6 +2439,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     return;
                 }
                 if (generation != captureGeneration || !isRequestOrientationCurrent(request)
+                        || (requestScene == CaptureScene.HOME
+                            && request.wallpaperContentRevision != wallpaperContentRevision)
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
                     retireCaptureAttempt(attempt);
@@ -2444,6 +2479,18 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             // attempt; drop it without touching the current capture state.
             if (activeCaptureAttempt != attempt) {
                 if (strip != null && !strip.isRecycled()) strip.recycle();
+                return;
+            }
+            if (requestScene == CaptureScene.HOME
+                    && request.wallpaperContentRevision != wallpaperContentRevision) {
+                if (strip != null && !strip.isRecycled()) strip.recycle();
+                mainHandler.post(() -> {
+                    if (activeCaptureAttempt != attempt) return;
+                    retireCaptureAttempt(attempt);
+                    sourceDirty = true;
+                    lastCaptureStartNanos = 0L;
+                    requestStateCapture("stale-wallpaper-revision");
+                });
                 return;
             }
             // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
@@ -2523,6 +2570,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 }
                 if (generation != captureGeneration
                         || !sceneState.matches(requestScene, requestSceneRevision)
+                        || (requestScene == CaptureScene.HOME
+                            && request.wallpaperContentRevision != wallpaperContentRevision)
                         || !isRequestOrientationCurrent(request)
                         || !isCaptureAllowed()) {
                     if (frame != null) frame.recycle();
@@ -2659,7 +2708,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         return new CaptureRequest(display.getDisplayId(), display.getRotation(),
                 tmpDisplaySize.x, tmpDisplaySize.y,
                 tmpDisplaySize.x >= tmpDisplaySize.y ? 1 : 0,
-                stripRect, tileRect, dockRect);
+                stripRect, tileRect, dockRect, wallpaperContentRevision);
     }
 
     /** Serve the mode-2 crop from the cached wallpaper strip when it is still valid
@@ -2675,6 +2724,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // While rotation stabilization is active the wallpaper content is still
         // transitional; the cache would serve a black-edge intermediate frame.
         if (rotationStabilizeUntilNanos != 0) return false;
+        if (req.wallpaperContentRevision != cacheWallpaperContentRevision) return false;
         // Orientation identity comes from the request that produced the strip, not from
         // the display at callback time (the display may already have rotated when the
         // SF callback arrives — the old code could tag a landscape strip as portrait).
@@ -2706,6 +2756,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }
             if (generation != captureGeneration
                     || !sceneState.matches(requestScene, requestSceneRevision)
+                    || req.wallpaperContentRevision != wallpaperContentRevision
                     || !isRequestOrientationCurrent(req)
                     || !isCaptureAllowed()) {
                 if (!frameUsesCacheBitmap) frame.recycle();
@@ -2728,6 +2779,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private void cacheWallpaperStrip(Bitmap strip, CaptureRequest req) {
         try {
             if (strip == null || strip.isRecycled()) return;
+            if (req.wallpaperContentRevision != wallpaperContentRevision) return;
             Bitmap copy = strip.copy(Bitmap.Config.ARGB_8888, false);
             if (copy == null) return;
             Bitmap old = wallpaperStripCache;
@@ -2738,6 +2790,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             cacheRotation = req.rotation;
             cacheDisplayWidth = req.displayWidth;
             cacheDisplayHeight = req.displayHeight;
+            cacheWallpaperContentRevision = req.wallpaperContentRevision;
             try {
                 cacheWallpaperId = WallpaperManager.getInstance(getContext())
                         .getWallpaperId(WallpaperManager.FLAG_SYSTEM);
@@ -3062,9 +3115,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         final Rect stripRect;
         final Rect tileRect;
         final Rect dockRect;
+        final long wallpaperContentRevision;
 
         CaptureRequest(int displayId, int rotation, int displayWidth, int displayHeight,
-                       int orientationIndex, Rect stripRect, Rect tileRect, Rect dockRect) {
+                       int orientationIndex, Rect stripRect, Rect tileRect, Rect dockRect,
+                       long wallpaperContentRevision) {
             this.displayId = displayId;
             this.rotation = rotation;
             this.displayWidth = displayWidth;
@@ -3073,6 +3128,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             this.stripRect = new Rect(stripRect);
             this.tileRect = new Rect(tileRect);
             this.dockRect = new Rect(dockRect);
+            this.wallpaperContentRevision = wallpaperContentRevision;
         }
     }
 
