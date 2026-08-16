@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 .github/apply_app_home_icon_exclusion.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -21,7 +22,7 @@ jobs:
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-api101-debug
+          name: LiquidDock-app-home-icon-exclusion
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
