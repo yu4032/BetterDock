@@ -2,7 +2,7 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/app-home-animation-handoff ]
+    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/app-home-animation-handoff, fix/app-home-animation-icon-exclusion ]
   workflow_dispatch:
 
 jobs:
