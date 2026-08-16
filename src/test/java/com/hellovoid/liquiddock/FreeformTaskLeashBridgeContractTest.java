@@ -72,6 +72,21 @@ public class FreeformTaskLeashBridgeContractTest {
         assertFalse(source.contains("writeIntArray(taskIds)"));
     }
 
+    @Test public void runningTaskDisplayIdUsesReflectionInsteadOfHiddenSdkField() throws Exception {
+        String layerResolver = source(
+                "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
+        String leashResolver = source(
+                "src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java");
+        for (String resolver : new String[]{layerResolver, leashResolver}) {
+            assertFalse("hidden RunningTaskInfo.displayId must not be a compile-time dependency",
+                    resolver.contains("task.displayId"));
+            assertTrue("display filtering must go through the reflective helper",
+                    resolver.contains("displayId(task)"));
+            assertTrue("reflective helper must look up the hidden displayId member by name",
+                    resolver.contains("\"displayId\""));
+        }
+    }
+
     @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
         String source = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java");
