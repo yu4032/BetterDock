@@ -89,4 +89,13 @@ public class HomeOwnershipShadowContractTest {
         assertTrue(mainHook.contains("foregroundTaskWindowingMode"));
         assertTrue(mainHook.contains("LauncherSceneOwnershipPolicy.launcherOwnsScene"));
     }
+
+    @Test public void r8KeepsOnlyMembersReflectedByTheDiagnosticAdapter() throws Exception {
+        String keep = Files.readString(Path.of("src/main/keepRules/liquiddock.keep"));
+        assertTrue(keep.contains("boolean launcherResumed;"));
+        assertTrue(keep.contains("boolean launcherLifecycleKnown;"));
+        assertTrue(keep.contains("DockLiquidGlassView liquidGlassView;"));
+        assertTrue(keep.contains("int foregroundTaskWindowingMode(java.lang.Object);"));
+        assertTrue(keep.contains("boolean overviewActive;"));
+    }
 }
