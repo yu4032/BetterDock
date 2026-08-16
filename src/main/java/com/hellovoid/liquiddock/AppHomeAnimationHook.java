@@ -8,6 +8,7 @@ final class AppHomeAnimationHook {
     private AppHomeAnimationHook() {}
 
     static void install(ClassLoader classLoader) {
+        AppHomeAnimationLayerExclusion.install(classLoader);
         try {
             // Device Launcher logs identify this as the user animator listener attached to
             // RectFParams(animType=CLOSE_TO_HOME, taskFromApp=true, needFinishOnAnimEnd=true).
