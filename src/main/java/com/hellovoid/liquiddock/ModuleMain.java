@@ -19,8 +19,20 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         String packageName = param.getPackageName();
         if (FreeformLeashProtocol.SYSTEM_UI_PACKAGE.equals(packageName)) {
+            ClassLoader classLoader = param.getClassLoader();
             try {
-                SystemUiFreeformLeashProvider.install(param.getClassLoader());
+                SystemUiTaskExecutorSource.install(classLoader);
+            } catch (Throwable error) {
+                Api101Bridge.log("[DC] SystemUI task executor source unavailable", error);
+            }
+            try {
+                SystemUiHomeOwnershipSource.install(classLoader);
+            } catch (Throwable error) {
+                // HOME ownership fails closed independently from freeform exclusion.
+                Api101Bridge.log("[DC] SystemUI HOME ownership source unavailable", error);
+            }
+            try {
+                SystemUiFreeformLeashProvider.install(classLoader);
             } catch (Throwable error) {
                 // SystemUI stability is more important than freeform exclusion. Never let
                 // a LiquidDock capability failure escape into the host process.
