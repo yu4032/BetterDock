@@ -22,7 +22,13 @@ final class RecentsHapticHook {
                 Method method = HookUtil.findMethodExact(type, "performEnterRecent",
                         new Class<?>[]{View.class});
                 HookUtil.hook(method, chain -> {
-                    listener.onEnterRecents();
+                    // 307 real-glass uses the vendor pass-window blur underneath Prismal.
+                    // Never pre-arm DockLiquidGlassView's legacy Recents capture state here;
+                    // the specialized pipeline was already installed and MainHook returned
+                    // before installing HOME/APP/RECENTS lifecycle hooks.
+                    if (!Miuix307MaterialPipeline.isInstalled()) {
+                        listener.onEnterRecents();
+                    }
                     return chain.proceed(chain.getArgs().toArray(new Object[0]));
                 });
                 hooked++;
