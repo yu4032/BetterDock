@@ -20,6 +20,7 @@ final class CaptureSceneState {
     long revision() { return revision; }
     boolean workstationSuspended() { return workstationSuspended; }
     boolean allAppsActive() { return allAppsActive; }
+    boolean appHomeHandoffPending() { return appHomeHandoffPending; }
     boolean matches(CaptureScene scene, long expectedRevision) {
         return desired == scene && revision == expectedRevision;
     }
