@@ -2,7 +2,7 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence ]
+    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, diagnostic/home-mode1-coordinate-space ]
   workflow_dispatch:
 
 jobs:
@@ -17,11 +17,14 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Apply HOME mode-1 coordinate diagnostic
+        if: github.ref == 'refs/heads/diagnostic/home-mode1-coordinate-space'
+        run: python .github/apply_home_mode1_diagnostic.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-api101-debug
+          name: LiquidDock-home-mode1-diagnostic
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
