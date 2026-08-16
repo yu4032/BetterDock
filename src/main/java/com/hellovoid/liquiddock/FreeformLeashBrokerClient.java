@@ -30,6 +30,7 @@ final class FreeformLeashBrokerClient {
     private volatile IBinder systemUiProvider;
     private volatile boolean demanded;
     private boolean binding;
+    private boolean bound;
     private int reconnectAttempt;
 
     FreeformLeashBrokerClient(Context context, Role role) {
@@ -61,20 +62,27 @@ final class FreeformLeashBrokerClient {
     private void demandConnection() {
         mainHandler.post(() -> {
             synchronized (lock) {
-                if (!demanded || broker != null || binding) return;
+                if (!demanded || broker != null || binding || bound) return;
                 binding = true;
+                // Reserve the binding before calling into Context so duplicate delayed
+                // reconnect callbacks cannot increment the bind count.
+                bound = true;
             }
             try {
                 Intent intent = new Intent();
                 intent.setClassName(FreeformLeashProtocol.MODULE_PACKAGE,
                         FreeformLeashProtocol.BROKER_SERVICE);
                 boolean ok = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
-                if (!ok) {
-                    synchronized (lock) { binding = false; }
-                    scheduleReconnect();
+                synchronized (lock) {
+                    binding = false;
+                    if (!ok) bound = false;
                 }
+                if (!ok) scheduleReconnect();
             } catch (Throwable error) {
-                synchronized (lock) { binding = false; }
+                synchronized (lock) {
+                    binding = false;
+                    bound = false;
+                }
                 Log.w(TAG, "freeform broker bind unavailable", error);
                 scheduleReconnect();
             }
@@ -85,45 +93,51 @@ final class FreeformLeashBrokerClient {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
             synchronized (lock) {
                 binding = false;
+                bound = true;
                 broker = service;
                 reconnectAttempt = 0;
-            }
-            try {
-                service.linkToDeath(() -> {
-                    clearBroker(service);
-                    scheduleReconnect();
-                }, 0);
-            } catch (Throwable error) {
-                clearBroker(service);
-                scheduleReconnect();
-                return;
             }
             if (role == Role.SYSTEM_UI) registerSystemUiProviderAsync();
             else refreshLauncherProviderAsync();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
-            clearBroker(null);
-            scheduleReconnect();
+            // BIND_AUTO_CREATE remains active. Android will reconnect this same binding;
+            // issuing bindService() again here would leak an additional bind count.
+            clearBrokerKeepBinding();
         }
 
         @Override public void onBindingDied(ComponentName name) {
-            clearBroker(null);
-            scheduleReconnect();
+            clearBrokerKeepBinding();
+            unbindAndReconnect();
         }
 
         @Override public void onNullBinding(ComponentName name) {
-            clearBroker(null);
-            scheduleReconnect();
+            clearBrokerKeepBinding();
+            unbindAndReconnect();
         }
     };
 
-    private void clearBroker(IBinder expected) {
-        synchronized (lock) {
-            if (expected == null || broker == expected) broker = null;
-            binding = false;
-        }
+    private void clearBrokerKeepBinding() {
+        broker = null;
         if (role == Role.LAUNCHER) clearLauncherProvider(null);
+    }
+
+    private void unbindAndReconnect() {
+        mainHandler.post(() -> {
+            boolean shouldUnbind;
+            synchronized (lock) {
+                shouldUnbind = bound;
+                bound = false;
+                binding = false;
+                broker = null;
+            }
+            if (shouldUnbind) {
+                try { context.unbindService(connection); } catch (Throwable ignored) {}
+            }
+            if (role == Role.LAUNCHER) clearLauncherProvider(null);
+            scheduleReconnect();
+        });
     }
 
     private void scheduleReconnect() {
@@ -151,8 +165,7 @@ final class FreeformLeashBrokerClient {
                 reply.readException();
             } catch (Throwable error) {
                 Log.w(TAG, "freeform provider registration unavailable", error);
-                clearBroker(b);
-                scheduleReconnect();
+                unbindAndReconnect();
             } finally {
                 reply.recycle();
                 data.recycle();
@@ -175,8 +188,7 @@ final class FreeformLeashBrokerClient {
                 if (next != null) setLauncherProvider(next);
             } catch (Throwable error) {
                 Log.w(TAG, "freeform provider discovery unavailable", error);
-                clearBroker(b);
-                scheduleReconnect();
+                unbindAndReconnect();
             } finally {
                 reply.recycle();
                 data.recycle();
@@ -197,7 +209,7 @@ final class FreeformLeashBrokerClient {
     private void clearLauncherProvider(IBinder expected) {
         IBinder current = launcherProvider;
         if (expected == null || current == expected) launcherProvider = null;
-        if (demanded) refreshLauncherProviderAsync();
+        if (demanded && broker != null) refreshLauncherProviderAsync();
     }
 
     private void runIo(Runnable action) {
