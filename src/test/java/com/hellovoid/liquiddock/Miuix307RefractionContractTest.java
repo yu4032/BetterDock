@@ -59,6 +59,7 @@ public class Miuix307RefractionContractTest {
         assertTrue(source.contains("Floating Dock"));
         assertTrue(source.contains("highlight"));
         assertTrue(source.contains("refractedAlpha"));
+        assertTrue(source.contains("return half4(refracted*alpha,alpha)"));
         assertFalse(source.contains("setMiBackgroundBlurRadius"));
         assertFalse(source.contains("setPassWindowBlurEnabled"));
     }
