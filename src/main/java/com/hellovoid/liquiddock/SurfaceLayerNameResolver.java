@@ -37,6 +37,12 @@ final class SurfaceLayerNameResolver {
         final boolean methodAvailable;
         final boolean invocationSucceeded;
         final int totalLayerCount;
+        final String layerClassName;
+        final boolean ownerUidAccessorAvailable;
+        final boolean nameAccessorAvailable;
+        final int ownerUidReadableCount;
+        final int nameReadableCount;
+        final String layerMetadataError;
         final List<DiagnosticLayer> candidates;
         final boolean candidatesTruncated;
         final String failureStage;
@@ -44,13 +50,22 @@ final class SurfaceLayerNameResolver {
 
         DiagnosticSnapshot(boolean serviceAvailable, boolean composerAvailable,
                            boolean methodAvailable, boolean invocationSucceeded,
-                           int totalLayerCount, List<DiagnosticLayer> candidates,
+                           int totalLayerCount, String layerClassName,
+                           boolean ownerUidAccessorAvailable, boolean nameAccessorAvailable,
+                           int ownerUidReadableCount, int nameReadableCount,
+                           String layerMetadataError, List<DiagnosticLayer> candidates,
                            boolean candidatesTruncated, String failureStage, String error) {
             this.serviceAvailable = serviceAvailable;
             this.composerAvailable = composerAvailable;
             this.methodAvailable = methodAvailable;
             this.invocationSucceeded = invocationSucceeded;
             this.totalLayerCount = totalLayerCount;
+            this.layerClassName = layerClassName;
+            this.ownerUidAccessorAvailable = ownerUidAccessorAvailable;
+            this.nameAccessorAvailable = nameAccessorAvailable;
+            this.ownerUidReadableCount = ownerUidReadableCount;
+            this.nameReadableCount = nameReadableCount;
+            this.layerMetadataError = layerMetadataError;
             this.candidates = candidates;
             this.candidatesTruncated = candidatesTruncated;
             this.failureStage = failureStage;
@@ -94,6 +109,12 @@ final class SurfaceLayerNameResolver {
         boolean methodAvailable = false;
         boolean invocationSucceeded = false;
         int totalLayerCount = 0;
+        String layerClassName = null;
+        boolean ownerUidAccessorAvailable = false;
+        boolean nameAccessorAvailable = false;
+        int ownerUidReadableCount = 0;
+        int nameReadableCount = 0;
+        String layerMetadataError = null;
         ArrayList<DiagnosticLayer> candidates = new ArrayList<>();
         boolean truncated = false;
         String stage = "service_lookup";
@@ -106,8 +127,10 @@ final class SurfaceLayerNameResolver {
             serviceAvailable = binder != null;
             if (binder == null) {
                 return diagnosticSnapshot(serviceAvailable, composerAvailable, methodAvailable,
-                        invocationSucceeded, totalLayerCount, candidates, false,
-                        stage, "SurfaceFlinger service returned null");
+                        invocationSucceeded, totalLayerCount, layerClassName,
+                        ownerUidAccessorAvailable, nameAccessorAvailable,
+                        ownerUidReadableCount, nameReadableCount, layerMetadataError,
+                        candidates, false, stage, "SurfaceFlinger service returned null");
             }
 
             stage = "as_interface";
@@ -118,8 +141,11 @@ final class SurfaceLayerNameResolver {
             composerAvailable = composer != null;
             if (composer == null) {
                 return diagnosticSnapshot(serviceAvailable, composerAvailable, methodAvailable,
-                        invocationSucceeded, totalLayerCount, candidates, false,
-                        stage, "ISurfaceComposer.Stub.asInterface returned null");
+                        invocationSucceeded, totalLayerCount, layerClassName,
+                        ownerUidAccessorAvailable, nameAccessorAvailable,
+                        ownerUidReadableCount, nameReadableCount, layerMetadataError,
+                        candidates, false, stage,
+                        "ISurfaceComposer.Stub.asInterface returned null");
             }
 
             stage = "method_lookup";
@@ -132,7 +158,10 @@ final class SurfaceLayerNameResolver {
             Object result = getLayerDebugInfo.invoke(composer);
             if (!(result instanceof List)) {
                 return diagnosticSnapshot(serviceAvailable, composerAvailable, methodAvailable,
-                        false, 0, candidates, false, stage,
+                        false, 0, layerClassName,
+                        ownerUidAccessorAvailable, nameAccessorAvailable,
+                        ownerUidReadableCount, nameReadableCount, layerMetadataError,
+                        candidates, false, stage,
                         "getLayerDebugInfo returned "
                                 + (result == null ? "null" : result.getClass().getName()));
             }
@@ -153,8 +182,44 @@ final class SurfaceLayerNameResolver {
 
             for (Object layer : layers) {
                 if (layer == null) continue;
-                Integer uid = ownerUid(layer);
-                String name = layerName(layer);
+                if (layerClassName == null) layerClassName = layer.getClass().getName();
+
+                Integer uid = null;
+                String name = null;
+                try {
+                    java.lang.reflect.Method method = layer.getClass().getMethod("getOwnerUid");
+                    ownerUidAccessorAvailable = true;
+                    Object value = method.invoke(layer);
+                    if (value instanceof Integer) {
+                        uid = (Integer) value;
+                        ownerUidReadableCount++;
+                    } else if (layerMetadataError == null) {
+                        layerMetadataError = "getOwnerUid returned "
+                                + (value == null ? "null" : value.getClass().getName());
+                    }
+                } catch (Throwable error) {
+                    if (layerMetadataError == null) {
+                        layerMetadataError = "getOwnerUid=" + diagnosticError(error);
+                    }
+                }
+
+                try {
+                    java.lang.reflect.Method method = layer.getClass().getMethod("getName");
+                    nameAccessorAvailable = true;
+                    Object value = method.invoke(layer);
+                    if (value instanceof String) {
+                        name = (String) value;
+                        nameReadableCount++;
+                    } else if (layerMetadataError == null) {
+                        layerMetadataError = "getName returned "
+                                + (value == null ? "null" : value.getClass().getName());
+                    }
+                } catch (Throwable error) {
+                    if (layerMetadataError == null) {
+                        layerMetadataError = "getName=" + diagnosticError(error);
+                    }
+                }
+
                 String lower = name != null ? name.toLowerCase(Locale.ROOT) : "";
                 boolean targetUidMatch = uid != null && wanted.contains(uid);
                 boolean keywordMatch = containsAny(lower, normalizedKeywords);
@@ -178,12 +243,16 @@ final class SurfaceLayerNameResolver {
             }
 
             return diagnosticSnapshot(serviceAvailable, composerAvailable, methodAvailable,
-                    invocationSucceeded, totalLayerCount, candidates, truncated,
-                    null, null);
+                    invocationSucceeded, totalLayerCount, layerClassName,
+                    ownerUidAccessorAvailable, nameAccessorAvailable,
+                    ownerUidReadableCount, nameReadableCount, layerMetadataError,
+                    candidates, truncated, null, null);
         } catch (Throwable error) {
             return diagnosticSnapshot(serviceAvailable, composerAvailable, methodAvailable,
-                    invocationSucceeded, totalLayerCount, candidates, truncated,
-                    stage, diagnosticError(error));
+                    invocationSucceeded, totalLayerCount, layerClassName,
+                    ownerUidAccessorAvailable, nameAccessorAvailable,
+                    ownerUidReadableCount, nameReadableCount, layerMetadataError,
+                    candidates, truncated, stage, diagnosticError(error));
         }
     }
 
@@ -220,7 +289,9 @@ final class SurfaceLayerNameResolver {
 
     private static DiagnosticSnapshot diagnosticSnapshot(
             boolean serviceAvailable, boolean composerAvailable, boolean methodAvailable,
-            boolean invocationSucceeded, int totalLayerCount,
+            boolean invocationSucceeded, int totalLayerCount, String layerClassName,
+            boolean ownerUidAccessorAvailable, boolean nameAccessorAvailable,
+            int ownerUidReadableCount, int nameReadableCount, String layerMetadataError,
             List<DiagnosticLayer> candidates, boolean candidatesTruncated,
             String failureStage, String error) {
         return new DiagnosticSnapshot(
@@ -229,6 +300,12 @@ final class SurfaceLayerNameResolver {
                 methodAvailable,
                 invocationSucceeded,
                 totalLayerCount,
+                layerClassName,
+                ownerUidAccessorAvailable,
+                nameAccessorAvailable,
+                ownerUidReadableCount,
+                nameReadableCount,
+                layerMetadataError,
                 Collections.unmodifiableList(new ArrayList<>(candidates)),
                 candidatesTruncated,
                 failureStage,
