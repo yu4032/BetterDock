@@ -23,7 +23,7 @@ final class HomeOwnershipProtocol {
     static final int BASELINE_APP = 2;
 
     static final int MAX_PENDING = 16;
-    static final long REQUEST_TIMEOUT_MS = 1500L;
+    static final long REQUEST_TIMEOUT_MS = 250L;
     static final long RECHECK_DELAY_MS = 160L;
 
     private HomeOwnershipProtocol() {}
