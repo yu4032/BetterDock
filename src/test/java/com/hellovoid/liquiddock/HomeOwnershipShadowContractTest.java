@@ -63,6 +63,17 @@ public class HomeOwnershipShadowContractTest {
         assertTrue(adapter.contains("freeform-exit"));
     }
 
+    @Test public void launcherProbeUsesCombinedSystemUiBaselineInsteadOfRawHomeVisibility() throws Exception {
+        String source = source("HomeOwnershipShadowProbe.java");
+        assertTrue(source.contains("HomeOwnershipShadowPolicy.systemUiBaseline("));
+        assertTrue(source.contains("HomeOwnershipShadowPolicy.matchesLauncher("));
+        assertTrue(source.contains("SystemUiBaseline.UNKNOWN"));
+        assertTrue(source.contains("rawHomeVisible="));
+        assertTrue(source.contains("rawMatch="));
+        assertTrue(source.contains("systemUiBaseline="));
+        assertTrue(source.contains("combinedMatch="));
+    }
+
     @Test public void launcherProbeIsAsyncAndCannotWriteProductionSceneState() throws Exception {
         String source = source("HomeOwnershipShadowProbe.java");
         assertTrue(source.contains("IBinder.FLAG_ONEWAY"));
