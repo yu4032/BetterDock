@@ -31,6 +31,17 @@ final class CaptureSceneState {
     }
 
     void setGestureTarget(String target, long nowNanos) {
+        if ("APP_HOME_ANIMATION_START".equals(target)) {
+            // GestureModeApp$8 is constructed for the real CLOSE_TO_HOME animation. This
+            // closes the ordering race where Recents prearm/Goal HOME was observed first.
+            appHomeHandoffPending = true;
+            appHomeHandoffUntilNanos = nowNanos + APP_HOME_HANDOFF_WATCHDOG_NANOS;
+            gestureTarget = null;
+            gestureTargetUntilNanos = 0L;
+            setDesired(CaptureScene.APP);
+            return;
+        }
+
         if ("HOME_ANIMATION_END".equals(target)) {
             // A cancelled/replaced path may still deliver the old animator's end callback.
             // Only a completion paired with a pending APP -> HOME target may commit HOME.
@@ -49,7 +60,8 @@ final class CaptureSceneState {
         // GestureToHome is a destination announcement. When it comes from APP, HyperOS still
         // runs CLOSE_TO_HOME for roughly another spring cycle. Keep composed APP capture until
         // the exact animation-end callback instead of switching to wallpaper at this boundary.
-        if (next == CaptureScene.HOME && desired == CaptureScene.APP) {
+        if (next == CaptureScene.HOME
+                && (appHomeHandoffPending || desired == CaptureScene.APP)) {
             appHomeHandoffPending = true;
             appHomeHandoffUntilNanos = nowNanos + APP_HOME_HANDOFF_WATCHDOG_NANOS;
             gestureTarget = null;
