@@ -40,6 +40,14 @@ public class HomeOwnershipShadowContractTest {
         assertFalse(source.contains("FreeformBridgePolicy.CircuitBreaker"));
     }
 
+    @Test public void diagnosticsReuseTheAlreadyDiscoveredProviderBinder() throws Exception {
+        String resolver = source("FreeformTaskLeashResolver.java");
+        String runtime = source("FreeformLeashRuntime.java");
+        assertTrue(resolver.contains("providerBinderForDiagnostics()"));
+        assertTrue(runtime.contains("providerBinderForDiagnostics()"));
+        assertFalse(runtime.contains("new FreeformLeashBrokerClient"));
+    }
+
     @Test public void launcherProbeIsAsyncAndCannotWriteProductionSceneState() throws Exception {
         String source = source("HomeOwnershipShadowProbe.java");
         assertTrue(source.contains("IBinder.FLAG_ONEWAY"));
