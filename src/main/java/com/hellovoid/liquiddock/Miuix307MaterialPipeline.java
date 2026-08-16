@@ -62,24 +62,26 @@ final class Miuix307MaterialPipeline {
                         return result;
                     });
 
-            // setupViews can run before the vendor has its final dimensions.  These callbacks
+            // setupViews can run before the vendor has its final dimensions. These callbacks
             // are the authoritative geometry boundary on 307 and keep the glass host aligned.
+            // Reuse the install-time config here: this path can be called every animation
+            // frame, while DockLiquidGlassView already owns the slow appearance hot-reload.
             HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
+                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
+                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                     new Class<?>[]{float.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), LiquidDockConfig.load());
+                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
                         return result;
                     });
 
@@ -95,7 +97,7 @@ final class Miuix307MaterialPipeline {
     private static View resolveBackground(Object hotSeats) {
         if (hotSeats == null) return null;
 
-        // New Launcher exposes the active dock background through this accessor.  Prefer it
+        // New Launcher exposes the active dock background through this accessor. Prefer it
         // over old field names so the 307 path never accidentally binds mBlurBackground2.
         try {
             Object value = HookUtil.invoke(hotSeats, "getHotSeatsBackground");
