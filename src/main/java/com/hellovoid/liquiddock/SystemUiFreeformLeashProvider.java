@@ -115,10 +115,14 @@ final class SystemUiFreeformLeashProvider {
     private static final Binder PROVIDER_BINDER = new Binder() {
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                 throws RemoteException {
+            ListenerState state = currentState;
+            if (SystemUiHomeOwnershipShadow.handles(code)) {
+                Context authContext = state != null ? state.context : null;
+                return SystemUiHomeOwnershipShadow.handleTransaction(code, data, authContext);
+            }
             if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT) {
                 return super.onTransact(code, data, reply, flags);
             }
-            ListenerState state = currentState;
             if (state == null || !callerIsLauncher(state.context)) return true;
             try {
                 data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
