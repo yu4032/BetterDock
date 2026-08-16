@@ -2,11 +2,12 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence ]
+    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, diagnostic/home-mode2-nocache-ab ]
   workflow_dispatch:
 
 jobs:
   build:
+    if: github.ref != 'refs/heads/diagnostic/home-mode2-nocache-ab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,3 +27,66 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       # Keep the same Gradle verification gates on main and active API101 development branches.
+
+  home-mode2-cache-ab:
+    if: github.ref == 'refs/heads/diagnostic/home-mode2-nocache-ab'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cached-A, nocache-B]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+
+      - name: Prepare B-only RED contract
+        if: matrix.variant == 'nocache-B'
+        run: python .github/apply_home_mode2_nocache.py prepare-test
+
+      - name: Verify B contract is RED before production mutation
+        if: matrix.variant == 'nocache-B'
+        shell: bash
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest --tests '*HomeMode2NoCacheDiagnosticContractTest' --stacktrace
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected RED diagnostic contract to fail before no-cache mutation.' >&2
+            exit 1
+          fi
+          echo 'RED confirmed: diagnostic contract fails before no-cache mutation.'
+
+      - name: Apply B-only no-cache mutation
+        if: matrix.variant == 'nocache-B'
+        run: python .github/apply_home_mode2_nocache.py apply
+
+      - name: Run full unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Name diagnostic APK
+        shell: bash
+        run: |
+          apk=$(find build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)
+          test -n "$apk"
+          if [ "${{ matrix.variant }}" = "cached-A" ]; then
+            cp "$apk" LiquidDock-home-mode2-cached-A.apk
+          else
+            cp "$apk" LiquidDock-home-mode2-nocache-B.apk
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-home-mode2-${{ matrix.variant }}
+          path: LiquidDock-home-mode2-*.apk
+          if-no-files-found: error
+          retention-days: 7
