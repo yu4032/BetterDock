@@ -11,7 +11,7 @@ import java.nio.file.Paths;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Source-level contract for promoting the device-validated 307 demo into a real backend. */
+/** Source-level contract for the device-validated 307 real-glass backend. */
 public class Miuix307FormalPipelineContractTest {
     private static String read(String path) throws IOException {
         Path source = Paths.get(path);
@@ -43,10 +43,13 @@ public class Miuix307FormalPipelineContractTest {
     }
 
     @Test
-    public void formalPipelineHasNoCaptureStateDependencies() throws IOException {
+    public void formalCoordinatorHasNoLegacySceneStateDependencies() throws IOException {
         String pipeline = read("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
+        String glassHook = read("src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java");
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
-        assertTrue(pipeline.contains("refreshBlur"));
+        assertTrue(pipeline.contains("MiuixGlassHook.install"));
+        assertTrue(glassHook.contains("LiquidGlassFactory.create"));
+        assertTrue(glassHook.contains("applyPassWindowBlur"));
         assertFalse(pipeline.contains("LiveScreenCapture"));
         assertFalse(pipeline.contains("CaptureSceneState"));
         assertFalse(pipeline.contains("CaptureSource"));
