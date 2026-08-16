@@ -91,7 +91,7 @@ final class Miuix307RefractionView extends View {
     private final Paint refractionPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF highlightBounds = new RectF();
-    private final RuntimeShader refraction = new RuntimeShader(REFRACTION_SHADER);
+    private final RuntimeShader refraction;
     private final int[] tmpLocation = new int[2];
     private final Point tmpDisplaySize = new Point();
 
@@ -157,16 +157,27 @@ final class Miuix307RefractionView extends View {
         lensRefractionPx = Math.max(0f, config.glass.lensRefraction * unit);
         chromaticAberration = Math.max(0f, config.glass.chromatic);
 
-        LiveScreenCapture capture = null;
+        RuntimeShader shader = null;
         try {
-            capture = new LiveScreenCapture(requestedCaptureScale, launcherClassLoader);
+            shader = new RuntimeShader(REFRACTION_SHADER);
         } catch (Throwable error) {
             captureDisabled = true;
-            MainHook.log("[DC] MiuiX 307 refraction capture unavailable; highlight-only: " + error);
+            MainHook.log("[DC] MiuiX 307 refraction shader unavailable; highlight-only: " + error);
+        }
+        refraction = shader;
+
+        LiveScreenCapture capture = null;
+        if (refraction != null) {
+            try {
+                capture = new LiveScreenCapture(requestedCaptureScale, launcherClassLoader);
+            } catch (Throwable error) {
+                captureDisabled = true;
+                MainHook.log("[DC] MiuiX 307 refraction capture unavailable; highlight-only: " + error);
+            }
         }
         screenCapture = capture;
 
-        refractionPaint.setShader(refraction);
+        if (refraction != null) refractionPaint.setShader(refraction);
         highlightPaint.setStyle(Paint.Style.STROKE);
         setClickable(false);
         setFocusable(false);
@@ -227,7 +238,7 @@ final class Miuix307RefractionView extends View {
     }
 
     private boolean canCapture() {
-        return attached && !captureDisabled && screenCapture != null && isShown()
+        return attached && refraction != null && !captureDisabled && screenCapture != null && isShown()
                 && getWidth() > 1 && getHeight() > 1 && getDisplay() != null;
     }
 
@@ -278,7 +289,7 @@ final class Miuix307RefractionView extends View {
 
     private void installFrame(int requestGeneration, Rect requestCrop,
                               float requestInsetX, float requestInsetY, Bitmap bitmap) {
-        if (requestGeneration != generation || !attached) {
+        if (requestGeneration != generation || !attached || refraction == null) {
             recycle(bitmap);
             return;
         }
@@ -331,7 +342,7 @@ final class Miuix307RefractionView extends View {
         int h = getHeight();
         if (w <= 1 || h <= 1) return;
 
-        if (shaderReady && currentShader != null) {
+        if (refraction != null && shaderReady && currentShader != null) {
             float safeRadius = Math.max(0f, Math.min(radius, Math.min(w, h) * .5f));
             refraction.setFloatUniform("size", w, h);
             refraction.setFloatUniform("captureInset", captureInsetX, captureInsetY);
