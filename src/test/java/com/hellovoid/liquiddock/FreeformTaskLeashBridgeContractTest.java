@@ -90,13 +90,16 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(resolver.contains("releaseAll(surfaces)"));
     }
 
-    @Test public void temporaryDockPreflightStillReflectsHiddenDisplayIdUntilRemoval() throws Exception {
+    @Test public void temporaryDockPreflightHasNoTaskStateAuthority() throws Exception {
         String layerResolver = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
-        assertFalse("hidden RunningTaskInfo.displayId must not be a compile-time dependency",
-                layerResolver.contains("task.displayId"));
-        assertTrue(layerResolver.contains("displayId(task)"));
-        assertTrue(layerResolver.contains("\"displayId\""));
+        assertFalse(layerResolver.contains("ActivityManager"));
+        assertFalse(layerResolver.contains("RunningTaskInfo"));
+        assertFalse(layerResolver.contains("getRunningTasks"));
+        assertFalse(layerResolver.contains("getWindowingMode"));
+        assertFalse(layerResolver.contains("displayId(task)"));
+        assertFalse(layerResolver.contains("isVisible(task)"));
+        assertTrue(layerResolver.contains("FreeformLeashRuntime.install"));
     }
 
     @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
