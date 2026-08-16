@@ -53,6 +53,16 @@ public class HomeOwnershipShadowContractTest {
         assertFalse(runtime.contains("new FreeformLeashBrokerClient"));
     }
 
+    @Test public void freeformPresenceOnlyTriggersShadowOnSafeChanges() throws Exception {
+        String resolver = source("FreeformTaskLeashResolver.java");
+        String adapter = source("HomeOwnershipShadowLauncherHook.java");
+        assertTrue(resolver.contains("result.isSafe()"));
+        assertTrue(resolver.contains("HomeOwnershipShadowLauncherHook.onFreeformPresence"));
+        assertTrue(adapter.contains("lastFreeformPresence"));
+        assertTrue(adapter.contains("freeform-enter"));
+        assertTrue(adapter.contains("freeform-exit"));
+    }
+
     @Test public void launcherProbeIsAsyncAndCannotWriteProductionSceneState() throws Exception {
         String source = source("HomeOwnershipShadowProbe.java");
         assertTrue(source.contains("IBinder.FLAG_ONEWAY"));
