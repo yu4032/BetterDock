@@ -34,8 +34,20 @@ final class FreeformTaskLeashResolver {
                 this.context, FreeformLeashBrokerClient.Role.LAUNCHER);
     }
 
+    void setProviderDemanded(boolean demanded) {
+        brokerClient.setDemanded(demanded);
+    }
+
+    boolean isProviderReady() {
+        return !breaker.isDisabled() && brokerClient.launcherProvider() != null;
+    }
+
     Resolution resolveVisibleLeashes(int displayId) {
         int[] taskIds = visibleFreeformTaskIds(displayId);
+        if (taskIds == null) {
+            brokerClient.setDemanded(true);
+            return Resolution.unavailable(true);
+        }
         if (taskIds.length == 0) {
             brokerClient.setDemanded(false);
             return Resolution.noFreeform();
@@ -84,21 +96,22 @@ final class FreeformTaskLeashResolver {
         return state.takeResolution();
     }
 
+    /** Returns null when task enumeration itself failed; callers must fail closed. */
     private int[] visibleFreeformTaskIds(int displayId) {
         List<Integer> ids = new ArrayList<>();
         try {
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-            List<ActivityManager.RunningTaskInfo> tasks = am != null
-                    ? am.getRunningTasks(MAX_RUNNING_TASKS) : null;
-            if (tasks != null) {
-                for (ActivityManager.RunningTaskInfo task : tasks) {
-                    if (task == null || task.displayId != displayId) continue;
-                    if (!FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) continue;
-                    ids.add(task.taskId);
-                }
+            if (am == null) return null;
+            List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(MAX_RUNNING_TASKS);
+            if (tasks == null) return null;
+            for (ActivityManager.RunningTaskInfo task : tasks) {
+                if (task == null || task.displayId != displayId) continue;
+                if (!FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) continue;
+                ids.add(task.taskId);
             }
         } catch (Throwable error) {
             Log.w(TAG, "visible freeform task scan failed", error);
+            return null;
         }
         int[] raw = new int[ids.size()];
         for (int i = 0; i < ids.size(); i++) raw[i] = ids.get(i);
@@ -253,7 +266,6 @@ final class FreeformTaskLeashResolver {
                 }
                 surfaces[i] = surface;
             }
-            // Any extra/mismatched task ID makes the response unsafe.
             if (!received.isEmpty()) {
                 for (SurfaceControl surface : received.values()) release(surface);
                 for (SurfaceControl surface : surfaces) release(surface);
