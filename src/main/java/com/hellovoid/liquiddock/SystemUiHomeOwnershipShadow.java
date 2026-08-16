@@ -20,7 +20,6 @@ final class SystemUiHomeOwnershipShadow {
     private static volatile ShadowState currentState;
 
     private static Field contextField;
-    private static Field executorField;
     private static Method isHomeVisibleMethod;
     private static Method getHomeTaskMethod;
     private static Method getTopFullscreenTaskInfoMethod;
@@ -34,7 +33,6 @@ final class SystemUiHomeOwnershipShadow {
                     "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository",
                     false, classLoader);
             contextField = HookUtil.findField(repositoryClass, "mContext");
-            executorField = HookUtil.findField(repositoryClass, "mBgExecutor");
             isHomeVisibleMethod = HookUtil.findMethodBestMatch(
                     repositoryClass, "isHomeVisible", new Object[0], false);
             getHomeTaskMethod = HookUtil.findMethodBestMatch(
@@ -67,9 +65,11 @@ final class SystemUiHomeOwnershipShadow {
         return code == HomeOwnershipShadowProtocol.TRANSACTION_REQUEST_HOME_OWNERSHIP_SHADOW;
     }
 
-    static boolean handleTransaction(int code, Parcel data, Context authContext) {
+    static boolean handleTransaction(int code, Parcel data) {
         if (!handles(code)) return false;
-        if (authContext == null || !callerIsLauncher(authContext)) return true;
+
+        ShadowState state = currentState;
+        if (state == null || !callerIsLauncher(state.context)) return true;
 
         long requestId = -1L;
         IBinder callback = null;
@@ -79,7 +79,7 @@ final class SystemUiHomeOwnershipShadow {
             int displayId = data.readInt();
             callback = data.readStrongBinder();
             if (callback == null) return true;
-            if (displayId < 0 || disabledForProcess) {
+            if (displayId < 0 || disabledForProcess || state.repository.get() == null) {
                 sendResult(callback, requestId,
                         disabledForProcess
                                 ? HomeOwnershipShadowProtocol.STATUS_STRUCTURE_FAILURE
@@ -88,8 +88,9 @@ final class SystemUiHomeOwnershipShadow {
                 return true;
             }
 
-            ShadowState state = currentState;
-            if (state == null || state.repository.get() == null) {
+            final Executor executor =
+                    SystemUiFreeformLeashProvider.taskStateExecutorForDiagnostics();
+            if (executor == null) {
                 sendResult(callback, requestId, HomeOwnershipShadowProtocol.STATUS_UNAVAILABLE,
                         false, -1, -1, -1, System.nanoTime());
                 return true;
@@ -98,7 +99,7 @@ final class SystemUiHomeOwnershipShadow {
             final long id = requestId;
             final int targetDisplayId = displayId;
             final IBinder resultCallback = callback;
-            state.executor.execute(() -> sampleOnRepositoryExecutor(
+            executor.execute(() -> sampleOnTaskStateExecutor(
                     state, resultCallback, id, targetDisplayId));
             return true;
         } catch (SecurityException | IllegalArgumentException malformed) {
@@ -124,18 +125,13 @@ final class SystemUiHomeOwnershipShadow {
         Context application = context.getApplicationContext();
         if (application != null) context = application;
 
-        Object executorValue = executorField.get(repository);
-        if (!(executorValue instanceof Executor)) {
-            throw new IllegalStateException("MultiTaskingTaskRepository#mBgExecutor is not Executor");
-        }
-
-        currentState = new ShadowState(repository, context, (Executor) executorValue,
+        currentState = new ShadowState(repository, context,
                 isHomeVisibleMethod, getHomeTaskMethod, getTopFullscreenTaskInfoMethod);
         Api101Bridge.log("[DC-SHADOW] HOME ownership repository observed");
     }
 
-    private static void sampleOnRepositoryExecutor(ShadowState state, IBinder callback,
-                                                   long requestId, int displayId) {
+    private static void sampleOnTaskStateExecutor(ShadowState state, IBinder callback,
+                                                  long requestId, int displayId) {
         try {
             Object repository = state.repository.get();
             if (repository == null) {
@@ -239,17 +235,15 @@ final class SystemUiHomeOwnershipShadow {
     private static final class ShadowState {
         final WeakReference<Object> repository;
         final Context context;
-        final Executor executor;
         final Method isHomeVisibleMethod;
         final Method getHomeTaskMethod;
         final Method getTopFullscreenTaskInfoMethod;
 
-        ShadowState(Object repository, Context context, Executor executor,
+        ShadowState(Object repository, Context context,
                     Method isHomeVisibleMethod, Method getHomeTaskMethod,
                     Method getTopFullscreenTaskInfoMethod) {
             this.repository = new WeakReference<>(repository);
             this.context = context;
-            this.executor = executor;
             this.isHomeVisibleMethod = isHomeVisibleMethod;
             this.getHomeTaskMethod = getHomeTaskMethod;
             this.getTopFullscreenTaskInfoMethod = getTopFullscreenTaskInfoMethod;
