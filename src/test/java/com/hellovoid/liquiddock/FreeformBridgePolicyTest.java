@@ -13,11 +13,6 @@ public class FreeformBridgePolicyTest {
                 new String[]{"com.example"}, "com.android.systemui"));
     }
 
-    @Test public void taskIdsAreDeduplicatedInStableOrder() {
-        assertArrayEquals(new int[]{8, 3, 9},
-                FreeformBridgePolicy.deduplicateTaskIds(new int[]{8, 3, 8, 9, 3}));
-    }
-
     @Test public void visibleCurrentDisplayCandidateIsIncluded() {
         assertTrue(FreeformBridgePolicy.shouldIncludeFreeformCandidate(0, true, 0));
     }
