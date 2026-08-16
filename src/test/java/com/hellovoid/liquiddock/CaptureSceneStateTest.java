@@ -11,6 +11,19 @@ public class CaptureSceneStateTest {
         assertEquals(CaptureScene.RECENTS, state.resolve(1L, true, true, true));
     }
 
+    @Test public void allAppsOwnsSceneEvenWhenLauncherOverlayStealsFocus() throws Exception {
+        CaptureSceneState state = new CaptureSceneState();
+        state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
+                .invoke(state, true);
+        assertEquals("ALL_APPS", state.desired().name());
+        // Official Laptop overlay enables focus when All Apps opens, so Launcher main focus
+        // may be false. That must not demote the scene to external APP.
+        assertEquals("ALL_APPS", state.resolve(1L, false, true, false).name());
+        state.getClass().getDeclaredMethod("setAllAppsActive", boolean.class)
+                .invoke(state, false);
+        assertEquals(CaptureScene.APP, state.resolve(2L, false, true, false));
+    }
+
     @Test public void gestureTargetExpiresAndCanBeInterrupted() {
         CaptureSceneState state = new CaptureSceneState();
         state.setGestureTarget("RECENTS", 1_000L);
@@ -46,7 +59,6 @@ public class CaptureSceneStateTest {
         assertFalse(state.workstationSuspended());
         state.setWorkstationSuspended(true, 1L, false, false, false);
         assertTrue(state.workstationSuspended());
-        // The suspend flag no longer forces a scene — resolve is scene-driven only.
         assertEquals(CaptureScene.APP, state.resolve(2L, false, false, false));
         state.setWorkstationSuspended(false, 3L, false, false, false);
         assertFalse(state.workstationSuspended());

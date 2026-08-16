@@ -120,10 +120,12 @@ private fun optionSummary(key: String): String = when (key) {
     "dock_divider_alpha" -> "分隔竖线不透明度"
     "workstation_dock_width_offset" -> "相对系统工作台 Dock 的原始长度增减；不会改变位置或普通 Dock"
     "workstation_grid_horizontal_offset" -> "单独调整工作台 8 列图标区域的左右距离，不继承普通桌面偏移"
-    "workstation_all_apps_landscape_horizontal_offset" -> "仅调整工作台所有应用横屏图标区的水平位置"
-    "workstation_all_apps_landscape_vertical_offset" -> "仅调整工作台所有应用横屏图标区的垂直位置"
-    "workstation_all_apps_portrait_horizontal_offset" -> "仅调整工作台所有应用竖屏图标区的水平位置"
-    "workstation_all_apps_portrait_vertical_offset" -> "仅调整工作台所有应用竖屏图标区的垂直位置"
+    "workstation_all_apps_landscape_horizontal_offset" -> "直接设置工作台所有应用横屏图标区左右间距；不叠加系统默认位置"
+    "workstation_all_apps_landscape_top_spacing" -> "直接设置工作台所有应用横屏图标区上间距；不叠加系统默认位置"
+    "workstation_all_apps_landscape_bottom_spacing" -> "直接设置工作台所有应用横屏图标区下间距；不叠加系统默认位置"
+    "workstation_all_apps_portrait_horizontal_offset" -> "直接设置工作台所有应用竖屏图标区左右间距；不叠加系统默认位置"
+    "workstation_all_apps_portrait_top_spacing" -> "直接设置工作台所有应用竖屏图标区上间距；不叠加系统默认位置"
+    "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
     "liquid_blur" -> "液态玻璃对捕获背景的模糊范围"
@@ -216,10 +218,12 @@ private fun ensureDividerDefaults(prefs: SharedPreferences) {
 private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.DOCK_WIDTH_OFFSET, "工作台 Dock 长度偏移"),
     IntSpec(ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET, "工作台桌面水平偏移"),
-    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET, "所有应用 · 横屏水平偏移"),
-    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_VERTICAL_OFFSET, "所有应用 · 横屏垂直偏移"),
-    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET, "所有应用 · 竖屏水平偏移"),
-    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_VERTICAL_OFFSET, "所有应用 · 竖屏垂直偏移"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET, "所有应用 · 横屏水平间距"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_TOP_SPACING, "所有应用 · 横屏上间距"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_LANDSCAPE_BOTTOM_SPACING, "所有应用 · 横屏下间距"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET, "所有应用 · 竖屏水平间距"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_TOP_SPACING, "所有应用 · 竖屏上间距"),
+    IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_BOTTOM_SPACING, "所有应用 · 竖屏下间距"),
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台图标上间距"),
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台图标下间距"),
 )

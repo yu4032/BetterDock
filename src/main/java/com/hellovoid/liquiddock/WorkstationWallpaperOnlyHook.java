@@ -1,249 +1,210 @@
 package com.hellovoid.liquiddock;
 
-import android.content.res.Configuration;
 import android.view.View;
-import android.view.ViewGroup;
+import android.view.ViewParent;
+
+import java.lang.ref.WeakReference;
 
 /**
- * Keeps HyperOS workstation/laptop Dock backgrounds on the launcher's native
- * wallpaper-snapshot path.
+ * Workstation compatibility bridge.
  *
- * The stock workstation implementation already captures the wallpaper bitmap,
- * crops it to the Dock and blurs that crop. Transitions to All Apps / Recents
- * can switch the Dock back to the live-blur path, which may feed the Floating
- * Dock itself back into the blur. This hook pins those transitions to snapshot
- * mode and prevents LiquidDock's normal mode-1 Recents capture from being
- * activated in workstation mode.
+ * DockLiquidGlassView owns workstation scene/capture state.  This hook only fixes
+ * legacy MainHook visibility decisions around that state machine:
+ *
+ * - keep the LiquidDock host attached/visible in workstation mode;
+ * - keep the native Dock background visible while a fresh workstation frame is pending;
+ * - reveal the glass only after installCapture() installs a valid frame;
+ * - after a workstation suspension, fall back to native background and restart the
+ *   workstation HOME glass when the workstation itself is still active.
+ *
+ * No vendor Mingou snapshot/live-blur policy is forced here.  All Apps/Recents source
+ * selection and capture cadence remain owned by DockLiquidGlassView.
  */
 final class WorkstationWallpaperOnlyHook {
-    private static final String HOTSEATS =
-            "com.miui.home.launcher.hotseats.HotSeats";
-    private static final String ALL_APPS_CONTROLLER =
-            "com.miui.home.launcher.laptop.AllAppsController";
-    private static final String LAUNCHER =
-            "com.miui.home.launcher.Launcher";
-    private static final String CELL_LAYOUT =
-            "com.miui.home.launcher.CellLayout";
+    private static WeakReference<DockLiquidGlassView> lastGlass =
+            new WeakReference<>(null);
 
     private WorkstationWallpaperOnlyHook() {}
 
     static void install(ClassLoader classLoader) {
-        installLiquidRecentsBlock();
-        installNativeSnapshotLock(classLoader);
-        installAllAppsSnapshotTriggers(classLoader);
-        installRecentsSnapshotTrigger(classLoader);
-        installAllAppsVerticalOffset(classLoader);
+        installModeBridge();
+        installBurstHandoff();
+        installSuspendFallback();
+        installCaptureReveal();
+        installMainSyncHostGuard();
+        MainHook.log("[DC] workstation LiquidGlass ownership bridge installed");
     }
 
-    /**
-     * MainHook still receives Launcher.showOrHideRecent() for compatibility with
-     * normal mode. In workstation mode do not let that callback unsuspend the
-     * LiquidDock glass and enter mode-1 full-display capture.
-     */
-    private static void installLiquidRecentsBlock() {
+    private static void installModeBridge() {
         try {
             HookUtil.hookMethod(DockLiquidGlassView.class,
-                    "onWorkstationRecentsButton", new Class<?>[0], chain -> {
-                        if (MainHook.isWorkstationMode()) {
-                            MainHook.log("[DC] workstation Recents: Liquid mode-1 blocked; "
-                                    + "using wallpaper snapshot");
-                            return null;
+                    "setWorkstationMode", new Class<?>[]{boolean.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        Object target = chain.getThisObject();
+                        if (!(target instanceof DockLiquidGlassView)) return result;
+
+                        DockLiquidGlassView glass = (DockLiquidGlassView) target;
+                        lastGlass = new WeakReference<>(glass);
+                        boolean enabled = Boolean.TRUE.equals(chain.getArgs().get(0));
+                        if (!enabled || !MainHook.isWorkstationMode()) {
+                            ensureHostVisible(glass);
+                            return result;
                         }
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+
+                        // MainHook.setupViews() may still set the parent host GONE after this
+                        // method returns.  Post the activation so it runs after that legacy
+                        // setup stack has completed.
+                        glass.post(() -> activateWorkstationHomeGlass(glass, "workstation-mode"));
+                        return result;
                     });
         } catch (Throwable error) {
-            MainHook.log("[DC] workstation Liquid Recents block unavailable: " + error);
+            MainHook.log("[DC] workstation mode LiquidGlass bridge unavailable: " + error);
         }
     }
 
-    /** Pin the stock Mingou workstation Dock to its static wallpaper snapshot. */
-    private static void installNativeSnapshotLock(ClassLoader classLoader) {
+    private static void installBurstHandoff() {
         try {
-            Class<?> hotSeats = Class.forName(HOTSEATS, false, classLoader);
-            boolean anyInstalled = false;
-
-            try {
-                HookUtil.hookMethod(hotSeats, "setMingouStaticDockLiveBlurVisible",
-                        new Class<?>[]{boolean.class}, chain -> {
-                            Object[] args = chain.getArgs().toArray(new Object[0]);
-                            if (MainHook.isWorkstationMode() && Boolean.TRUE.equals(args[0])) {
-                                args[0] = false;
-                                MainHook.log("[DC] workstation live Dock blur blocked");
-                            }
-                            return chain.proceed(args);
-                        });
-                anyInstalled = true;
-            } catch (Throwable t) {
-                MainHook.log("[DC] workstation live-blur lock unavailable: " + t.getMessage());
-            }
-
-            try {
-                HookUtil.hookMethod(hotSeats, "setMingouStaticDockSnapshotMode",
-                        new Class<?>[]{boolean.class}, chain -> {
-                            Object[] args = chain.getArgs().toArray(new Object[0]);
-                            if (MainHook.isWorkstationMode()) args[0] = true;
-                            return chain.proceed(args);
-                        });
-                anyInstalled = true;
-            } catch (Throwable t) {
-                MainHook.log("[DC] workstation snapshot-mode lock unavailable: " + t.getMessage());
-            }
-
-            if (anyInstalled) {
-                MainHook.log("[DC] workstation native wallpaper-snapshot lock installed");
-            }
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation native snapshot lock class unavailable: " + error.getMessage());
-        }
-    }
-
-    /** Refresh the wallpaper-only snapshot at both All Apps transition boundaries. */
-    private static void installAllAppsSnapshotTriggers(ClassLoader classLoader) {
-        try {
-            Class<?> controller = Class.forName(ALL_APPS_CONTROLLER, false, classLoader);
-            hookAllAppsTransition(controller, "showAllApps");
-            hookAllAppsTransition(controller, "showWindow");
-            MainHook.log("[DC] workstation All Apps wallpaper triggers installed");
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation All Apps snapshot triggers unavailable: " + error);
-        }
-    }
-
-    private static void hookAllAppsTransition(Class<?> controller, String methodName) {
-        try {
-            HookUtil.hookMethod(controller, methodName, new Class<?>[]{boolean.class}, chain -> {
-                Object launcher = HookUtil.invoke(chain.getThisObject(), "getLauncher");
-                if (MainHook.isWorkstationMode())
-                    forceWallpaperSnapshot(launcher, methodName + "-before");
-                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                if (MainHook.isWorkstationMode()) {
-                    forceWallpaperSnapshot(launcher, methodName + "-after");
-                    postSnapshotRefresh(launcher, methodName + "-settled");
-                }
-                return result;
-            });
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation " + methodName + " snapshot hook unavailable: " + error);
-        }
-    }
-
-    /** Recents also stays on the same wallpaper-only native snapshot. */
-    private static void installRecentsSnapshotTrigger(ClassLoader classLoader) {
-        try {
-            Class<?> launcher = Class.forName(LAUNCHER, false, classLoader);
-            HookUtil.hookMethod(launcher, "showOrHideRecent", new Class<?>[0], chain -> {
-                Object thisLauncher = chain.getThisObject();
-                if (MainHook.isWorkstationMode())
-                    forceWallpaperSnapshot(thisLauncher, "recents-before");
-                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                if (MainHook.isWorkstationMode()) {
-                    forceWallpaperSnapshot(thisLauncher, "recents-after");
-                    postSnapshotRefresh(thisLauncher, "recents-settled");
-                }
-                return result;
-            });
-            MainHook.log("[DC] workstation Recents wallpaper trigger installed");
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation Recents snapshot trigger unavailable: " + error);
-        }
-    }
-
-    private static void postSnapshotRefresh(Object launcher, String reason) {
-        if (!(launcher instanceof View)) {
-            Object hotSeats = HookUtil.invoke(launcher, "getHotSeats");
-            if (hotSeats instanceof View) {
-                ((View) hotSeats).postDelayed(
-                        () -> forceWallpaperSnapshot(launcher, reason), 180L);
-            }
-            return;
-        }
-        ((View) launcher).postDelayed(() -> forceWallpaperSnapshot(launcher, reason), 180L);
-    }
-
-    /**
-     * Calls only the stock workstation snapshot API. Internally HyperOS obtains the
-     * wallpaper bitmap directly, crops it to the Dock and blurs that crop, so no Dock
-     * SurfaceFlinger layer can be sampled into the result.
-     */
-    private static void forceWallpaperSnapshot(Object launcher, String reason) {
-        if (!MainHook.isWorkstationMode() || launcher == null) return;
-        try {
-            Object hotSeats = HookUtil.invoke(launcher, "getHotSeats");
-            if (hotSeats == null) return;
-            HookUtil.invoke(hotSeats, "requestMingouStaticDockBlurSnapshotIfNeeded", false);
-            HookUtil.invoke(hotSeats, "showMingouStaticDockBlurOverlayIfPossible");
-            HookUtil.invoke(hotSeats, "setMingouStaticDockSnapshotMode", true);
-            HookUtil.invoke(hotSeats, "setMingouStaticDockLiveBlurVisible", false);
-            MainHook.log("[DC] workstation wallpaper snapshot forced reason=" + reason);
-        } catch (Throwable error) {
-            MainHook.log("[DC] workstation wallpaper snapshot force FAILED: " + error);
-        }
-    }
-
-    /**
-     * HomeGridHook already applies as much of the requested All Apps Y translation as
-     * the native GridConfig's top/bottom slack permits. Laptop All Apps commonly has
-     * baseBottom == 0, which clamps every positive offset to zero. After native layout,
-     * add only the missing delta (requested - already-applied), so positive Y works and
-     * negative Y is not doubled. The original onLayout runs first every time, so this
-     * correction never accumulates.
-     */
-    private static void installAllAppsVerticalOffset(ClassLoader classLoader) {
-        try {
-            Class<?> cellLayout = Class.forName(CELL_LAYOUT, false, classLoader);
-            HookUtil.hookMethod(cellLayout, "onLayout",
-                    new Class<?>[]{boolean.class, int.class, int.class, int.class, int.class},
-                    chain -> {
+            HookUtil.hookMethod(DockLiquidGlassView.class,
+                    "startWorkstationCaptureBurst", new Class<?>[]{String.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (!MainHook.isWorkstationMode()) return result;
                         Object target = chain.getThisObject();
-                        if (!(target instanceof ViewGroup)
-                                || !Boolean.TRUE.equals(HookUtil.invoke(target, "isInLapTopAllApps")))
-                            return result;
+                        if (MainHook.isWorkstationMode() && target instanceof DockLiquidGlassView) {
+                            DockLiquidGlassView glass = (DockLiquidGlassView) target;
+                            lastGlass = new WeakReference<>(glass);
+                            String reason = String.valueOf(chain.getArgs().get(0));
 
-                        ViewGroup layout = (ViewGroup) target;
-                        LiquidDockConfig fullConfig = LiquidDockConfig.load();
-                        LiquidDockConfig.Workstation config = fullConfig.workstation;
-                        boolean portrait = layout.getResources().getConfiguration().orientation
-                                == Configuration.ORIENTATION_PORTRAIT;
-                        float configured = portrait
-                                ? config.allAppsPortraitVerticalOffset
-                                : config.allAppsLandscapeVerticalOffset;
-                        float scale = fullConfig.grid.dp
-                                ? layout.getResources().getDisplayMetrics().density : 1f;
-                        int requested = Math.round(configured * scale);
-                        if (requested == 0) return result;
-
-                        int alreadyApplied = 0;
-                        try {
-                            Object gridConfig = HookUtil.getField(target, "mGridConfig");
-                            int baseTop = Math.max(0,
-                                    ((Number) HookUtil.invoke(gridConfig, "getTop")).intValue());
-                            int baseCell = ((Number) HookUtil.invoke(
-                                    gridConfig, "getCellSize")).intValue();
-                            int countY = HookUtil.getIntField(target, "mVCells");
-                            int baseHeightGap = Math.max(0,
-                                    HookUtil.getIntField(target, "mHeightGap"));
-                            int baseBottom = Math.max(0, layout.getHeight()
-                                    - (baseTop + baseCell * countY
-                                    + baseHeightGap * Math.max(0, countY - 1)));
-                            alreadyApplied = Math.max(-baseTop,
-                                    Math.min(baseBottom, requested));
-                        } catch (Throwable ignored) {
-                        }
-
-                        int correction = requested - alreadyApplied;
-                        if (correction == 0) return result;
-                        for (int i = 0; i < layout.getChildCount(); i++) {
-                            View child = layout.getChildAt(i);
-                            child.layout(child.getLeft(), child.getTop() + correction,
-                                    child.getRight(), child.getBottom() + correction);
+                            // The burst itself may hide geometrySource before SurfaceFlinger
+                            // has returned a new frame.  Keep the native background visible and
+                            // the glass child hidden for that gap. installCapture() will swap
+                            // them atomically once a valid frame exists.
+                            ensureHostVisible(glass);
+                            glass.setVisibility(View.INVISIBLE);
+                            revealNativeBackdrop(glass, "burst-wait-" + reason);
                         }
                         return result;
                     });
-            MainHook.log("[DC] workstation All Apps vertical-offset guard installed");
         } catch (Throwable error) {
-            MainHook.log("[DC] workstation All Apps vertical-offset guard unavailable: " + error);
+            MainHook.log("[DC] workstation burst handoff unavailable: " + error);
+        }
+    }
+
+    private static void installSuspendFallback() {
+        try {
+            HookUtil.hookMethod(DockLiquidGlassView.class,
+                    "suspendWorkstationGlass", new Class<?>[]{String.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        Object target = chain.getThisObject();
+                        if (!MainHook.isWorkstationMode() || !(target instanceof DockLiquidGlassView)) {
+                            return result;
+                        }
+
+                        DockLiquidGlassView glass = (DockLiquidGlassView) target;
+                        lastGlass = new WeakReference<>(glass);
+                        String reason = String.valueOf(chain.getArgs().get(0));
+                        ensureHostVisible(glass);
+                        glass.setVisibility(View.INVISIBLE);
+                        revealNativeBackdrop(glass, reason);
+
+                        // Initial workstation entry is immediately handled by the
+                        // setWorkstationMode() bridge above.  Later suspensions mean an
+                        // All Apps/Recents transition has settled back to HOME; restart HOME
+                        // glass on the next main-loop turn instead of leaving workstation
+                        // permanently wallpaper-only.
+                        if (!"workstation-enter".equals(reason)) {
+                            glass.post(() -> activateWorkstationHomeGlass(
+                                    glass, "resume-home-after-" + reason));
+                        }
+                        return result;
+                    });
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation suspend fallback unavailable: " + error);
+        }
+    }
+
+    private static void installCaptureReveal() {
+        try {
+            ClassLoader loader = DockLiquidGlassView.class.getClassLoader();
+            Class<?> croppedFrame = Class.forName(
+                    "com.hellovoid.liquiddock.DockLiquidGlassView$CroppedFrame",
+                    false, loader);
+            HookUtil.hookMethod(DockLiquidGlassView.class,
+                    "installCapture",
+                    new Class<?>[]{croppedFrame, String.class, CaptureScene.class},
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        Object target = chain.getThisObject();
+                        if (MainHook.isWorkstationMode() && target instanceof DockLiquidGlassView) {
+                            DockLiquidGlassView glass = (DockLiquidGlassView) target;
+                            lastGlass = new WeakReference<>(glass);
+                            ensureHostVisible(glass);
+                            // installCapture() already made geometrySource transparent only
+                            // after a real frame was installed. Reveal that frame now.
+                            glass.setVisibility(View.VISIBLE);
+                        }
+                        return result;
+                    });
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation capture reveal unavailable: " + error);
+        }
+    }
+
+    private static void installMainSyncHostGuard() {
+        try {
+            HookUtil.hookMethod(MainHook.class,
+                    "syncAll", new Class<?>[]{View.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        if (MainHook.isWorkstationMode()) {
+                            DockLiquidGlassView glass = lastGlass.get();
+                            if (glass != null) ensureHostVisible(glass);
+                        }
+                        return result;
+                    });
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation host visibility guard unavailable: " + error);
+        }
+    }
+
+    private static void activateWorkstationHomeGlass(DockLiquidGlassView glass, String reason) {
+        if (glass == null || !MainHook.isWorkstationMode()) return;
+        ensureHostVisible(glass);
+        try {
+            Object sceneState = HookUtil.getField(glass, "sceneState");
+            Object suspended = HookUtil.invoke(sceneState, "workstationSuspended");
+            if (Boolean.FALSE.equals(suspended) && glass.getVisibility() == View.VISIBLE) {
+                return;
+            }
+
+            HookUtil.invoke(glass, "startWorkstationCaptureBurst", reason);
+            glass.requestCapture(reason);
+            MainHook.log("[DC] workstation HOME LiquidGlass activation requested reason=" + reason);
+        } catch (Throwable error) {
+            revealNativeBackdrop(glass, "activation-failed-" + reason);
+            MainHook.log("[DC] workstation HOME LiquidGlass activation failed: " + error);
+        }
+    }
+
+    private static void ensureHostVisible(DockLiquidGlassView glass) {
+        try {
+            ViewParent parent = glass.getParent();
+            if (parent instanceof View) {
+                View host = (View) parent;
+                if (host.getVisibility() != View.VISIBLE) host.setVisibility(View.VISIBLE);
+            }
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation glass host restore failed: " + error);
+        }
+    }
+
+    private static void revealNativeBackdrop(Object glass, String reason) {
+        try {
+            Object geometrySource = HookUtil.getField(glass, "geometrySource");
+            if (geometrySource instanceof View) {
+                ((View) geometrySource).setAlpha(1f);
+            }
+            HookUtil.setField(glass, "nativeBackgroundHiddenByGlass", false);
+            MainHook.log("[DC] workstation native backdrop fallback reason=" + reason);
+        } catch (Throwable error) {
+            MainHook.log("[DC] workstation native backdrop fallback failed: " + error);
         }
     }
 }

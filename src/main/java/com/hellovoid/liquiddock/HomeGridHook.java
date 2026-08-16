@@ -18,9 +18,11 @@ final class HomeGridHook {
     private static volatile boolean workstationMode;
     private static int workstationHorizontalOffset;
     private static int workstationAllAppsLandscapeHorizontalOffset;
-    private static int workstationAllAppsLandscapeVerticalOffset;
+    private static int workstationAllAppsLandscapeTopSpacing;
+    private static int workstationAllAppsLandscapeBottomSpacing;
     private static int workstationAllAppsPortraitHorizontalOffset;
-    private static int workstationAllAppsPortraitVerticalOffset;
+    private static int workstationAllAppsPortraitTopSpacing;
+    private static int workstationAllAppsPortraitBottomSpacing;
     private static java.lang.ref.WeakReference<android.view.View> workspaceRef =
             new java.lang.ref.WeakReference<>(null);
     private static float density;
@@ -46,12 +48,16 @@ final class HomeGridHook {
         workstationHorizontalOffset = offset;
     }
 
-    static void setWorkstationAllAppsOffsets(int landscapeHorizontal, int landscapeVertical,
-                                                    int portraitHorizontal, int portraitVertical) {
+    static void setWorkstationAllAppsOffsets(int landscapeHorizontal,
+                                                    int landscapeTop, int landscapeBottom,
+                                                    int portraitHorizontal,
+                                                    int portraitTop, int portraitBottom) {
         workstationAllAppsLandscapeHorizontalOffset = landscapeHorizontal;
-        workstationAllAppsLandscapeVerticalOffset = landscapeVertical;
+        workstationAllAppsLandscapeTopSpacing = landscapeTop;
+        workstationAllAppsLandscapeBottomSpacing = landscapeBottom;
         workstationAllAppsPortraitHorizontalOffset = portraitHorizontal;
-        workstationAllAppsPortraitVerticalOffset = portraitVertical;
+        workstationAllAppsPortraitTopSpacing = portraitTop;
+        workstationAllAppsPortraitBottomSpacing = portraitBottom;
     }
 
     static void install(ClassLoader classLoader, boolean enableGrid8x4,
@@ -473,19 +479,23 @@ final class HomeGridHook {
             int width = layout.getWidth();
             int height = layout.getHeight();
             if (width <= 0 || height <= 0) return;
+            // Laptop All Apps is a dedicated CellLayout whose identity is stored on
+            // CellLayout.mGridType. Detect it before applying the normal Workspace bounds
+            // guard: the overlay has its own GridConfig and layout timing.
+            boolean workstationAllApps = isLaptopAllApps(cellLayout);
             // MIUI can invoke calculateXsAndYs() after Configuration has switched but
-            // before this CellLayout has the new orientation bounds. Never write grid
-            // geometry from the previous orientation's stable size.
-            if (!sizeMatchesOrientation(layout, width, height)) return;
+            // before a normal Workspace CellLayout has the new orientation bounds. Never
+            // write normal Workspace geometry from the previous orientation's stable size.
+            if (!workstationAllApps && !sizeMatchesOrientation(layout, width, height)) return;
 
-            boolean workstation = workstationMode || MainHook.isWorkstationMode();
-            boolean workstationAllApps = workstation && isLaptopAllApps(cellLayout);
+            // A genuine laptop All Apps CellLayout is self-identifying; do not require the
+            // global laptop-mode callback to have arrived first.
+            boolean workstation = workstationAllApps
+                    || workstationMode || MainHook.isWorkstationMode();
 
-            // Laptop All Apps has its own GridType/GridConfig.  The system DEX identifies
-            // it through CellLayout.isInLapTopAllApps() and
-            // GRID_TYPE_IN_ALL_APPS_WORKSPACE. Preserve that dedicated geometry instead
-            // of replacing it with the normal Workspace centering formula. The 8x4 count
-            // still applies; cellSize below shrinks as needed to stay inside this layout.
+            // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated
+            // geometry instead of replacing it with the normal Workspace centering formula.
+            // Detection is version-tolerant and no longer depends on one private method.
             if (workstationAllApps) {
                 baseLeft = Math.max(0, configLeft);
                 baseTop = Math.max(0, baseTop);
@@ -521,57 +531,107 @@ final class HomeGridHook {
                 baseBottom = Math.max(0, baseBottom);
             }
 
-            int workstationX = workstationAllApps
-                    ? (portrait ? workstationAllAppsPortraitHorizontalOffset
-                            : workstationAllAppsLandscapeHorizontalOffset)
-                    : workstationHorizontalOffset;
-            int workstationY = workstationAllApps
-                    ? (portrait ? workstationAllAppsPortraitVerticalOffset
-                            : workstationAllAppsLandscapeVerticalOffset)
-                    : 0;
-            if (workstation) {
-                // Offsets are translations, not symmetric insets. Clamp them against the
-                // native margins so the adjusted grid can never be pushed off-screen.
-                workstationX = Math.max(-baseLeft, Math.min(baseRight, workstationX));
-                workstationY = Math.max(-baseTop, Math.min(baseBottom, workstationY));
+            int left;
+            int right;
+            int top;
+            int bottom;
+            if (workstationAllApps) {
+                int horizontalMargin = portrait
+                        ? workstationAllAppsPortraitHorizontalOffset
+                        : workstationAllAppsLandscapeHorizontalOffset;
+                int topMargin = portrait
+                        ? workstationAllAppsPortraitTopSpacing
+                        : workstationAllAppsLandscapeTopSpacing;
+                int bottomMargin = portrait
+                        ? workstationAllAppsPortraitBottomSpacing
+                        : workstationAllAppsLandscapeBottomSpacing;
+                int[] margins = WorkstationGridMarginPolicy.apply(
+                        baseLeft, baseRight, baseTop, baseBottom,
+                        horizontalMargin, topMargin, bottomMargin);
+                left = margins[0];
+                right = margins[1];
+                top = margins[2];
+                bottom = margins[3];
+            } else if (workstation) {
+                // Normal workstation Workspace keeps its existing horizontal translation
+                // semantics. Only All Apps switches to explicit symmetric margins.
+                int workstationX = Math.max(-baseLeft,
+                        Math.min(baseRight, workstationHorizontalOffset));
+                left = baseLeft + workstationX;
+                right = baseRight - workstationX;
+                top = baseTop;
+                bottom = baseBottom;
+            } else {
+                left = baseLeft + (portrait ? portraitLeft : landscapeLeft);
+                right = baseRight + (portrait ? portraitRight : landscapeRight);
+                top = baseTop + (portrait ? portraitTop : landscapeTop);
+                bottom = baseBottom + (portrait ? portraitBottom : landscapeBottom);
             }
-            int left = baseLeft + (workstation ? workstationX
-                    : (portrait ? portraitLeft : landscapeLeft));
-            int right = baseRight + (workstation ? -workstationX
-                    : (portrait ? portraitRight : landscapeRight));
-            int top = baseTop + (workstation ? workstationY
-                    : (portrait ? portraitTop : landscapeTop));
-            int bottom = baseBottom + (workstation ? -workstationY
-                    : (portrait ? portraitBottom : landscapeBottom));
             int rowGap = baseHeightGap + (workstation ? 0
                     : (portrait ? portraitRowGap : landscapeRowGap));
 
             int availableWidth = Math.max(countX, width - left - right);
-            int availableHeight = height - top - bottom
-                - rowGap * Math.max(0, countY - 1);
+            int allAppsInnerHeight = Math.max(countY, height - top - bottom);
+            int availableHeight = workstationAllApps
+                    ? allAppsInnerHeight
+                    : allAppsInnerHeight - rowGap * Math.max(0, countY - 1);
             int cellSize = Math.min(baseCell, Math.min(
                 Math.max(1, availableWidth / countX),
                 Math.max(1, availableHeight / countY)));
             int widthGap = countX > 1
                 ? Math.max(0, availableWidth - cellSize * countX) / (countX - 1) : 0;
+            int heightGap = rowGap;
+            if (workstationAllApps && countY > 1) {
+                // Absolute top/bottom spacing means the last row must end at height-bottom,
+                // not merely fit somewhere inside it. Distribute the remaining inner span
+                // between rows just as the horizontal path already does for left/right.
+                heightGap = Math.max(0, allAppsInnerHeight - cellSize * countY)
+                        / (countY - 1);
+            }
             HookUtil.setIntField(cellLayout, "mCellPaddingLeft", left);
             HookUtil.setIntField(cellLayout, "mCellPaddingTop", top);
             HookUtil.setIntField(cellLayout, "mCellWidth", cellSize);
             HookUtil.setIntField(cellLayout, "mCellHeight", cellSize);
             HookUtil.setIntField(cellLayout, "mWidthGap", widthGap);
-            HookUtil.setIntField(cellLayout, "mHeightGap", rowGap);
+            HookUtil.setIntField(cellLayout, "mHeightGap", heightGap);
         } catch (Throwable e) {
             MainHook.log("[DC] CellLayout offset apply failed: " + e);
         }
     }
 
     private static boolean isLaptopAllApps(Object cellLayout) {
+        // Stable identity from the launcher: CellLayout.setGridType() stores
+        // GRID_TYPE_IN_ALL_APPS_WORKSPACE directly in CellLayout.mGridType. GridConfig
+        // does not expose or own that value.
+        String gridType = "";
         try {
-            Object result = HookUtil.invoke(cellLayout, "isInLapTopAllApps");
-            return Boolean.TRUE.equals(result);
-        } catch (Throwable ignored) {
-            return false;
+            Object value = HookUtil.getField(cellLayout, "mGridType");
+            if (value != null) gridType = String.valueOf(value);
+        } catch (Throwable ignored) {}
+        if (gridType.isEmpty()) {
+            try {
+                Object value = HookUtil.invoke(cellLayout, "getGridType");
+                if (value != null) gridType = String.valueOf(value);
+            } catch (Throwable ignored) {}
         }
+
+        // Keep the visibility-dependent method only as a secondary compatibility signal.
+        boolean exact = false;
+        try {
+            exact = Boolean.TRUE.equals(HookUtil.invoke(cellLayout, "isInLapTopAllApps"));
+        } catch (Throwable ignored) {}
+
+        StringBuilder ancestry = new StringBuilder();
+        if (cellLayout instanceof android.view.View) {
+            android.view.ViewParent parent = ((android.view.View) cellLayout).getParent();
+            int depth = 0;
+            while (parent != null && depth++ < 8) {
+                if (ancestry.length() > 0) ancestry.append('>');
+                ancestry.append(parent.getClass().getName());
+                parent = parent.getParent();
+            }
+        }
+        return WorkstationLayoutClassifier.matches(exact, gridType, ancestry.toString());
     }
 
     private static void installRotationRefresh(ClassLoader classLoader) {

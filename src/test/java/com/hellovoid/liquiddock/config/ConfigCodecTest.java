@@ -196,7 +196,7 @@ public class ConfigCodecTest {
     public void absentPreferencesExportCompleteHistoricalDefaults() {
         Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
 
-        assertEquals(100, exported.size());
+        assertEquals(104, exported.size());
         assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
         assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
         assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
@@ -210,6 +210,10 @@ public class ConfigCodecTest {
         assertEquals(48, exported.get("liquid_capture_bleed_top"));
         assertEquals(1200, exported.get("liquid_home_settle_delay"));
         assertEquals(Boolean.FALSE, exported.get("workstation_dock_customization"));
+        assertEquals(0, exported.get("workstation_all_apps_landscape_top_spacing"));
+        assertEquals(0, exported.get("workstation_all_apps_landscape_bottom_spacing"));
+        assertEquals(0, exported.get("workstation_all_apps_portrait_top_spacing"));
+        assertEquals(0, exported.get("workstation_all_apps_portrait_bottom_spacing"));
         assertFalse(exported.containsKey("dock_divider_enabled"));
         assertFalse(exported.containsKey("dock_divider_width_dp"));
     }

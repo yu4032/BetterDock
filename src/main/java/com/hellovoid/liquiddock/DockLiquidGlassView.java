@@ -244,6 +244,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // scrolling the overview), so observation must also track it — but ONLY when visible,
     // so normal home-screen page swipes (recents hidden) still do not trigger captures.
     private View recentsView;
+    // Normal All Apps uses the Launcher main root; laptop All Apps uses its separate
+    // focusable "Laptop overlay" root. Both are local to com.miui.home and exclude the
+    // Floating Dock Surface by construction when captured with captureLayers().
+    private View allAppsCaptureRoot;
     private final View geometrySource;
     private final RuntimeShader refraction;
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -355,6 +359,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private volatile long activeCaptureAttempt;
     private Runnable captureTimeout;
     private LiveScreenCapture liveCapture;
+    private final SurfaceLayerNameResolver surfaceLayerNameResolver;
+    private final FreeformLayerResolver freeformLayerResolver;
     private ViewTreeObserver observedTree;
 
     private boolean attached;
@@ -386,6 +392,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private boolean workstationMode;
     private boolean workstationRecentsActive;
     private boolean workstationRecentsWasVisible;
+    private final WorkstationCaptureBurst workstationCaptureBurst = new WorkstationCaptureBurst();
+    private boolean workstationSuspendWhenBurstSettles;
     private long lastCaptureStartNanos;
     // Wallpaper strip cache: mode-2 (wallpaper-only) capture is skipped entirely while
     // the wallpaper is unchanged — the strip is static, so one capture is enough.  The
@@ -516,6 +524,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 .getDisplayMetrics().density * 8f;
         this.chromaticAberration = chromaticAberration;
         this.captureCadence = new CaptureCadence(captureFps);
+        this.surfaceLayerNameResolver = new SurfaceLayerNameResolver();
+        this.freeformLayerResolver = new FreeformLayerResolver(
+                getContext(), surfaceLayerNameResolver);
         this.powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
         this.displayDensity = getResources().getDisplayMetrics().density;
 
@@ -615,6 +626,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             mainHandler.post(() -> setLauncherState(known, resumed));
             return;
         }
+        // Focus/lifecycle callbacks are also the freeform enter/exit boundary. HyperOS may
+        // report the same logical Launcher state on both sides, so always invalidate the
+        // short task/layer cache and request a fresh scene sample below.
+        freeformLayerResolver.invalidate();
         boolean changed = launcherLifecycleKnown != known || launcherResumed != resumed;
         launcherLifecycleKnown = known;
         launcherResumed = resumed;
@@ -630,9 +645,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (changed) {
             logI("Liquid capture lifecycle=" + (known ? "RESUMED" : "UNKNOWN")
                     + "; window gate will decide capture");
-            observationValid = false;
-            requestStateCapture("lifecycle");
         }
+        // Even when (known,resumed) is unchanged, a freeform task may just have appeared or
+        // disappeared. Force the boundary frame so HOME switches between wallpaper and the
+        // live full-display-with-exclusions path immediately.
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture(changed ? "lifecycle" : "lifecycle-scene-refresh");
     }
 
     void setLauncherResumed(boolean resumed) {
@@ -830,6 +849,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             geometrySource.setAlpha(0f);
         }
         if (updateObservation()) {
+            if (workstationMode && (sceneState.allAppsActive() || isRecentsVisible())) {
+                workstationCaptureBurst.start();
+            }
             requestStateCapture("observation");
         }
         updateDesiredScene();
@@ -1023,43 +1045,74 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }
     }
 
-    /** Resolve the foreground app window's SF layer name (e.g. "#27820") via the
-     *  SurfaceFlinger layer tree — the low-level way to hit exactly the app layer and
-     *  avoid the Dock overlay / wallpaper layers entirely (no name-list guessing, no
-     *  exclusion).  Matches by owner uid of the foreground task. */
+    /** Resolve the foreground app window's topmost SF layer by owner uid. */
     private String resolveAppLayerByUid(String pkg) {
         try {
-            int uid;
-            try {
-                uid = getContext().getPackageManager().getPackageUid(pkg, 0);
-            } catch (Throwable e) {
-                return null;
-            }
-            Class<?> stub = Class.forName("android.view.ISurfaceComposer$Stub");
-            java.lang.reflect.Method asInterface = stub.getMethod("asInterface",
-                    android.os.IBinder.class);
-            Class<?> sm = Class.forName("android.os.ServiceManager");
-            java.lang.reflect.Method getService = sm.getMethod("getService", String.class);
-            Object binder = getService.invoke(null, "SurfaceFlinger");
-            Object composer = asInterface.invoke(null, binder);
-            java.lang.reflect.Method getLayers = composer.getClass()
-                    .getMethod("getLayerDebugInfo");
-            Object layersObj = getLayers.invoke(composer);
-            if (!(layersObj instanceof java.util.List)) return null;
-            String best = null;
-            for (Object layer : (java.util.List<?>) layersObj) {
-                try {
-                    Class<?> lc = layer.getClass();
-                    Object ownerUid = lc.getMethod("getOwnerUid").invoke(layer);
-                    if (!(ownerUid instanceof Integer) || (Integer) ownerUid != uid) continue;
-                    Object name = lc.getMethod("getName").invoke(layer);
-                    if (name != null) best = (String) name;  // last match = topmost z
-                } catch (Throwable ignored) {
-                }
-            }
-            return best;
+            int uid = getContext().getPackageManager().getPackageUid(pkg, 0);
+            return surfaceLayerNameResolver.resolveTopmostByOwnerUid(uid);
         } catch (Throwable e) {
             logW("resolveForegroundAppLayerName failed: " + e);
+            return null;
+        }
+    }
+
+    private FullDisplayExclusions resolveFullDisplayExclusions() {
+        boolean freeformActive = freeformLayerResolver.hasVisibleFreeformTasks();
+        java.util.Collection<String> freeformLayers =
+                freeformLayerResolver.resolveVisibleLayerNames();
+        String[] names = CaptureExclusionNames.merge(
+                dockWindowLayerName, dragLayerName, freeformLayers);
+        boolean safe = !freeformActive || !freeformLayers.isEmpty();
+        if (freeformActive) {
+            logI("freeform capture exclusion: resolved=" + freeformLayers.size()
+                    + " names=" + java.util.Arrays.toString(names));
+        }
+        return new FullDisplayExclusions(names, safe);
+    }
+
+    private static final class FullDisplayExclusions {
+        static final FullDisplayExclusions NONE =
+                new FullDisplayExclusions(null, true);
+
+        final String[] layerNames;
+        final boolean safe;
+
+        FullDisplayExclusions(String[] layerNames, boolean safe) {
+            this.layerNames = layerNames;
+            this.safe = safe;
+        }
+    }
+
+    private android.view.SurfaceControl resolveLauncherOwnedCaptureSurface(CaptureScene scene) {
+        View source = null;
+        if (scene == CaptureScene.RECENTS) {
+            source = recentsView != null ? recentsView : workspace;
+        } else if (scene == CaptureScene.ALL_APPS) {
+            source = allAppsCaptureRoot != null ? allAppsCaptureRoot : workspace;
+        }
+        return resolveViewRootSurfaceControl(source);
+    }
+
+    private android.view.SurfaceControl resolveViewRootSurfaceControl(View source) {
+        if (source == null) return null;
+        try {
+            View rootView = source.getRootView();
+            java.lang.reflect.Method getVri = View.class.getDeclaredMethod("getViewRootImpl");
+            getVri.setAccessible(true);
+            Object vri = getVri.invoke(rootView);
+            if (vri == null) return null;
+            java.lang.reflect.Method getSc = vri.getClass().getDeclaredMethod("getSurfaceControl");
+            getSc.setAccessible(true);
+            Object value = getSc.invoke(vri);
+            if (!(value instanceof android.view.SurfaceControl)) return null;
+            android.view.SurfaceControl sc = (android.view.SurfaceControl) value;
+            try {
+                if (!sc.isValid()) return null;
+            } catch (Throwable ignored) {}
+            return sc;
+        } catch (Throwable e) {
+            logW("launcher-owned root SurfaceControl unavailable scene=" + sceneState.desired()
+                    + " error=" + e);
             return null;
         }
     }
@@ -1145,8 +1198,37 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         recentsView = view;
     }
 
+    boolean isAllAppsActive() {
+        return sceneState.allAppsActive();
+    }
+
+    void setAllAppsActive(boolean active, View captureRoot) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setAllAppsActive(active, captureRoot));
+            return;
+        }
+        boolean rootChanged = active && captureRoot != null && allAppsCaptureRoot != captureRoot;
+        if (active && captureRoot != null) allAppsCaptureRoot = captureRoot;
+        boolean stateChanged = sceneState.allAppsActive() != active;
+        sceneState.setAllAppsActive(active);
+        if (!stateChanged && !rootChanged) return;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        if (workstationMode) {
+            workstationSuspendWhenBurstSettles = !active;
+            if (active) {
+                startWorkstationCaptureBurst("all-apps-enter");
+            } else {
+                startWorkstationCaptureBurst("all-apps-exit");
+            }
+        }
+        updateDesiredScene();
+        requestStateCapture(active ? "all-apps-enter" : "all-apps-exit");
+        if (!active) allAppsCaptureRoot = null;
+    }
+
     /** Exact Overview lifecycle supplied by launcher Enter/ExitOverviewStateEvent hooks.
-     * Gesture target hooks also update this latch early so the first transition frame is live. */
+     * This is the confirmed live-Recents boundary; gesture target hooks remain prearm-only. */
     void setOverviewActive(boolean active, String reason) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(() -> setOverviewActive(active, reason));
@@ -1156,6 +1238,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         overviewActive = active;
         observationValid = false;
         lastCaptureStartNanos = 0L;
+        if (workstationMode && workstationRecentsActive) {
+            workstationSuspendWhenBurstSettles = !active;
+            if (active) {
+                startWorkstationCaptureBurst("workstation-recents-enter");
+            } else {
+                startWorkstationCaptureBurst("workstation-recents-exit");
+            }
+        }
         if (active) {
             sceneState.setGestureTarget("RECENTS", System.nanoTime());
         } else if (sceneState.desired() == CaptureScene.RECENTS) {
@@ -1522,9 +1612,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         if (workstationMode) return;
-        // Gesture events are earlier than Overview enter/exit events and therefore provide
-        // the first-frame latch. HOME/APP immediately clear a cancelled/closing Recents path.
-        overviewActive = "RECENTS".equals(target);
+        // Gesture events are prearm-only. Exact Overview enter/exit callbacks own the
+        // confirmed live-Recents boundary; HOME/APP still replace a cancelled path immediately.
         sceneState.setGestureTarget(target, System.nanoTime());
         updateDesiredScene();
         if ("APP".equals(target)) {
@@ -1578,8 +1667,12 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             if (visible) {
                 workstationRecentsWasVisible = true;
             } else if (workstationRecentsWasVisible) {
-                suspendWorkstationGlass("workstation-recents-hidden");
-                return;
+                if (workstationCaptureBurst.isActive()) {
+                    workstationSuspendWhenBurstSettles = true;
+                } else {
+                    suspendWorkstationGlass("workstation-recents-hidden");
+                    return;
+                }
             }
         }
         CaptureScene prev = sceneState.desired();
@@ -1664,6 +1757,14 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         if (systemUiPanelExpanded) return false;
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
+
+        // Workstation All Apps/Recents intentionally draw through a different Dock container;
+        // their capture burst must not depend on the normal Floating Dock View being visible.
+        if (workstationMode && (workstationCaptureBurst.isActive()
+                || sceneState.allAppsActive() || workstationRecentsActive)) {
+            lastAllowedNanos = System.nanoTime();
+            return true;
+        }
 
         // A real APP focus transition pre-arms only a short bounded window. This bypasses
         // Dock visibility long enough to install one or two mode-1 frames while the Dock is
@@ -1835,6 +1936,8 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
         workstationRecentsActive = false;
         workstationRecentsWasVisible = false;
+        workstationCaptureBurst.stop();
+        workstationSuspendWhenBurstSettles = false;
         cancelPendingCaptureWork();
         captureGeneration++;
         appVisualSignatureValid = false;
@@ -1857,34 +1960,28 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             return;
         }
         if (!workstationMode) return;
-        // A second press is the exit toggle. Keep live capture through the closing
-        // animation; recents visibility dropping will suspend the glass afterward.
+        // A second press is the exit toggle. Force a fresh frame and keep a bounded
+        // workstation burst alive through the closing animation.
         if (workstationRecentsActive) {
-            logI("workstation Recents exit requested; waiting for panel hide");
+            workstationSuspendWhenBurstSettles = true;
+            startWorkstationCaptureBurst("workstation-recents-exit");
+            requestStateCapture("workstation-recents-exit");
+            logI("workstation Recents exit requested; adaptive capture armed");
             return;
         }
 
         workstationRecentsActive = true;
         workstationRecentsWasVisible = false;
-        cancelPendingCaptureWork();
-        captureGeneration++;
-        appVisualSignatureValid = false;
-        dynamicAppActiveUntilNanos = 0L;
+        workstationSuspendWhenBurstSettles = false;
+        startWorkstationCaptureBurst("workstation-recents-enter");
         long now = System.nanoTime();
-        sceneState.setWorkstationSuspended(false, now, isRecentsVisible(),
-                launcherLifecycleKnown, launcherResumed);
         // Exact button boundary is authoritative long enough for the overview animation
         // to become visible; once visible, normal Recents visibility owns the scene.
         sceneState.setGestureTarget("RECENTS", now);
-        setVisibility(VISIBLE);
-        // Never reveal the normal HotSeats background in workstation. The independent
-        // DockContainerView remains underneath; this glass draws only the live Recents frame.
-        geometrySource.setAlpha(0f);
-        nativeBackgroundHiddenByGlass = true;
         sourceDirty = true;
         observationValid = false;
         lastCaptureStartNanos = 0L;
-        requestStateCapture("workstation-recents-button");
+        requestStateCapture("workstation-recents-enter");
 
         // Failed/blocked transition safety: if the panel never becomes visible, do not
         // leave the normal glass active over the workstation Dock indefinitely.
@@ -1899,7 +1996,39 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         }, 1800L);
     }
 
+    private void startWorkstationCaptureBurst(String reason) {
+        if (!workstationMode) return;
+        resetCaptureCircuit(reason);
+        workstationCaptureBurst.start();
+        cancelPendingCaptureWork();
+        appVisualSignatureValid = false;
+        dynamicAppActiveUntilNanos = 0L;
+        sceneState.setWorkstationSuspended(false, System.nanoTime(), isRecentsVisible(),
+                launcherLifecycleKnown, launcherResumed);
+        setVisibility(VISIBLE);
+        // Never reveal the normal HotSeats background in workstation. The independent
+        // workstation Dock remains underneath this glass composition.
+        geometrySource.setAlpha(0f);
+        nativeBackgroundHiddenByGlass = true;
+        sourceDirty = true;
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        logI("workstation capture burst started reason=" + reason);
+    }
+
+    private void finishWorkstationCaptureBurstIfSettled() {
+        if (!workstationMode || workstationCaptureBurst.isActive()) return;
+        logI("workstation capture burst stable scene=" + sceneState.desired());
+        if (!workstationSuspendWhenBurstSettles) return;
+        // If the closing scene is still visibly active, its lifecycle callback will perform
+        // the final suspension when it actually disappears.
+        if (sceneState.allAppsActive() || isRecentsVisible()) return;
+        suspendWorkstationGlass("workstation-background-stable");
+    }
+
     private void suspendWorkstationGlass(String reason) {
+        workstationCaptureBurst.stop();
+        workstationSuspendWhenBurstSettles = false;
         cancelPendingCaptureWork();
         captureGeneration++;
         appVisualSignatureValid = false;
@@ -2052,12 +2181,39 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // Wallpaper-only capture is wrong there: the glass must refract the app content below.
         // Default to full-display capture; keep wallpaper mode for desktop-only setups via
         // config key "liquid_capture_fullscreen" (false = wallpaper layer only).
-        final boolean useFullscreen = fullscreenCapture;
+        final boolean useFullscreen = fullscreenCapture
+                || (workstationMode && workstationCaptureBurst.isActive());
 
         final long generation = captureGeneration;
         updateDesiredScene();
         final CaptureScene requestScene = sceneState.desired();
         final long requestSceneRevision = sceneState.revision();
+        final boolean liveHomeBehindFreeform = useFullscreen
+                && !workstationMode
+                && requestScene == CaptureScene.HOME
+                && freeformLayerResolver.hasVisibleFreeformTasks();
+        final android.view.SurfaceControl localCaptureSurface = useFullscreen
+                ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
+        CaptureSourcePolicy.Source selectedSource;
+        if (!useFullscreen) {
+            selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
+        } else if (workstationMode) {
+            selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
+                    requestScene, localCaptureSurface != null);
+        } else {
+            selectedSource = CaptureSourcePolicy.sourceFor(
+                    requestScene, localCaptureSurface != null, isRecentsVisible(),
+                    liveHomeBehindFreeform);
+        }
+        if (workstationMode && selectedSource == CaptureSourcePolicy.Source.FULL_DISPLAY) {
+            if (!hasValidDockWindowSurface()) dockWindowSurface = resolveWindowSurfaceControl();
+            // Never run an unsafe workstation full-display fallback: if the Dock cannot be
+            // excluded by handle or layer name, wallpaper is preferable to sampling icons.
+            if (!hasValidDockWindowSurface() && dockWindowLayerName == null) {
+                selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
+            }
+        }
+        final CaptureSourcePolicy.Source requestedSource = selectedSource;
         capturing = true;
         lastCaptureStartNanos = System.nanoTime();
         final long attempt = ++captureAttemptSeq;
@@ -2092,16 +2248,19 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             }, backoff);
         };
         mainHandler.postDelayed(captureTimeout, 600L);
-        // APP/RECENTS mode-1 needs the Dock exclusion.  Cache the SurfaceControl across
-        // frames and re-resolve only after a window/rotation/error invalidates it.
+        // APP and confirmed RECENTS use full-display mode-1. Unconfirmed RECENTS remains
+        // wallpaper-backed, so only confirmed live capture enters the Dock exclusion path.
         boolean needsDockExclude = useFullscreen
-                && requestScene != CaptureScene.HOME && !workstationMode;
+                && (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                    || (workstationMode
+                        && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER));
         if (needsDockExclude && !hasValidDockWindowSurface()) {
             dockWindowSurface = resolveWindowSurfaceControl();
         }
-        logI((useFullscreen ? "fullscreen" : "captureMode(2)") + " attempt display=" + request.displayId
+        logI("capture source=" + requestedSource + " attempt display=" + request.displayId
                 + " strip=" + request.stripRect + " tile=" + request.tileRect
-                + " scale=" + captureScale + " exclude=" + (dockWindowSurface != null));
+                + " scale=" + captureScale + " exclude=" + (dockWindowSurface != null)
+                + " scene=" + requestScene);
 
         worker.post(() -> {
             Bitmap strip = null;
@@ -2115,46 +2274,21 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     liveCapture = client;
                 }
                 if (useFullscreen) {
+                    final FullDisplayExclusions fullDisplayExclusions =
+                            (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                                    || (workstationMode
+                                        && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
+                                    ? resolveFullDisplayExclusions()
+                                    : FullDisplayExclusions.NONE;
                     android.view.SurfaceControl[] excludes = null;
-                    if (dockWindowSurface != null) {
+                    if ((requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                            || (workstationMode
+                                && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
+                            && dockWindowSurface != null) {
                         excludes = new android.view.SurfaceControl[]{dockWindowSurface};
                     }
-                    // Async path: submit and return; the result arrives on the SF callback
-                    // thread, so this worker thread is free to service the next request
-                    // immediately (no blocking wait inside getBuffer()).
                     final CaptureRequest req = request;
-                    // Home screen: wallpaper-only capture (mode 2, fast,
-                    // inherently icon/dock-free).  APP and RECENTS use
-                    // full-display capture with Dock + drag layers excluded
-                    // (mode 1) for real-time content.
-                    // Workstation mode: all scenes use wallpaper-only (mode 2).
-                    // The stock Dock has its own snapshot pipeline; LiquidDock
-                    // must not enter mode-1 and risk sampling its own overlay.
-                    boolean wallpaperMode = requestScene == CaptureScene.HOME
-                            || workstationMode;
-                    String[] excludeNames = null;
-                    if (!wallpaperMode) {
-                        excludeNames = dockWindowLayerName != null
-                                ? new String[]{dockWindowLayerName, dragLayerName}
-                                : (dragLayerName != null ? new String[]{dragLayerName} : null);
-                    }
-                    // Wallpaper is static: if a valid strip cache exists (rotation barrier
-                    // passed: current orientation produced a real installed frame, same
-                    // wallpaper, strip covers the request), serve the crop from cache
-                    // and skip the SF capture entirely.
-                    if (wallpaperMode && tryServeWallpaperFromCache(
-                            req, requestScene, requestSceneRevision, attempt)) {
-                        return;
-                    }
-                    logI("capture mode=" + (wallpaperMode ? 2 : 1)
-                            + " names=" + java.util.Arrays.toString(
-                                    wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
-                            + " crop=" + req.stripRect + " scale=" + captureScale
-                            + " scene=" + requestScene + " revision=" + requestSceneRevision);
-                    // Wallpaper mode still passes the Dock exclusion: during Dock expand/
-                    // collapse the SF layer tree shifts and the wallpaper include can pick
-                    // up the Dock's content; excluding the Dock layer is a belt-and-braces
-                    // guard in both modes.
+                    final LiveScreenCapture captureClient = client;
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
                         @Override public void onResult(Bitmap bmp) {
                             handleCaptureResult(bmp, req, generation, attempt,
@@ -2164,22 +2298,90 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                             mainHandler.post(() -> {
                                 if (generation != captureGeneration
                                         || activeCaptureAttempt != attempt) return;
-                                // Only the current attempt may drop the SF client:
-                                // a stale zombie worker's late error must not clear
-                                // the live client the new worker is using.
                                 liveCapture = null;
                                 invalidateDockWindowSurfaceCache();
                                 retireCaptureAttempt(attempt);
-                                Log.e(TAG, "async fullscreen capture failed", error);
+                                Log.e(TAG, "async capture failed source=" + requestedSource, error);
                                 if (sourceDirty) requestStateCapture();
                             });
                         }
                     };
-                    client.captureScreenAsync(req.stripRect, captureScale, req.displayId,
+
+                    CaptureSourcePolicy.Source actualSource = requestedSource;
+                    if (actualSource == CaptureSourcePolicy.Source.LOCAL_LAYER
+                            && localCaptureSurface != null) {
+                        // Recents/All Apps are Launcher-owned. Capture their ViewRoot layer
+                        // directly so the separate Floating Dock Surface cannot appear in the
+                        // input at all. If the hidden LayerCapture API rejects this build,
+                        // fall back to wallpaper — never to full-display capture.
+                        LiveScreenCapture.CaptureCallback localCb = new LiveScreenCapture.CaptureCallback() {
+                            @Override public void onResult(Bitmap bmp) { captureCb.onResult(bmp); }
+                            @Override public void onError(Throwable error) {
+                                if (workstationMode
+                                        && (hasValidDockWindowSurface() || dockWindowLayerName != null)) {
+                                    logW("local launcher-layer capture failed; safe full-display fallback: "
+                                            + error);
+                                    if (!fullDisplayExclusions.safe) {
+                                        logW("local launcher-layer capture failed; unresolved freeform "
+                                                + "surface, wallpaper fallback");
+                                        captureClient.captureScreenAsync(req.stripRect, captureScale,
+                                                req.displayId, null, null, 2, captureCb);
+                                        return;
+                                    }
+                                    android.view.SurfaceControl[] fallbackExcludes = dockWindowSurface != null
+                                            ? new android.view.SurfaceControl[]{dockWindowSurface} : null;
+                                    captureClient.captureScreenAsync(req.stripRect, captureScale,
+                                            req.displayId, fallbackExcludes,
+                                            fullDisplayExclusions.layerNames, 1, captureCb);
+                                } else {
+                                    logW("local launcher-layer capture failed; wallpaper fallback: " + error);
+                                    captureClient.captureScreenAsync(req.stripRect, captureScale,
+                                            req.displayId, null, null, 2, captureCb);
+                                }
+                            }
+                        };
+                        if (captureClient.captureLayerAsync(req.stripRect, captureScale,
+                                localCaptureSurface, localCb)) {
+                            logI("capture local launcher layer scene=" + requestScene);
+                            return;
+                        }
+                        if (workstationMode
+                                && (hasValidDockWindowSurface() || dockWindowLayerName != null)
+                                && fullDisplayExclusions.safe) {
+                            logW("local launcher-layer API unavailable; safe full-display fallback scene="
+                                    + requestScene);
+                            actualSource = CaptureSourcePolicy.Source.FULL_DISPLAY;
+                        } else {
+                            logW("local launcher-layer API unavailable; wallpaper fallback scene="
+                                    + requestScene);
+                            actualSource = CaptureSourcePolicy.Source.WALLPAPER;
+                        }
+                    }
+
+                    if (actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                            && !fullDisplayExclusions.safe) {
+                        logW("full-display capture blocked: visible freeform task has no "
+                                + "resolvable SurfaceFlinger layer; wallpaper fallback");
+                        actualSource = CaptureSourcePolicy.Source.WALLPAPER;
+                    }
+                    boolean wallpaperMode = actualSource == CaptureSourcePolicy.Source.WALLPAPER;
+                    String[] excludeNames = actualSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                            ? fullDisplayExclusions.layerNames : null;
+                    if (wallpaperMode
+                            && !(workstationMode && workstationCaptureBurst.isActive())
+                            && tryServeWallpaperFromCache(
+                            req, requestScene, requestSceneRevision, attempt)) {
+                        return;
+                    }
+                    logI("capture source=" + actualSource
+                            + " names=" + java.util.Arrays.toString(
+                                    wallpaperMode ? new String[]{"Wallpaper BBQ wrapper"} : excludeNames)
+                            + " crop=" + req.stripRect + " scale=" + captureScale
+                            + " scene=" + requestScene + " revision=" + requestSceneRevision);
+                    captureClient.captureScreenAsync(req.stripRect, captureScale, req.displayId,
                             wallpaperMode ? null : excludes, excludeNames,
-                            wallpaperMode ? 2 : 1,
-                            captureCb);
-                    return; // async path owns completion via handleCaptureResult
+                            wallpaperMode ? 2 : 1, captureCb);
+                    return;
                 } else {
                     strip = client.captureWallpaper(request.stripRect, captureScale, request.displayId);
                     if (strip != null) {
@@ -2245,9 +2447,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 return;
             }
             // Black-frame guard: on HyperOS captureMode(2) against the wallpaper layer
-            // returns status=0 with a PURE BLACK buffer while a non-home app is in front
-            // (verified: Dock pull-up over an app).  Installing such a frame freezes a
-            // black backdrop forever; discard it and keep the previous frame.
+            // returns status=0 with a valid-sized but PURE BLACK buffer while a non-home app
+            // is in front (verified: Dock pull-up over an app).  Installing such a frame
+            // freezes a black backdrop forever; discard it and keep the previous frame.
             VisualProbe visualProbe = probeBitmap(strip, blackFrameThreshold);
             logI("frame " + strip.getWidth() + "x" + strip.getHeight()
                     + " stripRect=" + request.stripRect
@@ -2346,6 +2548,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                     wallpaperCacheReady = true;
                 }
                 rotationStabilizeTick(visualProbe.signature);
+                if (workstationMode && workstationCaptureBurst.isActive()) {
+                    if (workstationCaptureBurst.onFrame(visualProbe.signature)) {
+                        requestStateCapture("workstation-background-changing");
+                    } else {
+                        finishWorkstationCaptureBurstIfSettled();
+                    }
+                }
                 // Config is hot-reloaded by the 1s ticker; no duplicate counter needed here.
                 if (sourceDirty) requestStateCapture();
                 if (dynamicAppCapture && requestScene == CaptureScene.APP
@@ -2356,7 +2565,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 // Recents deliberately does not require isGlassActuallyVisible(): HyperOS hides
                 // the Dock window in overview, but the live backdrop still has to follow cards.
                 // requestStateCapture() still applies the global screen-power/SystemUI gates.
-                if (isRecentsVisible()) requestStateCapture("recents-continue");
+                if (!workstationMode && isRecentsVisible()) {
+                    requestStateCapture("recents-continue");
+                }
             });
         } catch (Throwable e) {
             if (strip != null && !strip.isRecycled()) strip.recycle();
@@ -2505,7 +2716,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
             retireCaptureAttempt(attempt);
             installCapture(frame, "cache", requestScene);
             if (sourceDirty) requestStateCapture();
-            if (isRecentsVisible()) requestStateCapture("recents-continue");
+            if (!workstationMode && isRecentsVisible()) {
+                requestStateCapture("recents-continue");
+            }
         });
         return true;
     }
