@@ -66,6 +66,12 @@ public class CaptureSourcePolicyTest {
         assertEquals("WALLPAPER", sourceFor("HOME", false, true));
     }
 
+    @Test public void unknownOwnershipAlwaysUsesWallpaper() throws Exception {
+        assertEquals("WALLPAPER", sourceFor("UNKNOWN", false));
+        assertEquals("WALLPAPER", sourceFor("UNKNOWN", true));
+        assertEquals("WALLPAPER", sourceFor("UNKNOWN", true, true));
+    }
+
     @Test public void unconfirmedRecentsUsesWallpaper() throws Exception {
         assertEquals("WALLPAPER", sourceFor("RECENTS", true));
         assertEquals("WALLPAPER", sourceFor("RECENTS", false));
@@ -100,5 +106,6 @@ public class CaptureSourcePolicyTest {
     @Test public void workstationNonLauncherScenesStayWallpaperBacked() throws Exception {
         assertEquals("WALLPAPER", workstationSourceFor("APP", true));
         assertEquals("WALLPAPER", workstationSourceFor("HOME", true));
+        assertEquals("WALLPAPER", workstationSourceFor("UNKNOWN", true));
     }
 }
