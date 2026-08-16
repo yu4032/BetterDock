@@ -5,9 +5,6 @@ on:
     branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/recents-exit-animation-handoff ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,8 +17,6 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply Recents exit lifecycle patch
-        run: python .github/apply_recents_exit_handoff.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
@@ -30,22 +25,4 @@ jobs:
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LiquidDock-recents-exit-verified-source
-          path: src/main/java/com/hellovoid/liquiddock/MainHook.java
-          if-no-files-found: error
-          retention-days: 7
-      - name: Commit verified MainHook
-        shell: bash
-        run: |
-          if git diff --quiet -- src/main/java/com/hellovoid/liquiddock/MainHook.java; then
-            echo 'MainHook already matches verified source.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/main/java/com/hellovoid/liquiddock/MainHook.java
-          git commit -m 'fix: defer recents exit until animation end'
-          git push origin HEAD:${GITHUB_REF_NAME}
       # Keep the same Gradle verification gates on main and active API101 development branches.
