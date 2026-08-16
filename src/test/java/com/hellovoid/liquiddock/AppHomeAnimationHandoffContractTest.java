@@ -12,13 +12,15 @@ public class AppHomeAnimationHandoffContractTest {
         return Files.readString(Path.of(path));
     }
 
-    @Test public void closeToHomeCompletionHasDedicatedLauncherHook() throws Exception {
+    @Test public void closeToHomeLifecycleHasDedicatedLauncherHook() throws Exception {
         Path path = Path.of("src/main/java/com/hellovoid/liquiddock/AppHomeAnimationHook.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path);
         assertTrue(source.contains("com.miui.home.recents.GestureModeApp$8"));
+        assertTrue(source.contains("getDeclaredConstructors"));
+        assertTrue(source.contains("onAppHomeAnimationStart"));
         assertTrue(source.contains("onAnimationEnd"));
-        assertTrue(source.contains("HOME_ANIMATION_END"));
+        assertTrue(source.contains("onAppHomeAnimationEnd"));
     }
 
     @Test public void appHomeHookIsInstalledBesideRecentsLifecycle() throws Exception {
@@ -27,8 +29,10 @@ public class AppHomeAnimationHandoffContractTest {
         assertTrue(haptic.contains("AppHomeAnimationHook.install(classLoader"));
     }
 
-    @Test public void animationEndRoutesToCurrentGlassWithoutChangingOwnershipAuthority() throws Exception {
+    @Test public void animationLifecycleRoutesToCurrentGlassWithoutChangingOwnershipAuthority() throws Exception {
         String runtime = read("src/main/java/com/hellovoid/liquiddock/HomeOwnershipRuntime.java");
+        assertTrue(runtime.contains("onAppHomeAnimationStart"));
+        assertTrue(runtime.contains("glass.setGestureCaptureTarget(\"APP_HOME_ANIMATION_START\")"));
         assertTrue(runtime.contains("onAppHomeAnimationEnd"));
         assertTrue(runtime.contains("glass.setGestureCaptureTarget(\"HOME_ANIMATION_END\")"));
     }
