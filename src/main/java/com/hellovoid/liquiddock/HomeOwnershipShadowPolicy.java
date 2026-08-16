@@ -23,8 +23,9 @@ final class HomeOwnershipShadowPolicy {
     static SystemUiBaseline systemUiBaseline(boolean homeVisible,
                                              int homeTaskId,
                                              int topFullscreenTaskId) {
-        if (topFullscreenTaskId >= 0 && topFullscreenTaskId != homeTaskId) {
-            return SystemUiBaseline.APP;
+        if (topFullscreenTaskId >= 0) {
+            if (homeTaskId < 0) return SystemUiBaseline.UNKNOWN;
+            if (topFullscreenTaskId != homeTaskId) return SystemUiBaseline.APP;
         }
         if (homeVisible) return SystemUiBaseline.HOME;
         return SystemUiBaseline.UNKNOWN;
