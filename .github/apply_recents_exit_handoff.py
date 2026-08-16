@@ -9,8 +9,14 @@ NEW = (
 )
 
 text = SOURCE.read_text()
-count = text.count(OLD)
-if count != 1:
-    raise SystemExit(f"expected exactly one legacy ExitOverview hook, got {count}")
-SOURCE.write_text(text.replace(OLD, NEW, 1))
-print("patched MainHook Recents exit boundary")
+old_count = text.count(OLD)
+new_count = text.count(NEW)
+if old_count == 1 and new_count == 0:
+    SOURCE.write_text(text.replace(OLD, NEW, 1))
+    print("patched MainHook Recents exit boundary")
+elif old_count == 0 and new_count == 1:
+    print("MainHook Recents exit boundary already patched")
+else:
+    raise SystemExit(
+        f"unexpected MainHook state: legacy={old_count} replacement={new_count}"
+    )
