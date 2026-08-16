@@ -205,7 +205,7 @@ final class FreeformTaskLeashResolver {
         final Binder callback = new Binder() {
             @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
                 if (code != FreeformLeashProtocol.TRANSACTION_LEASH_RESULT) return false;
-                ArrayList<SurfaceControl> parsed = new ArrayList<>();
+                ArrayList<SurfaceControl> transferred = new ArrayList<>();
                 try {
                     data.enforceInterface(FreeformLeashProtocol.CALLBACK_DESCRIPTOR);
                     long responseId = data.readLong();
@@ -218,12 +218,12 @@ final class FreeformTaskLeashResolver {
                         int taskId = data.readInt();
                         int status = data.readInt();
                         SurfaceControl surface = data.readTypedObject(SurfaceControl.CREATOR);
-                        if (surface != null) parsed.add(surface);
                         if (status == FreeformLeashProtocol.STATUS_OK
                                 && surface != null && surface.isValid()) {
+                            transferred.add(surface);
                             SurfaceControl old = successful.put(taskId, surface);
                             if (old != null && old != surface) {
-                                parsed.remove(old);
+                                transferred.remove(old);
                                 release(old);
                                 bad = true;
                             }
@@ -232,22 +232,25 @@ final class FreeformTaskLeashResolver {
                                     && status != FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE) {
                                 bad = true;
                             }
-                            if (surface != null) bad = true;
+                            if (surface != null) {
+                                release(surface);
+                                bad = true;
+                            }
                         }
                     }
                     synchronized (RequestState.this) {
                         if (expired || responseId != requestId) {
-                            for (SurfaceControl surface : parsed) release(surface);
+                            for (SurfaceControl surface : transferred) release(surface);
                             return true;
                         }
                         malformed = bad;
                         received.putAll(successful);
-                        parsed.clear();
+                        transferred.clear(); // ownership moved to received
                         latch.countDown();
                     }
                     return true;
                 } catch (Throwable error) {
-                    for (SurfaceControl surface : parsed) release(surface);
+                    for (SurfaceControl surface : transferred) release(surface);
                     synchronized (RequestState.this) {
                         malformed = true;
                         if (!expired) latch.countDown();
