@@ -35,6 +35,9 @@ final class FreeformCaptureLeashHook {
                 FreeformTaskLeashResolver.Resolution resolution = null;
                 try {
                     int displayId = (Integer) args[2];
+                    if (!FreeformLeashRuntime.shouldResolveForCapture(displayId)) {
+                        return chain.proceed(args);
+                    }
                     resolution = FreeformLeashRuntime.resolveForCapture(displayId);
                     if (!resolution.hasVisibleFreeformTasks()) {
                         return chain.proceed(args);
