@@ -23,7 +23,7 @@ final class SystemUiTaskStateProvider {
             synchronized (SystemUiTaskStateProvider.class) {
                 client = brokerClient;
                 if (client == null) {
-                    client = new FreeformLeashBrokerClient(
+                    client = FreeformLeashBrokerClient.shared(
                             safeContext, FreeformLeashBrokerClient.Role.SYSTEM_UI);
                     brokerClient = client;
                 }
