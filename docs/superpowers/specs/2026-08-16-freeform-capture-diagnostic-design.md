@@ -2,34 +2,44 @@
 
 ## Goal
 
-Add a one-shot, read-only diagnostic path that runs inside the injected Launcher process when a visible freeform/small-window task exists and the Dock is about to start its next capture. The diagnostic must gather enough evidence in one reproduction to identify why live full-display capture is being downgraded to wallpaper capture.
+Add a one-shot, read-only diagnostic inside the injected Launcher process that captures enough evidence from one freeform/small-window reproduction to identify why an intended live full-display Dock capture is falling back to wallpaper.
 
 The diagnostic must not change capture behavior.
 
-## Current failure path
+## Failure path under investigation
 
-Current capture behavior can reach this sequence:
+The production pipeline can currently reach:
 
 ```text
 visible freeform task detected
--> FreeformLayerResolver resolves zero SurfaceFlinger layer names
+-> production FreeformLayerResolver has one or more freeform owner UIDs
+-> SurfaceLayerNameResolver resolves zero layer names or throws
 -> fullDisplayExclusions.safe = false
--> requested FULL_DISPLAY is downgraded to WALLPAPER
+-> FULL_DISPLAY is downgraded to WALLPAPER
 ```
 
-The current implementation silently absorbs most resolver failures, so device logs do not reveal whether the failure is task detection, SurfaceFlinger access, UID matching, layer naming, or a later exclusion/capture step.
+The production resolver historically catches its SurfaceFlinger failure and returns an empty layer list, so the device cannot distinguish hidden-API failure from UID/layer ownership mismatch.
 
 ## Trigger
 
-Run automatically once per Launcher process lifetime when all conditions are true:
+Run automatically at most once per Launcher process lifetime.
+
+The trigger is the production freeform layer-resolution boundary:
 
 ```text
-freeform diagnostic not yet attempted
-AND at least one visible freeform task is detected
-AND DockLiquidGlassView is entering capture preflight
+DockLiquidGlassView.resolveFullDisplayExclusions()
+-> FreeformLayerResolver.resolveVisibleLayerNames()
+-> production layer resolution completes or fails
+-> one-shot diagnostic report
+-> production caller computes the existing `safe` value unchanged
 ```
 
-The diagnostic is marked attempted even if it throws. This prevents repeated SurfaceFlinger scans and log spam.
+The report only claims the one-shot gate when either:
+
+- production has identified at least one freeform owner UID; or
+- an independent diagnostic task scan identifies a visible non-Launcher freeform task.
+
+This lets the report still run when package-UID lookup itself is the failure.
 
 No settings toggle or manual trigger is added.
 
@@ -37,150 +47,176 @@ No settings toggle or manual trigger is added.
 
 ### FreeformCaptureDiagnostic
 
-Add a dedicated diagnostic component whose only responsibility is to snapshot and log the capture decision and freeform-resolution environment.
+A dedicated diagnostic-only component owns the one-shot gate and grouped logging.
 
-It must not:
+It consumes immutable snapshots/facts and never participates in capture policy. It must not:
 
-- modify `CaptureSceneState`;
-- modify `CaptureSourcePolicy` output;
-- call `captureScreenAsync`, `captureLayerAsync`, or any visual capture API;
-- change `sourceDirty`, `capturing`, visibility, native-background ownership, or workstation state;
-- cache data used later by production capture decisions.
+- modify `CaptureSceneState` or `CaptureSourcePolicy`;
+- call `captureScreenAsync`, `captureLayerAsync`, `captureDisplay`, or any visual capture API;
+- change capture source, visibility, native-background ownership, workstation state, or scheduling;
+- cache information for later production decisions.
 
-The component emits one grouped report using the log tag/prefix `LiquidDockDiag` and a single diagnostic id.
+It emits one report using Android log tag `LiquidDockDiag` and one diagnostic id.
 
 ### FreeformLayerResolver
 
-Expose a diagnostic snapshot API that reports the same RunningTaskInfo facts used by production detection without changing production resolution semantics.
+Production behavior remains the same:
 
-The snapshot should include, where available:
+```text
+RunningTaskInfo -> visible freeform package -> package UID
+-> resolveAllByOwnerUids(...)
+-> cache resolved names, or empty list on failure
+```
+
+Diagnostic additions are isolated:
+
+1. an independent `snapshotForDiagnostics()` task scan that does not read/write production caches;
+2. a diagnostic-only `visibleFreeformDetected` fact so UID lookup failure can still trigger a report;
+3. preservation of the actual `Throwable` caught during production `resolveAllByOwnerUids(...)`, passed only to the report before being discarded as before;
+4. a single `FreeformCaptureDiagnostic.runOnce(...)` call at the resolver boundary.
+
+The returned collection and cache semantics must remain unchanged.
+
+The task snapshot records, where available:
 
 - taskId;
 - displayId;
 - windowingMode;
 - isVisible;
-- topActivity package/class;
-- baseActivity package/class;
-- task bounds;
+- topActivity;
+- baseActivity;
+- bounds;
+- package name;
 - package UID;
-- whether `FreeformCapturePolicy.shouldExclude(...)` considers the task a visible freeform task.
-
-The diagnostic should inspect the first 16–32 running tasks so task ordering and underlay relationships are visible.
+- whether the task is considered visible freeform;
+- package-UID or snapshot error.
 
 ### SurfaceLayerNameResolver
 
-Expose a diagnostic snapshot API around `ISurfaceComposer.getLayerDebugInfo()`.
+Production `queryLayers()`, `resolveTopmostByOwnerUid()`, and `resolveAllByOwnerUids()` remain unchanged.
 
-It should report:
+A separate `snapshotForDiagnostics(targetUids, keywords)` repeats the SurfaceFlinger query with explicit stage reporting:
 
-- whether SurfaceFlinger service lookup succeeded;
-- whether `ISurfaceComposer.Stub.asInterface(...)` succeeded;
-- whether `getLayerDebugInfo()` exists and invocation succeeded;
-- the exact exception class and message on failure;
-- returned layer count on success;
-- ownerUid/name pairs for candidate layers.
+```text
+ServiceManager.getService("SurfaceFlinger")
+-> ISurfaceComposer.Stub.asInterface(...)
+-> getLayerDebugInfo method lookup
+-> getLayerDebugInfo invocation
+-> candidate extraction
+```
 
-Candidate layer groups should include:
+It reports the exact failing stage and underlying exception class/message.
 
-1. layers whose ownerUid equals a detected freeform app UID;
-2. layers whose names contain the freeform package/activity keywords;
-3. suspicious system layers whose names contain case-insensitive terms such as `freeform`, `task`, `leash`, `window`, or `miuifreeform`.
+Candidate layers are the union of:
 
-If extra fields such as parent/id/z are available through reflection, include them; otherwise log them as unavailable rather than treating that as a diagnostic failure.
+1. `ownerUid` matching a detected/production freeform UID;
+2. names containing freeform package/activity keywords;
+3. names containing suspicious terms such as `freeform`, `miuifreeform`, `task`, `leash`, or `window`.
+
+For candidates, optional reflected metadata such as id/parent/z is recorded when available; absence is represented as `-` and is not a failure.
 
 ### DockLiquidGlassView
 
-Add only a small preflight call that passes current capture facts to `FreeformCaptureDiagnostic.runOnce(...)` before the existing safety fallback is applied.
+No diagnostic code is added to this large class.
 
-The invocation must not branch production behavior.
+Its existing production flow remains authoritative and unchanged. The resolver-boundary report runs transitively while `resolveFullDisplayExclusions()` is evaluating the freeform exclusion list, before the existing `safe -> WALLPAPER` decision.
 
-## Report contents
+## Report
 
-A single report should contain these sections under one diagnostic id:
+One reproduction emits a bounded report:
 
 ```text
-[LiquidDockDiag] BEGIN id=...
+LiquidDockDiag: BEGIN id=...
+LiquidDockDiag: PROCESS ...
+LiquidDockDiag: TASKS ...
+LiquidDockDiag: TASK ...
+LiquidDockDiag: SF ...
+LiquidDockDiag: LAYER ...
+LiquidDockDiag: RESOLVER ...
+LiquidDockDiag: DECISION ...
+LiquidDockDiag: END id=...
 ```
 
-### Capture preflight
+### TASKS / TASK
 
-- workstationMode;
-- fullscreenCapture;
-- effective useFullscreen;
-- current CaptureScene;
-- selected/requested CaptureSourcePolicy.Source;
-- launcher lifecycle/focus facts available to DockLiquidGlassView;
-- displayId;
-- dockWindowLayerName;
-- whether the Dock SurfaceControl is currently considered valid;
-- current dragLayerName if available.
+Shows the independent `RunningTaskInfo` view, including which task is considered freeform and whether package UID resolution succeeded.
 
-### Running tasks
+### SF / LAYER
 
-For each inspected task, print the fields listed above and explicitly identify tasks treated as visible freeform tasks.
+Shows hidden SurfaceFlinger API availability, total layer count, candidate layers, owner UIDs, keyword matches, suspicious system layers, and optional id/parent/z metadata.
 
-### SurfaceFlinger layer enumeration
+### RESOLVER
 
-Print the API availability/failure evidence and candidate layers. Do not dump every SurfaceFlinger layer unconditionally; candidate filtering keeps the report bounded while still exposing likely freeform task/leash layers.
+Shows the actual production facts used by the failing resolver call:
 
-### Existing resolver result
+```text
+productionOwnerUids
+resolvedLayers
+productionResolutionError
+productionSafe = ownerUids empty OR resolvedLayers non-empty
+```
 
-Print:
+This directly mirrors the current downstream safety condition without modifying it.
 
-- `freeformActive`;
-- freeform app UIDs detected from tasks;
-- `resolvedFreeformLayers` from the existing production resolver;
-- merged exclusion layer names;
-- resulting `fullDisplayExclusions.safe` value.
+### DECISION
 
-### Decision consequence
+Reports whether current production facts imply the existing safety fallback:
 
-Print:
+```text
+wouldSafetyFallback = productionOwnerUids non-empty AND resolvedLayers empty
+```
 
-- originally selected source;
-- whether the existing safety rule will downgrade FULL_DISPLAY to WALLPAPER;
-- the exact reason category inferred from the snapshot when possible.
-
-The diagnostic may classify the observation as one of:
+The diagnostic classifies the evidence as one of:
 
 ```text
 TASK_DETECTION_FAILED
 SURFACEFLINGER_API_FAILED
 UID_MATCH_FAILED
-LAYER_RESOLUTION_SUCCEEDED
+PRODUCTION_RESOLVER_FAILED
 POST_RESOLUTION_CAPTURE_PATH
 UNKNOWN
 ```
 
-Classification is informational only and must not drive production behavior.
+Classification is informational only.
 
-Finish with:
+Interpretation examples:
 
 ```text
-[LiquidDockDiag] END id=...
+SURFACEFLINGER_API_FAILED
+-> service/interface/method/invocation failure; fix hidden API access/path.
+
+UID_MATCH_FAILED
+-> SF enumeration succeeds but no layer is owned by the freeform App UID;
+   inspect suspicious task/leash/system-owned candidates.
+
+PRODUCTION_RESOLVER_FAILED
+-> independent SF diagnostic works/matches, but the actual production resolver threw.
+
+POST_RESOLUTION_CAPTURE_PATH
+-> production resolver already returned layer names; investigate mode-1 exclusion/capture later.
 ```
 
-## Error handling
+## One-shot and error handling
 
-Diagnostic errors must never affect capture. `runOnce(...)` catches all diagnostic exceptions, logs the exact exception class/message, emits END, and leaves the existing production flow unchanged.
+`AtomicBoolean.compareAndSet(false, true)` claims the report only after a freeform condition is established. Once claimed, it remains claimed even if diagnostics throw, preventing repeated expensive scans.
 
-The diagnostic attempt flag is set before expensive work starts so a failure cannot cause repeated scans every frame.
+All report errors are caught internally. A claimed report always attempts to emit `END`. The diagnostic never rethrows into production capture.
 
 ## Testing
 
-Add focused tests/source contracts that verify:
+Source-contract tests verify:
 
-- the diagnostic is one-shot;
-- it does not call any capture method;
-- it does not write capture scene/source state;
-- production `safe -> WALLPAPER` fallback remains unchanged;
-- current freeform production resolver behavior remains unchanged;
-- diagnostic task/layer snapshot helpers surface exceptions instead of silently swallowing them;
-- `DockLiquidGlassView` only invokes the diagnostic from capture preflight.
+- an `AtomicBoolean` one-shot gate exists;
+- diagnostic code contains no visual capture calls;
+- both resolvers expose diagnostic snapshot APIs;
+- `FreeformLayerResolver` invokes the diagnostic at its production resolution boundary;
+- the actual production resolution `Throwable` is captured for logging instead of changing control flow;
+- `DockLiquidGlassView` still contains its existing `FULL_DISPLAY && !safe -> WALLPAPER` fallback;
+- `DockLiquidGlassView` itself contains no diagnostic integration.
 
 ## Scope constraints
 
-Do not change the current freeform capture behavior in this diagnostic build.
+Do not change the current freeform capture result in this diagnostic build.
 
 Specifically, do not:
 
@@ -188,11 +224,11 @@ Specifically, do not:
 - change HOME/APP/RECENTS scene ownership;
 - change workstation All Apps or Recents behavior;
 - change `CaptureSourcePolicy`;
-- change `LiveScreenCapture` capture mode or exclusion semantics;
-- introduce a new underlay resolver;
-- save screenshots or other binary diagnostics;
+- change `LiveScreenCapture` capture modes/exclusion semantics;
+- introduce an underlay resolver;
+- save screenshots or binary artifacts;
 - add settings UI.
 
-Keep the diagnostic code isolated so it can be removed cleanly after the root cause is confirmed.
+Keep the diagnostic isolated so it can be deleted cleanly once the root cause is confirmed.
 
-Commits use `[skip ci]` unless a build is explicitly requested.
+All commits remain on `dev/freeform-capture-diagnostic` and use `[skip ci]` unless a build is explicitly requested.
