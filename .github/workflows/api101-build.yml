@@ -5,6 +5,9 @@ on:
     branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, fix/wallpaper-live-handoff ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,6 +20,9 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Apply wallpaper handoff candidate
+        if: github.ref == 'refs/heads/fix/wallpaper-live-handoff'
+        run: python .github/apply_wallpaper_handoff_fix.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
@@ -25,4 +31,13 @@ jobs:
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Persist verified wallpaper handoff candidate
+        if: github.ref == 'refs/heads/fix/wallpaper-live-handoff'
+        run: |
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix: invalidate stale wallpaper handoff cache'
+          git push origin HEAD:fix/wallpaper-live-handoff
       # Keep the same Gradle verification gates on main and active API101 development branches.
