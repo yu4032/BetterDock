@@ -451,12 +451,9 @@ public class MainHook {
             Object focused = HookUtil.invoke(launcher, "isWindowFocus");
             int windowingMode = foregroundTaskWindowingMode(launcher);
             if (paused instanceof Boolean) {
-                boolean previousOwnershipKnown = launcherLifecycleKnown;
-                boolean previousLauncherOwnership = launcherResumed;
                 launcherLifecycleKnown = true;
                 launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                        !((Boolean) paused), windowingMode,
-                        previousLauncherOwnership, previousOwnershipKnown);
+                        !((Boolean) paused), windowingMode);
             }
             log("[DC] liquid lifecycle seed: known=" + launcherLifecycleKnown
                 + " resumed=" + launcherResumed + " paused=" + paused
@@ -467,8 +464,8 @@ public class MainHook {
         }
     }
 
-    /** Windowing mode of the current top task. HyperOS small windows are freeform overlays;
-     * they preserve the already-established HOME/APP ownership underneath them. */
+    /** Windowing mode of the current top task. HyperOS small windows are freeform tasks;
+     * they may pause / defocus Launcher while the Launcher surface remains the owning scene. */
     private static int foregroundTaskWindowingMode(Object launcher) {
         if (!(launcher instanceof Activity)) return -1;
         try {
@@ -527,21 +524,18 @@ public class MainHook {
                             log("[DC] liquid focus ignored while stock All Apps overlay owns focus: " + hasFocus);
                             return r;
                         }
-                        boolean previousOwnershipKnown = launcherLifecycleKnown;
-                        boolean previousLauncherOwnership = launcherResumed;
                         launcherLifecycleKnown = true;
                         int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
                         boolean launcherOwnsScene = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                                hasFocus, windowingMode,
-                                previousLauncherOwnership, previousOwnershipKnown);
+                                hasFocus, windowingMode);
                         launcherResumed = launcherOwnsScene;
                         log("[DC] liquid focus: " + hasFocus
                                 + " windowingMode=" + windowingMode
                                 + " launcherOwnsScene=" + launcherOwnsScene);
                         if (glass != null) {
                             if (!launcherOwnsScene) {
-                                // Resolve the APP/layer before requesting the APP scene. A freeform
-                                // overlay keeps the previously established base scene unchanged.
+                                // Resolve the APP/layer before requesting the APP scene. A fullscreen
+                                // task owns the backdrop; a freeform task does not demote Launcher.
                                 glass.onLauncherFocusLost();
                                 glass.refreshForegroundAppLayer();
                                 glass.setLauncherState(true, false);
@@ -646,13 +640,10 @@ public class MainHook {
                         chain -> {
                             Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                             if (launcherClass.isInstance(chain.getThisObject())) {
-                                boolean previousOwnershipKnown = launcherLifecycleKnown;
-                                boolean previousLauncherOwnership = launcherResumed;
                                 launcherLifecycleKnown = true;
                                 int windowingMode = foregroundTaskWindowingMode(chain.getThisObject());
                                 launcherResumed = LauncherSceneOwnershipPolicy.launcherOwnsScene(
-                                        false, windowingMode,
-                                        previousLauncherOwnership, previousOwnershipKnown);
+                                        false, windowingMode);
                                 log("[DC] liquid lifecycle fallback: onPause windowingMode="
                                         + windowingMode + " launcherOwnsScene=" + launcherResumed);
                                 DockLiquidGlassView g = liquidGlassView;
