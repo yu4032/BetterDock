@@ -13,7 +13,6 @@ LiquidDock 是一个面向 HyperOS 3 Pad 启动器的 LSPosed/libxposed API 101 
 - **独立 Dock 阴影**：与描边分离，并抑制 HyperOS 原生 Dock 阴影避免重复
 - **捕获管线**：HOME / APP / RECENTS 场景状态、动态画面探针、黑帧保护、旋转稳定与捕获节流
 - **桌面网格**：横屏 8×4、竖屏 4×8，自定义边距、行距与页面指示器偏移
-- **Widget adaptation**：可独立开关
 - **Dock 分隔线**：图标间竖线的宽度、高度比例、垂直偏移、颜色和透明度独立调节
 - **配置管理**：Schema 驱动的 JSON 导入/导出、默认预设、历史配置迁移和 API 101 Remote Preferences
 
