@@ -31,7 +31,7 @@
 - `onLayout()` 后再次断言 exact frame，抵消 MIUI 的 span-dependent 二次居中；
 - 不修改 MIUI 的 occupancy/placement 算法。
 
-Widget 类型与 span 目前仍是硬编码规则。后续计划改为 `WidgetClassifier` / `WidgetSpecRegistry`，但 registry **尚未实现**。
+Widget 类型与 span 目前仍是硬编码规则。后续计划改为 `WidgetClassifier` / `WidgetSpecRegistry`，registry **尚未实现**。
 
 ---
 
@@ -52,8 +52,6 @@ Widget 类型与 span 目前仍是硬编码规则。后续计划改为 `WidgetCl
 | 方圆形 | 开/关 | 使用 squircle 轮廓 |
 | Fill-Diff | 开/关 | 使用 outer/inner 轮廓差形成描边 |
 
-`*` `ConfigSchema` 当前 `corner_offset` 的 UI 默认值仍为 `-1`，并保持历史 absent-key 语义；不要仅按表格把旧配置重新归一化。
-
 ---
 
 ## 描边 (Stroke)
@@ -70,16 +68,6 @@ native blur Dock 的描边仍由 `DockStrokeRenderer` 直接安装到 foreground
 | 方圆形外扩/内缩量 | 0 ~ 16 dp | `sq_stroke_off` |
 | Fill-Diff 描边宽度 | 1 ~ 6 dp | `stroke_w` |
 | 标准描边宽度 | 1 ~ 10 dp | `std_stroke_w` |
-
-### 旧描边阴影状态
-
-历史配置仍保留：
-
-- `stroke_shadow`
-- `shadow_radius`
-- `shadow_alpha`
-
-但描边切换到 foreground renderer 后，**当前 `DockStrokeRenderer` 不实现旧描边阴影效果**。这些 key 目前主要为配置兼容存在，不应把“描边没有旧阴影”当作当前 renderer 的回归。
 
 ---
 
@@ -164,8 +152,6 @@ LiquidDock 会识别并抑制 HyperOS 原生 Dock shadow target，避免自绘 s
 
 `liquid_capture_fullscreen` 当前默认 true，且不作为普通 JSON 导出字段。开启时优先 full-display capture；关闭时才退回 vendor wallpaper capture mode。实际 capture 还受 scene、Dock 可见性、Recents、drag、SystemUI、屏幕交互状态、attempt token 和 rotation stabilization 共同控制。
 
-因此不要再把 capture 描述为固定的“HOME=wallpaper、APP/RECENTS=full display”映射。
-
 ---
 
 ## 工作台 / Laptop（未完成适配）
@@ -197,8 +183,6 @@ LiquidDock 会识别并抑制 HyperOS 原生 Dock shadow target，避免自绘 s
 | 工作台 Dock icon top offset | −48 ~ 48 dp |
 | 工作台 Dock icon bottom offset | −48 ~ 48 dp |
 
-这些参数存在不代表工作台已经可用。当前仍需要完整真机回归覆盖 Dock、All Apps、Recents、旋转、进入/退出、位置恢复和捕获。
-
 ---
 
 ## 工作台 Divider
@@ -214,30 +198,6 @@ LiquidDock 会识别并抑制 HyperOS 原生 Dock shadow target，避免自绘 s
 | R/G/B | 0 ~ 255 | Divider 颜色 |
 | Alpha | 0 ~ 255 | Divider alpha |
 
-旧配置没有 `dock_divider_enabled` 时沿用 legacy sentinel：数值 0 表示“不覆盖系统默认”。显式开关存在后，0 就是实际可设置值。
-
 详见 [DIVIDER.md](DIVIDER.md)。
 
 ---
-
-## 配置管理
-
-Phase 1 后的配置职责：
-
-- `ConfigSchema`：统一登记 persisted key/type/default/range/storage/export metadata
-- `ConfigCodec`：JSON 导入/导出
-- `ConfigMigration`：设置进程历史偏好升级
-- `PresetManager`：预设写入
-- `ConfigReader`：只读 Remote Preferences snapshot
-- `LiquidDockConfig`：不可变运行时 typed config
-- `LegacyConfigMigration`：仅 Launcher package-ready 时尝试迁移 pre-API101 JSON
-
-当前兼容规则包括：
-
-- SharedPreferences key 不改名；
-- 历史 JSON 继续可导入；
-- `grid_widget_adaptation` 已加入导入/导出；
-- decimal dp 使用 `<key>_tenths` 保留精度；
-- `liquid_home_settle_delay` 继续保留历史 `_tenths` round-trip；
-- Divider width/Y 保持历史 DIRECT raw-tenths JSON 语义，不改成通用 `DP_TENTHS` sidecar；
-- `dock_dimensions_dp` 与 `liquid_dimensions_dp` 的历史导出表示继续保持兼容。
