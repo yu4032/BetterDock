@@ -46,10 +46,18 @@ public class Miuix307GlassContractTest {
 
     @Test
     public void miuixModeIsolatedFromLegacyCaptureLifecycle() throws IOException {
-        String source = read("MainHook.java");
-        assertTrue(source.contains("miuiXDock"));
-        assertTrue(source.contains("if (miuiXDock) return"));
-        assertTrue(source.contains("MiuiX dock: skipping old capture/lifecycle hooks"));
+        String mainHook = read("MainHook.java");
+        String haptic = read("RecentsHapticHook.java");
+        String pipeline = read("Miuix307MaterialPipeline.java");
+
+        // MainHook exits immediately when the specialized 307 pipeline is installed, before
+        // reaching installLiquidGlassCaptureHooks in either legacy path.
+        assertTrue(mainHook.contains("MiuiX 307 material active; legacy liquid capture bypassed"));
+        assertTrue(mainHook.indexOf("Miuix307MaterialPipeline.install")
+                < mainHook.indexOf("installLiquidGlassCaptureHooks(classLoader)"));
+        // RecentsHapticHook is installed earlier, so its callback must gate itself at runtime.
+        assertTrue(haptic.contains("!Miuix307MaterialPipeline.isInstalled()"));
+        assertFalse(pipeline.contains("installLiquidGlassCaptureHooks"));
     }
 
     @Test
