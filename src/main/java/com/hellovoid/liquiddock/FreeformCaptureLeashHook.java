@@ -9,12 +9,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Final fail-closed gate immediately before LiquidDock submits a mode-1 display capture. */
 final class FreeformCaptureLeashHook {
-    private static final AtomicBoolean INSTALLED = new AtomicBoolean();
+    private static final AtomicBoolean INSTALL_ATTEMPTED = new AtomicBoolean();
 
     private FreeformCaptureLeashHook() {}
 
     static void install() {
-        if (!INSTALLED.compareAndSet(false, true)) return;
+        if (!INSTALL_ATTEMPTED.compareAndSet(false, true)) return;
+        FreeformLeashRuntime.setCaptureGateInstalled(false);
         try {
             Method method = LiveScreenCapture.class.getDeclaredMethod(
                     "captureScreenAsync",
@@ -39,8 +40,6 @@ final class FreeformCaptureLeashHook {
                         return chain.proceed(args);
                     }
                     if (!resolution.isSafe()) {
-                        // Never submit a full-display capture when any visible freeform task
-                        // lacks a trusted task leash. Preserve the historical safety fallback.
                         args[3] = null;
                         args[4] = null;
                         args[5] = 2;
@@ -53,7 +52,6 @@ final class FreeformCaptureLeashHook {
                     return chain.proceed(args);
                 } catch (Throwable error) {
                     Api101Bridge.log("[DC] freeform leash capture gate failed; wallpaper fallback", error);
-                    // The gate itself must fail closed and must never break Dock capture.
                     args[3] = null;
                     args[4] = null;
                     args[5] = 2;
@@ -64,11 +62,10 @@ final class FreeformCaptureLeashHook {
                     }
                 }
             });
+            FreeformLeashRuntime.setCaptureGateInstalled(true);
             Api101Bridge.log("[DC] freeform task-leash capture gate installed");
         } catch (Throwable error) {
-            // If this hook cannot be installed, Dock's existing preflight remains fail-closed:
-            // provider readiness never becomes a resolvable freeform exclusion.
-            INSTALLED.set(true);
+            FreeformLeashRuntime.setCaptureGateInstalled(false);
             Api101Bridge.log("[DC] freeform task-leash capture gate unavailable", error);
         }
     }
