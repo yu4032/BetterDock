@@ -38,14 +38,15 @@ final class FreeformCaptureLeashHook {
                         int displayId = (Integer) args[2];
                         resolution = FreeformLeashRuntime.resolveForCapture(displayId);
                         if (resolution.hasVisibleFreeformTasks()) {
-                            if (!resolution.isSafe()) {
+                            SurfaceControl[] remote = resolution.borrowedRemoteLeashes();
+                            if (!resolution.isSafe() || !allValid(remote)) {
                                 args[3] = null;
                                 args[4] = null;
                                 args[5] = 2;
                             } else {
                                 SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
                                         ? (SurfaceControl[]) args[3] : null;
-                                args[3] = merge(existing, resolution.borrowedRemoteLeashes());
+                                args[3] = merge(existing, remote);
                             }
                         }
                     } catch (Throwable gateError) {
@@ -71,6 +72,14 @@ final class FreeformCaptureLeashHook {
             FreeformLeashRuntime.setCaptureGateInstalled(false);
             Api101Bridge.log("[DC] freeform task-leash capture gate unavailable", error);
         }
+    }
+
+    private static boolean allValid(SurfaceControl[] surfaces) {
+        if (surfaces == null || surfaces.length == 0) return false;
+        for (SurfaceControl surface : surfaces) {
+            if (surface == null || !surface.isValid()) return false;
+        }
+        return true;
     }
 
     private static SurfaceControl[] merge(SurfaceControl[] existing, SurfaceControl[] remote) {
