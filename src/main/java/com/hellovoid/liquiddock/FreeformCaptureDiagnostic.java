@@ -143,14 +143,14 @@ final class FreeformCaptureDiagnostic {
         if (!sf.invocationSucceeded) {
             return "SURFACEFLINGER_API_FAILED";
         }
+        if (productionResolutionError != null) {
+            return "PRODUCTION_RESOLVER_FAILED";
+        }
         if (productionResolvedLayers != null && !productionResolvedLayers.isEmpty()) {
             return "POST_RESOLUTION_CAPTURE_PATH";
         }
         if (targetUidCandidateCount == 0) {
             return "UID_MATCH_FAILED";
-        }
-        if (productionResolutionError != null) {
-            return "PRODUCTION_RESOLVER_FAILED";
         }
         return "UNKNOWN";
     }
