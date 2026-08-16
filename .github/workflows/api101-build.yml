@@ -5,6 +5,9 @@ on:
     branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, demo/miuix307-material-pipeline ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,7 +20,19 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      # BEGIN MIUIX307_FORMALIZE
       - run: python3 .github/patch_miuix307_demo.py
+      - run: python3 .github/formalize_miuix307.py
+      - name: Commit source-native MiuiX 307 pipeline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: formalize MiuiX 307 material pipeline"
+            git push origin HEAD:demo/miuix307-material-pipeline
+          fi
+      # END MIUIX307_FORMALIZE
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
