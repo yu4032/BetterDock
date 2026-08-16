@@ -24,9 +24,7 @@ final class SystemUiFreeformLeashProvider {
     private static final FreeformBridgePolicy.CircuitBreaker BREAKER =
             new FreeformBridgePolicy.CircuitBreaker();
 
-    private static volatile WeakReference<Object> listenerRef = new WeakReference<>(null);
-    private static volatile Executor shellExecutor;
-    private static volatile Context appContext;
+    private static volatile ListenerState currentState;
     private static volatile FreeformLeashBrokerClient brokerClient;
 
     private static Field contextField;
@@ -88,9 +86,9 @@ final class SystemUiFreeformLeashProvider {
             throw new IllegalStateException("ShellTaskOrganizer executor unavailable");
         }
 
-        listenerRef = new WeakReference<>(listener);
-        shellExecutor = (Executor) executorValue;
-        appContext = context;
+        // Publish listener + executor + context as one immutable capability snapshot so a
+        // concurrent Binder request can never combine fields from two listener generations.
+        currentState = new ListenerState(listener, (Executor) executorValue, context);
 
         FreeformLeashBrokerClient client = brokerClient;
         if (client == null) {
@@ -112,8 +110,8 @@ final class SystemUiFreeformLeashProvider {
             if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_LEASHES) {
                 return super.onTransact(code, data, reply, flags);
             }
-            Context context = appContext;
-            if (context == null || !callerIsLauncher(context)) return true;
+            ListenerState state = currentState;
+            if (state == null || !callerIsLauncher(state.context)) return true;
             try {
                 data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
                 long requestId = data.readLong();
@@ -125,16 +123,15 @@ final class SystemUiFreeformLeashProvider {
                             FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
                     return true;
                 }
-                Executor executor = shellExecutor;
-                if (executor == null || listenerRef.get() == null) {
+                if (state.listener.get() == null) {
                     sendUniform(callback, requestId, taskIds,
                             FreeformLeashProtocol.STATUS_UNAVAILABLE);
                     return true;
                 }
                 try {
-                    executor.execute(() -> {
+                    state.executor.execute(() -> {
                         try {
-                            resolveOnShellExecutor(callback, requestId, taskIds);
+                            resolveOnShellExecutor(state, callback, requestId, taskIds);
                         } catch (Throwable error) {
                             recordInfrastructureFailure("resolve freeform leash", error);
                             sendUniform(callback, requestId, taskIds,
@@ -154,9 +151,9 @@ final class SystemUiFreeformLeashProvider {
         }
     };
 
-    private static void resolveOnShellExecutor(IBinder callback, long requestId, int[] taskIds)
-            throws Exception {
-        Object listener = listenerRef.get();
+    private static void resolveOnShellExecutor(ListenerState state, IBinder callback,
+                                               long requestId, int[] taskIds) throws Exception {
+        Object listener = state.listener.get();
         if (listener == null) {
             sendUniform(callback, requestId, taskIds, FreeformLeashProtocol.STATUS_UNAVAILABLE);
             return;
@@ -169,20 +166,20 @@ final class SystemUiFreeformLeashProvider {
         int[] statuses = new int[taskIds.length];
         SurfaceControl[] surfaces = new SurfaceControl[taskIds.length];
         for (int i = 0; i < taskIds.length; i++) {
-            Object state = tasks.get(taskIds[i]);
-            if (state == null) {
+            Object taskState = tasks.get(taskIds[i]);
+            if (taskState == null) {
                 statuses[i] = FreeformLeashProtocol.STATUS_UNAVAILABLE;
                 continue;
             }
             Field field = leashField;
-            if (field == null || !field.getDeclaringClass().isAssignableFrom(state.getClass())) {
-                field = HookUtil.findField(state.getClass(), "mLeash");
+            if (field == null || !field.getDeclaringClass().isAssignableFrom(taskState.getClass())) {
+                field = HookUtil.findField(taskState.getClass(), "mLeash");
                 if (!SurfaceControl.class.isAssignableFrom(field.getType())) {
                     throw new IllegalStateException("freeform state mLeash is not SurfaceControl");
                 }
                 leashField = field;
             }
-            Object value = field.get(state);
+            Object value = field.get(taskState);
             if (value instanceof SurfaceControl && ((SurfaceControl) value).isValid()) {
                 statuses[i] = FreeformLeashProtocol.STATUS_OK;
                 surfaces[i] = (SurfaceControl) value;
@@ -245,5 +242,17 @@ final class SystemUiFreeformLeashProvider {
     private static void recordInfrastructureFailure(String where, Throwable error) {
         boolean disabled = BREAKER.recordInfrastructureFailure();
         Api101Bridge.log("[DC] " + where + (disabled ? "; bridge disabled for process" : ""), error);
+    }
+
+    private static final class ListenerState {
+        final WeakReference<Object> listener;
+        final Executor executor;
+        final Context context;
+
+        ListenerState(Object listener, Executor executor, Context context) {
+            this.listener = new WeakReference<>(listener);
+            this.executor = executor;
+            this.context = context;
+        }
     }
 }
