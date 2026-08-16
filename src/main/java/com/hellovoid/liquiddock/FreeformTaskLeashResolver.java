@@ -37,6 +37,11 @@ final class FreeformTaskLeashResolver {
         return !breaker.isDisabled() && brokerClient.launcherProvider() != null;
     }
 
+    IBinder providerBinderForDiagnostics() {
+        brokerClient.setDemanded(true);
+        return brokerClient.launcherProvider();
+    }
+
     Resolution resolveVisibleLeashes(int displayId) {
         brokerClient.setDemanded(true);
         if (displayId < 0 || breaker.isDisabled()) return Resolution.unavailable(true);
