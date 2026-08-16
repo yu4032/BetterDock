@@ -32,7 +32,7 @@ Obsolete members and methods:
 
 Why obsolete:
 
-The historical foreground-app SurfaceFlinger layer-name path no longer participates in capture-source selection, layer exclusion, or safety decisions. `SurfaceLayerNameResolver` is already a no-op adapter. `appLayerName` is only assigned/logged and has no consumer in the capture pipeline.
+The historical foreground-app SurfaceFlinger layer-name path no longer participates in capture-source selection, layer exclusion, HOME/APP ownership, or safety decisions. `SurfaceLayerNameResolver` is already a no-op adapter. `appLayerName` is only assigned/logged and has no consumer in the capture pipeline.
 
 Removal precondition:
 
@@ -156,43 +156,38 @@ Status: **Protocol tombstone / keep**.
 
 Do **not** delete or reuse these transaction numbers simply because the old per-task protocol is gone. Launcher and SystemUI can restart independently and briefly run different module generations. Reusing an old transaction code with a new payload could make mixed generations parse incompatible Parcel layouts.
 
-A later protocol-major cleanup may remove them only if the bridge gains an explicit version negotiation mechanism that makes numeric reuse safe.
+The diagnostic HOME-ownership request code at `FIRST_CALL_TRANSACTION + 2` is also intentionally not reused by the production HOME protocol. Production uses a fresh transaction code and explicit protocol versioning.
 
-## HOME/APP ownership inference slated for shadow audit
+## HOME/APP ownership inference retired
 
-The following code is **active today** and must not be deleted until the SystemUI shadow audit proves a replacement is reliable at capture decision boundaries.
+The SystemUI shadow audit is complete. On `fix/home-app-ownership-convergence`, ordinary HOME/APP ownership no longer comes from Launcher lifecycle/focus plus top-task inference.
 
 ### `src/main/java/com/hellovoid/liquiddock/MainHook.java`
 
-Search anchors:
+Status: **Old ownership path removed**.
 
-- `seedLauncherLifecycleState`
-- `foregroundTaskWindowingMode`
-- `onWindowFocusChanged`
-- `LauncherSceneOwnershipPolicy.launcherOwnsScene`
-- `liquid lifecycle fallback: onPause`
+Removed production authorities:
 
-Current inference chain:
+- `seedLauncherLifecycleState`;
+- `foregroundTaskWindowingMode`;
+- HOME/APP `ActivityManager.getRunningTasks(1)` query;
+- `LauncherSceneOwnershipPolicy.launcherOwnsScene`;
+- lifecycle fallback writes to `launcherResumed` / `launcherLifecycleKnown`;
+- focus-driven HOME/APP classification.
 
-1. Launcher lifecycle/focus callbacks indicate whether Launcher appears resumed/focused.
-2. `foregroundTaskWindowingMode()` calls `ActivityManager.getRunningTasks(1)`.
-3. The top task's windowing mode is read reflectively.
-4. `LauncherSceneOwnershipPolicy` treats freeform top tasks as still owned by HOME.
-5. The result updates `launcherResumed`, which becomes the HOME/APP baseline for `CaptureSceneState`.
-
-This chain remains active until a diagnostic-only comparison proves that SystemUI's existing home-task state is a safe baseline replacement.
+Launcher focus now serves only as a refresh boundary that asks `HomeOwnershipRuntime` for a fresh SystemUI baseline. It contributes no HOME/APP evidence.
 
 ### `src/main/java/com/hellovoid/liquiddock/LauncherSceneOwnershipPolicy.java`
 
-Status: **Active pending shadow audit**.
-
-The class is intentionally simple, but it exists only to compensate for Launcher focus/lifecycle being disturbed by freeform tasks. It becomes a deletion candidate if SystemUI home visibility is proven reliable.
+Status: **Deleted by HOME/APP convergence**.
 
 ### `src/test/java/com/hellovoid/liquiddock/LauncherSceneOwnershipPolicyTest.java`
 
-Status: **Active pending shadow audit**.
+Status: **Deleted and replaced by SystemUI ownership/convergence tests**.
 
-Delete or replace only in the formal HOME/APP ownership migration, not in the diagnostic branch.
+### Current production authority
+
+`SystemUiHomeOwnershipSource` passively reads the existing WMShell `MultiTaskingTaskRepository` on the existing `ShellTaskOrganizer` executor. It returns only HOME, APP, or UNKNOWN to Launcher. UNKNOWN is fail-closed and maps to wallpaper; it never falls back to Launcher top-task/focus inference or a last-good HOME/APP capture decision.
 
 ## Explicit non-candidates
 
