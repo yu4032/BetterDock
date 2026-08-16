@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Display;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +20,8 @@ final class HomeOwnershipShadowLauncherHook {
     private static Field launcherLifecycleKnownField;
     private static Field liquidGlassViewField;
     private static Method foregroundTaskWindowingModeMethod;
+    private static volatile WeakReference<Object> lastLauncher = new WeakReference<>(null);
+    private static volatile Boolean lastFreeformPresence;
 
     private HomeOwnershipShadowLauncherHook() {}
 
@@ -57,7 +60,17 @@ final class HomeOwnershipShadowLauncherHook {
         }
     }
 
+    static void onFreeformPresence(boolean visible) {
+        Boolean previous = lastFreeformPresence;
+        if (previous != null && previous == visible) return;
+        lastFreeformPresence = visible;
+        Object launcher = lastLauncher.get();
+        if (launcher == null) return;
+        postSample(visible ? "freeform-enter" : "freeform-exit", launcher, null);
+    }
+
     private static void postSample(String reason, Object launcher, Boolean focus) {
+        if (launcher != null) lastLauncher = new WeakReference<>(launcher);
         MAIN.post(() -> sampleAfterProductionHooks(reason, launcher, focus));
     }
 
