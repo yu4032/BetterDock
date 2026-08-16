@@ -93,6 +93,10 @@ final class FreeformTaskLeashResolver {
 
         Resolution result = state.takeResolution();
         if (state.wasMalformed()) breaker.recordInfrastructureFailure();
+        if (result.isSafe()) {
+            HomeOwnershipShadowLauncherHook.onFreeformPresence(
+                    result.hasVisibleFreeformTasks());
+        }
         return result;
     }
 
