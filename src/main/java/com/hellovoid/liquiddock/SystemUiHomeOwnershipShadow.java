@@ -10,6 +10,7 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Diagnostic-only, read-only view of WMShell's existing MultiTaskingTaskRepository. */
@@ -97,9 +98,8 @@ final class SystemUiHomeOwnershipShadow {
             final long id = requestId;
             final int targetDisplayId = displayId;
             final IBinder resultCallback = callback;
-            Runnable task = () -> sampleOnRepositoryExecutor(
-                    state, resultCallback, id, targetDisplayId);
-            state.executeMethod.invoke(state.executor, task);
+            state.executor.execute(() -> sampleOnRepositoryExecutor(
+                    state, resultCallback, id, targetDisplayId));
             return true;
         } catch (SecurityException | IllegalArgumentException malformed) {
             return true;
@@ -124,14 +124,12 @@ final class SystemUiHomeOwnershipShadow {
         Context application = context.getApplicationContext();
         if (application != null) context = application;
 
-        Object executor = executorField.get(repository);
-        if (executor == null) {
-            throw new IllegalStateException("MultiTaskingTaskRepository#mBgExecutor unavailable");
+        Object executorValue = executorField.get(repository);
+        if (!(executorValue instanceof Executor)) {
+            throw new IllegalStateException("MultiTaskingTaskRepository#mBgExecutor is not Executor");
         }
-        Method execute = HookUtil.findMethodBestMatch(
-                executor.getClass(), "execute", new Object[]{(Runnable) () -> {}}, false);
 
-        currentState = new ShadowState(repository, context, executor, execute,
+        currentState = new ShadowState(repository, context, (Executor) executorValue,
                 isHomeVisibleMethod, getHomeTaskMethod, getTopFullscreenTaskInfoMethod);
         Api101Bridge.log("[DC-SHADOW] HOME ownership repository observed");
     }
@@ -241,19 +239,17 @@ final class SystemUiHomeOwnershipShadow {
     private static final class ShadowState {
         final WeakReference<Object> repository;
         final Context context;
-        final Object executor;
-        final Method executeMethod;
+        final Executor executor;
         final Method isHomeVisibleMethod;
         final Method getHomeTaskMethod;
         final Method getTopFullscreenTaskInfoMethod;
 
-        ShadowState(Object repository, Context context, Object executor, Method executeMethod,
+        ShadowState(Object repository, Context context, Executor executor,
                     Method isHomeVisibleMethod, Method getHomeTaskMethod,
                     Method getTopFullscreenTaskInfoMethod) {
             this.repository = new WeakReference<>(repository);
             this.context = context;
             this.executor = executor;
-            this.executeMethod = executeMethod;
             this.isHomeVisibleMethod = isHomeVisibleMethod;
             this.getHomeTaskMethod = getHomeTaskMethod;
             this.getTopFullscreenTaskInfoMethod = getTopFullscreenTaskInfoMethod;
