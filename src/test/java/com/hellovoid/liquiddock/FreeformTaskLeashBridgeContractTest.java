@@ -85,13 +85,19 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(source.contains("setCaptureGateInstalled(false)"));
     }
 
-    @Test public void freeformPreflightNoLongerCallsSurfaceFlingerDebugResolver() throws Exception {
-        String source = source(
+    @Test public void productionFreeformAndLegacyResolverDoNotUseSurfaceFlingerDebugApi()
+            throws Exception {
+        String freeform = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
-        assertTrue(source.contains("FreeformLeashRuntime"));
-        assertFalse(source.contains("resolveAllByOwnerUids"));
-        assertFalse(source.contains("getLayerDebugInfo"));
-        assertFalse(source.contains("getPackageUid"));
+        String legacy = source(
+                "src/main/java/com/hellovoid/liquiddock/SurfaceLayerNameResolver.java");
+        assertTrue(freeform.contains("FreeformLeashRuntime"));
+        assertFalse(freeform.contains("resolveAllByOwnerUids"));
+        assertFalse(freeform.contains("getLayerDebugInfo"));
+        assertFalse(freeform.contains("getPackageUid"));
+        assertFalse(legacy.contains("ISurfaceComposer"));
+        assertFalse(legacy.contains("getLayerDebugInfo"));
+        assertFalse(legacy.contains("SurfaceFlinger"));
     }
 
     @Test public void protocolDeadlineIsTwentyFiveMilliseconds() throws Exception {
