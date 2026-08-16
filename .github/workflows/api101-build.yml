@@ -17,12 +17,20 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Apply Recents exit lifecycle patch
+        run: python .github/apply_recents_exit_handoff.py
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-recents-exit-verified-source
+          path: src/main/java/com/hellovoid/liquiddock/MainHook.java
           if-no-files-found: error
           retention-days: 7
       # Keep the same Gradle verification gates on main and active API101 development branches.
