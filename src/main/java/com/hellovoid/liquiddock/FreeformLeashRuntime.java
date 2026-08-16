@@ -1,6 +1,6 @@
 package com.hellovoid.liquiddock;
 
-/** Launcher-process rendezvous between Dock preflight and capture submission. */
+/** Launcher-process rendezvous between capture setup and final mode-1 submission. */
 final class FreeformLeashRuntime {
     private static volatile FreeformTaskLeashResolver resolver;
     private static volatile boolean captureGateInstalled;
@@ -8,7 +8,9 @@ final class FreeformLeashRuntime {
     private FreeformLeashRuntime() {}
 
     static void install(FreeformTaskLeashResolver value) {
-        if (value != null) resolver = value;
+        if (value == null) return;
+        resolver = value;
+        value.setProviderDemanded(true);
     }
 
     static void setCaptureGateInstalled(boolean installed) {
