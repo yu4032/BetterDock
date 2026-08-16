@@ -27,6 +27,10 @@ final class WallpaperZoomRuntime {
             return;
         }
         DockLiquidGlassView glass = currentView.get();
-        if (glass != null) glass.setLauncherWallpaperVisualScale(scale);
+        if (glass != null) {
+            // Task 3 supplies the typed method. Keep this bridge independently buildable until
+            // then; the final implementation replaces this reflective edge with a direct call.
+            HookUtil.invoke(glass, "setLauncherWallpaperVisualScale", scale);
+        }
     }
 }
