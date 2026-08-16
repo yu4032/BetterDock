@@ -22,6 +22,9 @@ final class FreeformLayerResolver {
     private long layerCacheUntilNanos;
     private List<Integer> cachedOwnerUids = Collections.emptyList();
     private List<String> cachedLayerNames = Collections.emptyList();
+    // Diagnostic-only fact. Production freeform detection still depends on cachedOwnerUids
+    // exactly as before; this latch only lets the report run if package-UID lookup itself fails.
+    private boolean diagnosticVisibleFreeformTask;
 
     static final class DiagnosticTask {
         final int taskId;
@@ -94,16 +97,25 @@ final class FreeformLayerResolver {
 
     synchronized Collection<String> resolveVisibleLayerNames() {
         refreshTaskOwners();
-        if (cachedOwnerUids.isEmpty()) return Collections.emptyList();
+        if (cachedOwnerUids.isEmpty()) {
+            runDiagnosticIfNeeded(null);
+            return Collections.emptyList();
+        }
         long now = System.nanoTime();
-        if (now < layerCacheUntilNanos) return cachedLayerNames;
+        if (now < layerCacheUntilNanos) {
+            runDiagnosticIfNeeded(null);
+            return cachedLayerNames;
+        }
+        Throwable resolutionError = null;
         try {
             Collection<String> resolved = surfaceLayers.resolveAllByOwnerUids(cachedOwnerUids);
             cachedLayerNames = Collections.unmodifiableList(new ArrayList<>(resolved));
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            resolutionError = error;
             cachedLayerNames = Collections.emptyList();
         }
         layerCacheUntilNanos = now + CACHE_NANOS;
+        runDiagnosticIfNeeded(resolutionError);
         return cachedLayerNames;
     }
 
@@ -185,11 +197,35 @@ final class FreeformLayerResolver {
                 snapshotError);
     }
 
+    private void runDiagnosticIfNeeded(Throwable productionResolutionError) {
+        if (FreeformCaptureDiagnostic.hasAttempted()) return;
+        if (!diagnosticVisibleFreeformTask && cachedOwnerUids.isEmpty()) return;
+        DiagnosticSnapshot snapshot;
+        try {
+            snapshot = snapshotForDiagnostics();
+        } catch (Throwable error) {
+            snapshot = new DiagnosticSnapshot(
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    diagnosticVisibleFreeformTask,
+                    diagnosticError(error));
+        }
+        FreeformCaptureDiagnostic.runOnce(
+                context,
+                snapshot,
+                surfaceLayers,
+                cachedOwnerUids,
+                cachedLayerNames,
+                productionResolutionError);
+    }
+
     private void refreshTaskOwners() {
         long now = System.nanoTime();
         if (now < taskCacheUntilNanos) return;
 
         LinkedHashSet<Integer> ownerUids = new LinkedHashSet<>();
+        boolean visibleFreeformDetected = false;
         try {
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             List<ActivityManager.RunningTaskInfo> tasks = am != null
@@ -202,6 +238,7 @@ final class FreeformLayerResolver {
                     if (task.topActivity == null) continue;
                     String pkg = task.topActivity.getPackageName();
                     if (pkg == null || "com.miui.home".equals(pkg)) continue;
+                    visibleFreeformDetected = true;
                     try {
                         ownerUids.add(context.getPackageManager().getPackageUid(pkg, 0));
                     } catch (Throwable ignored) {
@@ -210,6 +247,7 @@ final class FreeformLayerResolver {
             }
         } catch (Throwable ignored) {
         }
+        diagnosticVisibleFreeformTask = visibleFreeformDetected;
 
         List<Integer> next = Collections.unmodifiableList(new ArrayList<>(ownerUids));
         if (!next.equals(cachedOwnerUids)) {
