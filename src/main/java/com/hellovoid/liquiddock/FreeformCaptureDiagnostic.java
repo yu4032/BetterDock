@@ -85,6 +85,12 @@ final class FreeformCaptureDiagnostic {
                     + " method=" + sfSnapshot.methodAvailable
                     + " invoked=" + sfSnapshot.invocationSucceeded
                     + " totalLayers=" + sfSnapshot.totalLayerCount
+                    + " layerClass=" + quoted(sfSnapshot.layerClassName)
+                    + " ownerUidAccessor=" + sfSnapshot.ownerUidAccessorAvailable
+                    + " nameAccessor=" + sfSnapshot.nameAccessorAvailable
+                    + " ownerUidReadable=" + sfSnapshot.ownerUidReadableCount
+                    + " nameReadable=" + sfSnapshot.nameReadableCount
+                    + " metadataError=" + quoted(sfSnapshot.layerMetadataError)
                     + " candidates=" + sfSnapshot.candidates.size()
                     + " targetUidCandidates=" + targetUidCandidateCount
                     + " truncated=" + sfSnapshot.candidatesTruncated
@@ -142,6 +148,12 @@ final class FreeformCaptureDiagnostic {
         }
         if (!sf.invocationSucceeded) {
             return "SURFACEFLINGER_API_FAILED";
+        }
+        if (sf.totalLayerCount == 0) {
+            return "SURFACEFLINGER_EMPTY_RESULT";
+        }
+        if (sf.ownerUidReadableCount == 0 || sf.nameReadableCount == 0) {
+            return "LAYER_METADATA_API_FAILED";
         }
         if (productionResolutionError != null) {
             return "PRODUCTION_RESOLVER_FAILED";
