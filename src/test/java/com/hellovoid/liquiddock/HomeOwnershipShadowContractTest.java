@@ -29,10 +29,13 @@ public class HomeOwnershipShadowContractTest {
         assertTrue(source.contains("WeakReference<Object>"));
         assertTrue(source.contains("MultiTaskingTaskRepository"));
         assertTrue(source.contains("mBgExecutor"));
+        assertTrue(source.contains("instanceof Executor"));
+        assertTrue(source.contains("final Executor executor"));
+        assertTrue(source.contains("executor.execute("));
         assertTrue(source.contains("isHomeVisible"));
         assertTrue(source.contains("getHomeTask"));
         assertTrue(source.contains("getTopFullscreenTaskInfo"));
-        assertTrue(source.contains("execute"));
+        assertFalse(source.contains("executeMethod"));
         assertFalse(source.contains("SurfaceControl"));
         assertFalse(source.contains("registerTaskOrganizer"));
         assertFalse(source.contains("onTaskAppeared"));
