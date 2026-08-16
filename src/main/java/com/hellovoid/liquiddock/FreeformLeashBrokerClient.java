@@ -71,7 +71,7 @@ final class FreeformLeashBrokerClient {
             try {
                 Intent intent = new Intent();
                 intent.setClassName(FreeformLeashProtocol.MODULE_PACKAGE,
-                        FreeformLeashProtocol.BROKER_SERVICE);
+                        FreeformLeashBrokerService.class.getName());
                 boolean ok = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
                 synchronized (lock) {
                     binding = false;
