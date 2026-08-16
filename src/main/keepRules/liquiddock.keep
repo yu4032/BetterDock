@@ -3,6 +3,15 @@
 # inline, merge, and obfuscate normally.
 -keep class com.hellovoid.liquiddock.ModuleMain { *; }
 
+# The broker is addressed by an explicit component-name string from hooked processes.
+-keepnames class com.hellovoid.liquiddock.FreeformLeashBrokerService
+
+# The Launcher freeform gate deliberately hooks this one LiquidDock method by reflection.
+# Keep only that member name/signature stable rather than retaining the whole capture class.
+-keepclassmembers class com.hellovoid.liquiddock.LiveScreenCapture {
+    void captureScreenAsync(android.graphics.Rect,float,int,android.view.SurfaceControl[],java.lang.String[],int,com.hellovoid.liquiddock.LiveScreenCapture$CaptureCallback);
+}
+
 # Android components referenced from the manifest are covered by AGP's default keep rules.
 # Miuix/Compose code is referenced normally and should rely on dependency consumer rules;
 # do not keep the whole dependency tree, otherwise R8 cannot meaningfully prune it.
