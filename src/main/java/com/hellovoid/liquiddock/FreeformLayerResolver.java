@@ -81,7 +81,6 @@ final class FreeformLayerResolver {
         cachedVisibleFreeform = visible;
         cachedScanSucceeded = succeeded;
         cacheUntilNanos = now + CACHE_NANOS;
-        FreeformLeashRuntime.updatePreflight(displayId, succeeded, visible);
     }
 
     private int displayId() {
