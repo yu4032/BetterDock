@@ -18,6 +18,24 @@ public class FreeformBridgePolicyTest {
                 FreeformBridgePolicy.deduplicateTaskIds(new int[]{8, 3, 8, 9, 3}));
     }
 
+    @Test public void visibleCurrentDisplayCandidateIsIncluded() {
+        assertTrue(FreeformBridgePolicy.shouldIncludeFreeformCandidate(0, true, 0));
+    }
+
+    @Test public void knownInvisibleCandidateIsSkipped() {
+        assertFalse(FreeformBridgePolicy.shouldIncludeFreeformCandidate(0, false, 0));
+    }
+
+    @Test public void knownOtherDisplayCandidateIsSkipped() {
+        assertFalse(FreeformBridgePolicy.shouldIncludeFreeformCandidate(2, true, 0));
+    }
+
+    @Test public void unknownMetadataFailsClosedByIncludingCandidate() {
+        assertTrue(FreeformBridgePolicy.shouldIncludeFreeformCandidate(null, true, 0));
+        assertTrue(FreeformBridgePolicy.shouldIncludeFreeformCandidate(0, null, 0));
+        assertTrue(FreeformBridgePolicy.shouldIncludeFreeformCandidate(null, null, 0));
+    }
+
     @Test public void breakerTripsOnlyAtThirdRuntimeInfrastructureFailure() {
         FreeformBridgePolicy.CircuitBreaker breaker = new FreeformBridgePolicy.CircuitBreaker();
         assertFalse(breaker.isDisabled());
