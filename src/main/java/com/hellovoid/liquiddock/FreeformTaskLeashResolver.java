@@ -153,6 +153,11 @@ final class FreeformTaskLeashResolver {
         try { surface.release(); } catch (Throwable ignored) {}
     }
 
+    private static void releaseAll(SurfaceControl[] surfaces) {
+        if (surfaces == null) return;
+        for (SurfaceControl surface : surfaces) release(surface);
+    }
+
     static final class Resolution implements AutoCloseable {
         private final boolean visibleFreeform;
         private final boolean safe;
@@ -183,7 +188,7 @@ final class FreeformTaskLeashResolver {
         @Override public synchronized void close() {
             if (closed) return;
             closed = true;
-            for (SurfaceControl surface : ownedRemoteLeashes) release(surface);
+            releaseAll(ownedRemoteLeashes);
             ownedRemoteLeashes = new SurfaceControl[0];
         }
     }
@@ -277,6 +282,7 @@ final class FreeformTaskLeashResolver {
                 SurfaceControl surface = received.remove(requestedTaskIds[i]);
                 if (surface == null || !surface.isValid()) {
                     if (surface != null) release(surface);
+                    releaseAll(surfaces);
                     expire();
                     return Resolution.unavailable(true);
                 }
@@ -284,8 +290,8 @@ final class FreeformTaskLeashResolver {
             }
             if (!received.isEmpty()) {
                 for (SurfaceControl surface : received.values()) release(surface);
-                for (SurfaceControl surface : surfaces) release(surface);
                 received.clear();
+                releaseAll(surfaces);
                 expired = true;
                 return Resolution.unavailable(true);
             }
