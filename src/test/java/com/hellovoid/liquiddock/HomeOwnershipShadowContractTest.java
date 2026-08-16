@@ -66,4 +66,22 @@ public class HomeOwnershipShadowContractTest {
         assertFalse(source.contains("CaptureSceneState"));
         assertFalse(source.contains("FreeformBridgePolicy.CircuitBreaker"));
     }
+
+    @Test public void launcherAdapterOnlyReadsExistingProductionDecision() throws Exception {
+        String adapter = source("HomeOwnershipShadowLauncherHook.java");
+        String mainHook = source("MainHook.java");
+        assertTrue(adapter.contains("launcherResumed"));
+        assertTrue(adapter.contains("foregroundTaskWindowingMode"));
+        assertTrue(adapter.contains("MAIN.post"));
+        assertTrue(adapter.contains("HomeOwnershipShadowProbe.sample"));
+        assertTrue(adapter.contains("HomeOwnershipShadowProbe.setOverviewActive"));
+        assertTrue(adapter.contains("HomeOwnershipShadowProbe.setAllAppsActive"));
+        assertFalse(adapter.contains("launcherResumed ="));
+        assertFalse(adapter.contains("Field.set("));
+        assertFalse(adapter.contains("setBoolean("));
+        assertFalse(adapter.contains("setLauncherState("));
+        assertFalse(mainHook.contains("HomeOwnershipShadowProbe"));
+        assertTrue(mainHook.contains("foregroundTaskWindowingMode"));
+        assertTrue(mainHook.contains("LauncherSceneOwnershipPolicy.launcherOwnsScene"));
+    }
 }
