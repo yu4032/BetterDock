@@ -69,32 +69,34 @@ public class FreeformTaskLeashBridgeContractTest {
         assertFalse(source.contains("SurfaceControl"));
     }
 
-    @Test public void resolverUsesBoundedAsyncRequestAndOwnedWrapperCleanup() throws Exception {
-        String source = source(
+    @Test public void resolverIsOnlyABoundedRemoteSnapshotClient() throws Exception {
+        String resolver = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java");
-        assertTrue(source.contains("REQUEST_TIMEOUT_MS"));
-        assertTrue(source.contains("IBinder.FLAG_ONEWAY"));
-        assertTrue(source.contains("CountDownLatch"));
-        assertTrue(source.contains("SurfaceControl.CREATOR"));
-        assertTrue(source.contains("surface.release()"));
-        assertTrue(source.contains("received.size() != requestedTaskIds.length"));
-        assertTrue(source.contains("releaseAll(surfaces)"));
-        assertFalse(source.contains("writeIntArray(taskIds)"));
+        assertFalse(resolver.contains("ActivityManager"));
+        assertFalse(resolver.contains("RunningTaskInfo"));
+        assertFalse(resolver.contains("getRunningTasks"));
+        assertFalse(resolver.contains("getWindowingMode"));
+        assertFalse(resolver.contains("displayId(task)"));
+        assertFalse(resolver.contains("isVisible(task)"));
+        assertFalse(resolver.contains("requestedTaskIds"));
+        assertFalse(resolver.contains("LinkedHashMap<Integer, SurfaceControl>"));
+        assertTrue(resolver.contains("TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT"));
+        assertTrue(resolver.contains("TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT"));
+        assertTrue(resolver.contains("REQUEST_TIMEOUT_MS"));
+        assertTrue(resolver.contains("IBinder.FLAG_ONEWAY"));
+        assertTrue(resolver.contains("CountDownLatch"));
+        assertTrue(resolver.contains("SurfaceControl.CREATOR"));
+        assertTrue(resolver.contains("surface.release()"));
+        assertTrue(resolver.contains("releaseAll(surfaces)"));
     }
 
-    @Test public void runningTaskDisplayIdUsesReflectionInsteadOfHiddenSdkField() throws Exception {
+    @Test public void temporaryDockPreflightStillReflectsHiddenDisplayIdUntilRemoval() throws Exception {
         String layerResolver = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
-        String leashResolver = source(
-                "src/main/java/com/hellovoid/liquiddock/FreeformTaskLeashResolver.java");
-        for (String resolver : new String[]{layerResolver, leashResolver}) {
-            assertFalse("hidden RunningTaskInfo.displayId must not be a compile-time dependency",
-                    resolver.contains("task.displayId"));
-            assertTrue("display filtering must go through the reflective helper",
-                    resolver.contains("displayId(task)"));
-            assertTrue("reflective helper must look up the hidden displayId member by name",
-                    resolver.contains("\"displayId\""));
-        }
+        assertFalse("hidden RunningTaskInfo.displayId must not be a compile-time dependency",
+                layerResolver.contains("task.displayId"));
+        assertTrue(layerResolver.contains("displayId(task)"));
+        assertTrue(layerResolver.contains("\"displayId\""));
     }
 
     @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
