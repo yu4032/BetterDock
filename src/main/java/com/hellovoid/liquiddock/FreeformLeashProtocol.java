@@ -13,8 +13,15 @@ final class FreeformLeashProtocol {
 
     static final int TRANSACTION_REGISTER_PROVIDER = IBinder.FIRST_CALL_TRANSACTION;
     static final int TRANSACTION_GET_PROVIDER = IBinder.FIRST_CALL_TRANSACTION + 1;
+
+    // Legacy per-task wire codes are intentionally left reserved. Reusing them with a new
+    // payload would let old/new Launcher and SystemUI processes misinterpret each other.
     static final int TRANSACTION_REQUEST_LEASHES = IBinder.FIRST_CALL_TRANSACTION;
     static final int TRANSACTION_LEASH_RESULT = IBinder.FIRST_CALL_TRANSACTION;
+    static final int TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT =
+            IBinder.FIRST_CALL_TRANSACTION + 1;
+    static final int TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT =
+            IBinder.FIRST_CALL_TRANSACTION + 1;
 
     static final int STATUS_OK = 0;
     static final int STATUS_UNAVAILABLE = 1;
