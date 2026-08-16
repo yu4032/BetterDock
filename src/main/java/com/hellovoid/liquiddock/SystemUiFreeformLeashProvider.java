@@ -239,8 +239,8 @@ final class SystemUiFreeformLeashProvider {
             out.writeLong(requestId);
             out.writeInt(overallStatus);
             out.writeInt(surfaces.length);
-            for (SurfaceControl surface : surfaces) {
-                out.writeTypedObject(surface, 0);
+            for (int i = 0; i < surfaces.length; i++) {
+                out.writeTypedObject(surfaces[i], 0);
             }
             callback.transact(FreeformLeashProtocol.TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
