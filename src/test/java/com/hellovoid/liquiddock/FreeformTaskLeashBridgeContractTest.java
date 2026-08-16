@@ -31,23 +31,33 @@ public class FreeformTaskLeashBridgeContractTest {
                 main.indexOf("SystemUiFreeformLeashProvider.install") < main.indexOf("return;"));
     }
 
-    @Test public void systemUiProviderIsPassiveThreadConfinedAndInputBounded() throws Exception {
-        String source = source(
+    @Test public void systemUiProviderOwnsDisplayScopedSnapshotEnumeration() throws Exception {
+        String provider = source(
                 "src/main/java/com/hellovoid/liquiddock/SystemUiFreeformLeashProvider.java");
-        assertTrue(source.contains("WeakReference<Object>"));
-        assertTrue(source.contains("ListenerState"));
-        assertTrue(source.contains("mShellTaskOrganizer"));
-        assertTrue(source.contains("mTasks"));
-        assertTrue(source.contains("mLeash"));
-        assertTrue(source.contains("executor.execute"));
-        assertTrue(source.contains("writeTypedObject(surfaces[i], 0)"));
-        assertTrue(source.contains("count > FreeformLeashProtocol.MAX_TASKS"));
-        assertFalse(source.contains("createIntArray()"));
-        assertFalse(source.contains("new SurfaceControl.Transaction"));
-        assertFalse(source.contains("registerTaskOrganizer"));
-        assertFalse(source.contains("onTaskAppeared"));
-        assertFalse(source.contains("SystemUIApplication"));
-        assertFalse(source.contains("PARCELABLE_WRITE_RETURN_VALUE"));
+        assertTrue(provider.contains("WeakReference<Object>"));
+        assertTrue(provider.contains("ListenerState"));
+        assertTrue(provider.contains("mShellTaskOrganizer"));
+        assertTrue(provider.contains("mTasks"));
+        assertTrue(provider.contains("mTaskInfo"));
+        assertTrue(provider.contains("mLeash"));
+        assertTrue(provider.contains("executor.execute"));
+        assertTrue(provider.contains("tasks.size()"));
+        assertTrue(provider.contains("tasks.valueAt("));
+        assertTrue(provider.contains("shouldIncludeFreeformCandidate"));
+        assertTrue(provider.contains("writeTypedObject(surfaces[i], 0)"));
+        assertTrue(provider.contains("TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT"));
+        assertTrue(provider.contains("TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT"));
+        assertTrue(provider.contains("included.size() > FreeformLeashProtocol.MAX_TASKS"));
+        assertFalse(provider.contains("readTaskIds("));
+        assertFalse(provider.contains("taskIds"));
+        assertFalse(provider.contains("createIntArray()"));
+        assertFalse(provider.contains("new SurfaceControl.Transaction"));
+        assertFalse(provider.contains("registerTaskOrganizer"));
+        assertFalse(provider.contains("onTaskAppeared"));
+        assertFalse(provider.contains("SystemUIApplication"));
+        assertFalse(provider.contains("PARCELABLE_WRITE_RETURN_VALUE"));
+        assertFalse("hidden RunningTaskInfo.displayId must not be a compile-time dependency",
+                provider.contains("taskInfo.displayId"));
     }
 
     @Test public void brokerNeverCarriesSurfaceControls() throws Exception {
@@ -114,7 +124,11 @@ public class FreeformTaskLeashBridgeContractTest {
         assertFalse(legacy.contains("getLayerDebugInfo"));
     }
 
-    @Test public void protocolDeadlineIsTwentyFiveMilliseconds() throws Exception {
+    @Test public void protocolDeadlineAndSnapshotVersionAreExplicit() throws Exception {
+        String protocol = source(
+                "src/main/java/com/hellovoid/liquiddock/FreeformLeashProtocol.java");
+        assertTrue(protocol.contains("TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT"));
+        assertTrue(protocol.contains("TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT"));
         assertEquals(25L, FreeformLeashProtocol.REQUEST_TIMEOUT_MS);
         assertEquals(32, FreeformLeashProtocol.MAX_TASKS);
     }
