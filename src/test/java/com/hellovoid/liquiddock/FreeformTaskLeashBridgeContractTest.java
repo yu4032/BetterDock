@@ -25,15 +25,18 @@ public class FreeformTaskLeashBridgeContractTest {
                 main.indexOf("SystemUiFreeformLeashProvider.install") < main.indexOf("return;"));
     }
 
-    @Test public void systemUiProviderIsPassiveAndThreadConfined() throws Exception {
+    @Test public void systemUiProviderIsPassiveThreadConfinedAndInputBounded() throws Exception {
         String source = source(
                 "src/main/java/com/hellovoid/liquiddock/SystemUiFreeformLeashProvider.java");
         assertTrue(source.contains("WeakReference<Object>"));
+        assertTrue(source.contains("ListenerState"));
         assertTrue(source.contains("mShellTaskOrganizer"));
         assertTrue(source.contains("mTasks"));
         assertTrue(source.contains("mLeash"));
         assertTrue(source.contains("executor.execute"));
         assertTrue(source.contains("writeTypedObject(surfaces[i], 0)"));
+        assertTrue(source.contains("count > FreeformLeashProtocol.MAX_TASKS"));
+        assertFalse(source.contains("createIntArray()"));
         assertFalse(source.contains("new SurfaceControl.Transaction"));
         assertFalse(source.contains("registerTaskOrganizer"));
         assertFalse(source.contains("onTaskAppeared"));
@@ -59,6 +62,7 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(source.contains("SurfaceControl.CREATOR"));
         assertTrue(source.contains("surface.release()"));
         assertTrue(source.contains("received.size() != requestedTaskIds.length"));
+        assertTrue(source.contains("releaseAll(surfaces)"));
     }
 
     @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
@@ -66,6 +70,7 @@ public class FreeformTaskLeashBridgeContractTest {
                 "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java");
         assertTrue(source.contains("LiveScreenCapture.class.getDeclaredMethod"));
         assertTrue(source.contains("resolution.borrowedRemoteLeashes()"));
+        assertTrue(source.contains("allValid(remote)"));
         assertTrue(source.contains("args[3] = merge"));
         assertTrue(source.contains("args[5] = 2"));
         assertTrue(source.contains("resolution.close()"));
