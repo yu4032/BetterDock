@@ -115,7 +115,7 @@ final class SystemUiFreeformLeashProvider {
             try {
                 data.enforceInterface(FreeformLeashProtocol.PROVIDER_DESCRIPTOR);
                 long requestId = data.readLong();
-                int[] taskIds = boundedTaskIds(data.createIntArray());
+                int[] taskIds = readTaskIds(data);
                 IBinder callback = data.readStrongBinder();
                 if (callback == null) return true;
                 if (BREAKER.isDisabled()) {
@@ -143,6 +143,9 @@ final class SystemUiFreeformLeashProvider {
                     sendUniform(callback, requestId, taskIds,
                             FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE);
                 }
+                return true;
+            } catch (SecurityException | IllegalArgumentException malformedRequest) {
+                // Caller input must never be able to trip a SystemUI process breaker.
                 return true;
             } catch (Throwable error) {
                 recordInfrastructureFailure("SystemUI provider transaction", error);
@@ -231,12 +234,14 @@ final class SystemUiFreeformLeashProvider {
         }
     }
 
-    private static int[] boundedTaskIds(int[] input) {
-        int[] ids = FreeformBridgePolicy.deduplicateTaskIds(input);
-        if (ids.length > FreeformLeashProtocol.MAX_TASKS) {
-            return java.util.Arrays.copyOf(ids, FreeformLeashProtocol.MAX_TASKS);
+    private static int[] readTaskIds(Parcel data) {
+        int count = data.readInt();
+        if (count < 0 || count > FreeformLeashProtocol.MAX_TASKS) {
+            throw new IllegalArgumentException("invalid freeform task count=" + count);
         }
-        return ids;
+        int[] raw = new int[count];
+        for (int i = 0; i < count; i++) raw[i] = data.readInt();
+        return FreeformBridgePolicy.deduplicateTaskIds(raw);
     }
 
     private static void recordInfrastructureFailure(String where, Throwable error) {
