@@ -5,6 +5,7 @@ import android.content.Context;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Parcel;
+import android.os.RemoteException;
 import android.util.Log;
 import android.view.SurfaceControl;
 
@@ -74,6 +75,11 @@ final class FreeformTaskLeashResolver {
                 state.expire();
                 return Resolution.unavailable(true);
             }
+        } catch (RemoteException remoteGone) {
+            // SystemUI/provider process death is normal lifecycle. Broker death handling will
+            // rediscover a replacement provider; do not poison the process-level breaker.
+            state.expire();
+            return Resolution.unavailable(true);
         } catch (Throwable error) {
             breaker.recordInfrastructureFailure();
             state.expire();
@@ -93,7 +99,9 @@ final class FreeformTaskLeashResolver {
             state.expire();
             return Resolution.unavailable(true);
         }
-        return state.takeResolution();
+        Resolution result = state.takeResolution();
+        if (state.wasMalformed()) breaker.recordInfrastructureFailure();
+        return result;
     }
 
     /** Returns null when task enumeration itself failed; callers must fail closed. */
@@ -213,8 +221,12 @@ final class FreeformTaskLeashResolver {
                                 release(old);
                                 bad = true;
                             }
-                        } else if (surface != null) {
-                            bad = true;
+                        } else {
+                            if (status != FreeformLeashProtocol.STATUS_UNAVAILABLE
+                                    && status != FreeformLeashProtocol.STATUS_INFRASTRUCTURE_FAILURE) {
+                                bad = true;
+                            }
+                            if (surface != null) bad = true;
                         }
                     }
                     synchronized (RequestState.this) {
@@ -242,6 +254,10 @@ final class FreeformTaskLeashResolver {
         RequestState(long requestId, int[] requestedTaskIds) {
             this.requestId = requestId;
             this.requestedTaskIds = requestedTaskIds.clone();
+        }
+
+        synchronized boolean wasMalformed() {
+            return malformed;
         }
 
         synchronized void expire() {
