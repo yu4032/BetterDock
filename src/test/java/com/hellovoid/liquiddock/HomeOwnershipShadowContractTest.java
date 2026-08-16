@@ -24,17 +24,19 @@ public class HomeOwnershipShadowContractTest {
         assertEquals(16, HomeOwnershipShadowProtocol.MAX_PENDING);
     }
 
-    @Test public void systemUiShadowIsReadOnlyAndBreakerIndependent() throws Exception {
+    @Test public void systemUiShadowReadsOnTheShellTaskOrganizerExecutorOnly() throws Exception {
         String source = source("SystemUiHomeOwnershipShadow.java");
+        String provider = source("SystemUiFreeformLeashProvider.java");
         assertTrue(source.contains("WeakReference<Object>"));
         assertTrue(source.contains("MultiTaskingTaskRepository"));
-        assertTrue(source.contains("mBgExecutor"));
-        assertTrue(source.contains("instanceof Executor"));
+        assertTrue(source.contains("SystemUiFreeformLeashProvider.taskStateExecutorForDiagnostics()"));
         assertTrue(source.contains("final Executor executor"));
         assertTrue(source.contains("executor.execute("));
         assertTrue(source.contains("isHomeVisible"));
         assertTrue(source.contains("getHomeTask"));
         assertTrue(source.contains("getTopFullscreenTaskInfo"));
+        assertTrue(provider.contains("taskStateExecutorForDiagnostics()"));
+        assertFalse(source.contains("mBgExecutor"));
         assertFalse(source.contains("executeMethod"));
         assertFalse(source.contains("SurfaceControl"));
         assertFalse(source.contains("registerTaskOrganizer"));
