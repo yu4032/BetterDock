@@ -112,13 +112,18 @@ final class SystemUiFreeformLeashProvider {
         client.setSystemUiProvider(PROVIDER_BINDER);
     }
 
+    /** Read-only diagnostic access to the executor that owns ShellTaskOrganizer callbacks. */
+    static Executor taskStateExecutorForDiagnostics() {
+        ListenerState state = currentState;
+        return state != null ? state.executor : null;
+    }
+
     private static final Binder PROVIDER_BINDER = new Binder() {
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                 throws RemoteException {
             ListenerState state = currentState;
             if (SystemUiHomeOwnershipShadow.handles(code)) {
-                Context authContext = state != null ? state.context : null;
-                return SystemUiHomeOwnershipShadow.handleTransaction(code, data, authContext);
+                return SystemUiHomeOwnershipShadow.handleTransaction(code, data);
             }
             if (code != FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT) {
                 return super.onTransact(code, data, reply, flags);
