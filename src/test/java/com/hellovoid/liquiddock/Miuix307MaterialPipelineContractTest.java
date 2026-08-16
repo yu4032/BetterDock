@@ -38,14 +38,26 @@ public class Miuix307MaterialPipelineContractTest {
     }
 
     @Test
-    public void materialPipelineUsesNativeMiuixBlurWithoutCapturePipeline() throws IOException {
-        Path pipeline = Paths.get("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
-        assertTrue("material pipeline source must exist", Files.exists(pipeline));
-        String source = read(pipeline.toString());
-        assertTrue(source.contains("HotSeatsListContentMiuiXBlurBackground"));
-        assertTrue(source.contains("mBlurUiHelper"));
-        assertTrue(source.contains("refreshBlur"));
-        assertFalse(source.contains("LiveScreenCapture"));
-        assertFalse(source.contains("CaptureSceneState"));
+    public void materialPipelineKeepsNativeMiuixBlurAndAddsPrismalGlass() throws IOException {
+        Path pipelinePath = Paths.get(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
+        Path glassHookPath = Paths.get(
+                "src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java");
+        assertTrue("material pipeline source must exist", Files.exists(pipelinePath));
+        assertTrue("MiuiX glass hook source must exist", Files.exists(glassHookPath));
+
+        String pipeline = read(pipelinePath.toString());
+        String glassHook = read(glassHookPath.toString());
+        String blurBridge = read("src/main/java/com/hellovoid/liquiddock/MiBlurBridge.java");
+
+        assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
+        assertTrue(pipeline.contains("MiuixGlassHook.install"));
+        assertTrue(glassHook.contains("LiquidGlassFactory.create"));
+        assertTrue(glassHook.contains("DockLiquidGlassHostView"));
+        assertTrue(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
+        assertTrue(blurBridge.contains("setPassWindowBlurEnabled"));
+        assertFalse(glassHook.contains("setBackground(null)"));
+        assertFalse(pipeline.contains("LiveScreenCapture"));
+        assertFalse(pipeline.contains("CaptureSceneState"));
     }
 }
