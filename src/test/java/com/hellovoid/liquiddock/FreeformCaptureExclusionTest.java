@@ -11,13 +11,15 @@ import java.util.Collection;
 import org.junit.Test;
 
 public class FreeformCaptureExclusionTest {
-    @Test public void onlyVisibleFreeformTasksAreExcluded() throws Exception {
+    @Test public void visibleFreeformOrUnknownModeRequiresExclusion() throws Exception {
         Class<?> policy = load("com.hellovoid.liquiddock.FreeformCapturePolicy");
         Method method = policy.getDeclaredMethod("shouldExclude", int.class, boolean.class);
         method.setAccessible(true);
         assertEquals(Boolean.TRUE, method.invoke(null, 5, true));
+        assertEquals(Boolean.TRUE, method.invoke(null, -1, true));
         assertEquals(Boolean.FALSE, method.invoke(null, 1, true));
         assertEquals(Boolean.FALSE, method.invoke(null, 5, false));
+        assertEquals(Boolean.FALSE, method.invoke(null, -1, false));
     }
 
     @Test public void existingDockAndDragNamesRemainDeduplicatedAndOrdered() throws Exception {
