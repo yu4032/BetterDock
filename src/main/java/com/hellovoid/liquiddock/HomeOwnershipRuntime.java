@@ -108,6 +108,17 @@ final class HomeOwnershipRuntime {
         Api101Bridge.log("[DC] Recents exit animation active=" + active);
     }
 
+    static void onAppHomeAnimationEnd() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            MAIN.post(HomeOwnershipRuntime::onAppHomeAnimationEnd);
+            return;
+        }
+        DockLiquidGlassView glass = currentView.get();
+        if (glass == null) return;
+        glass.setGestureCaptureTarget("HOME_ANIMATION_END");
+        Api101Bridge.log("[DC] APP HOME CLOSE_TO_HOME animation end");
+    }
+
     static HomeOwnershipPolicy.Baseline appliedBaselineForTests() {
         return appliedBaseline;
     }
