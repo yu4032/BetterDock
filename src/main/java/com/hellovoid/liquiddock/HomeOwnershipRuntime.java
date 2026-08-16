@@ -29,6 +29,7 @@ final class HomeOwnershipRuntime {
             return;
         }
         currentView = new WeakReference<>(glass);
+        WallpaperZoomRuntime.bind(glass);
         appliedBaseline = HomeOwnershipPolicy.Baseline.UNKNOWN;
         lastConfirmedBaseline = HomeOwnershipPolicy.Baseline.UNKNOWN;
         glass.setLauncherState(false, false);
