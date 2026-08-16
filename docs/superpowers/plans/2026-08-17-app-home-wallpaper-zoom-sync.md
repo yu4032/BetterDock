@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep APP → HOME on wallpaper-only capture while reproducing HyperOS Launcher wallpaper zoom in LiquidDock's captured strip.
+**Goal:** Keep APP → HOME on low-cost wallpaper-only capture while synchronizing LiquidDock's wallpaper cache with HyperOS Launcher's real per-frame wallpaper scale.
 
-**Architecture:** A small pure-math helper converts a screen-space Dock crop to the unzoomed wallpaper coordinate space. `WallpaperZoomHook` samples the Launcher's actual per-frame `LocalWallpaperElement.updateTargetParams(float)` scale and publishes it through a runtime bridge to `DockLiquidGlassView`, which invalidates wallpaper cache and requests fresh mode-2 captures. Full-display APP/RECENTS capture remains unchanged.
+**Architecture:** `WallpaperZoomHook` samples the actual `LocalWallpaperElement.updateTargetParams(float)` visual scale and publishes it through a weak runtime bridge to `DockLiquidGlassView`. Scale changes and the HOME gesture invalidate the mode-2 wallpaper cache; each cached strip is bound to the transform revision that produced it. A tested crop-transform helper is retained for a later isolated A/B but is intentionally not wired into the conservative first device candidate.
 
-**Tech Stack:** Java, libxposed API101 hooks, Android `Rect`/`Point`, HyperOS Launcher internals, GitHub Actions Gradle tests/build.
+**Tech Stack:** Java, libxposed API101 hooks, HyperOS Launcher internals, GitHub Actions Gradle tests/build.
 
 ## Global Constraints
 
@@ -14,67 +14,53 @@
 - Do not carry forward APP `CLOSE_TO_HOME` FULL_DISPLAY hold or SurfaceControl exclusion experiments.
 - Do not change SystemUI HOME/APP ownership authority.
 - Do not use Floating Dock window focus as a capture/correctness gate.
-- Apply zoom correction only to wallpaper mode 2.
-- Scale 1.0 must be identity; invalid/out-of-range scale must fall back to identity.
+- Keep the first device candidate on the original wallpaper mode-2 crop/scale.
+- Never synthesize wallpaper animation timing from fixed delays.
 
 ---
 
-### Task 1: Pure wallpaper zoom crop transform
+### Task 1: Pure wallpaper zoom crop transform — completed, not wired
 
 **Files:**
-- Create: `src/main/java/com/hellovoid/liquiddock/WallpaperZoomTransform.java`
-- Create: `src/test/java/com/hellovoid/liquiddock/WallpaperZoomTransformTest.java`
+- `src/main/java/com/hellovoid/liquiddock/WallpaperZoomTransform.java`
+- `src/test/java/com/hellovoid/liquiddock/WallpaperZoomTransformTest.java`
 
-**Interfaces:**
-- Produces: `WallpaperZoomTransform.Result adjust(Rect screenCrop, int displayWidth, int displayHeight, float visualScale, float captureScale)` with `Rect sourceCrop` and `float frameScale`.
+- [x] RED tests for identity, center invariance, inverse scaling, dimension preservation, and invalid-scale fallback.
+- [x] Implemented center-based inverse transform.
+- [x] Full unit suite passed after implementation.
+- [x] Leave helper unused in the conservative candidate to avoid possible double application of a SurfaceFlinger transform.
 
-- [ ] Write RED tests for identity at 1.0, center-point invariance, inverse scaling around display center, dimension preservation (`adjustedCropSize * adjustedFrameScale ≈ originalCropSize * captureScale`), and invalid-scale fallback.
-- [ ] Run `./gradlew testDebugUnitTest --tests '*WallpaperZoomTransformTest'` and verify failure because helper is missing.
-- [ ] Implement minimal helper using `raw = center + (screen-center)/scale`; clamp crop to display bounds; set `frameScale = captureScale * scale` when correction is active.
-- [ ] Run focused tests and commit.
-
-### Task 2: Sample HyperOS Launcher wallpaper scale
+### Task 2: Sample HyperOS Launcher wallpaper scale — completed
 
 **Files:**
-- Create: `src/main/java/com/hellovoid/liquiddock/WallpaperZoomHook.java`
-- Create: `src/main/java/com/hellovoid/liquiddock/WallpaperZoomRuntime.java`
-- Modify: `src/main/java/com/hellovoid/liquiddock/RecentsHapticHook.java`
-- Create: `src/test/java/com/hellovoid/liquiddock/WallpaperZoomHookContractTest.java`
+- `src/main/java/com/hellovoid/liquiddock/WallpaperZoomHook.java`
+- `src/main/java/com/hellovoid/liquiddock/WallpaperZoomRuntime.java`
+- `src/main/java/com/hellovoid/liquiddock/RecentsHapticHook.java`
+- `src/main/java/com/hellovoid/liquiddock/HomeOwnershipRuntime.java`
+- `src/test/java/com/hellovoid/liquiddock/WallpaperZoomHookContractTest.java`
 
-**Interfaces:**
-- `WallpaperZoomHook.install(ClassLoader)` hooks `com.miui.home.recents.anim.LocalWallpaperElement.updateTargetParams(float)` after original execution.
-- `WallpaperZoomRuntime.bind(DockLiquidGlassView)` stores only a weak view reference.
-- `WallpaperZoomRuntime.onScale(float)` forwards to `DockLiquidGlassView.setLauncherWallpaperVisualScale(float)` on main thread.
+- [x] RED contract verified.
+- [x] Hook exact `LocalWallpaperElement.updateTargetParams(float)` after original execution.
+- [x] Add Local/System `animTo`/`setTo` diagnostics only; do not mutate wallpaper APIs.
+- [x] Bind a weak runtime bridge to the current glass view.
+- [x] Preserve the validated Recents lifecycle hook.
 
-- [ ] Write RED source contract requiring the exact LocalWallpaperElement method, a diagnostic hook for Local/System `animTo`/`setTo`, and no ownership mutation.
-- [ ] Run focused contract test and verify failure.
-- [ ] Implement hooks by method-name/one-float-signature discovery for `updateTargetParams`; log sampled scale only when debug logging is enabled.
-- [ ] Install the hook next to the existing Recents lifecycle hook and run focused/full unit tests.
-
-### Task 3: Integrate scale revision with wallpaper capture/cache
+### Task 3: Synchronize wallpaper cache with zoom revision — completed pending final CI
 
 **Files:**
-- Modify: `src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java`
-- Modify: `src/main/java/com/hellovoid/liquiddock/HomeOwnershipRuntime.java` only if binding is needed from the existing glass binding point.
-- Create: `src/test/java/com/hellovoid/liquiddock/WallpaperZoomCaptureContractTest.java`
+- `.github/apply_wallpaper_zoom_sync.py`
+- `src/test/java/com/hellovoid/liquiddock/WallpaperZoomCaptureContractTest.java`
 
-**Interfaces:**
-- `DockLiquidGlassView.setLauncherWallpaperVisualScale(float scale)` validates [0.8, 1.25], ignores sub-epsilon repeats, increments a transform revision, clears `wallpaperStripCache`, zeros capture cadence boundary, and requests a capture.
-- Wallpaper mode capture uses `WallpaperZoomTransform.adjust(...)`; FULL_DISPLAY uses the original `req.stripRect` and original `captureScale` exactly.
-
-- [ ] Write RED contract proving wallpaper mode uses adjusted crop/scale, full-display path does not, and zoom updates invalidate cache before requesting capture.
-- [ ] Verify RED.
-- [ ] Implement scale state plus cache invalidation and capture scheduling.
-- [ ] Apply the transform only immediately before mode-2 `captureScreenAsync`, keeping `CaptureRequest` screen geometry unchanged for downstream tile mapping.
-- [ ] Add logs: `wallpaper zoom scale=... revision=...`, `wallpaper zoom capture screenCrop=... sourceCrop=... frameScale=...`.
-- [ ] Run all unit tests and `assembleDebug`.
+- [x] RED contract verified for zoom-driven cache invalidation/revision binding.
+- [x] `setLauncherWallpaperVisualScale(float)` validates [0.8, 1.25], increments `wallpaperTransformRevision`, marks wallpaper cache not ready, clears it safely, and requests HOME capture through the existing cadence/coalescing path.
+- [x] Bind each cached wallpaper strip to the transform revision that produced it; stale in-flight captures cannot become valid cache hits for a newer zoom revision.
+- [x] Add a second RED contract for the race before the first zoom callback.
+- [x] `GestureToHome` clears the static HOME cache before its first wallpaper request.
+- [x] Do not wire `WallpaperZoomTransform.adjust(...)` into capture yet.
 
 ### Task 4: CI/device candidate
 
-**Files:**
-- Modify: `.github/workflows/api101-build.yml` only to include `fix/app-home-wallpaper-zoom-sync`, then restore workflow parity after candidate artifact is produced if needed.
-
-- [ ] Verify exact branch HEAD in GitHub Actions.
+- [ ] Verify exact final branch HEAD in GitHub Actions.
 - [ ] Require `testDebugUnitTest`, `assembleDebug`, and artifact upload all success.
-- [ ] Download artifact, verify ZIP/APK integrity and SHA-256.
+- [ ] Download artifact and verify ZIP/APK integrity plus SHA-256.
 - [ ] Do not merge to `main`; device test APP → HOME and Recents → HOME first.
