@@ -4,6 +4,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -39,6 +40,24 @@ final class FreeformLeashBrokerClient {
     private boolean binding;
     private boolean bound;
     private int reconnectAttempt;
+
+    private final Binder providerWatcherCallback = new Binder() {
+        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
+            if (code != FreeformLeashProtocol.TRANSACTION_PROVIDER_CHANGED) {
+                return false;
+            }
+            try {
+                data.enforceInterface(FreeformLeashProtocol.BROKER_PROVIDER_CALLBACK_DESCRIPTOR);
+                IBinder next = data.readStrongBinder();
+                if (next != null) setLauncherProvider(next);
+                else clearLauncherProviderFromWatcher();
+                return true;
+            } catch (Throwable error) {
+                clearLauncherProviderFromWatcher();
+                return true;
+            }
+        }
+    };
 
     static FreeformLeashBrokerClient shared(Context context, Role role) {
         FreeformLeashBrokerClient current = role == Role.SYSTEM_UI
@@ -138,7 +157,7 @@ final class FreeformLeashBrokerClient {
                 reconnectAttempt = 0;
             }
             if (role == Role.SYSTEM_UI) registerSystemUiProviderAsync();
-            else refreshLauncherProviderAsync();
+            else registerProviderWatcherAsync();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -160,7 +179,7 @@ final class FreeformLeashBrokerClient {
 
     private void clearBrokerKeepBinding() {
         broker = null;
-        if (role == Role.LAUNCHER) clearLauncherProvider(null);
+        if (role == Role.LAUNCHER) clearLauncherProviderFromWatcher();
     }
 
     private void unbindAndReconnect() {
@@ -175,7 +194,7 @@ final class FreeformLeashBrokerClient {
             if (shouldUnbind) {
                 try { context.unbindService(connection); } catch (Throwable ignored) {}
             }
-            if (role == Role.LAUNCHER) clearLauncherProvider(null);
+            if (role == Role.LAUNCHER) clearLauncherProviderFromWatcher();
             scheduleReconnect();
         });
     }
@@ -213,6 +232,35 @@ final class FreeformLeashBrokerClient {
         });
     }
 
+    private void registerProviderWatcherAsync() {
+        if (role != Role.LAUNCHER) return;
+        runIo(() -> {
+            IBinder b = broker;
+            if (b == null) return;
+            Parcel data = Parcel.obtain();
+            Parcel reply = Parcel.obtain();
+            boolean accepted = false;
+            try {
+                data.writeInterfaceToken(FreeformLeashProtocol.BROKER_DESCRIPTOR);
+                data.writeStrongBinder(providerWatcherCallback);
+                accepted = b.transact(FreeformLeashProtocol.TRANSACTION_WATCH_PROVIDER,
+                        data, reply, 0);
+                if (accepted) reply.readException();
+            } catch (Throwable error) {
+                Log.w(TAG, "freeform provider watcher registration unavailable", error);
+                unbindAndReconnect();
+                return;
+            } finally {
+                reply.recycle();
+                data.recycle();
+            }
+            // Mixed generations may not understand the watcher transaction. Keep the old
+            // GET_PROVIDER path as a one-shot compatibility fallback; current generations
+            // recover event-driven through providerWatcherCallback.
+            if (!accepted) mainHandler.post(FreeformLeashBrokerClient.this::refreshLauncherProviderAsync);
+        });
+    }
+
     private void refreshLauncherProviderAsync() {
         if (role != Role.LAUNCHER || launcherProvider != null) return;
         runIo(() -> {
@@ -245,6 +293,13 @@ final class FreeformLeashBrokerClient {
         } catch (Throwable error) {
             clearLauncherProvider(next);
         }
+    }
+
+    private void clearLauncherProviderFromWatcher() {
+        IBinder current = launcherProvider;
+        if (current == null) return;
+        launcherProvider = null;
+        notifyProviderChanged(null);
     }
 
     private void clearLauncherProvider(IBinder expected) {
