@@ -241,15 +241,15 @@ final class SystemUiFreeformLeashProvider {
     private static void sendSnapshotResult(IBinder callback, long requestId, int overallStatus,
                                            SurfaceControl[] surfaces) {
         if (callback == null) return;
-        SurfaceControl[] safeSurfaces = surfaces != null ? surfaces : NO_SURFACES;
+        if (surfaces == null) surfaces = NO_SURFACES;
         Parcel out = Parcel.obtain();
         try {
             out.writeInterfaceToken(FreeformLeashProtocol.CALLBACK_DESCRIPTOR);
             out.writeLong(requestId);
             out.writeInt(overallStatus);
-            out.writeInt(safeSurfaces.length);
-            for (int i = 0; i < safeSurfaces.length; i++) {
-                out.writeTypedObject(safeSurfaces[i], 0);
+            out.writeInt(surfaces.length);
+            for (int i = 0; i < surfaces.length; i++) {
+                out.writeTypedObject(surfaces[i], 0);
             }
             callback.transact(FreeformLeashProtocol.TRANSACTION_VISIBLE_LEASH_SNAPSHOT_RESULT,
                     out, null, IBinder.FLAG_ONEWAY);
