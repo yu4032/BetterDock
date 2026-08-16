@@ -60,12 +60,12 @@ final class FreeformLayerResolver {
         if (now < cacheUntilNanos) return;
         boolean visible = false;
         boolean succeeded = false;
+        int displayId = displayId();
         try {
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             List<ActivityManager.RunningTaskInfo> tasks = am != null
                     ? am.getRunningTasks(MAX_RUNNING_TASKS) : null;
             if (tasks != null) {
-                int displayId = displayId();
                 for (ActivityManager.RunningTaskInfo task : tasks) {
                     if (task == null || task.displayId != displayId) continue;
                     if (FreeformCapturePolicy.shouldExclude(windowingMode(task), isVisible(task))) {
@@ -81,6 +81,7 @@ final class FreeformLayerResolver {
         cachedVisibleFreeform = visible;
         cachedScanSucceeded = succeeded;
         cacheUntilNanos = now + CACHE_NANOS;
+        FreeformLeashRuntime.updatePreflight(displayId, succeeded, visible);
     }
 
     private int displayId() {
