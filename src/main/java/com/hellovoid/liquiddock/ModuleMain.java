@@ -17,7 +17,18 @@ public final class ModuleMain extends XposedModule {
 
     @Override
     public void onPackageReady(@NonNull PackageReadyParam param) {
-        if (!"com.miui.home".equals(param.getPackageName())) return;
+        String packageName = param.getPackageName();
+        if (FreeformLeashProtocol.SYSTEM_UI_PACKAGE.equals(packageName)) {
+            try {
+                SystemUiFreeformLeashProvider.install(param.getClassLoader());
+            } catch (Throwable error) {
+                // SystemUI stability is more important than freeform exclusion. Never let
+                // a LiquidDock capability failure escape into the host process.
+                Api101Bridge.log("[DC] SystemUI freeform leash provider unavailable", error);
+            }
+            return;
+        }
+        if (!FreeformLeashProtocol.LAUNCHER_PACKAGE.equals(packageName)) return;
         try {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
