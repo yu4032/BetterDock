@@ -24,8 +24,6 @@ final class FreeformLeashProtocol {
     static final long REQUEST_TIMEOUT_MS = 25L;
 
     static final String MODULE_PACKAGE = "com.hellovoid.liquiddock";
-    static final String BROKER_SERVICE =
-            "com.hellovoid.liquiddock.FreeformLeashBrokerService";
     static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     static final String LAUNCHER_PACKAGE = "com.miui.home";
 
