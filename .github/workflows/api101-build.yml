@@ -20,36 +20,17 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      # BEGIN MIUIX307_FORMALIZE
       - run: python3 .github/patch_miuix307_demo.py
       - run: python3 .github/formalize_miuix307.py
-      - name: Package source-native MiuiX 307 files
+      - name: Commit source-native MiuiX 307 pipeline
         run: |
-          mkdir -p /tmp/miuix307-formal-source
-          cp --parents \
-            .github/workflows/api101-build.yml \
-            src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java \
-            src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
-            src/main/java/com/hellovoid/liquiddock/MainHook.java \
-            src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
-            src/main/java/com/hellovoid/liquiddock/Miuix307HighlightView.java \
-            src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt \
-            src/test/java/com/hellovoid/liquiddock/Miuix307MaterialPipelineContractTest.java \
-            src/test/java/com/hellovoid/liquiddock/Miuix307FormalPipelineContractTest.java \
-            /tmp/miuix307-formal-source/
-          printf '%s\n' \
-            '.github/patch_miuix307_demo.py' \
-            '.github/formalize_miuix307.py' \
-            'src/main/java/com/hellovoid/liquiddock/Miuix307DemoPipeline.java' \
-            'src/test/java/com/hellovoid/liquiddock/Miuix307DemoPipelineContractTest.java' \
-            > /tmp/miuix307-formal-source/DELETE_PATHS.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LiquidDock-miuix307-formal-source
-          path: /tmp/miuix307-formal-source
-          if-no-files-found: error
-          retention-days: 1
-      # END MIUIX307_FORMALIZE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: formalize MiuiX 307 material pipeline"
+            git push origin HEAD:demo/miuix307-material-pipeline
+          fi
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
