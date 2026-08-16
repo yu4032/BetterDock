@@ -12,10 +12,16 @@ public class FreeformTaskLeashBridgeContractTest {
         return Files.readString(Path.of(relative));
     }
 
-    @Test public void scopeAndEntryPointIsolateSystemUi() throws Exception {
+    @Test public void scopeManifestAndEntryPointCoverOnlyApprovedHosts() throws Exception {
         String scope = source("src/main/resources/META-INF/xposed/scope.list");
         assertTrue(scope.contains("com.miui.home"));
         assertTrue(scope.contains("com.android.systemui"));
+
+        String manifest = source("src/main/AndroidManifest.xml");
+        assertTrue(manifest.contains("<package android:name=\"com.miui.home\""));
+        assertTrue(manifest.contains("<package android:name=\"com.android.systemui\""));
+        assertTrue(manifest.contains(".FreeformLeashBrokerService"));
+        assertTrue(manifest.contains("android:exported=\"true\""));
 
         String main = source("src/main/java/com/hellovoid/liquiddock/ModuleMain.java");
         assertTrue(main.contains("SystemUiFreeformLeashProvider.install"));
@@ -63,6 +69,7 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(source.contains("surface.release()"));
         assertTrue(source.contains("received.size() != requestedTaskIds.length"));
         assertTrue(source.contains("releaseAll(surfaces)"));
+        assertFalse(source.contains("writeIntArray(taskIds)"));
     }
 
     @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
