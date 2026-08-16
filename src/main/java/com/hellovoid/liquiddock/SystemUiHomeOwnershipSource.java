@@ -162,21 +162,16 @@ final class SystemUiHomeOwnershipSource {
             }
             boolean homeVisible = (Boolean) homeVisibleValue;
 
-            Object homeTask;
-            Object topFullscreenTask;
-            try {
-                homeTask = state.getHomeTask.invoke(repository);
-            } catch (Throwable unavailable) {
-                homeTask = null;
-            }
-            try {
-                topFullscreenTask = state.getTopFullscreenTaskInfo.invoke(repository, displayId);
-            } catch (Throwable unavailable) {
-                topFullscreenTask = null;
-            }
+            // Invocation failure is not equivalent to a legitimate null task. Any reflection
+            // or repository read error must fail closed rather than manufacturing HOME.
+            Object homeTask = state.getHomeTask.invoke(repository);
+            Object topFullscreenTask = state.getTopFullscreenTaskInfo.invoke(repository, displayId);
 
             int homeTaskId = reflectedTaskId(homeTask);
             int topFullscreenTaskId = reflectedTaskId(topFullscreenTask);
+            if (topFullscreenTask != null && topFullscreenTaskId < 0) {
+                throw new IllegalStateException("top fullscreen taskId unavailable");
+            }
             HomeOwnershipPolicy.Result result = HomeOwnershipPolicy.classify(
                     homeVisible, homeTaskId, topFullscreenTaskId, confirmation);
             sendResult(callback, requestId, HomeOwnershipProtocol.STATUS_OK,
