@@ -64,24 +64,22 @@ final class Miuix307MaterialPipeline {
 
             // setupViews can run before the vendor has its final dimensions. These callbacks
             // are the authoritative geometry boundary on 307 and keep the glass host aligned.
-            // Reuse the install-time config here: this path can be called every animation
-            // frame, while DockLiquidGlassView already owns the slow appearance hot-reload.
             HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
+                        MiuixGlassHook.syncSize((View) chain.getThisObject());
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
+                        MiuixGlassHook.syncSize((View) chain.getThisObject());
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                     new Class<?>[]{float.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.sync((View) chain.getThisObject(), config);
+                        MiuixGlassHook.syncGeometry((View) chain.getThisObject(), config);
                         return result;
                     });
 
