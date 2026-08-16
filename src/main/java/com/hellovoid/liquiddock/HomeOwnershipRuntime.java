@@ -37,8 +37,6 @@ final class HomeOwnershipRuntime {
             resolver = new HomeOwnershipResolver(context, HomeOwnershipRuntime::applyBaseline);
         }
         request("bind");
-        // setupViews can bind before the view has an attached Display. Retry once on the next
-        // View turn; a missing display remains UNKNOWN rather than guessing display 0.
         glass.post(() -> {
             if (currentView.get() == glass) request("bind-post");
         });
@@ -106,6 +104,17 @@ final class HomeOwnershipRuntime {
         glass.setOverviewActive(active,
                 active ? "launcher-exit-animation-start" : "launcher-exit-animation-end");
         Api101Bridge.log("[DC] Recents exit animation active=" + active);
+    }
+
+    static void onAppHomeAnimationStart() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            MAIN.post(HomeOwnershipRuntime::onAppHomeAnimationStart);
+            return;
+        }
+        DockLiquidGlassView glass = currentView.get();
+        if (glass == null) return;
+        glass.setGestureCaptureTarget("APP_HOME_ANIMATION_START");
+        Api101Bridge.log("[DC] APP HOME CLOSE_TO_HOME animation start");
     }
 
     static void onAppHomeAnimationEnd() {
