@@ -1,5 +1,7 @@
 package com.hellovoid.liquiddock;
 
+import android.os.IBinder;
+
 /** Launcher-process rendezvous between capture setup and final mode-1 submission. */
 final class FreeformLeashRuntime {
     private static volatile FreeformTaskLeashResolver resolver;
@@ -25,6 +27,11 @@ final class FreeformLeashRuntime {
     static boolean isProviderReady() {
         FreeformTaskLeashResolver value = resolver;
         return captureGateInstalled && value != null && value.isProviderReady();
+    }
+
+    static IBinder providerBinderForDiagnostics() {
+        FreeformTaskLeashResolver value = resolver;
+        return value != null ? value.providerBinderForDiagnostics() : null;
     }
 
     static FreeformTaskLeashResolver.Resolution resolveForCapture(int displayId) {
