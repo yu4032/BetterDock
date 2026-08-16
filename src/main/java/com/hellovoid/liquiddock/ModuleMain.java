@@ -35,14 +35,20 @@ public final class ModuleMain extends XposedModule {
             return;
         }
         if (!FreeformLeashProtocol.LAUNCHER_PACKAGE.equals(packageName)) return;
+        ClassLoader classLoader = param.getClassLoader();
         try {
             LegacyConfigMigration.migrateAtProcessStart();
-            ClassLoader classLoader = param.getClassLoader();
             FreeformCaptureLeashHook.install();
             new MainHook().install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
+        }
+        try {
+            HomeOwnershipShadowLauncherHook.install(classLoader);
+        } catch (Throwable error) {
+            // Diagnostic-only capability. Production Launcher hooks are already installed.
+            Api101Bridge.log("[DC-SHADOW] Launcher HOME ownership observer unavailable", error);
         }
     }
 }
