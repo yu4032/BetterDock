@@ -31,13 +31,17 @@ public class Miuix307GlassContractTest {
 
     @Test
     public void materialPipelineUsesExistingPrismalGlassStack() throws IOException {
-        String source = read("Miuix307MaterialPipeline.java");
-        assertTrue(source.contains("LiquidGlassFactory.create"));
-        assertTrue(source.contains("DockLiquidGlassHostView"));
-        assertTrue(source.contains("applyPassWindowBlur"));
-        assertTrue(source.contains("setBackgroundWidth"));
-        assertTrue(source.contains("setBackgroundHeight"));
-        assertFalse(source.contains("new Miuix307RefractionView"));
+        Path hookPath = MAIN.resolve("MiuixGlassHook.java");
+        assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
+        String hook = read("MiuixGlassHook.java");
+        String pipeline = read("Miuix307MaterialPipeline.java");
+
+        assertTrue(hook.contains("LiquidGlassFactory.create"));
+        assertTrue(hook.contains("DockLiquidGlassHostView"));
+        assertTrue(hook.contains("applyPassWindowBlur"));
+        assertTrue(pipeline.contains("setBackgroundWidth"));
+        assertTrue(pipeline.contains("setBackgroundHeight"));
+        assertFalse(pipeline.contains("new Miuix307RefractionView"));
     }
 
     @Test
@@ -50,8 +54,8 @@ public class Miuix307GlassContractTest {
 
     @Test
     public void nativeMiuixDrawableIsPreserved() throws IOException {
-        String source = read("Miuix307MaterialPipeline.java");
+        String source = read("Miuix307MaterialPipeline.java") + read("MiBlurBridge.java");
         assertFalse(source.contains("setBackground(null)"));
-        assertTrue(source.contains("mBackground"));
+        assertTrue(read("Miuix307MaterialPipeline.java").contains("mBackground"));
     }
 }
