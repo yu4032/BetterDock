@@ -24,9 +24,12 @@ public class WallpaperZoomCaptureContractTest {
 
     @Test public void homeGestureDropsStaticCacheBeforeFirstZoomCallback() throws Exception {
         String patch = read(".github/apply_wallpaper_zoom_sync.py");
-        assertTrue(patch.contains("HOME gesture dropped wallpaper cache"));
-        assertTrue(patch.contains("if (\"HOME\".equals(target))"));
-        assertTrue(patch.contains("wallpaperCacheReady = false;\n            clearWallpaperCacheSafely();"));
+        int home = patch.indexOf("if (\"HOME\".equals(target))");
+        int ready = patch.indexOf("wallpaperCacheReady = false", home);
+        int clear = patch.indexOf("clearWallpaperCacheSafely()", ready);
+        int marker = patch.indexOf("HOME gesture dropped wallpaper cache", clear);
+        assertTrue(home >= 0 && ready > home && clear > ready && marker > clear);
+        assertTrue(marker - home < 600);
     }
 
     @Test public void cacheIsBoundToTheZoomRevisionThatProducedIt() throws Exception {
