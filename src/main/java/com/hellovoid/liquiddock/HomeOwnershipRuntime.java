@@ -96,6 +96,18 @@ final class HomeOwnershipRuntime {
         Api101Bridge.log("[DC] HOME ownership baseline=HOME reason=" + reason);
     }
 
+    static void onRecentsExitAnimationChanged(boolean active) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            MAIN.post(() -> onRecentsExitAnimationChanged(active));
+            return;
+        }
+        DockLiquidGlassView glass = currentView.get();
+        if (glass == null) return;
+        glass.setOverviewActive(active,
+                active ? "launcher-exit-animation-start" : "launcher-exit-animation-end");
+        Api101Bridge.log("[DC] Recents exit animation active=" + active);
+    }
+
     static HomeOwnershipPolicy.Baseline appliedBaselineForTests() {
         return appliedBaseline;
     }
