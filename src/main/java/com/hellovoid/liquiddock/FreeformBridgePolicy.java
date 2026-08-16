@@ -37,6 +37,11 @@ final class FreeformBridgePolicy {
             return disabled;
         }
 
+        synchronized void disableForProcess() {
+            infrastructureFailures = Math.max(infrastructureFailures, FAILURE_LIMIT);
+            disabled = true;
+        }
+
         synchronized boolean isDisabled() {
             return disabled;
         }
