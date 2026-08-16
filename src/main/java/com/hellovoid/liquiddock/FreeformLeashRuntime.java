@@ -3,11 +3,16 @@ package com.hellovoid.liquiddock;
 /** Launcher-process rendezvous between Dock preflight and capture submission. */
 final class FreeformLeashRuntime {
     private static volatile FreeformTaskLeashResolver resolver;
+    private static volatile boolean captureGateInstalled;
 
     private FreeformLeashRuntime() {}
 
     static void install(FreeformTaskLeashResolver value) {
         if (value != null) resolver = value;
+    }
+
+    static void setCaptureGateInstalled(boolean installed) {
+        captureGateInstalled = installed;
     }
 
     static void demandProvider(boolean needed) {
@@ -17,13 +22,14 @@ final class FreeformLeashRuntime {
 
     static boolean isProviderReady() {
         FreeformTaskLeashResolver value = resolver;
-        return value != null && value.isProviderReady();
+        return captureGateInstalled && value != null && value.isProviderReady();
     }
 
     static FreeformTaskLeashResolver.Resolution resolveForCapture(int displayId) {
         FreeformTaskLeashResolver value = resolver;
-        return value != null
-                ? value.resolveVisibleLeashes(displayId)
-                : FreeformTaskLeashResolver.Resolution.unavailable(true);
+        if (!captureGateInstalled || value == null) {
+            return FreeformTaskLeashResolver.Resolution.unavailable(true);
+        }
+        return value.resolveVisibleLeashes(displayId);
     }
 }
