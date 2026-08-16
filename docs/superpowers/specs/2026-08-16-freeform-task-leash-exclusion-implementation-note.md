@@ -26,6 +26,12 @@ Instead:
    - rewrites this one LiquidDock request to mode 2 wallpaper when coverage is incomplete, timed out, unavailable, or the gate itself fails.
 7. The original capture method is invoked exactly once. Remote parcel-created `SurfaceControl` wrappers are released in `finally` after the original method returns from request submission.
 
+## Complete retirement of the old SF debug API
+
+A final source audit found one unrelated legacy caller in `DockLiquidGlassView.refreshForegroundAppLayer()`. It populated `appLayerName` for logging/cached diagnostics but that value no longer participates in capture arguments or source policy.
+
+To honor the design rule globally without rewriting the large Dock file, `SurfaceLayerNameResolver` now remains only as a signature-compatible no-op adapter: `resolveTopmostByOwnerUid()` returns `null` and `resolveAllByOwnerUids()` returns an empty collection. Its production implementation contains no `ISurfaceComposer`, no `getLayerDebugInfo()`, no SurfaceFlinger Binder query, and no layer-name guessing.
+
 ## Why this is not a second state machine
 
 The compatibility facade caches only the same short-lived visible-freeform presence fact that the previous resolver already cached. It does not cache task IDs or leashes and does not make the final task-coverage decision.
