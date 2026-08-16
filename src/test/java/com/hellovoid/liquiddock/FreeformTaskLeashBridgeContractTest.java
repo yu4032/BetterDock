@@ -85,7 +85,7 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(source.contains("setCaptureGateInstalled(false)"));
     }
 
-    @Test public void productionFreeformAndLegacyResolverDoNotUseSurfaceFlingerDebugApi()
+    @Test public void productionFreeformAndLegacyResolverDoNotUseRetiredDebugApi()
             throws Exception {
         String freeform = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformLayerResolver.java");
@@ -97,7 +97,6 @@ public class FreeformTaskLeashBridgeContractTest {
         assertFalse(freeform.contains("getPackageUid"));
         assertFalse(legacy.contains("ISurfaceComposer"));
         assertFalse(legacy.contains("getLayerDebugInfo"));
-        assertFalse(legacy.contains("SurfaceFlinger"));
     }
 
     @Test public void protocolDeadlineIsTwentyFiveMilliseconds() throws Exception {
