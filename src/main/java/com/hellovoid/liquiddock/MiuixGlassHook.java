@@ -12,8 +12,8 @@ import java.lang.reflect.Field;
 /**
  * MiuiX-specific glass installer for OS3.0.307+ docks.
  *
- * The vendor background remains intact and owns the realtime backdrop blur/gradient.  This
- * class only overlays LiquidDock's existing Prismal glass stack above it.  No Launcher
+ * The vendor background remains intact and owns the realtime backdrop blur/gradient. This
+ * class only overlays LiquidDock's existing Prismal glass stack above it. No Launcher
  * HOME/APP/RECENTS capture lifecycle is installed for this path.
  */
 final class MiuixGlassHook {
@@ -34,7 +34,8 @@ final class MiuixGlassHook {
         if (parent == null) return false;
 
         if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == parent) {
-            sync(dockBg, config);
+            syncSize(dockBg);
+            syncGeometry(dockBg, config);
             return true;
         }
 
@@ -81,7 +82,7 @@ final class MiuixGlassHook {
                 : Math.min(parent.getChildCount(), bgIdx + 1);
         parent.addView(host, insertIndex, hostLp);
 
-        // Preserve the MiuiX drawable.  Stroke is an overlay/foreground only.
+        // Preserve the MiuiX drawable. Stroke is an overlay/foreground only.
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
 
         backgroundRef = dockBg;
@@ -91,8 +92,9 @@ final class MiuixGlassHook {
         return true;
     }
 
-    static void sync(View dockBg, LiquidDockConfig config) {
-        if (dockBg == null || config == null || dockBg != backgroundRef) return;
+    /** Width/height animation path: no config I/O or stroke/material rebuild. */
+    static void syncSize(View dockBg) {
+        if (dockBg == null || dockBg != backgroundRef) return;
         DockLiquidGlassHostView host = hostRef;
         if (host == null || host.getParent() == null) return;
 
@@ -111,6 +113,15 @@ final class MiuixGlassHook {
             }
             if (changed) host.setLayoutParams(params);
         }
+        host.setVisibility(dockBg.getVisibility());
+        host.invalidate();
+    }
+
+    /** Radius/material path: only called when the vendor radius changes. */
+    static void syncGeometry(View dockBg, LiquidDockConfig config) {
+        if (dockBg == null || config == null || dockBg != backgroundRef) return;
+        DockLiquidGlassHostView host = hostRef;
+        if (host == null || host.getParent() == null) return;
 
         float radius = readRadius(dockBg);
         host.setVisibility(dockBg.getVisibility());
