@@ -18,12 +18,19 @@ public class FreeformBridgePolicyTest {
                 FreeformBridgePolicy.deduplicateTaskIds(new int[]{8, 3, 8, 9, 3}));
     }
 
-    @Test public void breakerTripsOnlyAtThirdInfrastructureFailure() {
+    @Test public void breakerTripsOnlyAtThirdRuntimeInfrastructureFailure() {
         FreeformBridgePolicy.CircuitBreaker breaker = new FreeformBridgePolicy.CircuitBreaker();
         assertFalse(breaker.isDisabled());
         assertFalse(breaker.recordInfrastructureFailure());
         assertFalse(breaker.recordInfrastructureFailure());
         assertTrue(breaker.recordInfrastructureFailure());
+        assertTrue(breaker.isDisabled());
+        assertEquals(3, breaker.failureCount());
+    }
+
+    @Test public void structuralInstallFailureCanDisableImmediately() {
+        FreeformBridgePolicy.CircuitBreaker breaker = new FreeformBridgePolicy.CircuitBreaker();
+        breaker.disableForProcess();
         assertTrue(breaker.isDisabled());
         assertEquals(3, breaker.failureCount());
     }
