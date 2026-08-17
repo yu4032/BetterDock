@@ -43,18 +43,15 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
     }
 
     @Test
-    public void workstationLiveScenesStayFullDisplayMode1() throws Exception {
+    public void workstationKnownScenesStayFullDisplayMode1() throws Exception {
         String policy = read("CaptureSourcePolicy.java");
 
         int method = policy.indexOf("sourceForWorkstationScene");
         String body = policy.substring(method);
-        assertTrue("workstation Recents must remain composed FULL_DISPLAY",
-                body.contains("scene == CaptureScene.RECENTS")
-                        && body.contains("Source.FULL_DISPLAY"));
-        assertTrue("workstation All Apps must also use FULL_DISPLAY for one exclusion model",
-                body.contains("scene == CaptureScene.ALL_APPS")
-                        && body.indexOf("scene == CaptureScene.ALL_APPS")
-                        < body.lastIndexOf("Source.FULL_DISPLAY"));
+        assertTrue("only unknown workstation ownership may stay non-live",
+                body.contains("scene == null || scene == CaptureScene.UNKNOWN"));
+        assertTrue("every known workstation scene must converge on composed FULL_DISPLAY",
+                body.contains("return Source.FULL_DISPLAY;"));
         assertFalse("workstation live scenes must not depend on LOCAL_LAYER fallback",
                 body.contains("Source.LOCAL_LAYER"));
     }
