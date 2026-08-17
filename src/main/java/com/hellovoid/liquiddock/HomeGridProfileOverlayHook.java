@@ -158,6 +158,53 @@ final class HomeGridProfileOverlayHook {
                     }
                     return chain.proceed();
                 });
+
+        installRotationDirectionFix(rule);
+    }
+
+    /**
+     * MIUI's stock 6x4/4x6 transform writes
+     * mIsVerticalCellCount = (getMHCells() != 4) inside transformToDstLayout().
+     * That accidentally still distinguishes 8x4 from 4x8, but 10x6 and 6x10 both
+     * evaluate true. get4x2WidgetCase() is the first call immediately after that write,
+     * so this hook is the narrowest point where the native transform direction can be
+     * corrected before any block or icon movement occurs.
+     */
+    private static void installRotationDirectionFix(Class<?> rule) throws NoSuchMethodException {
+        Method directionLatch = null;
+        for (Method candidate : rule.getDeclaredMethods()) {
+            if ("get4x2WidgetCase".equals(candidate.getName())
+                    && candidate.getParameterCount() == 2) {
+                directionLatch = candidate;
+                break;
+            }
+        }
+        if (directionLatch == null) {
+            throw new NoSuchMethodException(rule.getName() + "#get4x2WidgetCase");
+        }
+        directionLatch.setAccessible(true);
+        Api101Bridge.module().hook(directionLatch)
+                .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                .intercept(chain -> {
+                    Object target = chain.getThisObject();
+                    if (!MainHook.isWorkstationMode()) {
+                        Object hValue = HookUtil.invoke(target, "getMHCells");
+                        Object vValue = HookUtil.invoke(target, "getMVCells");
+                        if (hValue instanceof Integer && vValue instanceof Integer) {
+                            int h = (Integer) hValue;
+                            int v = (Integer) vValue;
+                            if (profile.matchesCounts(h, v)) {
+                                boolean horizontal =
+                                        HomeGridRotationPolicy.sourceUsesHorizontalCoordinates(h, v);
+                                HookUtil.setField(target, "mIsVerticalCellCount", horizontal);
+                                MainHook.log("[DC] 10x6 rotation direction source="
+                                        + (horizontal ? "horizontal" : "vertical")
+                                        + " h=" + h + " v=" + v);
+                            }
+                        }
+                    }
+                    return chain.proceed();
+                });
     }
 
     private static int[][] blocks(boolean portrait) {
