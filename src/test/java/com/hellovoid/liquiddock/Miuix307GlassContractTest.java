@@ -98,8 +98,15 @@ public class Miuix307GlassContractTest {
     public void detachedThemeHierarchyWaitsForRealReattachBeforeGlassRebind() throws IOException {
         String pipeline = read("Miuix307MaterialPipeline.java");
 
-        // Icon/theme changes rebuild HotSeats over multiple main-loop turns. A detached old
-        // background can still have a parent, so parent != null is not enough to declare repair.
+        // Icon/theme changes can replace the background and, on some builds, the HotSeats owner.
+        // Recovery therefore keeps the Launcher weakly and re-resolves mHotSeats instead of
+        // trusting a detached owner captured during setupViews.
+        assertTrue("Launcher owner must not be retained strongly",
+                pipeline.contains("WeakReference<Object> launcherRef"));
+        assertTrue("setupViews must refresh the weak Launcher owner",
+                pipeline.contains("new WeakReference<>(launcher)"));
+        assertTrue("theme recovery must re-resolve the current HotSeats owner",
+                pipeline.contains("resolveCurrentHotSeats"));
         assertTrue("HotSeats owner must not be retained strongly",
                 pipeline.contains("WeakReference<Object> hotSeatsRef"));
         assertTrue("setupViews must refresh the weak HotSeats owner",
@@ -114,9 +121,11 @@ public class Miuix307GlassContractTest {
                 pipeline.contains("currentBackground.isAttachedToWindow()"));
 
         // If the first main-turn repair runs before the replacement hierarchy is attached, wait
-        // for a real layout event instead of giving up or polling with arbitrary delays.
+        // on a stable Launcher/workspace root. Listening only to the detached old HotSeats tree
+        // can never observe the replacement hierarchy's first layout.
         assertTrue(pipeline.contains("ViewTreeObserver.OnGlobalLayoutListener"));
         assertTrue(pipeline.contains("armHierarchyLayoutRecovery"));
+        assertTrue(pipeline.contains("workspaceRef != null && workspaceRef.isAttachedToWindow()"));
         assertTrue(pipeline.contains("removeOnGlobalLayoutListener"));
         assertFalse("theme recovery must not poll with delayed retries",
                 pipeline.contains("MAIN_HANDLER.postDelayed("));
