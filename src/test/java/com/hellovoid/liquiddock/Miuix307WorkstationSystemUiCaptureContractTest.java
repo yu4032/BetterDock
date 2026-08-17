@@ -1,0 +1,115 @@
+package com.hellovoid.liquiddock;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.Test;
+
+/** Regression contracts for capture ownership skipped by the MiuiX 307 early-return path. */
+public class Miuix307WorkstationSystemUiCaptureContractTest {
+    private static String read(String file) throws Exception {
+        return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + file));
+    }
+
+    @Test
+    public void miuix307RestoresSystemUiPanelCaptureGate() throws Exception {
+        String entry = read("ModuleMain.java");
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("launcher init must install the 307 capture ownership bridge",
+                entry.contains("Miuix307CaptureOwnershipHook.install(classLoader)"));
+        assertTrue("307 must observe the device-proven panel expansion setter",
+                ownership.contains("\"setControlPanelExpanded\""));
+        assertTrue("panel state must reach the actually bound 307 glass",
+                ownership.contains("glass.setSystemUiPanelExpanded(expanded)"));
+        assertTrue("a newly bound 307 glass must inherit an already-open panel state",
+                ownership.contains("syncBoundGlassState()"));
+    }
+
+    @Test
+    public void workstationModeNeverInvokesLegacyGlassSuspension() throws Exception {
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("307 must still observe MainHook workstation transitions",
+                ownership.contains("\"setWorkstationMode\"")
+                        && ownership.contains("MainHook.class"));
+        assertFalse("307 must never invoke the legacy workstation setter that hides the glass",
+                ownership.contains("glass.setWorkstationMode(enabled)")
+                        || ownership.contains("glass.setWorkstationMode(workstation)"));
+        assertTrue("workstation transition should only request a fresh 307 capture",
+                ownership.contains("glass.requestCapture(enabled")
+                        || ownership.contains("glass.requestCapture(workstation"));
+    }
+
+    @Test
+    public void workstationPolicyInjectionIsScopedToOneCaptureDecision() throws Exception {
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("workstation capture must temporarily enter the existing workstation source policy",
+                ownership.contains("HookUtil.setField(glass, \"workstationMode\", true)"));
+        assertTrue("workstation mode-1 must be forced even if ordinary fullscreen capture is disabled",
+                ownership.contains("HookUtil.setField(glass, \"fullscreenCapture\", true)"));
+        assertTrue("temporary capture-policy state must restore both original fields",
+                ownership.contains("finally")
+                        && ownership.contains("HookUtil.setField(glass, \"workstationMode\", originalWorkstationMode)")
+                        && ownership.contains("HookUtil.setField(glass, \"fullscreenCapture\", originalFullscreenCapture)"));
+    }
+
+    @Test
+    public void workstationKnownScenesStayFullDisplayMode1() throws Exception {
+        String policy = read("CaptureSourcePolicy.java");
+
+        int method = policy.indexOf("sourceForWorkstationScene");
+        String body = policy.substring(method);
+        assertTrue("only unknown workstation ownership may stay non-live",
+                body.contains("scene == null || scene == CaptureScene.UNKNOWN"));
+        assertTrue("every known workstation scene must converge on composed FULL_DISPLAY",
+                body.contains("return Source.FULL_DISPLAY;"));
+        assertFalse("workstation live scenes must not depend on LOCAL_LAYER fallback",
+                body.contains("Source.LOCAL_LAYER"));
+    }
+
+    @Test
+    public void workstationResolverUsesDeviceProvenLaptopOverlayWindowIdentity() throws Exception {
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("device log proves workstation is the WindowManager window titled Laptop overlay",
+                ownership.contains("\"Laptop overlay\""));
+        assertTrue("window title must be accepted directly instead of requiring root class identity",
+                ownership.contains("isWorkstationWindowTitle(title)"));
+        assertTrue("DockContainerView remains a structural compatibility fallback",
+                ownership.contains("containsDockContainerView(rootView)"));
+        assertTrue("fallback must walk child views because the WindowManager root can be a wrapper",
+                ownership.contains("ViewGroup") && ownership.contains("getChildCount()")
+                        && ownership.contains("getChildAt(i)"));
+        assertTrue("device-proven Laptop overlay must survive the generic type-2997 rejection",
+                ownership.contains("if (!workstationTitle && lp.type == 2997) continue;"));
+        assertTrue("a valid workstation Surface must not be discarded only because mName is hidden",
+                ownership.contains("layerName = title.toString()"));
+    }
+
+    @Test
+    public void workstationFullDisplayUsesDedicatedNonFloatingDockExclusion() throws Exception {
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("workstation needs a dedicated runtime resolver",
+                ownership.contains("resolveWorkstationDockTarget()"));
+        assertTrue("workstation resolver must retain DockContainerView ownership fallback",
+                ownership.contains("DockContainerView"));
+        assertTrue("ordinary type-2997 Floating Dock must be rejected as a workstation candidate",
+                ownership.contains("lp.type == 2997") && ownership.contains("continue;"));
+        assertTrue("ordinary Floating Dock title must also be rejected",
+                ownership.contains("\"Floating Dock\"") && ownership.contains("continue;"));
+        assertTrue("resolved workstation SurfaceControl must replace the normal Dock exclusion",
+                ownership.contains("HookUtil.setField(glass, \"dockWindowSurface\", target.surface)")
+                        && ownership.contains("HookUtil.setField(glass, \"dockWindowLayerName\", target.layerName)"));
+        assertTrue("an unresolved workstation Dock must fail closed before capture submission",
+                ownership.contains("workstation Dock surface unresolved; capture remains frozen")
+                        && ownership.contains("return null;"));
+        assertFalse("dedicated workstation resolver must not use wallpaper as a safety fallback",
+                ownership.contains("captureWallpaper") || ownership.contains("mode 2"));
+    }
+}
