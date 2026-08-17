@@ -19,8 +19,6 @@ public class DockBottomGeometryContractTest {
                 "src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path, StandardCharsets.UTF_8);
-        // Existing MainHook/307 compatibility hooks can remain binary-compatible, but their
-        // custom delta is canceled before layout so DeviceConfig no longer owns the feature.
         assertTrue(source.contains("getHotSeatsMarginBottom"));
         assertTrue(source.contains("PRIORITY_HIGHEST"));
         assertTrue(source.contains("result - bottomOffsetPx"));
@@ -34,8 +32,23 @@ public class DockBottomGeometryContractTest {
         String source = Files.readString(path, StandardCharsets.UTF_8);
         assertTrue(source.contains("offsetTopAndBottom"));
         assertTrue(source.contains("HotSeats"));
+        assertTrue(source.contains("isLaptopDockHierarchy"));
+        assertTrue(source.contains("dockcontainerview"));
         assertFalse(source.contains("getMingouLaptopDockBottomOffsetPx"));
         assertFalse(source.contains("isMingouLaptopPcModeEnabled"));
+    }
+
+    @Test
+    public void finalOwnerDoesNotTrustGlobalWorkstationState() throws Exception {
+        String source = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java"),
+                StandardCharsets.UTF_8);
+        int finalOwner = source.indexOf("installFinalHotSeatsOffset");
+        int hierarchy = source.indexOf("isLaptopDockHierarchy", finalOwner);
+        assertTrue(finalOwner >= 0);
+        assertTrue(hierarchy > finalOwner);
+        assertFalse(source.substring(finalOwner, hierarchy)
+                .contains("if (MainHook.isWorkstationMode()) return result"));
     }
 
     @Test
