@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -30,26 +31,25 @@ public class HomeGridCountOwnershipTest {
     }
 
     @Test
-    public void landscapeCoreEightResolvesExactlyTenColumnsBySixRows() throws Exception {
-        // Stable HomeGridHook rewrites stock 6 to 8 before the lowest-priority overlay setter.
-        assertEquals(10, profileRewrite(false, true, 8));
-        assertEquals(6, profileRewrite(false, false, 8));
+    public void landscapeEightByFourSurvivesStalePortraitConfiguration() throws Exception {
+        // Rotation can publish portrait Configuration before GridConfig has left the landscape
+        // 8x4 intermediate. Count ownership must follow the observed grid, not Configuration.
+        assertEquals(10, profileRewrite(true, true, 8));
+        assertEquals(6, profileRewrite(true, false, 4));
     }
 
     @Test
-    public void portraitCoreEightResolvesExactlySixColumnsByTenRows() throws Exception {
-        assertEquals(6, profileRewrite(true, true, 8));
-        assertEquals(10, profileRewrite(true, false, 8));
+    public void portraitFourByEightSurvivesStaleLandscapeConfiguration() throws Exception {
+        assertEquals(6, profileRewrite(false, true, 4));
+        assertEquals(10, profileRewrite(false, false, 8));
     }
 
     @Test
-    public void overlayAlsoAcceptsStockAndLegacyAxisCounts() throws Exception {
-        assertEquals(10, profileRewrite(false, true, 6));
-        assertEquals(6, profileRewrite(false, false, 6));
-        assertEquals(10, profileRewrite(false, true, 8));
-        assertEquals(6, profileRewrite(false, false, 4));
-        assertEquals(6, profileRewrite(true, true, 4));
-        assertEquals(10, profileRewrite(true, false, 8));
+    public void alreadyResolvedProfileCountsRemainStableAcrossConfigurationChanges() throws Exception {
+        assertEquals(10, profileRewrite(true, true, 10));
+        assertEquals(6, profileRewrite(true, false, 6));
+        assertEquals(6, profileRewrite(false, true, 6));
+        assertEquals(10, profileRewrite(false, false, 10));
     }
 
     @Test
@@ -60,7 +60,7 @@ public class HomeGridCountOwnershipTest {
     }
 
     @Test
-    public void productionOverlayUsesSharedCountRecoveryPolicy() throws Exception {
+    public void productionOverlayUsesObservedCountsInsteadOfGlobalOrientation() throws Exception {
         String core = Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"),
                 StandardCharsets.UTF_8);
@@ -71,5 +71,7 @@ public class HomeGridCountOwnershipTest {
         assertTrue(core.contains("if ((Integer) args[0] == 6) args[0] = 8;"));
         assertTrue(core.contains("if ((Integer) result == 6) result = 8;"));
         assertTrue(overlay.contains("HomeGridCountPolicy.profileRewrite"));
+        assertFalse(overlay.contains("Resources.getSystem().getConfiguration().orientation"));
+        assertFalse(overlay.contains("context.getResources().getConfiguration().orientation"));
     }
 }
