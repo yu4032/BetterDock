@@ -60,4 +60,30 @@ public class Miuix307MaterialPipelineContractTest {
         assertFalse(pipeline.contains("LiveScreenCapture"));
         assertFalse(pipeline.contains("CaptureSceneState"));
     }
+
+    @Test
+    public void sideSwipeHomeGestureConvergesOnExistingWallpaperPrearm() throws IOException {
+        String pipeline = read(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
+
+        assertTrue("307 side-swipe HOME boundary must hook the native GestureToHome event",
+                pipeline.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
+        assertTrue("GestureToHome must cover runtime constructor variants",
+                pipeline.contains("getDeclaredConstructors()"));
+        assertTrue("GestureToHome hook must use reflected constructor identity",
+                pipeline.contains("HookUtil.hook(ctor"));
+        assertTrue("side-swipe HOME must reuse the existing wallpaper prearm",
+                pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
+
+        // Keep the already-working vendor state-broadcast boundary as a second signal. Both
+        // paths must converge on the same semantic entry point instead of duplicating state.
+        assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
+        assertTrue(pipeline.contains("\"toHome\""));
+        int first = pipeline.indexOf("MiuixGlassHook.onHomeTransitionStart()");
+        int second = pipeline.indexOf("MiuixGlassHook.onHomeTransitionStart()", first + 1);
+        assertTrue("GestureToHome and StateNotifyUtils must both call the same prearm method",
+                first >= 0 && second > first);
+        assertTrue("GestureToHome compatibility hook must fail open on vendor changes",
+                pipeline.contains("GestureToHome prearm unavailable"));
+    }
 }
