@@ -81,6 +81,29 @@ final class DockStrokeRenderer {
      * itself; for native mode it is HotSeatsListContentBlurBackground2.
      */
     static void configure(View host, LiquidDockConfig.Dock config, float radius) {
+        configureInternal(host, config, radius, true);
+    }
+
+    /** 307 in-place glass owns the visual edge, so do not redraw the vendor foreground below it. */
+    static void configureReplacingForeground(
+            View host, LiquidDockConfig.Dock config, float radius) {
+        configureInternal(host, config, radius, false);
+    }
+
+    /** Match the glass clip to the same radius basis used by the configured custom stroke. */
+    static float resolveConfiguredRadius(
+            View host, LiquidDockConfig.Dock config, float nativeBlurRadius) {
+        float radius = Math.max(0f, nativeBlurRadius);
+        if (host == null || config == null || !config.enabled) return radius;
+        float density = host.getResources().getDisplayMetrics().density;
+        float cornerScale = config.cornersDp ? density : 1f;
+        return Math.max(0f, radius
+                + (config.cornerOffset - config.blurCornerOffset) * cornerScale);
+    }
+
+    private static void configureInternal(
+            View host, LiquidDockConfig.Dock config, float radius,
+            boolean preserveExistingForeground) {
         if (host == null) return;
 
         synchronized (INSTALLED) {
@@ -88,7 +111,8 @@ final class DockStrokeRenderer {
 
             if (config == null || !config.strokeEnabled) {
                 if (installed != null && host.getForeground() == installed) {
-                    host.setForeground(installed.baseForeground());
+                    host.setForeground(preserveExistingForeground
+                            ? installed.baseForeground() : null);
                 }
                 INSTALLED.remove(host);
                 return;
@@ -103,9 +127,12 @@ final class DockStrokeRenderer {
             }
 
             if (installed == null) {
-                installed = new StrokeDrawable(current);
+                installed = new StrokeDrawable(
+                        preserveExistingForeground ? current : null);
                 INSTALLED.put(host, installed);
                 host.setForeground(installed);
+            } else if (!preserveExistingForeground) {
+                installed.setBaseForeground(null);
             }
 
             installed.setStyle(style);
@@ -236,7 +263,7 @@ final class DockStrokeRenderer {
     }
 
     private static final class StrokeDrawable extends Drawable {
-        private final Drawable baseForeground;
+        private Drawable baseForeground;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path outer = new Path();
         private final Path inner = new Path();
@@ -264,6 +291,11 @@ final class DockStrokeRenderer {
 
         Drawable baseForeground() {
             return baseForeground;
+        }
+
+        void setBaseForeground(Drawable baseForeground) {
+            this.baseForeground = baseForeground;
+            invalidateSelf();
         }
 
         void setStyle(Style style) {

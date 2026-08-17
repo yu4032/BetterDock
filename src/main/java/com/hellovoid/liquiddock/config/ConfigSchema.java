@@ -208,6 +208,8 @@ public final class ConfigSchema {
         public static final ConfigKey<String> BLUR_MODE = string(
                 "liquid_blur_mode", "shader", "shader", "shader",
                 ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Boolean> MIUIX_307_PIPELINE = bool(
+                "liquid_miuix_307_pipeline", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BLUR = dp(
                 "liquid_blur", 6, 6, 6, 0, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CHROMATIC = integer(

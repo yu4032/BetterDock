@@ -444,6 +444,10 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
     SettingsList(padding, stringResource(R.string.page_liquid)) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable),
             stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+        BooleanSetting(prefs, ConfigSchema.Glass.MIUIX_307_PIPELINE,
+            "HyperOS 3.0.307+ 高级材质兼容",
+            "仅在 HyperOS 3.0.307+ 开启系统高级材质时手动启用；默认关闭，重启桌面生效",
+            masterEnabled && liquidGlass)
         StringDropdown(
             prefs,
             ConfigSchema.Glass.BLUR_MODE.name(),

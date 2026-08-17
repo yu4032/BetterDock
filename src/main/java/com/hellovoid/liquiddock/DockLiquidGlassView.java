@@ -289,7 +289,16 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
     // freezes into the captured background.
     private volatile boolean dockDragging = false;
+    // Ordinary 307 DragController has no reflectable View.getSurfaceControl(). If no valid
+    // drag Surface can be excluded, freeze the last clean backdrop instead of sampling the
+    // moving icon into the glass. A later valid Surface automatically resumes live capture.
+    private volatile boolean dockDragCaptureFrozen = false;
+    // MIUI system Dock drag uses WMS/Shell-owned startDragAndDrop surfaces. Unlike ordinary
+    // Launcher DragView motion, those surfaces cannot be excluded using a Launcher-owned
+    // SurfaceControl, so keep the last clean backdrop installed until the system drag ends.
+    private volatile boolean systemDockDragActive = false;
     private volatile String dragLayerName = null;
+    private volatile android.view.SurfaceControl dragSurfaceControl = null;
     private final CaptureCadence captureCadence;
     private boolean dynamicAppCapture;
     private long dynamicAppActiveUntilNanos;
@@ -381,6 +390,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int drawFailLogged;
     private int blackFrameLogCount;
     private boolean nativeBackgroundHiddenByGlass;
+    private boolean preserveGeometrySourceVisuals;
     private boolean kickScheduled;
     private long captureGeneration;
     private final CaptureSceneState sceneState = new CaptureSceneState();
@@ -1347,18 +1357,87 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 && rawY <= tmpDockLocation[1] + h + margin;
     }
 
+    /** Freeze capture while MIUI's system DragAndDrop owns the moving Dock icon. */
+    void setSystemDockDragActive(boolean active) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setSystemDockDragActive(active));
+            return;
+        }
+        if (systemDockDragActive == active) return;
+        systemDockDragActive = active;
+        if (active) {
+            logI("Liquid capture frozen: system Dock drag");
+            mainHandler.removeCallbacks(cancelGrace);
+            cancelPendingCaptureWork();
+            invalidate();
+            return;
+        }
+        logI("Liquid capture resumed: system Dock drag ended");
+        resetCaptureCircuit("system-dock-drag-end");
+        beginObservationBurst();
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("system-dock-drag-end");
+    }
+
     /** Dock icon drag state (MainHook hooks DragController.startDrag/endDrag).  While
      *  dragging, the glass keeps capturing continuously so the background follows the icon
      *  rearrangement; the drag surface layer is excluded from captures. */
     void setDockDragging(boolean dragging, String dragSurfaceLayerName) {
+        setDockDragging(dragging, dragSurfaceLayerName, null);
+    }
+
+    void setDockDragging(boolean dragging, String dragSurfaceLayerName,
+                         android.view.SurfaceControl dragSurface) {
+        boolean wasFrozen = dockDragCaptureFrozen;
+        boolean hasExcludableSurface = dragging && isValidCaptureSurface(dragSurface);
         dockDragging = dragging;
         dragLayerName = dragging ? dragSurfaceLayerName : null;
+        dragSurfaceControl = hasExcludableSurface ? dragSurface : null;
+        dockDragCaptureFrozen = dragging && !hasExcludableSurface;
+
+        if (dockDragCaptureFrozen) {
+            if (!wasFrozen) {
+                logI("Liquid capture frozen: Dock drag has no excludable Surface");
+                mainHandler.removeCallbacks(cancelGrace);
+                cancelPendingCaptureWork();
+                invalidate();
+            }
+            return;
+        }
+
         if (dragging) {
+            if (wasFrozen) logI("Liquid capture resumed: Dock drag Surface became excludable");
             resetCaptureCircuit("drag-start");
             beginObservationBurst();
             observationValid = false;
+            lastCaptureStartNanos = 0L;
             requestStateCapture("drag-start");
+            return;
         }
+
+        if (wasFrozen) {
+            logI("Liquid capture resumed: Dock drag ended");
+            resetCaptureCircuit("dock-drag-end");
+            beginObservationBurst();
+            observationValid = false;
+            lastCaptureStartNanos = 0L;
+            requestStateCapture("dock-drag-end");
+        }
+    }
+
+    private static boolean isValidCaptureSurface(android.view.SurfaceControl surface) {
+        if (surface == null) return false;
+        try { return surface.isValid(); }
+        catch (Throwable ignored) { return false; }
+    }
+
+    private android.view.SurfaceControl[] buildFullDisplaySurfaceExcludes() {
+        java.util.ArrayList<android.view.SurfaceControl> out = new java.util.ArrayList<>(2);
+        if (isValidCaptureSurface(dockWindowSurface)) out.add(dockWindowSurface);
+        android.view.SurfaceControl drag = dragSurfaceControl;
+        if (isValidCaptureSurface(drag) && drag != dockWindowSurface) out.add(drag);
+        return out.isEmpty() ? null : out.toArray(new android.view.SurfaceControl[0]);
     }
 
     /** Configurable by the GUI (liquid_capture_stop_delay, up to 10s). */
@@ -1472,6 +1551,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     void setFullscreenCapture(boolean enabled) { fullscreenCapture = enabled; }
+
+    /** Keep a parent material View visible when glass is composed inside that View. */
+    void setPreserveGeometrySourceVisuals(boolean preserve) {
+        preserveGeometrySourceVisuals = preserve;
+        if (preserve) {
+            geometrySource.setAlpha(1f);
+            nativeBackgroundHiddenByGlass = false;
+        }
+    }
 
     /** Apply the live liquid_glass switch without requiring a Launcher restart. */
     private void setRuntimeGlassEnabled(boolean enabled) {
@@ -1755,6 +1843,13 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
         // while it is expanded only wastes GPU/binder work and risks sampling its animation.
         if (systemUiPanelExpanded) return false;
+        // The system Dock drag is rendered by WMS/Shell-owned surfaces created by
+        // startDragAndDrop(). Freeze the last clean frame before the ordinary dockDragging /
+        // Recents visibility exception below can keep sampling those surfaces.
+        if (systemDockDragActive) return false;
+        // Ordinary DragController is safe to capture only when its moving Surface can be
+        // excluded. On this 307 build View.getSurfaceControl() is absent, so freeze instead.
+        if (dockDragCaptureFrozen) return false;
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 
@@ -2188,10 +2283,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         updateDesiredScene();
         final CaptureScene requestScene = sceneState.desired();
         final long requestSceneRevision = sceneState.revision();
-        final boolean liveHomeBehindFreeform = useFullscreen
+        final boolean visibleFreeform = useFullscreen
                 && !workstationMode
-                && requestScene == CaptureScene.HOME
                 && freeformLayerResolver.hasVisibleFreeformTasks();
+        final boolean liveHomeBehindFreeform = visibleFreeform
+                && requestScene == CaptureScene.HOME;
         final android.view.SurfaceControl localCaptureSurface = useFullscreen
                 ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
         CaptureSourcePolicy.Source selectedSource;
@@ -2200,6 +2296,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } else if (workstationMode) {
             selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
                     requestScene, localCaptureSurface != null);
+        } else if (requestScene == CaptureScene.APP && visibleFreeform) {
+            // A visible freeform task is wallpaper-owned for the floating Dock. Decide this
+            // before mode-1 submission so the app/freeform composition is never sampled even
+            // for the short interval before the final FreeformCaptureLeashHook race guard.
+            selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
         } else {
             selectedSource = CaptureSourcePolicy.sourceFor(
                     requestScene, localCaptureSurface != null, isRecentsVisible(),
@@ -2280,13 +2381,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                         && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
                                     ? resolveFullDisplayExclusions()
                                     : FullDisplayExclusions.NONE;
-                    android.view.SurfaceControl[] excludes = null;
-                    if ((requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
-                            || (workstationMode
-                                && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
-                            && dockWindowSurface != null) {
-                        excludes = new android.view.SurfaceControl[]{dockWindowSurface};
-                    }
+                    android.view.SurfaceControl[] excludes =
+                            (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                                    || (workstationMode
+                                        && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
+                                    ? buildFullDisplaySurfaceExcludes() : null;
                     final CaptureRequest req = request;
                     final LiveScreenCapture captureClient = client;
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {
@@ -2913,7 +3012,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         installedCaptureScene = sourceScene;
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
-        if (!nativeBackgroundHiddenByGlass) {
+        if (preserveGeometrySourceVisuals) {
+            if (geometrySource.getAlpha() != 1f) geometrySource.setAlpha(1f);
+            nativeBackgroundHiddenByGlass = false;
+        } else if (!nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(0f);
             nativeBackgroundHiddenByGlass = true;
         }

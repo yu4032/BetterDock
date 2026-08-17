@@ -112,6 +112,13 @@ public class MainHook {
 
         boolean dockCustomization = config.dock.enabled;
         boolean liquidGlass = config.glass.enabled;
+        if (liquidGlass && config.glass.miuix307Pipeline) {
+            if (Miuix307Compatibility.install(classLoader, config)) {
+                log("[DC] HyperOS 3.0.307+ compatibility active; legacy liquid capture bypassed");
+                return;
+            }
+            log("[DC] HyperOS 3.0.307+ compatibility unavailable; falling back to ordinary pipeline");
+        }
         if (!dockCustomization && !liquidGlass) {
             log("[DC] Dock customization and liquid glass both disabled");
             return;
