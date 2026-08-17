@@ -46,6 +46,7 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             FreeformCaptureLeashHook.install();
             new MainHook().install(classLoader);
+            Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
