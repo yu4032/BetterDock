@@ -17,19 +17,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * but that also bypasses the proven DragController start/end hooks. During an icon drag the
  * moving icon lives on its own drag Surface, outside the Floating Dock window, so excluding only
  * the Dock window is insufficient. Reuse the original behavior here: resolve that drag Surface
- * name after the runtime startDrag overload returns, feed it to DockLiquidGlassView.setDockDragging,
+ * name after the runtime startDrag overload returns, briefly retry on later animation frames when
+ * the vendor creates the Surface asynchronously, feed it to DockLiquidGlassView.setDockDragging,
  * and clear it at endDrag(). No gesture, Recents, lifecycle, or ownership hook is installed here.
  */
 final class Miuix307DragCaptureHook {
     private static final String TAG = "[DC][MG]";
+    private static final int DRAG_SURFACE_RETRY_FRAMES = 12;
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static volatile WeakReference<View> backgroundRef = new WeakReference<>(null);
 
     // A vendor startDrag overload may delegate to another startDrag overload. Treat those nested
-    // callbacks as one drag session, but allow a later callback to upgrade a temporarily-null
-    // Surface name to the concrete "drag surface#..." name.
+    // callbacks as one drag session, but allow a later callback or short frame retry to upgrade a
+    // temporarily-null Surface name to the concrete "drag surface#..." name.
     private static volatile boolean dragActive;
     private static volatile String activeDragLayerName;
+    private static volatile long dragSessionId;
 
     private Miuix307DragCaptureHook() {}
 
@@ -93,11 +96,45 @@ final class Miuix307DragCaptureHook {
                 && !Objects.equals(activeDragLayerName, dragLayerName);
         if (!firstCallback && !betterLayer) return;
 
-        dragActive = true;
+        if (firstCallback) {
+            dragActive = true;
+            dragSessionId++;
+        }
         if (betterLayer) activeDragLayerName = dragLayerName;
         glass.setDockDragging(true, activeDragLayerName);
         MainHook.log(TAG + " drag start method=" + signature
                 + " exclude=" + activeDragLayerName);
+
+        if (firstCallback && activeDragLayerName == null) {
+            scheduleDragSurfaceRetry(dragController, dragSessionId, 1);
+        }
+    }
+
+    private static void scheduleDragSurfaceRetry(Object dragController, long sessionId,
+                                                 int attempt) {
+        if (!dragActive || activeDragLayerName != null || sessionId != dragSessionId) return;
+        if (attempt > DRAG_SURFACE_RETRY_FRAMES) {
+            MainHook.log(TAG + " drag surface retry exhausted attempts="
+                    + DRAG_SURFACE_RETRY_FRAMES + " exclude=null");
+            return;
+        }
+
+        View scheduler = backgroundRef.get();
+        if (scheduler == null) return;
+        scheduler.postOnAnimation(() -> {
+            if (!dragActive || activeDragLayerName != null || sessionId != dragSessionId) return;
+
+            String dragLayerName = resolveDragSurfaceLayerName(dragController);
+            if (dragLayerName != null && !dragLayerName.isEmpty()) {
+                activeDragLayerName = dragLayerName;
+                DockLiquidGlassView glass = currentGlass();
+                if (glass != null) glass.setDockDragging(true, dragLayerName);
+                MainHook.log(TAG + " drag surface retry attempt=" + attempt
+                        + " exclude=" + dragLayerName);
+                return;
+            }
+            scheduleDragSurfaceRetry(dragController, sessionId, attempt + 1);
+        });
     }
 
     private static void onEndDrag() {
@@ -106,6 +143,9 @@ final class Miuix307DragCaptureHook {
         if (glass != null) glass.setDockDragging(false, null);
         dragActive = false;
         activeDragLayerName = null;
+        // Invalidate any postOnAnimation callback queued by the just-finished drag so it cannot
+        // attach a stale Surface to a rapidly-started next drag session.
+        dragSessionId++;
         MainHook.log(TAG + " drag end");
     }
 
