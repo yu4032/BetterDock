@@ -28,15 +28,15 @@ public class HomeGridHookProfileContractTest {
     }
 
     @Test
-    public void overlayUsesSelectedProfileForAxisAndRotationMetadata() throws IOException {
+    public void overlayUsesSelectedProfileForCountsAndNativeRotationMetadata() throws IOException {
         String source = read(
                 "src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java");
         assertTrue(source.contains("HomeGridProfile.fromPersisted"));
-        assertTrue(source.contains("profile.columns(portrait)"));
-        assertTrue(source.contains("profile.rows(portrait)"));
+        assertTrue(source.contains("HomeGridCountPolicy.profileRewriteForGridName"));
         assertTrue(source.contains("profile.blockOrigins(portrait)"));
         assertTrue(source.contains("profile.totalBlocks()"));
         assertTrue(source.contains("profile.matchesCounts(h, v)"));
+        assertTrue(source.contains("installRotationDirectionFix"));
     }
 
     @Test
