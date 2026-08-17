@@ -58,11 +58,29 @@ public class Miuix307DropAnimationLifecycleContractTest {
         int resetHook = drag.indexOf("\"resetDraggingView\"");
         int resetProceed = drag.indexOf("chain.proceed", resetHook);
         int cleanup = drag.indexOf("onHotseatDragCleanup()", resetProceed);
-        assertTrue("HotSeats resetDraggingView is an observed final cleanup boundary",
+        assertTrue("HotSeats resetDraggingView is an observed cleanup boundary",
                 resetHook >= 0 && resetProceed > resetHook && cleanup > resetProceed);
 
         // Completion is lifecycle-driven, never guessed from a fixed animation duration.
         assertFalse(drag.contains("postDelayed("));
+    }
+
+    @Test
+    public void hotseatCleanupCannotPreemptRealDragObjectFinish() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        int cleanup = drag.indexOf("private static void onHotseatDragCleanup()");
+        int next = drag.indexOf("\n    private static void ", cleanup + 1);
+        String body = next > cleanup ? drag.substring(cleanup, next) : drag.substring(cleanup);
+
+        assertTrue("when the real DragObject finish hook is available, HotSeats cleanup is fallback-only",
+                body.contains("dropAnimationFinishHookInstalled")
+                        && body.contains("settlingDragObject != null"));
+        assertTrue("HotSeats cleanup must stay frozen and wait for DragObject finish",
+                body.contains("waiting for DragObject animation end") && body.contains("return;"));
+        assertTrue("fallback release is allowed only after the real-finish guard",
+                body.indexOf("dropAnimationFinishHookInstalled")
+                        < body.indexOf("finishDropSettling("));
     }
 
     @Test
