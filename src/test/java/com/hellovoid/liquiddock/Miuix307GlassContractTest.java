@@ -68,4 +68,21 @@ public class Miuix307GlassContractTest {
         assertFalse(source.contains("setBackground(null)"));
         assertTrue(source.contains("mBackground"));
     }
+
+    @Test
+    public void appBackdropUsesOwnershipAndKeepsNativeMiuixVisible() throws IOException {
+        String source = read("MiuixGlassHook.java");
+
+        // APP/HOME ownership is required so DockLiquidGlassView selects FULL_DISPLAY for APP
+        // instead of remaining UNKNOWN -> WALLPAPER forever on the specialized 307 path.
+        assertTrue(source.contains("HomeOwnershipRuntime.bind(glass, glass.getContext())"));
+        // 307 glass must always be allowed to sample the composed display over apps, even if a
+        // stale historical preference disabled the legacy fullscreen-capture toggle.
+        assertTrue(source.contains("glass.setFullscreenCapture(true)"));
+        // DockLiquidGlassView normally hides geometrySource after its first frame. On 307 that
+        // source is the native MiuiX pass-window blur background and must remain visible.
+        assertTrue(source.contains("installNativeBackgroundPreserver"));
+        assertTrue(source.contains("nativeBackgroundHiddenByGlass"));
+        assertTrue(source.contains("dockBg.setAlpha(1f)"));
+    }
 }
