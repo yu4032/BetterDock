@@ -100,12 +100,21 @@ public class HomeGridGeometryPolicyTest {
     }
 
     @Test
-    public void normalWorkspaceHookUsesAxisIndependentPolicy() throws Exception {
-        String source = Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"),
+    public void finalGeometryOwnerUsesAxisIndependentPolicyAtLayoutBoundaries() throws Exception {
+        String owner = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridGeometryIndependenceHook.java"),
                 StandardCharsets.UTF_8);
-        assertTrue(source.contains("HomeGridGeometryPolicy.normalWorkspace"));
-        assertTrue(source.contains("mCellWidth\", geometry[4]"));
-        assertTrue(source.contains("mCellHeight\", geometry[5]"));
+        String module = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/ModuleMain.java"),
+                StandardCharsets.UTF_8);
+        assertTrue(owner.contains("HomeGridGeometryPolicy.normalWorkspace"));
+        assertTrue(owner.contains("PRIORITY_HIGHEST"));
+        assertTrue(owner.contains("PRIORITY_LOWEST"));
+        assertTrue(owner.contains("mCellWidth\", geometry[4]"));
+        assertTrue(owner.contains("mCellHeight\", geometry[5]"));
+        int main = module.indexOf("new MainHook().install(classLoader);");
+        int profile = module.indexOf("HomeGridProfileOverlayHook.install(classLoader);");
+        int geometry = module.indexOf("HomeGridGeometryIndependenceHook.install(classLoader);");
+        assertTrue(main >= 0 && profile > main && geometry > profile);
     }
 }
