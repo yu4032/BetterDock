@@ -110,7 +110,7 @@ final class Miuix307DragCaptureHook {
     }
 
     /** Resolve the currently bound Prismal view from the MiuiX background's sibling host. */
-    private static DockLiquidGlassView currentGlass() {
+    static DockLiquidGlassView currentGlass() {
         View background = backgroundRef.get();
         if (background == null) return null;
         android.view.ViewParent parent = background.getParent();
