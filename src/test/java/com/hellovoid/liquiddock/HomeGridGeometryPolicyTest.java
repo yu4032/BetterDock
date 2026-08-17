@@ -3,6 +3,9 @@ package com.hellovoid.liquiddock;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -94,5 +97,15 @@ public class HomeGridGeometryPolicyTest {
         assertEquals(240, g[CELL_HEIGHT]);
         assertEquals(0, g[WIDTH_GAP]);
         assertEquals(3, g[HEIGHT_GAP]);
+    }
+
+    @Test
+    public void normalWorkspaceHookUsesAxisIndependentPolicy() throws Exception {
+        String source = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"),
+                StandardCharsets.UTF_8);
+        assertTrue(source.contains("HomeGridGeometryPolicy.normalWorkspace"));
+        assertTrue(source.contains("mCellWidth\", geometry[4]"));
+        assertTrue(source.contains("mCellHeight\", geometry[5]"));
     }
 }
