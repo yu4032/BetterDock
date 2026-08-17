@@ -5,6 +5,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
@@ -13,8 +14,9 @@ import java.lang.reflect.Field;
  * MiuiX-specific glass installer for OS3.0.307+ docks.
  *
  * The vendor background remains intact and owns the realtime backdrop blur/gradient. This
- * class only overlays LiquidDock's existing Prismal glass stack above it. No Launcher
- * HOME/APP/RECENTS capture lifecycle is installed for this path.
+ * class overlays LiquidDock's existing Prismal glass stack above it. The generic Launcher
+ * gesture/Recents capture hooks stay disabled; only SystemUI HOME/APP ownership is rebound so
+ * the glass can choose FULL_DISPLAY while the floating Dock is shown over an app.
  */
 final class MiuixGlassHook {
     private static final String TAG = "[DC][MG]";
@@ -23,6 +25,8 @@ final class MiuixGlassHook {
     private static DockLiquidGlassView glassRef;
     private static DockLiquidGlassHostView hostRef;
     private static View backgroundRef;
+    private static ViewTreeObserver nativeBackgroundObserver;
+    private static ViewTreeObserver.OnPreDrawListener nativeBackgroundPreserver;
 
     private MiuixGlassHook() {}
 
@@ -40,6 +44,7 @@ final class MiuixGlassHook {
         }
 
         // Detached/old host: never stack a second glass layer on a recreated Dock hierarchy.
+        removeNativeBackgroundPreserver();
         if (hostRef != null && hostRef.getParent() instanceof ViewGroup) {
             ((ViewGroup) hostRef.getParent()).removeView(hostRef);
         }
@@ -65,6 +70,11 @@ final class MiuixGlassHook {
         DockLiquidGlassView glass = LiquidGlassFactory.create(
                 dockBg, workspace, config.glass, config.dock, false, SQUIRCLE_CP);
         glass.setId(View.generateViewId());
+        // The specialized 307 path bypasses MainHook's legacy capture hooks. Rebind only the
+        // authoritative SystemUI HOME/APP ownership so APP resolves to FULL_DISPLAY instead of
+        // remaining UNKNOWN -> WALLPAPER. Force the composed-display capability for this mode;
+        // historical preferences must not turn an app backdrop back into wallpaper.
+        glass.setFullscreenCapture(true);
 
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
         host.setId(View.generateViewId());
@@ -82,13 +92,17 @@ final class MiuixGlassHook {
                 : Math.min(parent.getChildCount(), bgIdx + 1);
         parent.addView(host, insertIndex, hostLp);
 
-        // Preserve the MiuiX drawable. Stroke is an overlay/foreground only.
-        DockStrokeRenderer.configure(dockBg, config.dock, radius);
-
+        // Preserve the MiuiX drawable/pass-window blur. DockLiquidGlassView normally hides its
+        // geometrySource after the first captured frame; on 307 that source is the actual native
+        // material background and must stay visible underneath the Prismal layer.
         backgroundRef = dockBg;
         glassRef = glass;
         hostRef = host;
-        MainHook.log(TAG + " Prismal glass installed above MiuiX background");
+        installNativeBackgroundPreserver(dockBg, glass);
+        HomeOwnershipRuntime.bind(glass, glass.getContext());
+
+        DockStrokeRenderer.configure(dockBg, config.dock, radius);
+        MainHook.log(TAG + " Prismal glass installed above MiuiX background with live ownership");
         return true;
     }
 
@@ -129,6 +143,66 @@ final class MiuixGlassHook {
         host.reloadOverlay(config.dock, config.glass);
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
         host.invalidate();
+    }
+
+    /**
+     * Keep the native MiuiX material visible without changing DockLiquidGlassView's legacy
+     * behavior. Its installCapture() sets geometrySource alpha=0 and marks the private
+     * nativeBackgroundHiddenByGlass latch. Because this listener is registered after the glass
+     * attaches its own pre-draw listener, it clears that latch and restores alpha before drawing.
+     */
+    private static void installNativeBackgroundPreserver(
+            View dockBg, DockLiquidGlassView glass) {
+        removeNativeBackgroundPreserver();
+        final Field hiddenField;
+        try {
+            hiddenField = findField(DockLiquidGlassView.class, "nativeBackgroundHiddenByGlass");
+            hiddenField.setAccessible(true);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " native background latch unavailable: " + error);
+            dockBg.setAlpha(1f);
+            return;
+        }
+
+        View root = dockBg.getRootView();
+        ViewTreeObserver observer = root != null ? root.getViewTreeObserver() : null;
+        if (observer == null || !observer.isAlive()) {
+            dockBg.setAlpha(1f);
+            return;
+        }
+
+        ViewTreeObserver.OnPreDrawListener listener = () -> {
+            if (backgroundRef != dockBg || glassRef != glass) return true;
+            try {
+                hiddenField.setBoolean(glass, false);
+            } catch (Throwable ignored) {}
+            if (dockBg.getAlpha() != 1f) dockBg.setAlpha(1f);
+            return true;
+        };
+        observer.addOnPreDrawListener(listener);
+        nativeBackgroundObserver = observer;
+        nativeBackgroundPreserver = listener;
+
+        // A capture callback may complete between setupViews and the next pre-draw. Restore once
+        // on the main queue as well so the native material never remains hidden for a full frame.
+        dockBg.post(() -> {
+            if (backgroundRef != dockBg || glassRef != glass) return;
+            try {
+                hiddenField.setBoolean(glass, false);
+            } catch (Throwable ignored) {}
+            dockBg.setAlpha(1f);
+        });
+    }
+
+    private static void removeNativeBackgroundPreserver() {
+        ViewTreeObserver observer = nativeBackgroundObserver;
+        ViewTreeObserver.OnPreDrawListener listener = nativeBackgroundPreserver;
+        nativeBackgroundObserver = null;
+        nativeBackgroundPreserver = null;
+        if (observer == null || listener == null) return;
+        try {
+            if (observer.isAlive()) observer.removeOnPreDrawListener(listener);
+        } catch (Throwable ignored) {}
     }
 
     private static int readDimension(View dockBg, String fieldName, boolean width) {
