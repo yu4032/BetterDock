@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.hellovoid.liquiddock.config.GridProfileConfig;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Locale;
 
@@ -14,8 +15,8 @@ import io.github.libxposed.api.XposedInterface;
  *
  * The existing HomeGridHook continues to own CellLayout geometry, widget frames, margins,
  * folders, indicator positioning and rotation refresh. This class overrides only values that
- * are inherently profile-sized: Pad axis counts, normal GridConfig counts and the 10x6
- * orientation transform. It is inactive for 8x4 and workstation/laptop-owned surfaces.
+ * are inherently profile-sized: Pad axis counts, normal GridConfig counts and rotation-rule
+ * metadata. It is inactive for 8x4 and while the workstation/laptop surface owns the UI.
  */
 final class HomeGridProfileOverlayHook {
     private static final String PAD_CELL_COUNT =
@@ -77,9 +78,6 @@ final class HomeGridProfileOverlayHook {
                                             boolean xAxis) throws NoSuchMethodException {
         Method method = HookUtil.findMethodExact(gridConfig, methodName,
                 new Class<?>[]{int.class});
-        // Lowest priority observes the stable 8x4 core first, but the semantic GridConfig name
-        // is the final owner. land_grid and vertical_grid cannot be confused by stale global
-        // Configuration during rotation.
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_LOWEST)
                 .intercept(chain -> {
@@ -111,16 +109,37 @@ final class HomeGridProfileOverlayHook {
     }
 
     /**
-     * The stock rule is not a generic block transform: widgetCaseInBlock() still assumes
-     * stock 6x4/4x6 matrix bounds. The captured crash is length=6,index=6 inside that method.
-     * For 10x6 only, bypass transformToDstLayout() completely and transform the rule's
-     * already-created source/destination occupancy matrices with our generic engine.
+     * Extend only the profile-sized metadata of MIUI's native transpose transform.
+     * LayoutTransformRule.init() creates source occupancy as [mVCells][mHCells] and
+     * destination occupancy as [mHCells][mVCells]. Therefore mH/mV describe the target
+     * grid while the source grid is their transpose. The native block and icon movers are
+     * retained; only their 10x6 metadata and the stock hard-coded direction latch are fixed.
      */
     private static void installRotationTransform(ClassLoader classLoader) throws Exception {
         Class<?> rule = Class.forName(ROTATION_RULE, false, classLoader);
-        Method transform = HookUtil.findMethodExact(
-                rule, "transformToDstLayout", new Class<?>[0]);
-        Api101Bridge.module().hook(transform)
+        for (Constructor<?> ctor : rule.getDeclaredConstructors()) {
+            ctor.setAccessible(true);
+            Api101Bridge.module().hook(ctor)
+                    .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        if (MainHook.isWorkstationMode() || isExcludedGridConfigCall()) return result;
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (args.length < 2 || !(args[0] instanceof Integer)
+                                || !(args[1] instanceof Integer)) return result;
+                        int h = (Integer) args[0];
+                        int v = (Integer) args[1];
+                        if (!profile.matchesCounts(h, v)) return result;
+                        Object target = chain.getThisObject();
+                        HookUtil.setField(target, "vScreenCoordinate", blocks(true));
+                        HookUtil.setField(target, "hScreenCoordinate", blocks(false));
+                        HookUtil.setIntField(target, "totalBlocks", profile.totalBlocks());
+                        return result;
+                    });
+        }
+
+        Method check = HookUtil.findMethodExact(rule, "checkCellCount", new Class<?>[0]);
+        Api101Bridge.module().hook(check)
                 .setPriority(XposedInterface.PRIORITY_HIGHEST)
                 .intercept(chain -> {
                     if (MainHook.isWorkstationMode() || isExcludedGridConfigCall()) {
@@ -129,22 +148,64 @@ final class HomeGridProfileOverlayHook {
                     Object target = chain.getThisObject();
                     Object hValue = HookUtil.invoke(target, "getMHCells");
                     Object vValue = HookUtil.invoke(target, "getMVCells");
-                    if (!(hValue instanceof Integer) || !(vValue instanceof Integer)) {
-                        return chain.proceed();
+                    if (hValue instanceof Integer && vValue instanceof Integer) {
+                        int h = (Integer) hValue;
+                        int v = (Integer) vValue;
+                        if (profile.matchesCounts(h, v)) return null;
                     }
-                    int h = (Integer) hValue;
-                    int v = (Integer) vValue;
-                    if (!profile.matchesCounts(h, v)) return chain.proceed();
-
-                    boolean transformed = HomeGridTransformEngine.transform(target);
-                    if (!transformed) {
-                        // Fail closed: keeping the launcher alive is preferable to entering the
-                        // known stock widgetCaseInBlock() length-6 crash path.
-                        MainHook.log("[DC] 10x6 rotation transform failed closed h="
-                                + h + " v=" + v);
-                    }
-                    return target;
+                    return chain.proceed();
                 });
+
+        installRotationDirectionFix(rule);
+    }
+
+    /**
+     * Stock transformToDstLayout() writes mIsVerticalCellCount = (mHCells != 4).
+     * That only distinguishes target 6x4 from 4x6. For a target 6x10, however, the
+     * source is the transposed 10x6 grid and must use hScreenCoordinate. Likewise a
+     * target 10x6 comes from 6x10 and must use vScreenCoordinate. get4x2WidgetCase()
+     * is the first native call after the stock write, so re-latch the direction there
+     * before any source occupancy cell is read.
+     */
+    private static void installRotationDirectionFix(Class<?> rule) throws NoSuchMethodException {
+        Method directionLatch = null;
+        for (Method candidate : rule.getDeclaredMethods()) {
+            if ("get4x2WidgetCase".equals(candidate.getName())
+                    && candidate.getParameterCount() == 2) {
+                directionLatch = candidate;
+                break;
+            }
+        }
+        if (directionLatch == null) {
+            throw new NoSuchMethodException(rule.getName() + "#get4x2WidgetCase");
+        }
+        directionLatch.setAccessible(true);
+        Api101Bridge.module().hook(directionLatch)
+                .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                .intercept(chain -> {
+                    Object target = chain.getThisObject();
+                    if (!MainHook.isWorkstationMode()) {
+                        Object hValue = HookUtil.invoke(target, "getMHCells");
+                        Object vValue = HookUtil.invoke(target, "getMVCells");
+                        if (hValue instanceof Integer && vValue instanceof Integer) {
+                            int h = (Integer) hValue;
+                            int v = (Integer) vValue;
+                            if (profile.matchesCounts(h, v)) {
+                                boolean sourceHorizontal =
+                                        HomeGridRotationPolicy.sourceUsesHorizontalCoordinates(h, v);
+                                HookUtil.setField(target, "mIsVerticalCellCount", sourceHorizontal);
+                                MainHook.log("[DC] 10x6 rotation source="
+                                        + (sourceHorizontal ? "horizontal" : "vertical")
+                                        + " target=" + h + "x" + v);
+                            }
+                        }
+                    }
+                    return chain.proceed();
+                });
+    }
+
+    private static int[][] blocks(boolean portrait) {
+        return profile.blockOrigins(portrait);
     }
 
     private static String gridName(Object gridConfig) {
@@ -158,10 +219,6 @@ final class HomeGridProfileOverlayHook {
         }
     }
 
-    /**
-     * GridConfig is also used by folders, All Apps, the laptop launcher and HotSeats.
-     * These are explicit non-Workspace owners and must never inherit the normal 10x6 grid.
-     */
     private static boolean isExcludedGridConfigCall() {
         for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
             String name = frame.getClassName().toLowerCase(Locale.ROOT);
