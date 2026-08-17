@@ -109,7 +109,6 @@ public class Miuix307GlassContractTest {
     @Test
     public void detachedThemeHierarchySchedulesOneShotGlassRebind() throws IOException {
         String pipeline = read("Miuix307MaterialPipeline.java");
-        String hook = read("MiuixGlassHook.java");
 
         // Theme/icon-pack changes can mutate only the HotSeats hierarchy. setupViews and geometry
         // callbacks are not guaranteed after the injected host is detached, so retain the owner
@@ -135,10 +134,11 @@ public class Miuix307GlassContractTest {
         assertTrue(pipeline.contains("ensureGlassBound(currentBackground, config, classLoader)"));
         assertTrue(pipeline.contains("Miuix307DragCaptureHook.bind(background)"));
 
-        // The host itself can be removed while the vendor background survives. Expose only the
-        // current host View so the pipeline can observe its detach; do not duplicate glass state.
-        assertTrue(hook.contains("boundHostView()"));
-        assertTrue(pipeline.contains("MiuixGlassHook.boundHostView()"));
+        // The host itself can be removed while the vendor background survives. Resolve the
+        // injected DockLiquidGlassHostView from the bound background parent and observe it too;
+        // no extra mutable glass API is needed in MiuixGlassHook.
+        assertTrue(pipeline.contains("resolveBoundHost(background)"));
+        assertTrue(pipeline.contains("instanceof DockLiquidGlassHostView"));
 
         // Existing binding identity remains the no-op guard, preventing duplicate Prismal hosts.
         assertTrue(pipeline.contains("MiuixGlassHook.isBoundTo(background)"));
