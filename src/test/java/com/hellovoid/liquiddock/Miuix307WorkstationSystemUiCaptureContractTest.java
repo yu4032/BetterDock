@@ -73,12 +73,27 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
     }
 
     @Test
+    public void workstationResolverUsesDeviceProvenLaptopOverlayWindowIdentity() throws Exception {
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("device log proves workstation is the WindowManager window titled Laptop overlay",
+                ownership.contains("\"Laptop overlay\""));
+        assertTrue("window title must be accepted directly instead of requiring root class identity",
+                ownership.contains("isWorkstationWindowTitle(title)"));
+        assertTrue("DockContainerView remains a structural compatibility fallback",
+                ownership.contains("containsDockContainerView(rootView)"));
+        assertTrue("fallback must walk child views because the WindowManager root can be a wrapper",
+                ownership.contains("ViewGroup") && ownership.contains("getChildCount()")
+                        && ownership.contains("getChildAt(i)"));
+    }
+
+    @Test
     public void workstationFullDisplayUsesDedicatedNonFloatingDockExclusion() throws Exception {
         String ownership = read("Miuix307CaptureOwnershipHook.java");
 
         assertTrue("workstation needs a dedicated runtime resolver",
                 ownership.contains("resolveWorkstationDockTarget()"));
-        assertTrue("workstation resolver must identify DockContainerView ownership",
+        assertTrue("workstation resolver must retain DockContainerView ownership fallback",
                 ownership.contains("DockContainerView"));
         assertTrue("ordinary type-2997 Floating Dock must be rejected as a workstation candidate",
                 ownership.contains("lp.type == 2997") && ownership.contains("continue;"));
