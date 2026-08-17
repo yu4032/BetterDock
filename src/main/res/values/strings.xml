@@ -21,6 +21,7 @@
     <string name="home_grid_summary">8×4 / 4×8 grid, orientation spacing, and page indicator</string>
     <string name="home_dock_summary">Size, corners, icon spacing, position, and blur</string>
     <string name="home_divider_summary">Independent divider width, height, position, color, and opacity</string>
+    <string name="home_workstation_title">Workstation</string>
     <string name="home_workstation_summary">Independent length and spacing; does not inherit normal Dock parameters</string>
     <string name="home_liquid_summary">Refraction, dispersion, blur backends, and adaptive local capture</string>
     <string name="home_stroke_summary">Base color, squircle shape, and stroke width</string>
@@ -38,7 +39,7 @@
     <string name="enable_widget_adaptation">Adapt widget sizes to the custom grid</string>
     <string name="enable_widget_adaptation_summary">Resizes supported 1×1, 2×1, 2×2, and 4×2 widgets to the custom grid; disabled by default and requires a launcher restart</string>
     <string name="dock_customization">Customize Dock geometry and appearance</string>
-    <string name="dock_customization_summary">Controls size, position, stroke, and shadow</string>
+    <string name="dock_customization_summary">Controls normal Dock size, position, and blur only; stroke and shadow are configured independently</string>
     <string name="dock_resize_animation">Dock size transition</string>
     <string name="dock_resize_animation_summary">Animates width, height, and corner changes for 200 ms; disable to apply the final size immediately</string>
     <string name="dock_smooth_resize_animation">Smooth LiquidDock size transition</string>
