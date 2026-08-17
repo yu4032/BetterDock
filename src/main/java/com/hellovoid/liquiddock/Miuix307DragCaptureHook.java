@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * the Dock window is insufficient. Reuse the original behavior here: resolve that drag Surface
  * name after the runtime startDrag overload returns, briefly retry on later animation frames when
  * the vendor creates the Surface asynchronously, feed it to DockLiquidGlassView.setDockDragging,
- * and clear it at endDrag(). No gesture, Recents, lifecycle, or ownership hook is installed here.
+ * then keep the last clean backdrop frozen through MIUI's drop-settling animation. No gesture,
+ * Recents, lifecycle, or ownership hook is installed here.
  */
 final class Miuix307DragCaptureHook {
     private static final String TAG = "[DC][MG]";
@@ -36,6 +37,12 @@ final class Miuix307DragCaptureHook {
     private static volatile String activeDragLayerName;
     private static volatile SurfaceControl activeDragSurface;
     private static volatile long dragSessionId;
+
+    // DragController.endDrag() clears mDragObject before returning, while MIUI's DragViews may
+    // still be settling into place. Retain only that finishing DragObject until its own
+    // mDropAnimationCounter reaches zero; this also handles multi-icon drops correctly.
+    private static volatile Object settlingDragObject;
+    private static volatile boolean dropAnimationFinishHookInstalled;
 
     private Miuix307DragCaptureHook() {}
 
@@ -71,18 +78,47 @@ final class Miuix307DragCaptureHook {
                 throw new IllegalStateException("no instance startDrag overloads");
             }
 
-            // The no-arg endDrag callback is device-proven to execute on 307. Keep that precise
-            // hook instead of broadening the end side unnecessarily.
+            installDropAnimationFinishHook(classLoader);
+
+            // The no-arg endDrag callback is device-proven to execute on 307. DragController
+            // clears mDragObject inside the original method, so retain it before proceed().
             HookUtil.hookMethod(dragController, "endDrag", new Class<?>[0],
                     chain -> {
+                        Object dragObject = currentDragObject(chain.getThisObject());
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        onEndDrag();
+                        onEndDrag(dragObject);
                         return result;
                     });
             installSystemDockDragHooks(classLoader);
-            MainHook.log(TAG + " drag-only capture hook installed startOverloads=" + startHooks);
+            MainHook.log(TAG + " drag-only capture hook installed startOverloads=" + startHooks
+                    + " dropAnimationHook=" + dropAnimationFinishHookInstalled);
         } catch (Throwable error) {
             MainHook.log(TAG + " drag-only capture hook unavailable: " + error);
+        }
+    }
+
+    /**
+     * MIUI increments DragObject.mDropAnimationCounter once for every settling DragView and
+     * decrements it inside DragObject.onDropAnimationFinished(). Hook after the vendor method so
+     * only the callback that observes the final zero releases the frozen backdrop.
+     */
+    private static void installDropAnimationFinishHook(ClassLoader classLoader) {
+        try {
+            Class<?> dragObjectClass = Class.forName(
+                    "com.miui.home.launcher.DragObject", false, classLoader);
+            HookUtil.hookMethod(dragObjectClass, "onDropAnimationFinished", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        onDropAnimationFinished(chain.getThisObject());
+                        return result;
+                    });
+            dropAnimationFinishHookInstalled = true;
+            MainHook.log(TAG + " drop animation lifecycle hook installed");
+        } catch (Throwable error) {
+            // Fail open to the old endDrag boundary if a vendor build changes this lifecycle.
+            // Never leave capture frozen waiting for a completion callback we cannot observe.
+            dropAnimationFinishHookInstalled = false;
+            MainHook.log(TAG + " drop animation lifecycle hook unavailable: " + error);
         }
     }
 
@@ -213,17 +249,79 @@ final class Miuix307DragCaptureHook {
         });
     }
 
-    private static void onEndDrag() {
-        if (!dragActive && activeDragLayerName == null) return;
-        DockLiquidGlassView glass = currentGlass();
-        if (glass != null) glass.setDockDragging(false, null, null);
+    /** Logical drag end. Physical drop settling may still be running after this boundary. */
+    private static void onEndDrag(Object dragObject) {
+        if (!dragActive && activeDragLayerName == null && activeDragSurface == null) return;
+
+        // Stop all logical-drag capture activity immediately and invalidate any queued Surface
+        // retry. The retained DragObject below is the only state allowed to outlive endDrag().
         dragActive = false;
         activeDragLayerName = null;
         activeDragSurface = null;
-        // Invalidate any postOnAnimation callback queued by the just-finished drag so it cannot
-        // attach a stale Surface to a rapidly-started next drag session.
         dragSessionId++;
-        MainHook.log(TAG + " drag end");
+
+        int dropAnimationCounter = dropAnimationFinishHookInstalled
+                ? readDropAnimationCounter(dragObject) : 0;
+        if (dropAnimationCounter > 0) {
+            settlingDragObject = dragObject;
+            DockLiquidGlassView glass = currentGlass();
+            if (glass != null) {
+                // Force the Surface-aware live path back into frozen mode. Even if the drag
+                // Surface was excludable, the settling icon is now animation content that must
+                // not be sampled into the glass.
+                glass.setDockDragging(true, null, null);
+            }
+            MainHook.log(TAG + " drag end -> drop settling counter=" + dropAnimationCounter
+                    + "; capture remains frozen");
+            return;
+        }
+
+        settlingDragObject = null;
+        finishDockDragCapture("drag end");
+    }
+
+    /** Called after MIUI has decremented mDropAnimationCounter for one DragView. */
+    private static void onDropAnimationFinished(Object dragObject) {
+        if (dragObject == null || settlingDragObject != dragObject) return;
+
+        int dropAnimationCounter = readDropAnimationCounter(dragObject);
+        if (dropAnimationCounter > 0) {
+            MainHook.log(TAG + " drop animation finished; remaining=" + dropAnimationCounter);
+            return;
+        }
+        if (dropAnimationCounter == 0) {
+            settlingDragObject = null;
+            finishDockDragCapture("drag release anim end");
+        }
+    }
+
+    private static void finishDockDragCapture(String reason) {
+        DockLiquidGlassView glass = currentGlass();
+        if (glass != null) glass.setDockDragging(false, null, null);
+        MainHook.log(TAG + " " + reason);
+    }
+
+    /** Read the DragObject before DragController.endDrag() clears mDragObject. */
+    private static Object currentDragObject(Object dragController) {
+        if (dragController == null) return null;
+        try {
+            return HookUtil.getField(dragController, "mDragObject");
+        } catch (Throwable error) {
+            MainHook.log(TAG + " current DragObject unavailable: " + error);
+            return null;
+        }
+    }
+
+    /** Vendor compatibility is fail-open: an unreadable counter must never freeze forever. */
+    private static int readDropAnimationCounter(Object dragObject) {
+        if (dragObject == null) return 0;
+        try {
+            Object value = HookUtil.getField(dragObject, "mDropAnimationCounter");
+            return value instanceof Number ? Math.max(0, ((Number) value).intValue()) : 0;
+        } catch (Throwable error) {
+            MainHook.log(TAG + " drop animation counter unavailable: " + error);
+            return 0;
+        }
     }
 
     /** Resolve the currently bound Prismal view from the MiuiX background's sibling host. */
@@ -249,7 +347,7 @@ final class Miuix307DragCaptureHook {
     /** Resolve the launcher-owned drag SurfaceControl without taking ownership of it. */
     private static SurfaceControl resolveDragSurfaceControl(Object dragController) {
         try {
-            Object dragObject = HookUtil.getField(dragController, "mDragObject");
+            Object dragObject = currentDragObject(dragController);
             if (dragObject == null) return null;
             Object views = HookUtil.getField(dragObject, "mDragViews");
             Object dragView;
