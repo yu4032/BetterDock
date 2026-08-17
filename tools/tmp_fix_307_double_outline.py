@@ -32,10 +32,12 @@ s = replace_once(s,
     '''        float radius = readRadius(dockBg);\n        int dockW = readDimension(dockBg, "mWidth", true);\n        int dockH = readDimension(dockBg, "mHeight", false);\n        MainHook.log(TAG + " in-place material radius=" + radius\n                + " dock size=" + dockW + "x" + dockH);\n''',
     '''        float nativeRadius = readRadius(dockBg);\n        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(\n                dockBg, config.dock, nativeRadius);\n        int dockW = readDimension(dockBg, "mWidth", true);\n        int dockH = readDimension(dockBg, "mHeight", false);\n        MainHook.log(TAG + " in-place material nativeRadius=" + nativeRadius\n                + " glassRadius=" + glassRadius\n                + " dock size=" + dockW + "x" + dockH);\n''',
     'install radius block')
-s = replace_once(s,
-    '        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);\n',
+host_token = '        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);\n'
+if s.count(host_token) != 2:
+    raise SystemExit(f'host geometry token: expected 2, found {s.count(host_token)}')
+s = s.replace(host_token,
     '        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);\n',
-    'install host radius')
+    1)
 s = replace_once(s,
     '        DockStrokeRenderer.configure(dockBg, config.dock, radius);\n',
     '        DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);\n',
