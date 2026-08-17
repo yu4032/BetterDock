@@ -9,26 +9,72 @@ public final class ConfigCodec {
 
     public static LinkedHashMap<String, Object> exportValues(Map<String, ?> preferences) {
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+        boolean gridProfileWritten = false;
         for (ConfigKey<?> key : ConfigSchema.all()) {
+            if (GridProfileConfig.LEGACY_8X4_KEY.equals(key.name())) {
+                writeCanonicalGridProfile(preferences, out);
+                gridProfileWritten = true;
+                continue;
+            }
             if (key.exportMode() == ConfigKey.ExportMode.NEVER) continue;
             if (key.exportMode() == ConfigKey.ExportMode.IF_PRESENT
                     && !preferences.containsKey(key.name())) continue;
             out.put(key.name(), exportValue(key, preferences));
         }
+        if (!gridProfileWritten) writeCanonicalGridProfile(preferences, out);
         return out;
     }
 
     public static LinkedHashMap<String, Object> importValues(Map<String, ?> jsonValues) {
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
         importMandatoryGridMigrationFlags(jsonValues, out);
+        importCanonicalGridProfile(jsonValues, out);
         for (ConfigKey<?> key : ConfigSchema.all()) {
+            if (GridProfileConfig.LEGACY_8X4_KEY.equals(key.name())) continue;
             if (!isDirectlyImportable(key) || !jsonValues.containsKey(key.name())) continue;
             importValue(key, jsonValues.get(key.name()), out);
         }
+        importLegacyGridProfile(jsonValues, out);
         importLegacyHorizontalMargins(jsonValues, out);
         importPreAxisLegacyMargins(jsonValues, out);
         importLegacyWorkstationAllAppsOffsets(jsonValues, out);
         return out;
+    }
+
+    private static void writeCanonicalGridProfile(Map<String, ?> preferences,
+                                                   Map<String, Object> out) {
+        out.put(GridProfileConfig.ENABLED_KEY, booleanValue(preferences.containsKey(
+                GridProfileConfig.ENABLED_KEY)
+                ? preferences.get(GridProfileConfig.ENABLED_KEY)
+                : GridProfileConfig.DEFAULT_ENABLED));
+        Object profile = preferences.get(GridProfileConfig.PROFILE_KEY);
+        out.put(GridProfileConfig.PROFILE_KEY, GridProfileConfig.normalizeProfile(
+                profile == null ? GridProfileConfig.DEFAULT_PROFILE : String.valueOf(profile)));
+    }
+
+    private static void importCanonicalGridProfile(Map<String, ?> jsonValues,
+                                                    Map<String, Object> out) {
+        if (jsonValues.containsKey(GridProfileConfig.ENABLED_KEY)) {
+            out.put(GridProfileConfig.ENABLED_KEY,
+                    booleanValue(jsonValues.get(GridProfileConfig.ENABLED_KEY)));
+        }
+        if (jsonValues.containsKey(GridProfileConfig.PROFILE_KEY)) {
+            Object value = jsonValues.get(GridProfileConfig.PROFILE_KEY);
+            out.put(GridProfileConfig.PROFILE_KEY,
+                    GridProfileConfig.normalizeProfile(value == null ? null : String.valueOf(value)));
+        }
+    }
+
+    private static void importLegacyGridProfile(Map<String, ?> jsonValues,
+                                                Map<String, Object> out) {
+        if (!jsonValues.containsKey(GridProfileConfig.LEGACY_8X4_KEY)) return;
+        if (!out.containsKey(GridProfileConfig.ENABLED_KEY)) {
+            out.put(GridProfileConfig.ENABLED_KEY,
+                    booleanValue(jsonValues.get(GridProfileConfig.LEGACY_8X4_KEY)));
+        }
+        if (!out.containsKey(GridProfileConfig.PROFILE_KEY)) {
+            out.put(GridProfileConfig.PROFILE_KEY, GridProfileConfig.DEFAULT_PROFILE);
+        }
     }
 
     private static Object exportValue(ConfigKey<?> key, Map<String, ?> preferences) {
