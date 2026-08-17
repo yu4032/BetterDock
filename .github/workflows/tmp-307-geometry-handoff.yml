@@ -1,0 +1,63 @@
+name: Temporary 307 geometry handoff build
+
+on:
+  push:
+    branches:
+      - fix/miuix307-drag-freeform-followup
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 2
+
+      - name: Apply geometry-ready handoff
+        run: python3 tools/tmp_fix_307_geometry_ready_handoff.py
+
+      - name: Verify production scope
+        run: |
+          git diff --name-only src/main/java
+          test "$(git diff --name-only src/main/java | wc -l)" -eq 2
+          git diff --name-only src/main/java | grep -qx 'src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java'
+          git diff --name-only src/main/java | grep -qx 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
+          grep -q 'Prismal handoff deferred; native geometry not ready' src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+          grep -q 'native geometry ready; committing Prismal handoff' src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+          grep -q 'if (!hasReadyNativeGeometry(dockBg)) return false;' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q 'radius > 0.5f' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q 'setPassWindowBlurRadius(dockBg, 0)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q 'clearPassWindowBlur(dockBg)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+
+      - name: Commit production implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
+                  src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          git commit -m 'fix: defer 307 glass until native geometry is ready'
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug only
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-307-geometry-handoff-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
