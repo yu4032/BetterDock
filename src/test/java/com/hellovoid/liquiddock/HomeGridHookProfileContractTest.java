@@ -8,48 +8,49 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Source-level regression contract for profile-driven Workspace grid hooks. */
+/** Wiring regression for the 10x6 overlay over the device-verified 8x4 core. */
 public class HomeGridHookProfileContractTest {
-    private static String source() throws IOException {
-        Path path = Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java");
-        return Files.readString(path, StandardCharsets.UTF_8);
+    private static String read(String path) throws IOException {
+        Path file = Paths.get(path);
+        assertTrue("missing expected source: " + path, Files.exists(file));
+        return Files.readString(file, StandardCharsets.UTF_8);
     }
 
     @Test
-    public void hookOwnsAnExtendedMasterAndSelectedProfile() throws IOException {
-        String source = source();
-        assertTrue(source.contains("boolean enableExtendedGrid"));
-        assertTrue(source.contains("HomeGridProfile profile"));
-        assertTrue(source.contains("extendedGridEnabled"));
-        assertFalse(source.contains("private static boolean grid8x4Enabled"));
+    public void moduleInstallsProfileOverlayAfterStableHomeGridCore() throws IOException {
+        String source = read("src/main/java/com/hellovoid/liquiddock/ModuleMain.java");
+        int core = source.indexOf("new MainHook().install(classLoader);");
+        int overlay = source.indexOf("HomeGridProfileOverlayHook.install(classLoader);");
+        assertTrue("MainHook must remain installed", core >= 0);
+        assertTrue("profile overlay must be installed after MainHook", overlay > core);
     }
 
     @Test
-    public void axisCountsComeFromTheSelectedProfile() throws IOException {
-        String source = source();
+    public void overlayUsesSelectedProfileForAxisAndRotationMetadata() throws IOException {
+        String source = read(
+                "src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java");
+        assertTrue(source.contains("HomeGridProfile.fromPersisted"));
         assertTrue(source.contains("profile.columns(portrait)"));
         assertTrue(source.contains("profile.rows(portrait)"));
-        assertFalse(source.contains("portrait ? 4 : 8"));
-        assertFalse(source.contains("portrait ? 8 : 4"));
-    }
-
-    @Test
-    public void rotationRuleUsesGeneratedProfileBlocks() throws IOException {
-        String source = source();
         assertTrue(source.contains("profile.blockOrigins(portrait)"));
         assertTrue(source.contains("profile.totalBlocks()"));
-        assertFalse(source.contains("isEightByFourGrid"));
+        assertTrue(source.contains("profile.matchesCounts(h, v)"));
     }
 
     @Test
-    public void gridConfigNormalizationIsNotTheOldGlobalSixToEightRule() throws IOException {
-        String source = source();
-        assertFalse(source.contains("if ((Integer) args[0] == 6) args[0] = 8;"));
-        assertFalse(source.contains("if ((Integer) result == 6) result = 8;"));
-        assertTrue("workstation All Apps identity must remain available",
-                source.contains("isLaptopAllApps(cellLayout)"));
+    public void overlayIsTenBySixOnlyAndPreservesWorkstationGeometry() throws IOException {
+        String source = read(
+                "src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java");
+        assertTrue(source.contains("profile != HomeGridProfile.GRID_10X6"));
+        assertTrue(source.contains("MainHook.isWorkstationMode()"));
+    }
+
+    @Test
+    public void existingEightByFourCoreRemainsPresent() throws IOException {
+        String source = read("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java");
+        assertTrue(source.contains("private static boolean grid8x4Enabled"));
+        assertTrue(source.contains("isEightByFourGrid"));
     }
 }
