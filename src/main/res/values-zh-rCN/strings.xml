@@ -21,6 +21,7 @@
     <string name="home_grid_summary">8×4 / 4×8、横竖屏边距与指示器</string>
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
     <string name="home_divider_summary">独立控制分隔线宽度、高度、位置、颜色与透明度</string>
+    <string name="home_workstation_title">工作台</string>
     <string name="home_workstation_summary">独立长度与间距；不继承普通 Dock 参数</string>
     <string name="home_liquid_summary">折射、色散、模糊后端与自适应局部捕获</string>
     <string name="home_stroke_summary">底色、方圆曲线与线宽</string>
@@ -38,7 +39,7 @@
     <string name="enable_widget_adaptation">小组件自适应</string>
     <string name="enable_widget_adaptation_summary">按自定义网格重新计算 1×1、2×1、2×2、4×2 小组件尺寸与位置；默认关闭，重启桌面生效</string>
     <string name="dock_customization">自定义 Dock 几何与外观</string>
-    <string name="dock_customization_summary">控制尺寸、位置、描边和阴影</string>
+    <string name="dock_customization_summary">仅控制普通 Dock 的尺寸、位置与模糊；描边和阴影独立设置</string>
     <string name="dock_resize_animation">Dock 尺寸过渡动画</string>
     <string name="dock_resize_animation_summary">宽度、高度和圆角变化时播放 200 ms 动画；关闭后立即应用最终尺寸</string>
     <string name="dock_smooth_resize_animation">LiquidDock 顺滑尺寸动画</string>
