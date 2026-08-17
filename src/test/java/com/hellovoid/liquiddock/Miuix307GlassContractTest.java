@@ -105,4 +105,22 @@ public class Miuix307GlassContractTest {
         assertTrue(height >= 0 && pipeline.indexOf("ensureGlassBound", height) > height);
         assertTrue(radius >= 0 && pipeline.indexOf("ensureGlassBound", radius) > radius);
     }
+
+    @Test
+    public void miuixUsesGuiCaptureTuningAndOnlyNativeBackdropBlur() throws IOException {
+        String source = read("MiuixGlassHook.java");
+
+        // 307 refraction sampling follows the existing GUI values rather than a demo constant.
+        assertTrue(source.contains("glass.setCaptureScale(config.glass.captureScale)"));
+        assertTrue(source.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
+        assertFalse(source.contains("glass.setCaptureScale(0.5f)"));
+        assertFalse(source.contains("glass.setCapturePowerLimitFps(30)"));
+
+        // MiuiX owns blur. Prismal must remain a sharp optical/refraction/highlight overlay;
+        // otherwise HOME/RECENTS can acquire a second heavy shader/self-blur after a rebind or
+        // config reload.
+        assertTrue(source.contains("enforcePrismalOpticalOnly"));
+        assertTrue(source.contains("glass.setBlurMode(LiquidBlurMode.SHADER)"));
+        assertTrue(source.contains("glass.setBlurRadiusPx(0)"));
+    }
 }
