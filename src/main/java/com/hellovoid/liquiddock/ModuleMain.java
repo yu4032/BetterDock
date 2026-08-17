@@ -49,6 +49,9 @@ public final class ModuleMain extends XposedModule {
             // 10x6 intentionally overlays only profile-sized hook points after the stable
             // 8x4 core has installed its generic CellLayout/widget/margin behavior.
             HomeGridProfileOverlayHook.install(classLoader);
+            // Final normal-Workspace geometry runs after profile counts are resolved. It
+            // separates X/Y sizing without taking ownership of workstation or Laptop All Apps.
+            HomeGridGeometryIndependenceHook.install(classLoader);
             // MainHook's legacy whole-Dock shadow lives in the full Dock-customization path.
             // Install the complementary owner after MainHook so Shadow stays functional when
             // Dock size/blur customization is disabled, without duplicating the normal path.
