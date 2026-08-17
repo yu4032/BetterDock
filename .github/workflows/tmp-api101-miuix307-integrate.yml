@@ -1,4 +1,4 @@
-name: Temporary API101 307 integration
+name: Temporary API101 307 isolation hardening
 
 on:
   push:
@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  integrate:
-    if: ${{ !contains(github.event.head_commit.message, '[api101-307-applied]') }}
+  harden:
+    if: ${{ contains(github.event.head_commit.message, '[api101-307-review-run]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +23,9 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Configure integration commit identity
+      - name: Configure review commit identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Apply validated 307 integration with RED/GREEN verification
-        run: python3 tools/tmp_integrate_api101_miuix307.py
+      - name: Harden 307 feature isolation and verify
+        run: python3 tools/tmp_harden_api101_miuix307.py
