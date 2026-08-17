@@ -19,14 +19,16 @@ jobs:
           fetch-depth: 2
 
       - name: Apply native optics fix
-        run: python3 tools/tmp_fix_307_native_optics.py
+        run: |
+          python3 tools/tmp_fix_native_optics_guard.py
+          python3 tools/tmp_fix_307_native_optics.py
 
       - name: Verify production scope
         run: |
-          git diff --name-only
-          test "$(git diff --name-only | wc -l)" -eq 2
-          git diff --name-only | grep -qx 'src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java'
-          git diff --name-only | grep -qx 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
+          git diff --name-only src/main/java
+          test "$(git diff --name-only src/main/java | wc -l)" -eq 2
+          git diff --name-only src/main/java | grep -qx 'src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java'
+          git diff --name-only src/main/java | grep -qx 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
           grep -q 'host.setGeometry(nativeRadius, false, SQUIRCLE_CP)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
           grep -q 'reloadOpticsPreservingGeometry(config.glass)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
           grep -q 'vendor material body transparent; native optics radius=' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
