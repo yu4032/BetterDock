@@ -5,7 +5,6 @@ import org.junit.Test;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static org.junit.Assert.assertFalse;
@@ -20,8 +19,8 @@ public class GridProfileUiContractTest {
     @Test
     public void composeUsesMasterSwitchAndTwoOptionProfileSelector() throws IOException {
         String source = read("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
-        assertTrue(source.contains("ConfigSchema.Grid.EXTENDED_ENABLED"));
-        assertTrue(source.contains("ConfigSchema.Grid.PROFILE.name()"));
+        assertTrue(source.contains("GridProfileConfig.ENABLED_KEY"));
+        assertTrue(source.contains("GridProfileConfig.PROFILE_KEY"));
         assertTrue(source.contains("\"8×4 / 4×8\" to \"8x4\""));
         assertTrue(source.contains("\"10×6 / 6×10\" to \"10x6\""));
         assertTrue(source.contains("masterEnabled && extendedGrid"));
@@ -47,11 +46,10 @@ public class GridProfileUiContractTest {
     }
 
     @Test
-    public void canonicalKeysAreDeclaredInSchema() throws IOException {
-        String source = read("src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java");
-        assertTrue(source.contains("EXTENDED_ENABLED"));
-        assertTrue(source.contains("\"home_grid_extended\""));
-        assertTrue(source.contains("PROFILE"));
-        assertTrue(source.contains("\"grid_profile\""));
+    public void canonicalKeysHaveSingleDedicatedOwner() throws IOException {
+        String source = read("src/main/java/com/hellovoid/liquiddock/config/GridProfileConfig.java");
+        assertTrue(source.contains("ENABLED_KEY = \"home_grid_extended\""));
+        assertTrue(source.contains("PROFILE_KEY = \"grid_profile\""));
+        assertTrue(source.contains("DEFAULT_PROFILE = \"8x4\""));
     }
 }
