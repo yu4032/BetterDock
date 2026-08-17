@@ -85,6 +85,10 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
         assertTrue("fallback must walk child views because the WindowManager root can be a wrapper",
                 ownership.contains("ViewGroup") && ownership.contains("getChildCount()")
                         && ownership.contains("getChildAt(i)"));
+        assertTrue("device-proven Laptop overlay must survive the generic type-2997 rejection",
+                ownership.contains("if (!workstationTitle && lp.type == 2997) continue;"));
+        assertTrue("a valid workstation Surface must not be discarded only because mName is hidden",
+                ownership.contains("layerName = title.toString()"));
     }
 
     @Test
