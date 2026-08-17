@@ -48,19 +48,38 @@ final class FreeformCaptureLeashHook {
                         int remoteLeashCount = 0;
                         String action = "PASS_THROUGH";
 
-                        if (visibleFreeform) {
-                            SurfaceControl[] remote = resolution.borrowedRemoteLeashes();
-                            remoteLeashCount = remote != null ? remote.length : 0;
-                            if (!safe || !allValid(remote)) {
-                                args[3] = null;
-                                args[4] = null;
-                                args[5] = 2;
-                                action = "WALLPAPER_FAIL_CLOSED";
-                            } else {
-                                SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
-                                        ? (SurfaceControl[]) args[3] : null;
-                                args[3] = merge(existing, remote);
-                                action = "EXCLUDE_TASK_LEASHES";
+                        if (!resolution.isKnown()) {
+                            // 307 already has a valid APP backdrop before the Dock is revealed.
+                            // An IPC timeout/provider restart is UNKNOWN state, not proof that a
+                            // freeform task is visible. Do not replace that APP frame with
+                            // wallpaper and do not risk an unexcluded full-display capture.
+                            if (Miuix307MaterialPipeline.isInstalled()
+                                    && Miuix307FreeformCaptureDeferral.defer()) {
+                                action = "DEFER_UNKNOWN_SNAPSHOT";
+                                logGateStateIfChanged(displayId, false, false, 0, action);
+                                return null; // captureScreenAsync is void; current APP frame stays.
+                            }
+                            // Legacy/non-307 path keeps the established conservative fallback.
+                            args[3] = null;
+                            args[4] = null;
+                            args[5] = 2;
+                            action = "WALLPAPER_FAIL_CLOSED";
+                        } else {
+                            Miuix307FreeformCaptureDeferral.onSnapshotKnown();
+                            if (visibleFreeform) {
+                                SurfaceControl[] remote = resolution.borrowedRemoteLeashes();
+                                remoteLeashCount = remote != null ? remote.length : 0;
+                                if (!safe || !allValid(remote)) {
+                                    args[3] = null;
+                                    args[4] = null;
+                                    args[5] = 2;
+                                    action = "WALLPAPER_FAIL_CLOSED";
+                                } else {
+                                    SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
+                                            ? (SurfaceControl[]) args[3] : null;
+                                    args[3] = merge(existing, remote);
+                                    action = "EXCLUDE_TASK_LEASHES";
+                                }
                             }
                         }
                         logGateStateIfChanged(displayId, visibleFreeform, safe,
