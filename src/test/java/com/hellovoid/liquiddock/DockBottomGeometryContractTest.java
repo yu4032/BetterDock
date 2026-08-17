@@ -21,19 +21,16 @@ public class DockBottomGeometryContractTest {
     }
 
     @Test
-    public void bottomOffsetNeverMutatesVendorMarginOrLayoutBounds() throws Exception {
+    public void bottomOffsetNeverMutatesLayoutBoundsAndStockMarginIsFenced() throws Exception {
         String owner = read("src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
-        String main = read("src/main/java/com/hellovoid/liquiddock/MainHook.java");
-        String miuix = read("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
 
-        // getHotSeatsMarginBottom participates in both HotSeats bottomMargin and
-        // DeviceConfig.getDockWindowHeight(), so touching it changes Workspace/indicator reserve.
-        assertFalse(owner.contains("getHotSeatsMarginBottom"));
-        assertFalse(main.contains("getHotSeatsMarginBottom"));
-        assertFalse(miuix.contains("getHotSeatsMarginBottom"));
-
-        // offsetTopAndBottom mutates actual layout bounds. The feature must be visual-only.
+        // The compatibility fence may intercept the vendor getter, but it must reconstruct the
+        // stock value independently of LiquidDock's bottomOffset. Actual feature ownership is Y
+        // translation only; no measured/layout bounds may be moved.
+        assertTrue(owner.contains("installStockMarginFence"));
+        assertTrue(owner.contains("DockBottomGeometryPolicy.stockMargin"));
         assertFalse(owner.contains("offsetTopAndBottom"));
+        assertFalse(owner.contains("setLayoutParams"));
     }
 
     @Test
@@ -54,13 +51,19 @@ public class DockBottomGeometryContractTest {
             throws Exception {
         try {
             Class<?> policy = Class.forName("com.hellovoid.liquiddock.DockBottomGeometryPolicy");
-            Method method = policy.getDeclaredMethod("visualTranslationY", float.class, int.class);
-            method.setAccessible(true);
-            assertEquals(-24f, (Float) method.invoke(null, 0f, 24), 0.001f);
-            assertEquals(76f, (Float) method.invoke(null, 100f, 24), 0.001f);
-            assertEquals(112f, (Float) method.invoke(null, 100f, -12), 0.001f);
+            Method visual = policy.getDeclaredMethod("visualTranslationY", float.class, int.class);
+            visual.setAccessible(true);
+            assertEquals(-24f, (Float) visual.invoke(null, 0f, 24), 0.001f);
+            assertEquals(76f, (Float) visual.invoke(null, 100f, 24), 0.001f);
+            assertEquals(112f, (Float) visual.invoke(null, 100f, -12), 0.001f);
+
+            Method stock = policy.getDeclaredMethod("stockMargin", int.class, int.class);
+            stock.setAccessible(true);
+            assertEquals(40, ((Integer) stock.invoke(null, 40, 0)).intValue());
+            assertEquals(18, ((Integer) stock.invoke(null, 40, 22)).intValue());
+            assertEquals(0, ((Integer) stock.invoke(null, 12, 22)).intValue());
         } catch (ClassNotFoundException error) {
-            fail("DockBottomGeometryPolicy must own pure visual translation math");
+            fail("DockBottomGeometryPolicy must own pure visual and stock-margin math");
         }
     }
 
