@@ -21,7 +21,6 @@ public class Miuix307CaptureCompatibilityTest {
     @Test public void miuix307ReusesOriginalDragSurfaceExclusionWithoutLegacyHookBundle()
             throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
-        String glass = read("MiuixGlassHook.java");
         Path dragPath = path("Miuix307DragCaptureHook.java");
         assertTrue("307 must have a narrow drag-only compatibility hook", Files.exists(dragPath));
         String drag = Files.readString(dragPath);
@@ -35,8 +34,8 @@ public class Miuix307CaptureCompatibilityTest {
         assertTrue(drag.contains("getSurfaceControl"));
         assertTrue(drag.contains("setDockDragging(true"));
         assertTrue(drag.contains("setDockDragging(false, null)"));
-        assertTrue(glass.contains("Miuix307DragCaptureHook.bind(glass)"));
         assertTrue(pipeline.contains("Miuix307DragCaptureHook.install(classLoader)"));
+        assertTrue(pipeline.contains("Miuix307DragCaptureHook.bind(background)"));
 
         // Never restore the complete legacy capture lifecycle just to regain drag exclusion.
         assertFalse(pipeline.contains("installLiquidGlassCaptureHooks"));
