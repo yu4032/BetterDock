@@ -17,31 +17,29 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
     @Test
     public void miuix307RestoresSystemUiPanelCaptureGate() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
-        String glassHook = read("MiuixGlassHook.java");
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
 
-        assertTrue("307 install must restore DeviceConfig panel-state compatibility",
-                pipeline.contains("installSystemUiPanelStateHook(classLoader)"));
+        assertTrue("307 install must restore capture ownership bridges",
+                pipeline.contains("Miuix307CaptureOwnershipHook.install(classLoader)"));
         assertTrue("307 must observe the device-proven panel expansion setter",
-                pipeline.contains("\"setControlPanelExpanded\""));
-        assertTrue("307 panel state must be forwarded to its actual bound glass",
-                pipeline.contains("MiuixGlassHook.setSystemUiPanelExpanded(expanded)"));
-        assertTrue("MiuixGlassHook must forward panel state into DockLiquidGlassView",
-                glassHook.contains("glass.setSystemUiPanelExpanded(expanded)"));
+                ownership.contains("\"setControlPanelExpanded\""));
+        assertTrue("panel state must reach the actually bound 307 glass",
+                ownership.contains("glass.setSystemUiPanelExpanded(expanded)"));
+        assertTrue("a newly bound 307 glass must inherit an already-open panel state",
+                ownership.contains("syncBoundGlassState()"));
     }
 
     @Test
     public void workstationModeReachesMiuix307OwnedGlass() throws Exception {
-        String main = read("MainHook.java");
-        String glassHook = read("MiuixGlassHook.java");
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
 
-        int setter = main.indexOf("private static void setWorkstationMode(boolean enabled)");
-        int next = main.indexOf("\n    private static void ", setter + 1);
-        String body = next > setter ? main.substring(setter, next) : main.substring(setter);
-
-        assertTrue("Main workstation transition must notify the 307-owned glass",
-                body.contains("MiuixGlassHook.setWorkstationMode(enabled)"));
-        assertTrue("MiuixGlassHook must forward workstation state to DockLiquidGlassView",
-                glassHook.contains("glass.setWorkstationMode(enabled)"));
+        assertTrue("307 must bridge MainHook workstation transitions after the early return",
+                ownership.contains("\"setWorkstationMode\"")
+                        && ownership.contains("MainHook.class"));
+        assertTrue("workstation state must reach the actually bound 307 glass",
+                ownership.contains("glass.setWorkstationMode(enabled)"));
+        assertTrue("freshly composed 307 glass must inherit current workstation mode",
+                ownership.contains("MainHook.isWorkstationMode()"));
     }
 
     @Test
@@ -63,18 +61,23 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
 
     @Test
     public void workstationFullDisplayUsesDedicatedNonFloatingDockExclusion() throws Exception {
-        String view = read("DockLiquidGlassView.java");
+        String ownership = read("Miuix307CaptureOwnershipHook.java");
 
-        assertTrue("workstation needs a dedicated resolver, not the ordinary Floating Dock resolver",
-                view.contains("resolveWorkstationDockExclusions()"));
+        assertTrue("workstation needs a dedicated runtime resolver",
+                ownership.contains("resolveWorkstationDockTarget()"));
         assertTrue("workstation resolver must identify DockContainerView ownership",
-                view.contains("DockContainerView"));
+                ownership.contains("DockContainerView"));
         assertTrue("ordinary type-2997 Floating Dock must be rejected as a workstation candidate",
-                view.contains("lp.type == 2997") && view.contains("continue;"));
-        assertTrue("workstation mode-1 must build excludes from the dedicated workstation result",
-                view.contains("workstationDockExclusions.surfaceControls")
-                        && view.contains("workstationDockExclusions.layerNames"));
-        assertFalse("workstation must never downgrade an unresolved live scene to wallpaper",
-                view.contains("wallpaper is preferable to sampling icons"));
+                ownership.contains("lp.type == 2997") && ownership.contains("continue;"));
+        assertTrue("ordinary Floating Dock title must also be rejected",
+                ownership.contains("\"Floating Dock\"") && ownership.contains("continue;"));
+        assertTrue("resolved workstation SurfaceControl must replace the normal Dock exclusion",
+                ownership.contains("HookUtil.setField(glass, \"dockWindowSurface\", target.surface)")
+                        && ownership.contains("HookUtil.setField(glass, \"dockWindowLayerName\", target.layerName)"));
+        assertTrue("an unresolved workstation Dock must fail closed before capture submission",
+                ownership.contains("workstation Dock surface unresolved; capture remains frozen")
+                        && ownership.contains("return null;"));
+        assertFalse("dedicated workstation resolver must not use wallpaper as a safety fallback",
+                ownership.contains("captureWallpaper") || ownership.contains("mode 2"));
     }
 }
