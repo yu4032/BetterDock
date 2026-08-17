@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Final fail-closed gate immediately before LiquidDock submits a mode-1 display capture. */
+/** Final freeform task-leash gate immediately before LiquidDock submits a mode-1 display capture. */
 final class FreeformCaptureLeashHook {
     private static final AtomicBoolean INSTALL_ATTEMPTED = new AtomicBoolean();
     // Dynamic APP capture can submit many mode-1 requests per second. Diagnostics are useful
@@ -52,10 +52,12 @@ final class FreeformCaptureLeashHook {
                             SurfaceControl[] remote = resolution.borrowedRemoteLeashes();
                             remoteLeashCount = remote != null ? remote.length : 0;
                             if (!safe || !allValid(remote)) {
-                                args[3] = null;
-                                args[4] = null;
-                                args[5] = 2;
-                                action = "WALLPAPER_FAIL_CLOSED";
+                                // Mode 1 already means this backdrop belongs to a live APP/Recents
+                                // scene; HOME never reaches this gate. If SystemUI temporarily
+                                // cannot hand us a valid freeform leash, preserve the live source
+                                // rather than replacing the entire backdrop with wallpaper. A
+                                // later frame can still resolve and exclude the real task leash.
+                                action = "PASS_THROUGH_UNRESOLVED_FREEFORM";
                             } else {
                                 SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
                                         ? (SurfaceControl[]) args[3] : null;
@@ -66,6 +68,8 @@ final class FreeformCaptureLeashHook {
                         logGateStateIfChanged(displayId, visibleFreeform, safe,
                                 remoteLeashCount, action);
                     } catch (Throwable gateError) {
+                        // Unexpected gate failures remain fail-closed. This is deliberately
+                        // narrower than treating a normal unavailable/late leash as an error.
                         logGateStateIfChanged(displayId, true, false, 0,
                                 "ERROR_WALLPAPER_" + gateError.getClass().getSimpleName());
                         args[3] = null;
