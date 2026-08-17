@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: "${{ github.event.head_commit.message == 'chore: fix one-shot Dock source patch' }}"
+    if: "${{ github.event.head_commit.message == 'chore: narrow one-shot Dock source patch' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,51 +24,34 @@ jobs:
           from pathlib import Path
           p = Path('src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java')
           s = p.read_text()
-          old = '''        final boolean liveHomeBehindFreeform = useFullscreen
-                  && !workstationMode
-                  && requestScene == CaptureScene.HOME
-                  && freeformLayerResolver.hasVisibleFreeformTasks();
-          final android.view.SurfaceControl localCaptureSurface = useFullscreen
-                  ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
-          CaptureSourcePolicy.Source selectedSource;
-          if (!useFullscreen) {
-              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
-          } else if (workstationMode) {
-              selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
-                      requestScene, localCaptureSurface != null);
-          } else {
-              selectedSource = CaptureSourcePolicy.sourceFor(
-                      requestScene, localCaptureSurface != null, isRecentsVisible(),
-                      liveHomeBehindFreeform);
-          }
-          '''
-          new = '''        final boolean visibleFreeform = useFullscreen
-                  && !workstationMode
-                  && freeformLayerResolver.hasVisibleFreeformTasks();
-          final boolean liveHomeBehindFreeform = visibleFreeform
-                  && requestScene == CaptureScene.HOME;
-          final android.view.SurfaceControl localCaptureSurface = useFullscreen
-                  ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
-          CaptureSourcePolicy.Source selectedSource;
-          if (!useFullscreen) {
-              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
-          } else if (workstationMode) {
-              selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
-                      requestScene, localCaptureSurface != null);
-          } else if (requestScene == CaptureScene.APP && visibleFreeform) {
-              // A visible freeform task is wallpaper-owned for the floating Dock. Decide this
-              // before mode-1 submission so the app/freeform composition is never sampled even
-              // for the short interval before the final FreeformCaptureLeashHook race guard.
-              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
-          } else {
-              selectedSource = CaptureSourcePolicy.sourceFor(
-                      requestScene, localCaptureSurface != null, isRecentsVisible(),
-                      liveHomeBehindFreeform);
-          }
-          '''
-          if old not in s:
-              raise SystemExit('exact Dock source-selection block not found; refusing broad edit')
-          p.write_text(s.replace(old, new, 1))
+          old1 = ("        final boolean liveHomeBehindFreeform = useFullscreen\n"
+                  "                && !workstationMode\n"
+                  "                && requestScene == CaptureScene.HOME\n"
+                  "                && freeformLayerResolver.hasVisibleFreeformTasks();\n")
+          new1 = ("        final boolean visibleFreeform = useFullscreen\n"
+                  "                && !workstationMode\n"
+                  "                && freeformLayerResolver.hasVisibleFreeformTasks();\n"
+                  "        final boolean liveHomeBehindFreeform = visibleFreeform\n"
+                  "                && requestScene == CaptureScene.HOME;\n")
+          old2 = ("        } else if (workstationMode) {\n"
+                  "            selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(\n"
+                  "                    requestScene, localCaptureSurface != null);\n"
+                  "        } else {\n"
+                  "            selectedSource = CaptureSourcePolicy.sourceFor(\n")
+          new2 = ("        } else if (workstationMode) {\n"
+                  "            selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(\n"
+                  "                    requestScene, localCaptureSurface != null);\n"
+                  "        } else if (requestScene == CaptureScene.APP && visibleFreeform) {\n"
+                  "            // A visible freeform task is wallpaper-owned for the floating Dock. Decide this\n"
+                  "            // before mode-1 submission so the app/freeform composition is never sampled even\n"
+                  "            // for the short interval before the final FreeformCaptureLeashHook race guard.\n"
+                  "            selectedSource = CaptureSourcePolicy.Source.WALLPAPER;\n"
+                  "        } else {\n"
+                  "            selectedSource = CaptureSourcePolicy.sourceFor(\n")
+          if s.count(old1) != 1 or s.count(old2) != 1:
+              raise SystemExit(f'exact Dock anchors not unique: first={s.count(old1)} second={s.count(old2)}')
+          s = s.replace(old1, new1, 1).replace(old2, new2, 1)
+          p.write_text(s)
           PY
           git diff --check
           git diff -- src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
