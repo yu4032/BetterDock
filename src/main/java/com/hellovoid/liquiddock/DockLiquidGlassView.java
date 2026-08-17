@@ -290,6 +290,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // freezes into the captured background.
     private volatile boolean dockDragging = false;
     private volatile String dragLayerName = null;
+    private volatile android.view.SurfaceControl dragSurfaceControl = null;
     private final CaptureCadence captureCadence;
     private boolean dynamicAppCapture;
     private long dynamicAppActiveUntilNanos;
@@ -1351,14 +1352,34 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  dragging, the glass keeps capturing continuously so the background follows the icon
      *  rearrangement; the drag surface layer is excluded from captures. */
     void setDockDragging(boolean dragging, String dragSurfaceLayerName) {
+        setDockDragging(dragging, dragSurfaceLayerName, null);
+    }
+
+    void setDockDragging(boolean dragging, String dragSurfaceLayerName,
+                         android.view.SurfaceControl dragSurface) {
         dockDragging = dragging;
         dragLayerName = dragging ? dragSurfaceLayerName : null;
+        dragSurfaceControl = dragging && isValidCaptureSurface(dragSurface) ? dragSurface : null;
         if (dragging) {
             resetCaptureCircuit("drag-start");
             beginObservationBurst();
             observationValid = false;
             requestStateCapture("drag-start");
         }
+    }
+
+    private static boolean isValidCaptureSurface(android.view.SurfaceControl surface) {
+        if (surface == null) return false;
+        try { return surface.isValid(); }
+        catch (Throwable ignored) { return false; }
+    }
+
+    private android.view.SurfaceControl[] buildFullDisplaySurfaceExcludes() {
+        java.util.ArrayList<android.view.SurfaceControl> out = new java.util.ArrayList<>(2);
+        if (isValidCaptureSurface(dockWindowSurface)) out.add(dockWindowSurface);
+        android.view.SurfaceControl drag = dragSurfaceControl;
+        if (isValidCaptureSurface(drag) && drag != dockWindowSurface) out.add(drag);
+        return out.isEmpty() ? null : out.toArray(new android.view.SurfaceControl[0]);
     }
 
     /** Configurable by the GUI (liquid_capture_stop_delay, up to 10s). */
@@ -2286,13 +2307,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                                         && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
                                     ? resolveFullDisplayExclusions()
                                     : FullDisplayExclusions.NONE;
-                    android.view.SurfaceControl[] excludes = null;
-                    if ((requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
-                            || (workstationMode
-                                && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
-                            && dockWindowSurface != null) {
-                        excludes = new android.view.SurfaceControl[]{dockWindowSurface};
-                    }
+                    android.view.SurfaceControl[] excludes =
+                            (requestedSource == CaptureSourcePolicy.Source.FULL_DISPLAY
+                                    || (workstationMode
+                                        && requestedSource == CaptureSourcePolicy.Source.LOCAL_LAYER))
+                                    ? buildFullDisplaySurfaceExcludes() : null;
                     final CaptureRequest req = request;
                     final LiveScreenCapture captureClient = client;
                     final LiveScreenCapture.CaptureCallback captureCb = new LiveScreenCapture.CaptureCallback() {

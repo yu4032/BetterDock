@@ -4,6 +4,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 
 import java.lang.ref.WeakReference;
 
@@ -28,6 +29,8 @@ final class Miuix307MaterialPipeline {
     private static View observedHost;
     private static View.OnAttachStateChangeListener hierarchyListener;
     private static boolean hierarchyRebindPosted;
+    private static ViewTreeObserver hierarchyRecoveryObserver;
+    private static ViewTreeObserver.OnGlobalLayoutListener hierarchyRecoveryListener;
 
     private Miuix307MaterialPipeline() {}
 
@@ -254,9 +257,10 @@ final class Miuix307MaterialPipeline {
     }
 
     /**
-     * Coalesce a theme/hierarchy burst into one next-main-turn repair. If the vendor replacement
-     * background is not parented yet, stop here; setupViews or a real geometry callback will
-     * retry later. This deliberately has no delayed polling loop.
+     * Coalesce a theme/hierarchy burst into one next-main-turn repair. Theme/icon changes can
+     * leave the old background discoverable with a parent while it is already detached, so a
+     * parent check alone is not authoritative. If the new hierarchy is not attached yet, wait
+     * for a real global-layout event instead of polling with an arbitrary delay.
      */
     private static void scheduleHierarchyRebind(
             LiquidDockConfig config, ClassLoader classLoader) {
@@ -267,20 +271,71 @@ final class Miuix307MaterialPipeline {
         }
         MAIN_HANDLER.post(() -> {
             hierarchyRebindPosted = false;
-            Object hotSeats = hotSeatsRef.get();
-            if (hotSeats == null) {
-                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; HotSeats owner gone");
+            if (tryHierarchyRebind(config, classLoader)) {
+                clearHierarchyLayoutRecovery();
                 return;
             }
-            View currentBackground = resolveBackground(hotSeats);
-            if (currentBackground == null || !(currentBackground.getParent() instanceof ViewGroup)) {
-                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; background not ready");
-                return;
-            }
-            if (!ensureGlassBound(currentBackground, config, classLoader)) {
-                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; install not ready");
-            }
+            armHierarchyLayoutRecovery(config, classLoader);
         });
+    }
+
+    private static boolean tryHierarchyRebind(
+            LiquidDockConfig config, ClassLoader classLoader) {
+        Object hotSeats = hotSeatsRef.get();
+        if (hotSeats == null) {
+            MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; HotSeats owner gone");
+            return false;
+        }
+        View currentBackground = resolveBackground(hotSeats);
+        if (currentBackground == null || !currentBackground.isAttachedToWindow()
+                || !(currentBackground.getParent() instanceof ViewGroup)) {
+            MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; background not attached");
+            return false;
+        }
+        if (!ensureGlassBound(currentBackground, config, classLoader)) {
+            MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; install not ready");
+            return false;
+        }
+        View host = resolveBoundHost(currentBackground);
+        if (host == null || !host.isAttachedToWindow()) {
+            MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; host not attached");
+            return false;
+        }
+        MainHook.log("[DC] MiuiX 307 hierarchy rebind complete after theme/layout change");
+        return true;
+    }
+
+    private static void armHierarchyLayoutRecovery(
+            LiquidDockConfig config, ClassLoader classLoader) {
+        Object hotSeats = hotSeatsRef.get();
+        if (!(hotSeats instanceof View)) return;
+        View owner = (View) hotSeats;
+        View root = owner.getRootView();
+        ViewTreeObserver observer = (root != null ? root : owner).getViewTreeObserver();
+        if (observer == null || !observer.isAlive()) return;
+        if (hierarchyRecoveryObserver == observer && hierarchyRecoveryListener != null) return;
+
+        clearHierarchyLayoutRecovery();
+        ViewTreeObserver.OnGlobalLayoutListener listener = () -> {
+            if (tryHierarchyRebind(config, classLoader)) {
+                clearHierarchyLayoutRecovery();
+            }
+        };
+        observer.addOnGlobalLayoutListener(listener);
+        hierarchyRecoveryObserver = observer;
+        hierarchyRecoveryListener = listener;
+        MainHook.log("[DC] MiuiX 307 hierarchy recovery armed for next real layout");
+    }
+
+    private static void clearHierarchyLayoutRecovery() {
+        ViewTreeObserver observer = hierarchyRecoveryObserver;
+        ViewTreeObserver.OnGlobalLayoutListener listener = hierarchyRecoveryListener;
+        hierarchyRecoveryObserver = null;
+        hierarchyRecoveryListener = null;
+        if (observer == null || listener == null) return;
+        try {
+            if (observer.isAlive()) observer.removeOnGlobalLayoutListener(listener);
+        } catch (Throwable ignored) {}
     }
 
     /** Resolve only the host injected beside this exact background in its current parent. */

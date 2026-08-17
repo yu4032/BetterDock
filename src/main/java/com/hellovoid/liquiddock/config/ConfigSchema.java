@@ -141,13 +141,13 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> SQUIRCLE_CONTROL_POINT = integer(
                 "sq_outer_cp", 58, 58, 58, 40, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_WIDTH = dp(
-                "sq_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
+                "sq_stroke_w", 1, 4, 4, 0, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_OFFSET = dp(
                 "sq_stroke_off", 3, 8, 8, 0, 16, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> FILL_DIFF_STROKE_WIDTH = dp(
-                "stroke_w", 1, 2, 2, 1, 6, ConfigKey.ExportMode.ALWAYS);
+                "stroke_w", 1, 2, 2, 0, 6, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STANDARD_STROKE_WIDTH = dp(
-                "std_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
+                "std_stroke_w", 1, 4, 4, 0, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_RED = integer(
                 "stroke_base_r", 255, 255, 255, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_GREEN = integer(

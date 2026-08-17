@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.SurfaceControl;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
@@ -32,6 +33,7 @@ final class Miuix307DragCaptureHook {
     // temporarily-null Surface name to the concrete "drag surface#..." name.
     private static volatile boolean dragActive;
     private static volatile String activeDragLayerName;
+    private static volatile SurfaceControl activeDragSurface;
     private static volatile long dragSessionId;
 
     private Miuix307DragCaptureHook() {}
@@ -84,7 +86,8 @@ final class Miuix307DragCaptureHook {
 
     private static void onStartDrag(Object dragController, String signature) {
         DockLiquidGlassView glass = currentGlass();
-        String dragLayerName = resolveDragSurfaceLayerName(dragController);
+        SurfaceControl dragSurface = resolveDragSurfaceControl(dragController);
+        String dragLayerName = surfaceLayerName(dragSurface);
         if (glass == null) {
             MainHook.log(TAG + " drag start method=" + signature
                     + " glass=null exclude=" + dragLayerName);
@@ -94,18 +97,21 @@ final class Miuix307DragCaptureHook {
         boolean firstCallback = !dragActive;
         boolean betterLayer = dragLayerName != null && !dragLayerName.isEmpty()
                 && !Objects.equals(activeDragLayerName, dragLayerName);
-        if (!firstCallback && !betterLayer) return;
+        boolean betterSurface = isValidSurface(dragSurface)
+                && activeDragSurface != dragSurface;
+        if (!firstCallback && !betterLayer && !betterSurface) return;
 
         if (firstCallback) {
             dragActive = true;
             dragSessionId++;
         }
         if (betterLayer) activeDragLayerName = dragLayerName;
-        glass.setDockDragging(true, activeDragLayerName);
+        if (betterSurface) activeDragSurface = dragSurface;
+        glass.setDockDragging(true, activeDragLayerName, activeDragSurface);
         MainHook.log(TAG + " drag start method=" + signature
                 + " exclude=" + activeDragLayerName);
 
-        if (firstCallback && activeDragLayerName == null) {
+        if (firstCallback && !isValidSurface(activeDragSurface)) {
             scheduleDragSurfaceRetry(dragController, dragSessionId, 1);
         }
     }
@@ -124,13 +130,19 @@ final class Miuix307DragCaptureHook {
         scheduler.postOnAnimation(() -> {
             if (!dragActive || activeDragLayerName != null || sessionId != dragSessionId) return;
 
-            String dragLayerName = resolveDragSurfaceLayerName(dragController);
-            if (dragLayerName != null && !dragLayerName.isEmpty()) {
-                activeDragLayerName = dragLayerName;
+            SurfaceControl dragSurface = resolveDragSurfaceControl(dragController);
+            String dragLayerName = surfaceLayerName(dragSurface);
+            if (isValidSurface(dragSurface)) {
+                activeDragSurface = dragSurface;
+                if (dragLayerName != null && !dragLayerName.isEmpty()) {
+                    activeDragLayerName = dragLayerName;
+                }
                 DockLiquidGlassView glass = currentGlass();
-                if (glass != null) glass.setDockDragging(true, dragLayerName);
+                if (glass != null) {
+                    glass.setDockDragging(true, activeDragLayerName, activeDragSurface);
+                }
                 MainHook.log(TAG + " drag surface retry attempt=" + attempt
-                        + " exclude=" + dragLayerName);
+                        + " exclude=" + activeDragLayerName + " handle=true");
                 return;
             }
             scheduleDragSurfaceRetry(dragController, sessionId, attempt + 1);
@@ -140,9 +152,10 @@ final class Miuix307DragCaptureHook {
     private static void onEndDrag() {
         if (!dragActive && activeDragLayerName == null) return;
         DockLiquidGlassView glass = currentGlass();
-        if (glass != null) glass.setDockDragging(false, null);
+        if (glass != null) glass.setDockDragging(false, null, null);
         dragActive = false;
         activeDragLayerName = null;
+        activeDragSurface = null;
         // Invalidate any postOnAnimation callback queued by the just-finished drag so it cannot
         // attach a stale Surface to a rapidly-started next drag session.
         dragSessionId++;
@@ -169,8 +182,8 @@ final class Miuix307DragCaptureHook {
         return null;
     }
 
-    /** Extract the original "drag surface#..." SurfaceFlinger layer name. */
-    private static String resolveDragSurfaceLayerName(Object dragController) {
+    /** Resolve the launcher-owned drag SurfaceControl without taking ownership of it. */
+    private static SurfaceControl resolveDragSurfaceControl(Object dragController) {
         try {
             Object dragObject = HookUtil.getField(dragController, "mDragObject");
             if (dragObject == null) return null;
@@ -182,17 +195,27 @@ final class Miuix307DragCaptureHook {
             Method getSurfaceControl = View.class.getDeclaredMethod("getSurfaceControl");
             getSurfaceControl.setAccessible(true);
             Object surface = getSurfaceControl.invoke(dragView);
-            if (surface == null) return null;
-
-            String value = surface.toString();
-            int start = value.indexOf("name=");
-            int end = value.indexOf(')', start);
-            if (start < 0 || end <= start) return null;
-            return value.substring(start + 5, end);
+            return surface instanceof SurfaceControl && isValidSurface((SurfaceControl) surface)
+                    ? (SurfaceControl) surface : null;
         } catch (Throwable error) {
             MainHook.log(TAG + " drag surface resolve failed: " + error);
             return null;
         }
+    }
+
+    private static boolean isValidSurface(SurfaceControl surface) {
+        if (surface == null) return false;
+        try { return surface.isValid(); }
+        catch (Throwable ignored) { return false; }
+    }
+
+    private static String surfaceLayerName(SurfaceControl surface) {
+        if (!isValidSurface(surface)) return null;
+        String value = surface.toString();
+        int start = value.indexOf("name=");
+        int end = value.indexOf(')', start);
+        if (start < 0 || end <= start) return null;
+        return value.substring(start + 5, end);
     }
 
     private static String methodSignature(Method method) {
