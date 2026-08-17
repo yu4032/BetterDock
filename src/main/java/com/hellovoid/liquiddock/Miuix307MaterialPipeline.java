@@ -91,6 +91,30 @@ final class Miuix307MaterialPipeline {
                         return result;
                     });
 
+            // Decompiled 307 Launcher emits StateNotifyUtils.sendStateBroadcast(..., "toHome",
+            // ...) before the APP->HOME icon-flight animation. Feed only that native boundary
+            // into DockLiquidGlassView's existing HOME gesture target so the old APP capture is
+            // scene-stale before animation pixels can be installed. This is optional/fail-open:
+            // a vendor signature change must not disable the entire 307 material pipeline.
+            try {
+                HookUtil.hookMethod(classLoader,
+                        "com.miui.home.recents.util.StateNotifyUtils", "sendStateBroadcast",
+                        chain -> {
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            for (Object arg : args) {
+                                if ("toHome".equals(arg)) {
+                                    MiuixGlassHook.onHomeTransitionStart();
+                                    break;
+                                }
+                            }
+                            return chain.proceed(args);
+                        }, android.content.Context.class,
+                        String.class, String.class, String.class);
+                MainHook.log("[DC] MiuiX 307 native toHome backdrop hook installed");
+            } catch (Throwable error) {
+                MainHook.log("[DC] MiuiX 307 native toHome hook unavailable: " + error);
+            }
+
             installed = true;
             MainHook.log("[DC] MiuiX 307 real glass pipeline hooks installed");
             return true;
