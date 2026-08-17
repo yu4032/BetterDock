@@ -113,7 +113,8 @@ final class HomeGridProfileOverlayHook {
      * LayoutTransformRule.init() creates source occupancy as [mVCells][mHCells] and
      * destination occupancy as [mHCells][mVCells]. Therefore mH/mV describe the target
      * grid while the source grid is their transpose. The native block and icon movers are
-     * retained; only their 10x6 metadata and the stock hard-coded direction latch are fixed.
+     * retained; only their 10x6 metadata and stock hard-coded orientation/block constants
+     * are generalized.
      */
     private static void installRotationTransform(ClassLoader classLoader) throws Exception {
         Class<?> rule = Class.forName(ROTATION_RULE, false, classLoader);
@@ -157,15 +158,15 @@ final class HomeGridProfileOverlayHook {
                 });
 
         installRotationDirectionFix(rule);
+        installOtherWidgetBlockRemap(rule);
     }
 
     /**
      * Stock transformToDstLayout() writes mIsVerticalCellCount = (mHCells != 4).
-     * That only distinguishes target 6x4 from 4x6. For a target 6x10, however, the
-     * source is the transposed 10x6 grid and must use hScreenCoordinate. Likewise a
-     * target 10x6 comes from 6x10 and must use vScreenCoordinate. get4x2WidgetCase()
-     * is the first native call after the stock write, so re-latch the direction there
-     * before any source occupancy cell is read.
+     * mH/mV are target counts, so a target 6x10 comes from a horizontal 10x6 source
+     * and must use hScreenCoordinate; a target 10x6 comes from vertical 6x10 and must
+     * use vScreenCoordinate. get4x2WidgetCase() is the first native call after the
+     * stock write, making it the narrowest safe re-latch point.
      */
     private static void installRotationDirectionFix(Class<?> rule) throws NoSuchMethodException {
         Method directionLatch = null;
@@ -201,6 +202,54 @@ final class HomeGridProfileOverlayHook {
                         }
                     }
                     return chain.proceed();
+                });
+    }
+
+    /**
+     * Native getDstBlockXY() contains literal block indices 4 and 2 for the second
+     * 4x2 SPECIAL_WIDGET. Those constants are valid only for the stock six-block grid.
+     * Keep native special-widget copying, switchBlock(), and switchIcons(), but map each
+     * remaining source block to the same ordinal free destination block on the 15-block grid.
+     */
+    private static void installOtherWidgetBlockRemap(Class<?> rule) throws NoSuchMethodException {
+        Method mapper = null;
+        for (Method candidate : rule.getDeclaredMethods()) {
+            if ("getDstBlockXY".equals(candidate.getName())
+                    && candidate.getParameterCount() == 2) {
+                mapper = candidate;
+                break;
+            }
+        }
+        if (mapper == null) {
+            throw new NoSuchMethodException(rule.getName() + "#getDstBlockXY");
+        }
+        mapper.setAccessible(true);
+        Api101Bridge.module().hook(mapper)
+                .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                .intercept(chain -> {
+                    Object target = chain.getThisObject();
+                    if (MainHook.isWorkstationMode()) return chain.proceed();
+                    Object hValue = HookUtil.invoke(target, "getMHCells");
+                    Object vValue = HookUtil.invoke(target, "getMVCells");
+                    if (!(hValue instanceof Integer) || !(vValue instanceof Integer)
+                            || !(chain.getArg(0) instanceof boolean[])
+                            || !(chain.getArg(1) instanceof Integer)) {
+                        return chain.proceed();
+                    }
+                    int h = (Integer) hValue;
+                    int v = (Integer) vValue;
+                    if (!profile.matchesCounts(h, v)) return chain.proceed();
+                    boolean[] special = (boolean[]) chain.getArg(0);
+                    int sourceIndex = (Integer) chain.getArg(1);
+                    boolean firstSpecial = special.length > 0 && special[0];
+                    boolean secondSpecial = special.length > 1 && special[1];
+                    int targetIndex = HomeGridRotationPolicy.mapOtherWidgetBlockIndex(
+                            h, v, firstSpecial, secondSpecial, sourceIndex);
+                    int[][] targetBlocks = blocks(v > h);
+                    if (targetIndex < 0 || targetIndex >= targetBlocks.length) {
+                        return chain.proceed();
+                    }
+                    return targetBlocks[targetIndex];
                 });
     }
 
