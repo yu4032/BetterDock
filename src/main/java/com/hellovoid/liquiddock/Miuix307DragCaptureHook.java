@@ -43,9 +43,11 @@ final class Miuix307DragCaptureHook {
     // at endDrag, so zero is not a safe release boundary. Keep an explicit settling session until
     // either DragObject's final completion or HotSeatsListContent.resetDraggingView() confirms the
     // vendor cleanup boundary. The local callback count protects multi-icon drops when the vendor
-    // counter is transiently zero.
+    // counter is transiently zero. Release itself crosses one display frame so SurfaceFlinger has
+    // committed the vendor's final icon-removal transaction before the first fresh capture starts.
     private static volatile Object settlingDragObject;
     private static volatile boolean dropSettling;
+    private static volatile boolean dropReleaseScheduled;
     private static volatile int settlingDropCallbacksRemaining;
     private static volatile boolean dropAnimationFinishHookInstalled;
     private static volatile boolean systemDockDragActive;
@@ -217,6 +219,7 @@ final class Miuix307DragCaptureHook {
         if (firstCallback) {
             // A stale completion from an older drag must never be allowed to release this drag.
             dropSettling = false;
+            dropReleaseScheduled = false;
             settlingDragObject = null;
             settlingDropCallbacksRemaining = 0;
             dragActive = true;
@@ -280,6 +283,7 @@ final class Miuix307DragCaptureHook {
 
         settlingDragObject = dragObject;
         dropSettling = true;
+        dropReleaseScheduled = false;
         settlingDropCallbacksRemaining = Math.max(1, countDragViews(dragObject));
 
         DockLiquidGlassView glass = currentGlass();
@@ -322,12 +326,37 @@ final class Miuix307DragCaptureHook {
         finishDropSettling("hotseat drag cleanup");
     }
 
+    /**
+     * Vendor animation callbacks run before the compositor is guaranteed to have presented the
+     * matching Surface transaction. Releasing capture in that same callback can therefore sample
+     * one last frame containing the dropped icon, which is immediately replaced by a clean frame
+     * and appears as a flash. Keep the clean backdrop frozen through one display-frame boundary.
+     */
     private static void finishDropSettling(String reason) {
-        if (!dropSettling) return;
-        dropSettling = false;
-        settlingDragObject = null;
-        settlingDropCallbacksRemaining = 0;
-        finishDockDragCapture(reason);
+        if (!dropSettling || dropReleaseScheduled) return;
+
+        final long releaseSession = dragSessionId;
+        View scheduler = backgroundRef.get();
+        if (scheduler == null) {
+            MainHook.log(TAG + " " + reason + " -> compositor barrier unavailable; stay frozen");
+            return;
+        }
+
+        dropReleaseScheduled = true;
+        MainHook.log(TAG + " " + reason + " -> compositor barrier armed session="
+                + releaseSession);
+        scheduler.postOnAnimation(() -> {
+            // A new drag increments dragSessionId and owns the freeze now. Never let an old
+            // frame callback release it.
+            if (!dropSettling || dragActive || releaseSession != dragSessionId) return;
+
+            dropReleaseScheduled = false;
+            dropSettling = false;
+            settlingDragObject = null;
+            settlingDropCallbacksRemaining = 0;
+            MainHook.log(TAG + " compositor barrier passed session=" + releaseSession);
+            finishDockDragCapture(reason);
+        });
     }
 
     private static void finishDockDragCapture(String reason) {
