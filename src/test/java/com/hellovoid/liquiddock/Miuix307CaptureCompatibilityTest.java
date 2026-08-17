@@ -41,6 +41,25 @@ public class Miuix307CaptureCompatibilityTest {
         assertFalse(pipeline.contains("installLiquidGlassCaptureHooks"));
     }
 
+    @Test public void miuix307HooksRuntimeStartDragOverloadsNotOneStaleSignature()
+            throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        // 307 keeps the old eight-argument startDrag method but Dock rearrangement may dispatch
+        // through another overload. Hook every instance overload by reflected Method identity so
+        // a stale-but-present vendor signature cannot silently install while never executing.
+        assertTrue(drag.contains("getDeclaredMethods()"));
+        assertTrue(drag.contains("\"startDrag\".equals(method.getName())"));
+        assertTrue(drag.contains("HookUtil.hook(method"));
+        assertTrue(drag.contains("methodSignature(method)"));
+        assertTrue(drag.contains("dragActive"));
+        assertTrue(drag.contains("activeDragLayerName"));
+
+        // The old exact signature was the regression: it existed, so install succeeded, but the
+        // device evidence showed only endDrag callbacks and no start callback at all.
+        assertFalse(drag.contains("android.graphics.drawable.Drawable.class, boolean.class,"));
+    }
+
     @Test public void freeformGateDiagnosticIsStateDeduplicatedNotPerFrame() throws Exception {
         String gate = read("FreeformCaptureLeashHook.java");
 
