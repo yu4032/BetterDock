@@ -40,11 +40,11 @@ final class Miuix307DragCaptureHook {
 
     // DragController.endDrag() clears mDragObject before returning while the visible DragViews may
     // still be settling. Device logs show that on 307 mDropAnimationCounter can already read zero
-    // at endDrag, so zero is not a safe release boundary. Keep an explicit settling session until
-    // either DragObject's final completion or HotSeatsListContent.resetDraggingView() confirms the
-    // vendor cleanup boundary. The local callback count protects multi-icon drops when the vendor
-    // counter is transiently zero. Release itself crosses one display frame so SurfaceFlinger has
-    // committed the vendor's final icon-removal transaction before the first fresh capture starts.
+    // at endDrag, so zero is not a safe release boundary. Prefer DragObject's real final completion;
+    // HotSeatsListContent.resetDraggingView() is fallback-only when that hook/object is unavailable.
+    // The local callback count protects multi-icon drops when the vendor counter is transiently zero.
+    // Release itself crosses one display frame so SurfaceFlinger has committed the vendor's final
+    // icon-removal transaction before the first fresh capture starts.
     private static volatile Object settlingDragObject;
     private static volatile boolean dropSettling;
     private static volatile boolean dropReleaseScheduled;
@@ -134,8 +134,9 @@ final class Miuix307DragCaptureHook {
      * HotSeatsListContent.startDragInDockForSystem() calls View.startDragAndDrop(), and the
      * resulting mask/leash surfaces are owned by MIUI WMS/Shell. Freeze capture before that
      * call can create those surfaces; IMiuiDragListener/onEnd and resetDraggingView are
-     * idempotent resume boundaries. resetDraggingView is also the device-observed final cleanup
-     * boundary for the ordinary Launcher drop-settling path.
+     * idempotent resume boundaries. For ordinary Launcher drops, resetDraggingView is deliberately
+     * fallback-only because device logs show it can run several milliseconds before DragObject's
+     * real "drag release anim end" callback.
      */
     private static void installSystemDockDragHooks(ClassLoader classLoader) {
         try {
@@ -153,7 +154,7 @@ final class Miuix307DragCaptureHook {
             HookUtil.hookMethod(content, "resetDraggingView", new Class<?>[0], chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                 // Clear a genuine WMS/Shell drag first. For an ordinary Launcher drag this is a
-                // no-op, then the same vendor cleanup callback releases our settling freeze.
+                // no-op; onHotseatDragCleanup() will not preempt the real DragObject completion.
                 setSystemDockDragActive(false);
                 onHotseatDragCleanup();
                 return result;
@@ -318,12 +319,17 @@ final class Miuix307DragCaptureHook {
     }
 
     /**
-     * Device logs place HotSeatsListContent.resetDraggingView() after the visible ~300 ms settle.
-     * Use that vendor lifecycle callback as a fallback/final boundary, never a guessed delay.
+     * resetDraggingView() is useful only as a compatibility fallback. On the 307 build captured in
+     * device logs it runs before DragObject logs "drag release anim end", so allowing it to arm the
+     * compositor barrier would still release capture while the DragView exists.
      */
     private static void onHotseatDragCleanup() {
         if (!dropSettling || dragActive) return;
-        finishDropSettling("hotseat drag cleanup");
+        if (dropAnimationFinishHookInstalled && settlingDragObject != null) {
+            MainHook.log(TAG + " hotseat drag cleanup observed; waiting for DragObject animation end");
+            return;
+        }
+        finishDropSettling("hotseat drag cleanup fallback");
     }
 
     /**
