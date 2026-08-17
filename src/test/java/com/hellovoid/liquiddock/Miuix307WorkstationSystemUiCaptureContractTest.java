@@ -16,11 +16,11 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
 
     @Test
     public void miuix307RestoresSystemUiPanelCaptureGate() throws Exception {
-        String pipeline = read("Miuix307MaterialPipeline.java");
+        String entry = read("ModuleMain.java");
         String ownership = read("Miuix307CaptureOwnershipHook.java");
 
-        assertTrue("307 install must restore capture ownership bridges",
-                pipeline.contains("Miuix307CaptureOwnershipHook.install(classLoader)"));
+        assertTrue("launcher init must install the 307 capture ownership bridge",
+                entry.contains("Miuix307CaptureOwnershipHook.install(classLoader)"));
         assertTrue("307 must observe the device-proven panel expansion setter",
                 ownership.contains("\"setControlPanelExpanded\""));
         assertTrue("panel state must reach the actually bound 307 glass",
