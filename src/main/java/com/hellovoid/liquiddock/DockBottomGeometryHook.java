@@ -5,45 +5,32 @@ import android.view.ViewParent;
 
 import java.lang.reflect.Method;
 import java.util.Locale;
+import java.util.WeakHashMap;
 
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * Final owner for the ordinary Floating Dock's vertical offset.
- *
- * Historical LiquidDock versions added the custom delta inside
- * DeviceConfig.getHotSeatsMarginBottom(). That getter is only one vendor routing path and
- * its base value itself contains Mingou/Laptop branches. Keep a compatibility neutralizer
- * for already-installed legacy interceptors, but apply the actual feature to the visible
- * HotSeats View after layout. The ordinary Dock therefore no longer depends on Mingou being
- * installed or on LauncherModeController reporting a particular transient state.
- */
+/** Own the ordinary Floating Dock's Y offset without changing Workspace geometry. */
 final class DockBottomGeometryHook {
     private static final String HOT_SEATS = "com.miui.home.launcher.hotseats.HotSeats";
     private static final String DEVICE_CONFIG = "com.miui.home.launcher.DeviceConfig";
+    private static final String GRID_CONTROLLER = "com.miui.home.launcher.grid.GridController";
+    private static final WeakHashMap<View, Float> VENDOR_TRANSLATION_Y = new WeakHashMap<>();
 
     private DockBottomGeometryHook() {}
 
     static void install(ClassLoader classLoader) {
         LiquidDockConfig config = LiquidDockConfig.load();
         if (!config.enabled || !config.dock.enabled) return;
-
         float scale = config.dock.dimensionsDp
                 ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
         int bottomOffsetPx = Math.round(config.dock.bottomOffset * scale);
         if (bottomOffsetPx == 0) return;
-
-        neutralizeLegacyMarginDelta(classLoader, bottomOffsetPx);
-        installFinalHotSeatsOffset(classLoader, bottomOffsetPx);
+        installStockMarginFence(classLoader);
+        installVisualTranslationOwner(classLoader, bottomOffsetPx);
     }
 
-    /**
-     * MainHook or the 307 compatibility path can still contain the historical
-     * getHotSeatsMarginBottom()+offset interceptor. Highest priority wraps that interceptor;
-     * subtracting exactly our configured delta restores the vendor getter result. This is
-     * compatibility-only and is not the geometry owner.
-     */
-    private static void neutralizeLegacyMarginDelta(ClassLoader classLoader, int bottomOffsetPx) {
+    /** Preserve the exact stock margin so LiquidDock never changes Workspace/Dock-window reserve. */
+    private static void installStockMarginFence(ClassLoader classLoader) {
         try {
             Class<?> deviceConfig = Class.forName(DEVICE_CONFIG, false, classLoader);
             Method getter = HookUtil.findMethodExact(
@@ -51,47 +38,85 @@ final class DockBottomGeometryHook {
             Api101Bridge.module().hook(getter)
                     .setPriority(XposedInterface.PRIORITY_HIGHEST)
                     .intercept(chain -> {
-                        Object result = chain.proceed();
-                        // The historical hooks themselves skip while MainHook thinks the
-                        // workstation is active, so only neutralize when they could have added.
-                        if (!(result instanceof Integer) || MainHook.isWorkstationMode()) {
-                            return result;
+                        try {
+                            Object controller = HookUtil.invokeStatic(GRID_CONTROLLER, "getInstance");
+                            Object grid = HookUtil.invoke(controller, "getActiveGridConfigInDock");
+                            Object bottom = HookUtil.invoke(grid, "getBottom");
+                            Object mingou = HookUtil.invokeStatic(
+                                    DEVICE_CONFIG, "getMingouLaptopDockBottomOffsetPx");
+                            if (bottom instanceof Number && mingou instanceof Number) {
+                                return DockBottomGeometryPolicy.stockMargin(
+                                        ((Number) bottom).intValue(), ((Number) mingou).intValue());
+                            }
+                        } catch (Throwable error) {
+                            MainHook.log("[DC] stock Dock margin reconstruction failed: " + error);
                         }
-                        return (Integer) result - bottomOffsetPx;
+                        return chain.proceed();
                     });
-            MainHook.log("[DC] legacy Dock bottom margin delta neutralized offset="
-                    + bottomOffsetPx);
+            MainHook.log("[DC] stock Dock margin fence installed");
         } catch (Throwable error) {
-            MainHook.log("[DC] legacy Dock bottom margin neutralizer unavailable: " + error);
+            MainHook.log("[DC] stock Dock margin fence unavailable: " + error);
         }
     }
 
-    private static void installFinalHotSeatsOffset(ClassLoader classLoader, int bottomOffsetPx) {
+    /** Add the custom delta only to the vendor's visual translationY animation value. */
+    private static void installVisualTranslationOwner(ClassLoader classLoader, int bottomOffsetPx) {
         try {
             Class<?> hotSeats = Class.forName(HOT_SEATS, false, classLoader);
-            Method onLayout = HookUtil.findMethodExact(hotSeats, "onLayout",
-                    new Class<?>[]{boolean.class, int.class, int.class, int.class, int.class});
-            Api101Bridge.module().hook(onLayout)
+            Method translation = HookUtil.findMethodExact(
+                    hotSeats, "setTranslationY", new Class<?>[]{float.class});
+            Api101Bridge.module().hook(translation)
+                    .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                    .intercept(chain -> {
+                        Object owner = chain.getThisObject();
+                        Object value = chain.getArg(0);
+                        if (!(owner instanceof View) || !(value instanceof Number)) {
+                            return chain.proceed();
+                        }
+                        View view = (View) owner;
+                        float vendorY = ((Number) value).floatValue();
+                        synchronized (VENDOR_TRANSLATION_Y) {
+                            VENDOR_TRANSLATION_Y.put(view, vendorY);
+                        }
+                        if (view.getParent() == null || isLaptopDockHierarchy(view)) {
+                            return chain.proceed();
+                        }
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        args[0] = DockBottomGeometryPolicy.visualTranslationY(
+                                vendorY, bottomOffsetPx);
+                        return chain.proceed(args);
+                    });
+
+            Method attached = HookUtil.findMethodExact(
+                    hotSeats, "onAttachedToWindow", new Class<?>[0]);
+            Api101Bridge.module().hook(attached)
                     .setPriority(XposedInterface.PRIORITY_HIGHEST)
                     .intercept(chain -> {
                         Object result = chain.proceed();
                         Object owner = chain.getThisObject();
-                        if (owner instanceof View) {
-                            View view = (View) owner;
-                            // Do not trust the global Mingou/Laptop flag here: uninstalling the
-                            // companion launcher can leave that vendor state on a different path
-                            // from the actual visible hierarchy. Exclude only a real laptop Dock.
-                            if (!isLaptopDockHierarchy(view)) {
-                                // Positive historical bottom margin moved the Dock upward.
-                                view.offsetTopAndBottom(-bottomOffsetPx);
+                        if (!(owner instanceof View)) return result;
+                        View view = (View) owner;
+                        if (isLaptopDockHierarchy(view)) return result;
+                        float vendorY;
+                        synchronized (VENDOR_TRANSLATION_Y) {
+                            Float remembered = VENDOR_TRANSLATION_Y.get(view);
+                            if (remembered == null) {
+                                remembered = view.getTranslationY();
+                                VENDOR_TRANSLATION_Y.put(view, remembered);
                             }
+                            vendorY = remembered;
+                        }
+                        float target = DockBottomGeometryPolicy.visualTranslationY(
+                                vendorY, bottomOffsetPx);
+                        if (Math.abs(view.getTranslationY() - target) > 0.01f) {
+                            view.setTranslationY(vendorY);
                         }
                         return result;
                     });
-            MainHook.log("[DC] final Dock bottom geometry owner installed offset="
+            MainHook.log("[DC] Dock bottom visual translation owner installed offset="
                     + bottomOffsetPx);
         } catch (Throwable error) {
-            MainHook.log("[DC] final Dock bottom geometry owner unavailable: " + error);
+            MainHook.log("[DC] Dock bottom visual translation owner unavailable: " + error);
         }
     }
 
@@ -102,9 +127,7 @@ final class DockBottomGeometryHook {
             String name = parent.getClass().getName().toLowerCase(Locale.ROOT);
             if (name.contains(".laptop.")
                     || name.contains("dockcontainerview")
-                    || name.contains("laptopdock")) {
-                return true;
-            }
+                    || name.contains("laptopdock")) return true;
             parent = parent.getParent();
         }
         return false;
