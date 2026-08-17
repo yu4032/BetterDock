@@ -33,6 +33,31 @@ public enum HomeGridProfile {
         return portrait ? landscapeColumns : landscapeRows;
     }
 
+    public int totalBlocks() {
+        return (landscapeColumns / 2) * (landscapeRows / 2);
+    }
+
+    public boolean matchesCounts(int horizontalCells, int verticalCells) {
+        return (horizontalCells == landscapeColumns && verticalCells == landscapeRows)
+                || (horizontalCells == landscapeRows && verticalCells == landscapeColumns);
+    }
+
+    /** Row-major 2x2 origins, preserving the exact historical 8x4 ordering. */
+    public int[][] blockOrigins(boolean portrait) {
+        int columns = columns(portrait);
+        int rows = rows(portrait);
+        int[][] origins = new int[(columns / 2) * (rows / 2)][2];
+        int index = 0;
+        for (int y = 0; y < rows; y += 2) {
+            for (int x = 0; x < columns; x += 2) {
+                origins[index][0] = x;
+                origins[index][1] = y;
+                index++;
+            }
+        }
+        return origins;
+    }
+
     public static String normalizePersisted(String value) {
         return GridProfileConfig.normalizeProfile(value);
     }
