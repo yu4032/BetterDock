@@ -40,7 +40,9 @@ s = once(s,
 old_ensure_head = '''        if (background == null || !isSupportedBackground(background)) return false;\n        if (MiuixGlassHook.isBoundTo(background)) {\n            Miuix307DragCaptureHook.bind(background);\n            observeBoundHierarchy(background, config, classLoader);\n            return true;\n        }\n\n        // Remove observers before MiuixGlassHook replaces an old host so our own controlled\n'''
 new_ensure_head = '''        if (background == null || !isSupportedBackground(background)) return false;\n        if (MiuixGlassHook.isBoundTo(background)) {\n            geometryDeferredLoggedFor = null;\n            Miuix307DragCaptureHook.bind(background);\n            observeBoundHierarchy(background, config, classLoader);\n            return true;\n        }\n\n        // setupViews/onAttachedToWindow run before BlurBackground2 has committed its real radius.\n        // Preserve the untouched vendor material during that placeholder phase. Existing vendor\n        // setBackgroundRadius/triggerMeasure callbacks naturally retry this method once geometry\n        // is valid, so no fixed-delay polling is needed.\n        if (!MiuixGlassHook.hasReadyNativeGeometry(background)) {\n            if (geometryDeferredLoggedFor != background) {\n                geometryDeferredLoggedFor = background;\n                MainHook.log("[DC] MiuiX 307 Prismal handoff deferred; native geometry not ready"\n                        + " class=" + background.getClass().getSimpleName()\n                        + " size=" + background.getWidth() + "x" + background.getHeight()\n                        + " radius=" + MiuixGlassHook.readNativeOpticsRadius(background));\n            }\n            return false;\n        }\n        if (geometryDeferredLoggedFor == background) {\n            MainHook.log("[DC] MiuiX 307 native geometry ready; committing Prismal handoff"\n                    + " size=" + background.getWidth() + "x" + background.getHeight()\n                    + " radius=" + MiuixGlassHook.readNativeOpticsRadius(background));\n            geometryDeferredLoggedFor = null;\n        }\n\n        // Remove observers before MiuixGlassHook replaces an old host so our own controlled\n'''
 s = once(s, old_ensure_head, new_ensure_head, 'ensureGlassBound geometry gate')
+p.write_text(s)
 
+combined = (ROOT / 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java').read_text() + p.read_text()
 for token in [
     'hasReadyNativeGeometry(View dockBg)',
     'readNativeOpticsRadius(View dockBg)',
@@ -48,7 +50,6 @@ for token in [
     'native geometry ready; committing Prismal handoff',
     'if (!hasReadyNativeGeometry(dockBg)) return false;',
 ]:
-    combined = (ROOT / 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java').read_text() + p.read_text()
     if token not in combined:
         raise SystemExit(f'missing required token: {token}')
 
