@@ -1,0 +1,40 @@
+name: Temporary themed MiShadow patch
+
+on:
+  push:
+    branches:
+      - fix/miuix307-drag-freeform-followup
+    paths:
+      - tools/tmp_apply_themed_mishadow_fix.py
+      - .github/workflows/tmp-themed-mishadow-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 0
+
+      - name: Apply exact patch
+        run: python tools/tmp_apply_themed_mishadow_fix.py
+
+      - name: Verify patch scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 2
+          git diff --name-only | grep -Fx 'src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java'
+          git diff --name-only | grep -Fx 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
+
+      - name: Commit production changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
+                  src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          git commit -m 'fix: suppress themed Dock MiShadow'
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
