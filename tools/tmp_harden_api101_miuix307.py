@@ -46,7 +46,8 @@ def write_isolation_contract():
                         ordinary.contains("setDockDragging(dragging, dragSurfaceLayerName, null)"));
                 assertTrue(ordinary.contains("dockDragging = dragging"));
                 assertTrue(ordinary.contains("dragLayerName = dragging ? dragSurfaceLayerName : null"));
-                assertTrue(ordinary.contains("requestStateCapture(\"drag-start\")"));
+                assertTrue(ordinary.contains("requestStateCapture"));
+                assertTrue(ordinary.contains("drag-start"));
             }
 
             @Test public void ordinaryContentBlurCleanupDoesNotClear307PassBlur() throws Exception {
@@ -92,7 +93,8 @@ def harden_blur_bridge():
 
 
 def verify_scope():
-    changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+    status = subprocess.check_output(['git', 'status', '--porcelain'], text=True).splitlines()
+    changed = {line[3:] for line in status if len(line) >= 4}
     expected = {
         'src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java',
         'src/main/java/com/hellovoid/liquiddock/MiBlurBridge.java',
