@@ -70,10 +70,10 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // Decompiled BlurBackground2 already owns pass-window blur and MiShadow. Device RenderEngine
-        // logs show that making Prismal own blur adds Floating Dock regionblurRadius:100 above that
-        // visual owner, blurring the native shadow/stroke. Both supported backgrounds must keep
-        // native visual ownership; Prismal is optical-only and we only clamp native blur radius.
+        // Decompiled BlurBackground2 already owns pass-window blur. Device RenderEngine logs show
+        // that making Prismal own blur adds a second large Floating Dock region blur. Keep the
+        // vendor backdrop-blur owner, while Prismal remains optical-only and only the native blur
+        // radius is clamped to LiquidDock's configured value.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(glassHook.contains("isNativeVisualOwner"));
@@ -82,5 +82,25 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         assertTrue(glassHook.contains("enforceNativeBlurRadius(dockBg);"));
         assertFalse(glassHook.contains("clearAllBlur"));
         assertFalse(glassHook.contains("Prismal owns blur"));
+    }
+
+    @Test
+    public void thirdPartyBackground2SuppressesOnlyItsBoundMiShadow() throws Exception {
+        String pipeline = read("Miuix307MaterialPipeline.java");
+        String glassHook = read("MiuixGlassHook.java");
+
+        // DEX + device trace: HotSeats.showViewShadow() invokes MiShadowUtils.applyViewShadow()
+        // on the active Dock background, and radius=143 reaches hidden View.setMiShadow(). Only
+        // the currently bound compat BlurBackground2 must skip that call. Default MiuiX material,
+        // stale themed instances, Recents TaskView, shortcut menus and arbitrary Views must pass.
+        assertTrue(pipeline.contains("installCompatMiShadowSuppression(classLoader)"));
+        assertTrue(pipeline.contains("com.miui.home.launcher.common.MiShadowUtils"));
+        assertTrue(pipeline.contains("applyViewShadow"));
+        assertTrue(pipeline.contains("MiuixGlassHook.shouldSuppressCompatMiShadow"));
+        assertTrue(glassHook.contains("shouldSuppressCompatMiShadow"));
+        assertTrue(glassHook.contains("COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())"));
+        assertTrue(glassHook.contains("dockBg != backgroundRef"));
+        assertTrue(glassHook.contains("compat BlurBackground2 MiShadow suppressed"));
+        assertFalse(pipeline.contains("setMiShadow"));
     }
 }
