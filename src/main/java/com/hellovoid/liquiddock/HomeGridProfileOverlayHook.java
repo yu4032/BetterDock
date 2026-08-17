@@ -82,9 +82,10 @@ final class HomeGridProfileOverlayHook {
                                             boolean xAxis) throws NoSuchMethodException {
         Method method = HookUtil.findMethodExact(gridConfig, methodName,
                 new Class<?>[]{int.class});
-        // The stable HomeGridHook setter has default priority and converts the stock 6 to
-        // its 8x4 value. Run after it, then convert only that expected 8x4 Workspace value
-        // to the selected 10x6 value. Other GridConfig sizes pass through untouched.
+        // The stable HomeGridHook setter has default priority and rewrites any stock 6 to 8.
+        // Run after it and recover that intermediate value according to the selected axis.
+        // This is essential for the 6-row/column side of 10x6, where 8 is not the legacy
+        // axis value but is still the value delivered by the stable core.
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_LOWEST)
                 .intercept(chain -> {
@@ -92,12 +93,10 @@ final class HomeGridProfileOverlayHook {
                         return chain.proceed();
                     }
                     boolean portrait = isPortrait();
-                    int legacy = xAxis
-                            ? HomeGridProfile.GRID_8X4.columns(portrait)
-                            : HomeGridProfile.GRID_8X4.rows(portrait);
-                    int target = xAxis ? profile.columns(portrait) : profile.rows(portrait);
                     int current = (Integer) chain.getArg(0);
-                    if (current != legacy && current != target) return chain.proceed();
+                    int target = HomeGridCountPolicy.profileRewrite(
+                            profile, portrait, xAxis, current);
+                    if (target == current) return chain.proceed();
                     Object[] args = chain.getArgs().toArray(new Object[0]);
                     args[0] = target;
                     return chain.proceed(args);
@@ -114,12 +113,8 @@ final class HomeGridProfileOverlayHook {
                     if (!(result instanceof Integer) || MainHook.isWorkstationMode()
                             || isExcludedGridConfigCall()) return result;
                     boolean portrait = isPortrait();
-                    int legacy = xAxis
-                            ? HomeGridProfile.GRID_8X4.columns(portrait)
-                            : HomeGridProfile.GRID_8X4.rows(portrait);
-                    int target = xAxis ? profile.columns(portrait) : profile.rows(portrait);
-                    int current = (Integer) result;
-                    return (current == legacy || current == target) ? target : result;
+                    return HomeGridCountPolicy.profileRewrite(
+                            profile, portrait, xAxis, (Integer) result);
                 });
     }
 
