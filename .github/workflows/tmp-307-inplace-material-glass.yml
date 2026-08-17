@@ -1,0 +1,71 @@
+name: Temporary 307 in-place material glass
+
+on:
+  push:
+    branches:
+      - fix/miuix307-drag-freeform-followup
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 2
+
+      - name: Apply in-place material glass
+        run: python3 tools/tmp_apply_307_inplace_material_glass.py
+
+      - name: Verify production scope
+        run: |
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          expected=$(cat <<'EOF'
+src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java
+src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+EOF
+          )
+          test "$changed" = "$expected"
+          grep -q 'setPreserveGeometrySourceVisuals(true)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q 'materialHost.addView(host' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q 'reloadOpticsOnly' src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java
+          grep -q 'installDockCustomizationCompatibility' src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+          grep -q 'setPassWindowBlurRadius(dockBg, 0)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          ! grep -q 'parent.addView(host' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+
+      - name: Commit production implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java \
+                  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java \
+                  src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
+                  src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          git commit -m 'experiment: compose glass inside 307 material shell'
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug only
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-307-inplace-material-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
