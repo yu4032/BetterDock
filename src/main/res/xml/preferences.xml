@@ -5,10 +5,19 @@
     <PreferenceCategory android:title="Home Screen Grid (Demo)">
 
         <SwitchPreference
-            android:key="home_grid_8x4"
-            android:title="8x4 / 4x8 Home Grid"
-            android:summary="Landscape 8 columns x 4 rows; portrait 4 columns x 8 rows"
-            android:defaultValue="true" />
+            android:key="home_grid_extended"
+            android:title="Optional Extended Layout"
+            android:summary="Use stock MIUI layout when disabled"
+            android:defaultValue="false" />
+
+        <ListPreference
+            android:key="grid_profile"
+            android:title="Extended Layout Size"
+            android:summary="Select 8×4 / 4×8 or 10×6 / 6×10"
+            android:defaultValue="8x4"
+            android:entries="@array/grid_profile_entries"
+            android:entryValues="@array/grid_profile_values"
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_left"
@@ -17,7 +26,7 @@
             android:defaultValue="160"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_right"
@@ -26,7 +35,7 @@
             android:defaultValue="160"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_top"
@@ -35,7 +44,7 @@
             android:defaultValue="80"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_landscape_margin_bottom"
@@ -44,7 +53,7 @@
             android:defaultValue="80"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_left"
@@ -53,7 +62,7 @@
             android:defaultValue="80"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_right"
@@ -62,7 +71,7 @@
             android:defaultValue="80"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_top"
@@ -71,7 +80,7 @@
             android:defaultValue="160"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="grid_portrait_margin_bottom"
@@ -80,7 +89,7 @@
             android:defaultValue="160"
             app:min="0"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_landscape_x"
@@ -89,7 +98,7 @@
             android:defaultValue="0"
             app:min="-400"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_landscape_y"
@@ -98,7 +107,7 @@
             android:defaultValue="0"
             app:min="-400"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_portrait_x"
@@ -107,7 +116,7 @@
             android:defaultValue="0"
             app:min="-400"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
 
         <com.hellovoid.liquiddock.SeekBarPreference
             android:key="indicator_portrait_y"
@@ -116,7 +125,7 @@
             android:defaultValue="0"
             app:min="-400"
             app:max="400"
-            android:dependency="home_grid_8x4" />
+            android:dependency="home_grid_extended" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="Dock Appearance">
