@@ -17,7 +17,9 @@ final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
-    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+    // Construct lazily at the first real hierarchy-detach boundary. Eager construction during
+    // class initialization breaks host-side JVM contract tests where Android's Looper is absent.
+    private static Handler MAIN_HANDLER;
 
     private static boolean installed;
     private static View workspaceRef;
@@ -260,6 +262,9 @@ final class Miuix307MaterialPipeline {
             LiquidDockConfig config, ClassLoader classLoader) {
         if (hierarchyRebindPosted) return;
         hierarchyRebindPosted = true;
+        if (MAIN_HANDLER == null) {
+            MAIN_HANDLER = new Handler(Looper.getMainLooper());
+        }
         MAIN_HANDLER.post(() -> {
             hierarchyRebindPosted = false;
             Object hotSeats = hotSeatsRef.get();
