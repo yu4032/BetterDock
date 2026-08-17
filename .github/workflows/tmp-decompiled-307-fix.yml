@@ -17,6 +17,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/miuix307-drag-freeform-followup
+      - name: Narrow ambiguous source anchor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/tmp_apply_decompiled_307_fix.py')
+          s = p.read_text()
+          old = """patch(path,\n'''        enforcePrismalOpticalOnly(glass);\n''',\n'''        if (nativeMaterial) enforcePrismalOpticalOnly(glass);\n''')"""
+          new = """patch(path,\n'''        glass.setCapturePowerLimitFps(config.glass.captureFps);\n        enforcePrismalOpticalOnly(glass);\n        MainHook.log(TAG + \" capture tuning fps=\" + config.glass.captureFps\n                + \" scale=\" + config.glass.captureScale);\n''',\n'''        glass.setCapturePowerLimitFps(config.glass.captureFps);\n        if (nativeMaterial) enforcePrismalOpticalOnly(glass);\n        MainHook.log(TAG + \" capture tuning fps=\" + config.glass.captureFps\n                + \" scale=\" + config.glass.captureScale);\n''')"""
+          assert s.count(old) == 1, s.count(old)
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Apply exact patch
         run: python3 tools/tmp_apply_decompiled_307_fix.py
       - name: Commit production changes
