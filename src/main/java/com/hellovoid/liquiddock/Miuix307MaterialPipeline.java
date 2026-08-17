@@ -14,8 +14,8 @@ import java.lang.reflect.Modifier;
  * Hook coordinator for HyperOS 3.0.307+ HotSeats material backgrounds.
  *
  * HyperOS can switch the live HotSeats background implementation when an icon theme is applied.
- * Keep either vendor background only as a geometry source while LiquidDock's Prismal glass owns
- * the real blur/optical pass; vendor compositor blur is explicitly suppressed.
+ * Keep the live vendor background as the authoritative visual shell while LiquidDock composes
+ * Prismal inside it; vendor compositor blur is explicitly suppressed.
  */
 final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
@@ -60,6 +60,7 @@ final class Miuix307MaterialPipeline {
             Miuix307DragCaptureHook.install(classLoader);
             installHomeGesturePrearm(classLoader);
             installCompatBackgroundBlurSuppression(classLoader);
+            installDockCustomizationCompatibility(classLoader, config);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -167,12 +168,89 @@ final class Miuix307MaterialPipeline {
         }
     }
 
+
+    /** Restore the non-glass Dock customization hooks skipped by MainHook's 307 early return. */
+    private static void installDockCustomizationCompatibility(
+            ClassLoader classLoader, LiquidDockConfig config) {
+        LiquidDockConfig.Dock dock = config.dock;
+        if (dock == null || !dock.enabled) return;
+        float density = android.content.res.Resources.getSystem().getDisplayMetrics().density;
+        float dimensionScale = dock.dimensionsDp ? density : 1f;
+        int spacing = Math.round(dock.spacing * dimensionScale);
+        int bottomOffset = Math.round(dock.bottomOffset * dimensionScale);
+
+        if (bottomOffset != 0) {
+            try {
+                Class<?> deviceConfig = Class.forName(
+                        "com.miui.home.launcher.DeviceConfig", false, classLoader);
+                HookUtil.hookMethod(deviceConfig, "getHotSeatsMarginBottom", new Class<?>[0],
+                        chain -> {
+                            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            if (MainHook.isWorkstationMode()) return result;
+                            return (Integer) result + bottomOffset;
+                        });
+            } catch (Throwable error) {
+                MainHook.log("[DC] MiuiX 307 bottom offset hook unavailable: " + error);
+            }
+        }
+
+        if (spacing != 0) {
+            try {
+                Class<?> recyclerView = Class.forName(
+                        "androidx.recyclerview.widget.RecyclerView", false, classLoader);
+                Class<?> recyclerState = Class.forName(
+                        "androidx.recyclerview.widget.RecyclerView$State", false, classLoader);
+                HookUtil.hookMethod(classLoader,
+                        "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager$OffsetDecoration",
+                        "getItemOffsets",
+                        chain -> {
+                            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            if (MainHook.isWorkstationMode()) return result;
+                            android.graphics.Rect out = (android.graphics.Rect) chain.getArgs().get(0);
+                            out.left += spacing;
+                            out.right += spacing;
+                            return result;
+                        }, android.graphics.Rect.class, View.class, recyclerView, recyclerState);
+
+                Class<?> layoutManager = Class.forName(
+                        "com.miui.home.launcher.hotseats.HotSeatsListContentLayoutManager",
+                        false, classLoader);
+                HookUtil.hookMethod(layoutManager, "updateBackgroundView",
+                        new Class<?>[]{android.widget.FrameLayout.class, int.class, int.class, float.class},
+                        chain -> {
+                            if (MainHook.isWorkstationMode()) {
+                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                            }
+                            int itemCount = (Integer) HookUtil.invoke(
+                                    chain.getThisObject(), "getItemCount");
+                            Object[] args = chain.getArgs().toArray(new Object[0]);
+                            if (itemCount > 0) args[1] = (Integer) args[1] + spacing * 2 * itemCount;
+                            return chain.proceed(args);
+                        });
+            } catch (Throwable error) {
+                MainHook.log("[DC] MiuiX 307 spacing hook unavailable: " + error);
+            }
+        }
+    }
+
     /** Native MiuiX implementation exposes explicit width/height/radius setters. */
     private static void installMiuixGeometryHooks(
             Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
+        LiquidDockConfig.Dock dock = config.dock;
+        float density = android.content.res.Resources.getSystem().getDisplayMetrics().density;
+        float dimensionScale = dock.dimensionsDp ? density : 1f;
+        float cornerScale = dock.cornersDp ? density : 1f;
+        int widthOffset = dock.enabled ? Math.round(dock.widthOffset * dimensionScale) : 0;
+        int heightOffset = dock.enabled ? Math.round(dock.heightOffset * dimensionScale) : 0;
+        float blurCornerOffset = dock.enabled ? dock.blurCornerOffset * cornerScale : 0f;
+
         HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
                 new Class<?>[]{int.class}, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && widthOffset != 0) {
+                        args[0] = (Integer) args[0] + widthOffset;
+                    }
+                    Object result = chain.proceed(args);
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
@@ -180,7 +258,11 @@ final class Miuix307MaterialPipeline {
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
                 new Class<?>[]{int.class}, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && heightOffset != 0) {
+                        args[0] = (Integer) args[0] + heightOffset;
+                    }
+                    Object result = chain.proceed(args);
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
@@ -188,7 +270,11 @@ final class Miuix307MaterialPipeline {
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                 new Class<?>[]{float.class}, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && blurCornerOffset != 0f) {
+                        args[0] = Math.max(0f, (Float) args[0] + blurCornerOffset);
+                    }
+                    Object result = chain.proceed(args);
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncGeometry(background, config);
@@ -203,9 +289,14 @@ final class Miuix307MaterialPipeline {
      */
     private static void installThemedBackgroundHooks(
             Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
-        // Decompiled BlurBackground2.addBlur() is invoked by both attach and radius updates.
-        // Its positive utility radius is suppressed before it reaches View; geometry sync then
-        // reasserts vendor GPU-blur disable while keeping the Prismal shape aligned.
+        LiquidDockConfig.Dock dock = config.dock;
+        float density = android.content.res.Resources.getSystem().getDisplayMetrics().density;
+        float dimensionScale = dock.dimensionsDp ? density : 1f;
+        float cornerScale = dock.cornersDp ? density : 1f;
+        int widthOffset = dock.enabled ? Math.round(dock.widthOffset * dimensionScale) : 0;
+        int heightOffset = dock.enabled ? Math.round(dock.heightOffset * dimensionScale) : 0;
+        float blurCornerOffset = dock.enabled ? dock.blurCornerOffset * cornerScale : 0f;
+
         HookUtil.hookMethod(backgroundClass, "onAttachedToWindow", new Class<?>[0], chain -> {
             Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
             View background = (View) chain.getThisObject();
@@ -213,9 +304,37 @@ final class Miuix307MaterialPipeline {
             MiuixGlassHook.syncGeometry(background, config);
             return result;
         });
+        HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
+                new Class<?>[]{int.class}, chain -> {
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && widthOffset != 0) {
+                        args[0] = (Integer) args[0] + widthOffset;
+                    }
+                    Object result = chain.proceed(args);
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncSize(background);
+                    return result;
+                });
+        HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
+                new Class<?>[]{int.class}, chain -> {
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && heightOffset != 0) {
+                        args[0] = (Integer) args[0] + heightOffset;
+                    }
+                    Object result = chain.proceed(args);
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncSize(background);
+                    return result;
+                });
         HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                 new Class<?>[]{float.class}, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (!MainHook.isWorkstationMode() && blurCornerOffset != 0f) {
+                        args[0] = Math.max(0f, (Float) args[0] + blurCornerOffset);
+                    }
+                    Object result = chain.proceed(args);
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncGeometry(background, config);
@@ -443,7 +562,17 @@ final class Miuix307MaterialPipeline {
 
     /** Resolve only the host injected beside this exact background in its current parent. */
     private static View resolveBoundHost(View background) {
-        if (background == null || !(background.getParent() instanceof ViewGroup)) return null;
+        if (background == null) return null;
+        // New in-place architecture: the LiquidDock host is a child of this exact material View.
+        if (background instanceof ViewGroup) {
+            ViewGroup material = (ViewGroup) background;
+            for (int i = 0; i < material.getChildCount(); i++) {
+                View child = material.getChildAt(i);
+                if (child instanceof DockLiquidGlassHostView) return child;
+            }
+        }
+        // Transitional fallback for a stale sibling host while an older hierarchy is detaching.
+        if (!(background.getParent() instanceof ViewGroup)) return null;
         ViewGroup parent = (ViewGroup) background.getParent();
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);

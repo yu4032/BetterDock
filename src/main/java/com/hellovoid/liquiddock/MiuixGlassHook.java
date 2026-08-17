@@ -13,8 +13,8 @@ import java.lang.reflect.Field;
 /**
  * MiuiX-specific glass installer for OS3.0.307+ docks.
  *
- * The vendor background remains only as a geometry source. Its compositor/pass-window blur is
- * disabled so LiquidDock's existing Prismal glass stack owns the actual blur and optical pass.
+ * The vendor background remains the authoritative Dock visual shell. Its compositor/pass-window
+ * blur is disabled, while LiquidDock's existing Prismal host is composed inside that shell.
  * The generic Launcher
  * gesture/Recents capture hooks stay disabled; only SystemUI HOME/APP ownership is rebound so
  * the glass can choose FULL_DISPLAY while the floating Dock is shown over an app.
@@ -42,10 +42,8 @@ final class MiuixGlassHook {
     /** True only when this exact vendor background instance still owns the live Prismal host. */
     static boolean isBoundTo(View dockBg) {
         if (dockBg == null || dockBg != backgroundRef) return false;
-        ViewGroup parent = dockBg.getParent() instanceof ViewGroup
-                ? (ViewGroup) dockBg.getParent() : null;
         DockLiquidGlassHostView host = hostRef;
-        return parent != null && host != null && host.getParent() == parent;
+        return host != null && host.getParent() == dockBg;
     }
 
     /**
@@ -80,20 +78,17 @@ final class MiuixGlassHook {
 
     static boolean install(View dockBg, View workspace, LiquidDockConfig config,
                            Object launcher, ClassLoader cl) {
-        if (dockBg == null || config == null) return false;
-        ViewGroup parent = dockBg.getParent() instanceof ViewGroup
-                ? (ViewGroup) dockBg.getParent() : null;
-        if (parent == null) return false;
-        boolean nativeMaterial = isNativeMaterialBackground(dockBg);
+        if (!(dockBg instanceof ViewGroup) || config == null) return false;
+        ViewGroup materialHost = (ViewGroup) dockBg;
         boolean nativeVisualOwner = isNativeVisualOwner(dockBg);
 
-        if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == parent) {
+        if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == materialHost) {
             syncSize(dockBg);
             syncGeometry(dockBg, config);
             return true;
         }
 
-        // Detached/old host: never stack a second glass layer on a recreated Dock hierarchy.
+        // Remove only LiquidDock's previous child host. Never replace or hide the vendor shell.
         removeVendorGpuBlurSuppressor();
         if (hostRef != null && hostRef.getParent() instanceof ViewGroup) {
             ((ViewGroup) hostRef.getParent()).removeView(hostRef);
@@ -104,52 +99,38 @@ final class MiuixGlassHook {
         vendorGpuBlurLoggedFor = null;
         compatBackgroundBlurLoggedFor = null;
 
-        // Both 307 backgrounds can attach pass-window blur to the whole Floating Dock Surface.
-        // Disable that compositor stage before Prismal is installed; the vendor View remains only
-        // as geometry until DockLiquidGlassView hides it after the first valid capture.
+        // The vendor View keeps outline/MiShadow/foreground ownership, but its compositor blur
+        // must stay disabled because SurfaceFlinger would otherwise post-process the whole Dock.
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
 
         float radius = readRadius(dockBg);
         int dockW = readDimension(dockBg, "mWidth", true);
         int dockH = readDimension(dockBg, "mHeight", false);
-        MainHook.log(TAG + " detected radius=" + radius
+        MainHook.log(TAG + " in-place material radius=" + radius
                 + " dock size=" + dockW + "x" + dockH);
 
         DockLiquidGlassView glass = LiquidGlassFactory.create(
-                dockBg, workspace, config.glass, config.dock, true, SQUIRCLE_CP);
+                dockBg, workspace, config.glass, config.dock,
+                config.dock.squircle, config.dock.squircleCp);
         glass.setId(View.generateViewId());
-        // The specialized 307 path bypasses MainHook's legacy capture hooks. Rebind only the
-        // authoritative SystemUI HOME/APP ownership so APP resolves to FULL_DISPLAY instead of
-        // remaining UNKNOWN -> WALLPAPER. Force the composed-display capability for this mode;
-        // historical preferences must not turn an app backdrop back into wallpaper.
         glass.setFullscreenCapture(true);
-        // 307 uses the same user-facing capture controls as legacy Liquid Glass. Keep these
-        // explicit here so this specialized path can never drift back to demo constants.
         glass.setCaptureScale(config.glass.captureScale);
         glass.setCapturePowerLimitFps(config.glass.captureFps);
-        // LiquidGlassFactory already applied config.blur/config.blurMode. Do not override them:
-        // the GPU capture is the input and Prismal itself owns blur/refraction/highlight.
-        MainHook.log(TAG + " capture tuning fps=" + config.glass.captureFps
-                + " scale=" + config.glass.captureScale);
+        // This geometry source is also the parent shell; hiding it would hide glass, stroke,
+        // outline and MiShadow together. Keep the shell alpha alive after every valid capture.
+        glass.setPreserveGeometrySourceVisuals(true);
 
-        DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
+        DockLiquidGlassHostView host = new DockLiquidGlassHostView(dockBg.getContext());
         host.setId(View.generateViewId());
         host.setLayers(glass);
-        host.setGeometry(radius, true, SQUIRCLE_CP);
-        host.reloadOverlay(config.dock, config.glass);
+        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);
+        host.reloadOpticsOnly(config.dock, config.glass);
 
         FrameLayout.LayoutParams hostLp = new FrameLayout.LayoutParams(
-                dockW > 0 ? dockW : ViewGroup.LayoutParams.MATCH_PARENT,
-                dockH > 0 ? dockH : ViewGroup.LayoutParams.MATCH_PARENT);
-        hostLp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        materialHost.addView(host, materialHost.getChildCount(), hostLp);
+        host.bringToFront();
 
-        int bgIdx = parent.indexOfChild(dockBg);
-        int insertIndex = bgIdx < 0 ? parent.getChildCount()
-                : Math.min(parent.getChildCount(), bgIdx + 1);
-        parent.addView(host, insertIndex, hostLp);
-
-        // Keep the vendor View only as DockLiquidGlassView's geometry source. Once a capture is
-        // installed, the normal glass lifecycle hides that source; do not restore its alpha/latch.
         backgroundRef = dockBg;
         glassRef = glass;
         hostRef = host;
@@ -157,8 +138,10 @@ final class MiuixGlassHook {
         installVendorGpuBlurSuppressor(dockBg);
         HomeOwnershipRuntime.bind(glass, glass.getContext());
 
+        // Stroke + stroke-shadow deliberately live on the vendor foreground, which Android draws
+        // after child dispatch, so they remain sharp and above the in-place glass.
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
-        MainHook.log(TAG + " Prismal owns blur; native 307 background is geometry only class="
+        MainHook.log(TAG + " Prismal composed inside native 307 material shell class="
                 + dockBg.getClass().getSimpleName());
         return true;
     }
@@ -167,25 +150,11 @@ final class MiuixGlassHook {
     static void syncSize(View dockBg) {
         if (dockBg == null || dockBg != backgroundRef) return;
         DockLiquidGlassHostView host = hostRef;
-        if (host == null || host.getParent() == null) return;
-
-        int dockW = readDimension(dockBg, "mWidth", true);
-        int dockH = readDimension(dockBg, "mHeight", false);
-        ViewGroup.LayoutParams params = host.getLayoutParams();
-        if (params != null) {
-            boolean changed = false;
-            if (dockW > 0 && params.width != dockW) {
-                params.width = dockW;
-                changed = true;
-            }
-            if (dockH > 0 && params.height != dockH) {
-                params.height = dockH;
-                changed = true;
-            }
-            if (changed) host.setLayoutParams(params);
-        }
+        if (host == null || host.getParent() != dockBg) return;
         if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
-        host.setVisibility(dockBg.getVisibility());
+        // MATCH_PARENT follows the authoritative vendor material geometry automatically.
+        host.bringToFront();
+        host.requestLayout();
         host.invalidate();
     }
 
@@ -193,15 +162,15 @@ final class MiuixGlassHook {
     static void syncGeometry(View dockBg, LiquidDockConfig config) {
         if (dockBg == null || config == null || dockBg != backgroundRef) return;
         DockLiquidGlassHostView host = hostRef;
-        if (host == null || host.getParent() == null) return;
+        if (host == null || host.getParent() != dockBg) return;
 
         if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
 
         float radius = readRadius(dockBg);
-        host.setVisibility(dockBg.getVisibility());
-        host.setGeometry(radius, true, SQUIRCLE_CP);
-        host.reloadOverlay(config.dock, config.glass);
+        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);
+        host.reloadOpticsOnly(config.dock, config.glass);
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
+        host.bringToFront();
         host.invalidate();
     }
 
@@ -235,9 +204,8 @@ final class MiuixGlassHook {
 
     /**
      * HyperOS can reapply its material state during animation without replacing the background.
-     * Reassert only GPU-blur suppression before draw. Crucially, this listener never restores
-     * dockBg alpha and never touches the glass view hidden-source latch: the
-     * ordinary glass lifecycle must be free to hide the native geometry source after capture.
+     * Reassert only GPU-blur suppression before draw. The vendor shell itself stays visible;
+     * LiquidDock is a child composition and must never force the shell alpha to zero.
      */
     private static void installVendorGpuBlurSuppressor(View dockBg) {
         removeVendorGpuBlurSuppressor();

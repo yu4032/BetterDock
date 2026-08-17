@@ -390,6 +390,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     private int drawFailLogged;
     private int blackFrameLogCount;
     private boolean nativeBackgroundHiddenByGlass;
+    private boolean preserveGeometrySourceVisuals;
     private boolean kickScheduled;
     private long captureGeneration;
     private final CaptureSceneState sceneState = new CaptureSceneState();
@@ -1550,6 +1551,15 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     }
 
     void setFullscreenCapture(boolean enabled) { fullscreenCapture = enabled; }
+
+    /** Keep a parent material View visible when glass is composed inside that View. */
+    void setPreserveGeometrySourceVisuals(boolean preserve) {
+        preserveGeometrySourceVisuals = preserve;
+        if (preserve) {
+            geometrySource.setAlpha(1f);
+            nativeBackgroundHiddenByGlass = false;
+        }
+    }
 
     /** Apply the live liquid_glass switch without requiring a Launcher restart. */
     private void setRuntimeGlassEnabled(boolean enabled) {
@@ -3002,7 +3012,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         installedCaptureScene = sourceScene;
         // Do not make the native Dock transparent until a real wallpaper-only frame exists.
         // This avoids the fully-transparent Dock failure mode when hidden capture APIs reject.
-        if (!nativeBackgroundHiddenByGlass) {
+        if (preserveGeometrySourceVisuals) {
+            if (geometrySource.getAlpha() != 1f) geometrySource.setAlpha(1f);
+            nativeBackgroundHiddenByGlass = false;
+        } else if (!nativeBackgroundHiddenByGlass) {
             geometrySource.setAlpha(0f);
             nativeBackgroundHiddenByGlass = true;
         }
