@@ -36,6 +36,10 @@ final class MiuixGlassHook {
     // BlurBackground2 can issue the same hard-coded utility blur repeatedly during layout.
     // Keep one concise diagnostic per themed background instance.
     private static View compatBackgroundBlurLoggedFor;
+    private static View transparentMaterialOwner;
+    private static GradientDrawable transparentMaterialBody;
+    private static float transparentMaterialRadius = Float.NaN;
+    private static View materialBodyLoggedFor;
 
     private MiuixGlassHook() {}
 
@@ -98,23 +102,25 @@ final class MiuixGlassHook {
         backgroundRef = null;
         vendorGpuBlurLoggedFor = null;
         compatBackgroundBlurLoggedFor = null;
+        transparentMaterialOwner = null;
+        transparentMaterialBody = null;
+        transparentMaterialRadius = Float.NaN;
+        materialBodyLoggedFor = null;
 
         // The vendor View keeps outline/MiShadow/foreground ownership, but its compositor blur
         // must stay disabled because SurfaceFlinger would otherwise post-process the whole Dock.
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
 
         float nativeRadius = readRadius(dockBg);
-        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(
-                dockBg, config.dock, nativeRadius);
+        suppressVendorMaterialBody(dockBg, nativeRadius);
         int dockW = readDimension(dockBg, "mWidth", true);
         int dockH = readDimension(dockBg, "mHeight", false);
-        MainHook.log(TAG + " in-place material nativeRadius=" + nativeRadius
-                + " glassRadius=" + glassRadius
+        MainHook.log(TAG + " in-place material nativeOpticsRadius=" + nativeRadius
                 + " dock size=" + dockW + "x" + dockH);
 
         DockLiquidGlassView glass = LiquidGlassFactory.create(
                 dockBg, workspace, config.glass, config.dock,
-                config.dock.squircle, config.dock.squircleCp);
+                false, SQUIRCLE_CP);
         glass.setId(View.generateViewId());
         glass.setFullscreenCapture(true);
         glass.setCaptureScale(config.glass.captureScale);
@@ -126,8 +132,8 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(dockBg.getContext());
         host.setId(View.generateViewId());
         host.setLayers(glass);
-        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);
-        host.reloadOpticsOnly(config.dock, config.glass);
+        host.setGeometry(nativeRadius, false, SQUIRCLE_CP);
+        host.reloadOpticsPreservingGeometry(config.glass);
 
         FrameLayout.LayoutParams hostLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -154,7 +160,10 @@ final class MiuixGlassHook {
         if (dockBg == null || dockBg != backgroundRef) return;
         DockLiquidGlassHostView host = hostRef;
         if (host == null || host.getParent() != dockBg) return;
-        if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
+        if (isNativeVisualOwner(dockBg)) {
+            suppressVendorGpuBlur(dockBg);
+            suppressVendorMaterialBody(dockBg, readRadius(dockBg));
+        }
         // MATCH_PARENT follows the authoritative vendor material geometry automatically.
         host.bringToFront();
         host.requestLayout();
@@ -170,10 +179,9 @@ final class MiuixGlassHook {
         if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
 
         float nativeRadius = readRadius(dockBg);
-        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(
-                dockBg, config.dock, nativeRadius);
-        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);
-        host.reloadOpticsOnly(config.dock, config.glass);
+        suppressVendorMaterialBody(dockBg, nativeRadius);
+        host.setGeometry(nativeRadius, false, SQUIRCLE_CP);
+        host.reloadOpticsPreservingGeometry(config.glass);
         DockStrokeRenderer.configureReplacingForeground(
                 dockBg, config.dock, nativeRadius);
         host.bringToFront();
@@ -220,7 +228,10 @@ final class MiuixGlassHook {
         if (observer == null || !observer.isAlive()) return;
 
         ViewTreeObserver.OnPreDrawListener listener = () -> {
-            if (backgroundRef == dockBg) suppressVendorGpuBlur(dockBg);
+            if (backgroundRef == dockBg) {
+                suppressVendorGpuBlur(dockBg);
+                suppressVendorMaterialBody(dockBg, readRadius(dockBg));
+            }
             return true;
         };
         observer.addOnPreDrawListener(listener);
@@ -228,7 +239,10 @@ final class MiuixGlassHook {
         vendorBlurSuppressor = listener;
 
         dockBg.post(() -> {
-            if (backgroundRef == dockBg) suppressVendorGpuBlur(dockBg);
+            if (backgroundRef == dockBg) {
+                suppressVendorGpuBlur(dockBg);
+                suppressVendorMaterialBody(dockBg, readRadius(dockBg));
+            }
         });
     }
 
@@ -241,6 +255,35 @@ final class MiuixGlassHook {
         try {
             if (observer.isAlive()) observer.removeOnPreDrawListener(listener);
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Keep the vendor View itself alive for layout, outline and MiShadow, but remove the
+     * opaque/material body that otherwise creates a second visible Dock edge around Prismal.
+     * The vendor's private radius state remains untouched and continues to drive optics.
+     */
+    private static void suppressVendorMaterialBody(View dockBg, float nativeRadius) {
+        if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
+        float radius = Math.max(0f, nativeRadius);
+        if (transparentMaterialOwner != dockBg || transparentMaterialBody == null) {
+            transparentMaterialOwner = dockBg;
+            transparentMaterialBody = new GradientDrawable();
+            transparentMaterialBody.setShape(GradientDrawable.RECTANGLE);
+            transparentMaterialBody.setColor(android.graphics.Color.TRANSPARENT);
+            transparentMaterialRadius = Float.NaN;
+        }
+        if (Float.compare(transparentMaterialRadius, radius) != 0) {
+            transparentMaterialRadius = radius;
+            transparentMaterialBody.setCornerRadius(radius);
+        }
+        if (dockBg.getBackground() != transparentMaterialBody) {
+            dockBg.setBackground(transparentMaterialBody);
+        }
+        if (materialBodyLoggedFor != dockBg) {
+            materialBodyLoggedFor = dockBg;
+            MainHook.log(TAG + " vendor material body transparent; native optics radius="
+                    + radius + " class=" + dockBg.getClass().getSimpleName());
+        }
     }
 
     private static int readDimension(View dockBg, String fieldName, boolean width) {
@@ -260,6 +303,17 @@ final class MiuixGlassHook {
     }
 
     private static float readRadius(View dockBg) {
+        if (dockBg != null && COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) {
+            try {
+                Field field = findField(dockBg.getClass(), "mCornerRadius");
+                field.setAccessible(true);
+                Object value = field.get(dockBg);
+                if (value instanceof Number) {
+                    return Math.max(0f, ((Number) value).floatValue());
+                }
+            } catch (Throwable ignored) {}
+        }
+
         try {
             Field field = findField(dockBg.getClass(), "mBackground");
             field.setAccessible(true);

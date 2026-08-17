@@ -196,12 +196,17 @@ final class DockLiquidGlassHostView extends FrameLayout {
         setGeometry(radius, squircle, squircleCp);
     }
 
-    void reloadOpticsOnly(LiquidDockConfig.Dock dock, LiquidDockConfig.Glass glass) {
-        setGeometry(radius, dock.squircle, dock.squircleCp);
+    /** Refresh optical parameters without changing the geometry chosen by the owner. */
+    void reloadOpticsPreservingGeometry(LiquidDockConfig.Glass glass) {
         setHighlight(glass.highlightAlpha, glass.highlightWidth);
         setHighlightParams(glass.normalStrength, glass.dome, glass.specularSharp,
                 glass.specularStrength, glass.rimLight, glass.caustics,
                 glass.edgeBand, glass.highlightAlpha);
+    }
+
+    void reloadOpticsOnly(LiquidDockConfig.Dock dock, LiquidDockConfig.Glass glass) {
+        setGeometry(radius, dock.squircle, dock.squircleCp);
+        reloadOpticsPreservingGeometry(glass);
     }
 
     void reloadOverlay(LiquidDockConfig.Dock dock, LiquidDockConfig.Glass glass) {
