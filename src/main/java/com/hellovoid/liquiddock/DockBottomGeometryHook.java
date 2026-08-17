@@ -1,20 +1,22 @@
 package com.hellovoid.liquiddock;
 
 import android.view.View;
+import android.view.ViewParent;
 
 import java.lang.reflect.Method;
+import java.util.Locale;
 
 import io.github.libxposed.api.XposedInterface;
 
 /**
- * Final owner for the ordinary Dock's vertical offset.
+ * Final owner for the ordinary Floating Dock's vertical offset.
  *
- * Historical LiquidDock versions added the custom offset inside
- * DeviceConfig.getHotSeatsMarginBottom(). That couples our feature to whichever vendor branch
- * happens to consume that getter (including Mingou/Laptop variants). This hook first neutralizes
- * that legacy compatibility delta when the getter exists, then applies the requested displacement
- * to the actual HotSeats View after layout. The visible Y therefore no longer depends on Mingou,
- * DeviceConfig margin routing, or whether the launcher used margin vs translation internally.
+ * Historical LiquidDock versions added the custom delta inside
+ * DeviceConfig.getHotSeatsMarginBottom(). That getter is only one vendor routing path and
+ * its base value itself contains Mingou/Laptop branches. Keep a compatibility neutralizer
+ * for already-installed legacy interceptors, but apply the actual feature to the visible
+ * HotSeats View after layout. The ordinary Dock therefore no longer depends on Mingou being
+ * installed or on LauncherModeController reporting a particular transient state.
  */
 final class DockBottomGeometryHook {
     private static final String HOT_SEATS = "com.miui.home.launcher.hotseats.HotSeats";
@@ -36,10 +38,10 @@ final class DockBottomGeometryHook {
     }
 
     /**
-     * MainHook or the 307 compatibility path may still have installed the historical
-     * getHotSeatsMarginBottom()+offset interceptor before this owner runs. Highest priority wraps
-     * that interceptor, so subtracting exactly our configured delta restores the vendor result.
-     * This is optional: if the vendor getter disappears, final visible-Y ownership still works.
+     * MainHook or the 307 compatibility path can still contain the historical
+     * getHotSeatsMarginBottom()+offset interceptor. Highest priority wraps that interceptor;
+     * subtracting exactly our configured delta restores the vendor getter result. This is
+     * compatibility-only and is not the geometry owner.
      */
     private static void neutralizeLegacyMarginDelta(ClassLoader classLoader, int bottomOffsetPx) {
         try {
@@ -50,6 +52,8 @@ final class DockBottomGeometryHook {
                     .setPriority(XposedInterface.PRIORITY_HIGHEST)
                     .intercept(chain -> {
                         Object result = chain.proceed();
+                        // The historical hooks themselves skip while MainHook thinks the
+                        // workstation is active, so only neutralize when they could have added.
                         if (!(result instanceof Integer) || MainHook.isWorkstationMode()) {
                             return result;
                         }
@@ -71,11 +75,16 @@ final class DockBottomGeometryHook {
                     .setPriority(XposedInterface.PRIORITY_HIGHEST)
                     .intercept(chain -> {
                         Object result = chain.proceed();
-                        if (MainHook.isWorkstationMode()) return result;
                         Object owner = chain.getThisObject();
                         if (owner instanceof View) {
-                            // Positive historical bottom margin moved the Dock upward.
-                            ((View) owner).offsetTopAndBottom(-bottomOffsetPx);
+                            View view = (View) owner;
+                            // Do not trust the global Mingou/Laptop flag here: uninstalling the
+                            // companion launcher can leave that vendor state on a different path
+                            // from the actual visible hierarchy. Exclude only a real laptop Dock.
+                            if (!isLaptopDockHierarchy(view)) {
+                                // Positive historical bottom margin moved the Dock upward.
+                                view.offsetTopAndBottom(-bottomOffsetPx);
+                            }
                         }
                         return result;
                     });
@@ -84,5 +93,20 @@ final class DockBottomGeometryHook {
         } catch (Throwable error) {
             MainHook.log("[DC] final Dock bottom geometry owner unavailable: " + error);
         }
+    }
+
+    static boolean isLaptopDockHierarchy(View view) {
+        ViewParent parent = view == null ? null : view.getParent();
+        int depth = 0;
+        while (parent != null && depth++ < 8) {
+            String name = parent.getClass().getName().toLowerCase(Locale.ROOT);
+            if (name.contains(".laptop.")
+                    || name.contains("dockcontainerview")
+                    || name.contains("laptopdock")) {
+                return true;
+            }
+            parent = parent.getParent();
+        }
+        return false;
     }
 }
