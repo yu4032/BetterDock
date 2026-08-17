@@ -1,10 +1,8 @@
 package com.hellovoid.liquiddock;
 
-/**
- * Resolves profile-sized Workspace counts after the stable 8x4 core has had a chance to
- * rewrite stock Launcher values. The 8x4 core intentionally remains untouched; this policy
- * is used only by the optional profile overlay.
- */
+import java.util.Locale;
+
+/** Resolves profile-sized Workspace counts without depending on rotation timing. */
 final class HomeGridCountPolicy {
     private HomeGridCountPolicy() {}
 
@@ -12,20 +10,28 @@ final class HomeGridCountPolicy {
                               boolean ignoredXAxis, int current) {
         if (profile != HomeGridProfile.GRID_10X6) return current;
 
-        /*
-         * Do not consult Configuration here. During a physical rotation HyperOS can publish
-         * the new Configuration before GridConfig/CellLayout has left the previous-orientation
-         * intermediate. The device-verified 8x4 core gives us a stronger source of truth:
-         *
-         *   stock/legacy short axis 4 -> target short axis 6
-         *   stable-core long axis    8 -> target long axis 10
-         *
-         * Already-resolved 6/10 values are idempotent. This makes 8x4 -> 10x6 and
-         * 4x8 -> 6x10 independent of whether Configuration is early or late.
-         */
+        // Values emitted by the device-verified 8x4 compatibility layer are unambiguous.
         if (current == 4) return 6;
         if (current == 8) return 10;
         if (current == 6 || current == 10) return current;
         return current;
+    }
+
+    /**
+     * GridConfig has a stable semantic owner name (land_grid / vertical_grid). Use that
+     * instead of global Configuration, which can lead or lag the GridConfig being applied
+     * during a physical rotation.
+     */
+    static int profileRewriteForGridName(HomeGridProfile profile, String gridName,
+                                         boolean xAxis, int current) {
+        if (profile != HomeGridProfile.GRID_10X6) return current;
+        String name = gridName == null ? "" : gridName.toLowerCase(Locale.ROOT);
+        if (name.contains("vertical_grid") || name.contains("portrait")) {
+            return xAxis ? 6 : 10;
+        }
+        if (name.contains("land_grid") || name.contains("landscape")) {
+            return xAxis ? 10 : 6;
+        }
+        return profileRewrite(profile, false, xAxis, current);
     }
 }
