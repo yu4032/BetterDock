@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import android.view.SurfaceControl;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 
 import java.lang.ref.WeakReference;
@@ -177,7 +178,7 @@ final class Miuix307CaptureOwnershipHook {
         }
     }
 
-    /** Resolve only the separate workstation DockContainerView WindowManager root. */
+    /** Resolve only the separate workstation Laptop overlay / DockContainerView window. */
     private static WorkstationDockTarget resolveWorkstationDockTarget() {
         try {
             Class<?> globalClass = Class.forName("android.view.WindowManagerGlobal");
@@ -194,26 +195,34 @@ final class Miuix307CaptureOwnershipHook {
                     Object attrsValue = HookUtil.getField(root, "mWindowAttributes");
                     if (!(attrsValue instanceof WindowManager.LayoutParams)) continue;
                     WindowManager.LayoutParams lp = (WindowManager.LayoutParams) attrsValue;
-
-                    // The normal floating Dock is a different window and must never satisfy the
-                    // workstation resolver, even when both windows coexist during a transition.
-                    if (lp.type == 2997) continue;
                     CharSequence title = lp.getTitle();
+                    boolean workstationTitle = isWorkstationWindowTitle(title);
+
+                    // The device-proven workstation window is titled "Laptop overlay". Accept
+                    // that identity before applying the generic type-2997 rejection: HyperOS is
+                    // free to reuse private window types across releases. The ordinary Floating
+                    // Dock remains explicitly forbidden by title and, absent the workstation
+                    // identity, by type.
                     if (title != null && "Floating Dock".contentEquals(title)) continue;
+                    if (!workstationTitle && lp.type == 2997) continue;
 
                     Object rootViewValue = HookUtil.getField(root, "mView");
                     if (!(rootViewValue instanceof View)) continue;
                     View rootView = (View) rootViewValue;
-                    if (!rootView.getClass().getName().contains("DockContainerView")) continue;
+                    boolean dockTree = containsDockContainerView(rootView);
+                    if (!workstationTitle && !dockTree) continue;
 
                     SurfaceControl surface = readRootSurfaceControl(root);
                     if (!isValidSurface(surface)) continue;
                     String layerName = readSurfaceLayerName(surface);
-                    if (layerName == null || layerName.isEmpty()) continue;
+                    if ((layerName == null || layerName.isEmpty()) && title != null) {
+                        layerName = title.toString();
+                    }
 
                     MainHook.log(TAG + " workstation Dock target type=" + lp.type
                             + " title=" + title
                             + " root=" + rootView.getClass().getName()
+                            + " dockTree=" + dockTree
                             + " layer=" + layerName);
                     return new WorkstationDockTarget(surface, layerName);
                 } catch (Throwable ignored) {
@@ -223,6 +232,21 @@ final class Miuix307CaptureOwnershipHook {
             MainHook.log(TAG + " workstation Dock resolver failed: " + error);
         }
         return null;
+    }
+
+    private static boolean isWorkstationWindowTitle(CharSequence title) {
+        return title != null && "Laptop overlay".contentEquals(title);
+    }
+
+    private static boolean containsDockContainerView(View view) {
+        if (view == null) return false;
+        if (view.getClass().getName().contains("DockContainerView")) return true;
+        if (!(view instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            if (containsDockContainerView(group.getChildAt(i))) return true;
+        }
+        return false;
     }
 
     private static SurfaceControl readRootSurfaceControl(Object root) {
