@@ -18,7 +18,7 @@
     <string name="category_about">关于</string>
     <string name="enable_liquiddock">启用 LiquidDock</string>
     <string name="enable_liquiddock_summary">关闭后停止主屏幕布局、Dock、分隔线、液态玻璃、描边和阴影的全部 Hook</string>
-    <string name="home_grid_summary">8×4 / 4×8、横竖屏边距与指示器</string>
+    <string name="home_grid_summary">可选 8×4 / 4×8 与 10×6 / 6×10、横竖屏距离与指示器</string>
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
     <string name="home_divider_summary">独立控制分隔线宽度、高度、位置、颜色与透明度</string>
     <string name="home_workstation_title">工作台</string>
@@ -35,7 +35,10 @@
     <string name="category_landscape">横屏</string>
     <string name="category_portrait">竖屏</string>
     <string name="enable_grid_8x4">启用 8×4 / 4×8 网格</string>
-    <string name="enable_grid_8x4_summary">关闭时完全使用 MIUI 原生布局；下方全部参数仅在开启后生效</string>
+    <string name="enable_grid_8x4_summary">旧版 8×4 配置兼容项</string>
+    <string name="enable_extended_grid">可选扩展布局</string>
+    <string name="enable_extended_grid_summary">关闭时完全使用 MIUI 原生布局；开启后从下方列表选择扩展规格</string>
+    <string name="extended_grid_profile">扩展布局规格</string>
     <string name="enable_widget_adaptation">小组件自适应</string>
     <string name="enable_widget_adaptation_summary">按自定义网格重新计算 1×1、2×1、2×2、4×2 小组件尺寸与位置；默认关闭，重启桌面生效</string>
     <string name="dock_customization">自定义 Dock 几何与外观</string>
