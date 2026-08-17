@@ -2188,10 +2188,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         updateDesiredScene();
         final CaptureScene requestScene = sceneState.desired();
         final long requestSceneRevision = sceneState.revision();
-        final boolean liveHomeBehindFreeform = useFullscreen
+        final boolean visibleFreeform = useFullscreen
                 && !workstationMode
-                && requestScene == CaptureScene.HOME
                 && freeformLayerResolver.hasVisibleFreeformTasks();
+        final boolean liveHomeBehindFreeform = visibleFreeform
+                && requestScene == CaptureScene.HOME;
         final android.view.SurfaceControl localCaptureSurface = useFullscreen
                 ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
         CaptureSourcePolicy.Source selectedSource;
@@ -2200,6 +2201,11 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         } else if (workstationMode) {
             selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
                     requestScene, localCaptureSurface != null);
+        } else if (requestScene == CaptureScene.APP && visibleFreeform) {
+            // A visible freeform task is wallpaper-owned for the floating Dock. Decide this
+            // before mode-1 submission so the app/freeform composition is never sampled even
+            // for the short interval before the final FreeformCaptureLeashHook race guard.
+            selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
         } else {
             selectedSource = CaptureSourcePolicy.sourceFor(
                     requestScene, localCaptureSurface != null, isRecentsVisible(),
