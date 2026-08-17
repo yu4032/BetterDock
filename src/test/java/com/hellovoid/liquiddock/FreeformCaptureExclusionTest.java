@@ -36,6 +36,22 @@ public class FreeformCaptureExclusionTest {
                 CaptureSourcePolicy.sourceFor(CaptureScene.APP, false, false));
     }
 
+    @Test public void unresolvedFreeformLeashDoesNotDowngradeAppMode1ToWallpaper()
+            throws Exception {
+        String gate = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java"));
+        int unresolvedStart = gate.indexOf("if (!safe || !allValid(remote))");
+        assertTrue("missing unresolved-freeform branch", unresolvedStart >= 0);
+        int resolvedElse = gate.indexOf("} else {", unresolvedStart);
+        assertTrue("missing resolved-freeform branch", resolvedElse > unresolvedStart);
+        String unresolvedBranch = gate.substring(unresolvedStart, resolvedElse);
+
+        assertTrue("APP mode-1 must stay live when the freeform leash is temporarily unavailable",
+                unresolvedBranch.contains("PASS_THROUGH_UNRESOLVED_FREEFORM"));
+        assertFalse("an unresolved freeform leash must not force mode-1 to wallpaper",
+                unresolvedBranch.contains("args[5] = 2"));
+    }
+
     @Test public void temporaryDockPreflightHasNoTaskStateAuthority() throws Exception {
         String dock = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
@@ -53,7 +69,7 @@ public class FreeformCaptureExclusionTest {
         assertFalse(resolver.contains("displayId(task)"));
         assertTrue("Actual freeform exclusion must merge SurfaceControl task leashes",
                 gate.contains("resolution.borrowedRemoteLeashes()"));
-        assertTrue("Unsafe snapshot resolution must keep wallpaper fallback",
+        assertTrue("Unexpected gate exceptions must retain a wallpaper fallback",
                 gate.contains("args[5] = 2"));
     }
 
