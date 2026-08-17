@@ -32,14 +32,19 @@ public class FreeformUnknownSnapshotPolicyTest {
         String gate = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java");
         assertTrue(gate.contains("if (!resolution.isKnown())"));
-        assertTrue(gate.contains("FreeformSnapshotDeferredException"));
+        assertTrue(gate.contains("Miuix307FreeformCaptureDeferral.defer"));
         assertTrue(gate.contains("DEFER_UNKNOWN_SNAPSHOT"));
 
-        String dock = source(
-                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
-        assertTrue(dock.contains("error instanceof FreeformSnapshotDeferredException"));
-        assertTrue(dock.contains("freeform-snapshot-retry"));
-        assertTrue(dock.contains("keeping current APP backdrop"));
+        String deferral = source(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307FreeformCaptureDeferral.java");
+        assertTrue(deferral.contains("retireCaptureAttempt"));
+        assertTrue(deferral.contains("sourceDirty"));
+        assertTrue(deferral.contains("freeform-snapshot-retry"));
+        assertTrue(deferral.contains("keeping current APP backdrop"));
+
+        String dragBridge = source(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307DragCaptureHook.java");
+        assertTrue(dragBridge.contains("static DockLiquidGlassView currentGlass()"));
     }
 
     @Test public void explicitUnsafeVisibleSnapshotStillHasWallpaperFailClosedPath()
