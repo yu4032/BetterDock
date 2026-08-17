@@ -154,11 +154,11 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_GREEN, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_BLUE, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_ALPHA, 255, 0, 255);
-        assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, 1, 1, 10);
+        assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, 1, 0, 10);
         assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET, 3, 0, 16);
         assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT, 58, 40, 80);
-        assertComposeIntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, 1, 1, 6);
-        assertComposeIntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, 1, 1, 10);
+        assertComposeIntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, 1, 0, 6);
+        assertComposeIntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, 1, 0, 10);
     }
 
     @Test
