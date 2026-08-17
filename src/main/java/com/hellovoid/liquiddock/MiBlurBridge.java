@@ -21,8 +21,6 @@ final class MiBlurBridge {
     private static final Method SET_MI_BACKGROUND_BLUR_RADIUS;
     private static final boolean PASS_BLUR_AVAILABLE;
 
-    static volatile boolean liquidGlassActive;
-
     static {
         Method selfBlur = null;
         Method textureScale = null;
@@ -138,20 +136,17 @@ final class MiBlurBridge {
         } catch (Throwable ignored) {}
     }
 
-    /** Symmetric cleanup: clear both legacy self blur and MiuiX pass-window blur. */
+    /** Legacy self/content cleanup. 307 pass-window cleanup is explicit at its adapter boundary. */
     static void clearContentBlur(View view) {
-        if (view == null) return;
-        if (LEGACY_AVAILABLE) {
-            try {
-                SET_MI_SELF_BLUR.invoke(view, 0, null);
-            } catch (Throwable ignored) {}
-            try {
-                SET_MI_SELF_BLUR_ENHANCE_FLAG.invoke(view, 0, SELF_BLUR_ENHANCE_FLAG);
-            } catch (Throwable ignored) {}
-            try {
-                SET_PASS_TEXTURE_SCALE.invoke(view, 1f);
-            } catch (Throwable ignored) {}
-        }
-        clearPassWindowBlur(view);
+        if (!LEGACY_AVAILABLE || view == null) return;
+        try {
+            SET_MI_SELF_BLUR.invoke(view, 0, null);
+        } catch (Throwable ignored) {}
+        try {
+            SET_MI_SELF_BLUR_ENHANCE_FLAG.invoke(view, 0, SELF_BLUR_ENHANCE_FLAG);
+        } catch (Throwable ignored) {}
+        try {
+            SET_PASS_TEXTURE_SCALE.invoke(view, 1f);
+        } catch (Throwable ignored) {}
     }
 }
