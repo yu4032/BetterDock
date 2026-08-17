@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.preference.PreferenceManager
 import com.hellovoid.liquiddock.config.ConfigKey
 import com.hellovoid.liquiddock.config.ConfigSchema
+import com.hellovoid.liquiddock.config.GridProfileConfig
 import com.hellovoid.liquiddock.config.PresetManager
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Button
@@ -363,26 +364,44 @@ private fun HomePage(
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var grid8x4 by remember {
-        mutableStateOf(prefs.getBoolean(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault()))
+    var extendedGrid by remember {
+        mutableStateOf(prefs.getBoolean(
+            GridProfileConfig.ENABLED_KEY, GridProfileConfig.DEFAULT_ENABLED))
     }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.page_grid), stringResource(R.string.grid_header_summary)) }
         item { SmallTitle(stringResource(R.string.category_grid)) }
         item {
             SettingsCard {
-                BooleanSetting(prefs, ConfigSchema.Grid.ENABLED, stringResource(R.string.enable_grid_8x4),
-                    stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
+                BooleanKeySetting(
+                    prefs,
+                    GridProfileConfig.ENABLED_KEY,
+                    stringResource(R.string.enable_extended_grid),
+                    stringResource(R.string.enable_extended_grid_summary),
+                    masterEnabled,
+                    GridProfileConfig.DEFAULT_ENABLED,
+                ) { extendedGrid = it }
+                StringListSetting(
+                    prefs,
+                    GridProfileConfig.PROFILE_KEY,
+                    stringResource(R.string.extended_grid_profile),
+                    GridProfileConfig.DEFAULT_PROFILE,
+                    listOf(
+                        "8×4 / 4×8" to "8x4",
+                        "10×6 / 6×10" to "10x6",
+                    ),
+                    masterEnabled && extendedGrid,
+                )
                 BooleanSetting(prefs, ConfigSchema.Grid.WIDGET_ADAPTATION, stringResource(R.string.enable_widget_adaptation),
-                    stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
+                    stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && extendedGrid)
             }
         }
         item { SmallTitle(stringResource(R.string.category_landscape)) }
         item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }
-            .forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+            .forEach { IntSetting(prefs, it, masterEnabled && extendedGrid) } } }
         item { SmallTitle(stringResource(R.string.category_portrait)) }
         item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_portrait") || it.key == "indicator_portrait_y" }
-            .forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+            .forEach { IntSetting(prefs, it, masterEnabled && extendedGrid) } } }
     }
 }
 
@@ -610,6 +629,21 @@ private fun BooleanSetting(
 }
 
 @Composable
+private fun BooleanKeySetting(
+    prefs: SharedPreferences, key: String, title: String, summary: String? = null,
+    enabled: Boolean = true, default: Boolean = false, onChanged: (Boolean) -> Unit = {},
+) {
+    var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
+    SwitchPreference(
+        checked = value,
+        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
+        title = title,
+        summary = summary,
+        enabled = enabled,
+    )
+}
+
+@Composable
 private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride: Boolean? = null) {
     val decimalDp = spec.unit == "dp"
     val initial = if (decimalDp && prefs.contains("${spec.key}_tenths"))
@@ -688,6 +722,35 @@ private fun StringDropdown(
             val next = options[(index + 1) % options.size].second
             value = next
             prefs.edit().putString(key, next).apply()
+        },
+    )
+}
+
+@Composable
+private fun StringListSetting(
+    prefs: SharedPreferences, key: String, title: String, default: String,
+    options: List<Pair<String, String>>, enabled: Boolean = true,
+) {
+    var value by remember(key) { mutableStateOf(prefs.getString(key, default) ?: default) }
+    val index = options.indexOfFirst { it.second == value }.let { if (it >= 0) it else 0 }
+    val context = LocalContext.current
+    ArrowPreference(
+        title = title,
+        summary = options[index].first,
+        enabled = enabled,
+        onClick = {
+            if (!enabled) return@ArrowPreference
+            val labels = options.map { it.first }.toTypedArray()
+            android.app.AlertDialog.Builder(context)
+                .setTitle(title)
+                .setSingleChoiceItems(labels, index) { dialog, which ->
+                    val next = options[which].second
+                    value = next
+                    prefs.edit().putString(key, next).apply()
+                    dialog.dismiss()
+                }
+                .setNegativeButton("取消", null)
+                .show()
         },
     )
 }
