@@ -50,12 +50,9 @@ public class Miuix307GlassContractTest {
         String haptic = read("RecentsHapticHook.java");
         String pipeline = read("Miuix307MaterialPipeline.java");
 
-        // MainHook exits immediately when the specialized 307 pipeline is installed, before
-        // reaching installLiquidGlassCaptureHooks in either legacy path.
         assertTrue(mainHook.contains("MiuiX 307 material active; legacy liquid capture bypassed"));
         assertTrue(mainHook.indexOf("Miuix307MaterialPipeline.install")
                 < mainHook.indexOf("installLiquidGlassCaptureHooks(classLoader)"));
-        // RecentsHapticHook is installed earlier, so its callback must gate itself at runtime.
         assertTrue(haptic.contains("!Miuix307MaterialPipeline.isInstalled()"));
         assertFalse(pipeline.contains("installLiquidGlassCaptureHooks"));
     }
@@ -73,14 +70,8 @@ public class Miuix307GlassContractTest {
     public void appBackdropUsesOwnershipAndKeepsNativeMiuixVisible() throws IOException {
         String source = read("MiuixGlassHook.java");
 
-        // APP/HOME ownership is required so DockLiquidGlassView selects FULL_DISPLAY for APP
-        // instead of remaining UNKNOWN -> WALLPAPER forever on the specialized 307 path.
         assertTrue(source.contains("HomeOwnershipRuntime.bind(glass, glass.getContext())"));
-        // 307 glass must always be allowed to sample the composed display over apps, even if a
-        // stale historical preference disabled the legacy fullscreen-capture toggle.
         assertTrue(source.contains("glass.setFullscreenCapture(true)"));
-        // DockLiquidGlassView normally hides geometrySource after its first frame. On 307 that
-        // source is the native MiuiX pass-window blur background and must remain visible.
         assertTrue(source.contains("installNativeBackgroundPreserver"));
         assertTrue(source.contains("nativeBackgroundHiddenByGlass"));
         assertTrue(source.contains("dockBg.setAlpha(1f)"));
@@ -91,9 +82,6 @@ public class Miuix307GlassContractTest {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String hook = read("MiuixGlassHook.java");
 
-        // HyperOS may replace the MiuiX background during APP -> HOME without rebuilding the
-        // whole Launcher. Every authoritative geometry callback must therefore ensure that the
-        // callback instance owns a Prismal host before merely synchronizing its geometry.
         assertTrue(hook.contains("isBoundTo"));
         assertTrue(pipeline.contains("ensureGlassBound"));
         assertTrue(pipeline.contains("MiuiX 307 background instance changed"));
@@ -107,12 +95,11 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void detachedThemeHierarchySchedulesOneShotGlassRebind() throws IOException {
+    public void detachedThemeHierarchyWaitsForRealReattachBeforeGlassRebind() throws IOException {
         String pipeline = read("Miuix307MaterialPipeline.java");
 
-        // Theme/icon-pack changes can mutate only the HotSeats hierarchy. setupViews and geometry
-        // callbacks are not guaranteed after the injected host is detached, so retain the owner
-        // weakly and repair from the actual View detach boundary instead of polling theme state.
+        // Icon/theme changes rebuild HotSeats over multiple main-loop turns. A detached old
+        // background can still have a parent, so parent != null is not enough to declare repair.
         assertTrue("HotSeats owner must not be retained strongly",
                 pipeline.contains("WeakReference<Object> hotSeatsRef"));
         assertTrue("setupViews must refresh the weak HotSeats owner",
@@ -121,26 +108,23 @@ public class Miuix307GlassContractTest {
                 pipeline.contains("View.OnAttachStateChangeListener"));
         assertTrue("theme recovery must have a coalescing latch",
                 pipeline.contains("hierarchyRebindPosted"));
-        assertTrue("detach must schedule a one-shot hierarchy repair",
+        assertTrue("detach must schedule hierarchy repair",
                 pipeline.contains("scheduleHierarchyRebind"));
-        assertTrue("repair must be queued on the main thread without a delay",
-                pipeline.contains("MAIN_HANDLER.post("));
+        assertTrue("repair must reject a stale detached background",
+                pipeline.contains("currentBackground.isAttachedToWindow()"));
+
+        // If the first main-turn repair runs before the replacement hierarchy is attached, wait
+        // for a real layout event instead of giving up or polling with arbitrary delays.
+        assertTrue(pipeline.contains("ViewTreeObserver.OnGlobalLayoutListener"));
+        assertTrue(pipeline.contains("armHierarchyLayoutRecovery"));
+        assertTrue(pipeline.contains("removeOnGlobalLayoutListener"));
         assertFalse("theme recovery must not poll with delayed retries",
                 pipeline.contains("MAIN_HANDLER.postDelayed("));
 
-        // Re-resolve the current vendor background from HotSeats rather than reinstalling into
-        // a stale detached View, then reuse the one authoritative installer/binding path.
         assertTrue(pipeline.contains("resolveBackground(hotSeats)"));
         assertTrue(pipeline.contains("ensureGlassBound(currentBackground, config, classLoader)"));
-        assertTrue(pipeline.contains("Miuix307DragCaptureHook.bind(background)"));
-
-        // The host itself can be removed while the vendor background survives. Resolve the
-        // injected DockLiquidGlassHostView from the bound background parent and observe it too;
-        // no extra mutable glass API is needed in MiuixGlassHook.
         assertTrue(pipeline.contains("resolveBoundHost(background)"));
         assertTrue(pipeline.contains("instanceof DockLiquidGlassHostView"));
-
-        // Existing binding identity remains the no-op guard, preventing duplicate Prismal hosts.
         assertTrue(pipeline.contains("MiuixGlassHook.isBoundTo(background)"));
     }
 
@@ -148,15 +132,11 @@ public class Miuix307GlassContractTest {
     public void miuixUsesGuiCaptureTuningAndOnlyNativeBackdropBlur() throws IOException {
         String source = read("MiuixGlassHook.java");
 
-        // 307 refraction sampling follows the existing GUI values rather than a demo constant.
         assertTrue(source.contains("glass.setCaptureScale(config.glass.captureScale)"));
         assertTrue(source.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
         assertFalse(source.contains("glass.setCaptureScale(0.5f)"));
         assertFalse(source.contains("glass.setCapturePowerLimitFps(30)"));
 
-        // MiuiX owns blur. Prismal must remain a sharp optical/refraction/highlight overlay;
-        // otherwise HOME/RECENTS can acquire a second heavy shader/self-blur after a rebind or
-        // config reload.
         assertTrue(source.contains("enforcePrismalOpticalOnly"));
         assertTrue(source.contains("glass.setBlurMode(LiquidBlurMode.SHADER)"));
         assertTrue(source.contains("glass.setBlurRadiusPx(0)"));
@@ -167,9 +147,6 @@ public class Miuix307GlassContractTest {
         String bridge = read("MiBlurBridge.java");
         String hook = read("MiuixGlassHook.java");
 
-        // HyperOS 307 rewrites the same HotSeats background from radius 14 to 201 during
-        // GestureToHome. The 307 layer must be able to restore only the configured radius without
-        // replaying setPassWindowBlurEnabled/setMiViewBlurMode and disturbing the vendor material.
         assertTrue(bridge.contains("setPassWindowBlurRadius"));
         assertTrue(hook.contains("enforceNativeBlurRadius"));
         assertTrue(hook.contains("config.glass.blur"));
