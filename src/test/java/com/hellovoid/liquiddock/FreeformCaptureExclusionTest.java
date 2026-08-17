@@ -62,7 +62,7 @@ public class FreeformCaptureExclusionTest {
     @Test public void appVisibleFreeformIsWallpaperOwnedBeforeMode1Submission() throws Exception {
         String dock = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
-        int sourceStart = dock.indexOf("CaptureSourcePolicy.Source selectedSource");
+        int sourceStart = dock.indexOf("final boolean visibleFreeform");
         assertTrue("missing capture source selection", sourceStart >= 0);
         int capturingStart = dock.indexOf("capturing = true", sourceStart);
         assertTrue("missing capture submission boundary", capturingStart > sourceStart);
