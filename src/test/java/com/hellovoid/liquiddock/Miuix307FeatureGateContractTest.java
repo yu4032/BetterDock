@@ -28,7 +28,8 @@ public class Miuix307FeatureGateContractTest {
 
     @Test public void mainHookUsesOneExplicit307FeatureGate() throws Exception {
         String hook = javaSource("MainHook.java");
-        assertTrue(hook.contains("config.glass.enabled && config.glass.miuix307Pipeline"));
+        assertTrue(hook.contains("boolean liquidGlass = config.glass.enabled"));
+        assertTrue(hook.contains("liquidGlass && config.glass.miuix307Pipeline"));
         assertTrue(hook.contains("Miuix307Compatibility.install("));
         assertEquals(1, count(hook, "Miuix307Compatibility.install("));
     }
