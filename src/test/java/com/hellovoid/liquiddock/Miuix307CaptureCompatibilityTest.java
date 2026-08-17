@@ -10,24 +10,35 @@ import org.junit.Test;
 
 /** Contracts for capture protections that existed before the specialized MiuiX 307 return. */
 public class Miuix307CaptureCompatibilityTest {
+    private static Path path(String file) {
+        return Path.of("src/main/java/com/hellovoid/liquiddock/" + file);
+    }
+
     private static String read(String file) throws Exception {
-        return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + file));
+        return Files.readString(path(file));
     }
 
     @Test public void miuix307ReusesOriginalDragSurfaceExclusionWithoutLegacyHookBundle()
             throws Exception {
-        String main = read("MainHook.java");
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glass = read("MiuixGlassHook.java");
+        Path dragPath = path("Miuix307DragCaptureHook.java");
+        assertTrue("307 must have a narrow drag-only compatibility hook", Files.exists(dragPath));
+        String drag = Files.readString(dragPath);
 
-        // Keep the original proven DragController -> setDockDragging path. The 307 early return
-        // must install this narrow hook instead of the complete legacy capture lifecycle.
-        assertTrue(main.contains("static void installDockDragHooks(ClassLoader cl)"));
-        assertTrue(main.contains("MiuixGlassHook.currentGlass()"));
-        assertTrue(main.contains("setDockDragging(true, resolveDragSurfaceLayerName"));
-        assertTrue(main.contains("setDockDragging(false, null)"));
-        assertTrue(glass.contains("static DockLiquidGlassView currentGlass()"));
-        assertTrue(pipeline.contains("MainHook.installDockDragHooks(classLoader)"));
+        // Keep the original proven DragController -> drag Surface -> setDockDragging path.
+        assertTrue(drag.contains("com.miui.home.launcher.DragController"));
+        assertTrue(drag.contains("\"startDrag\""));
+        assertTrue(drag.contains("\"endDrag\""));
+        assertTrue(drag.contains("mDragObject"));
+        assertTrue(drag.contains("mDragViews"));
+        assertTrue(drag.contains("getSurfaceControl"));
+        assertTrue(drag.contains("setDockDragging(true"));
+        assertTrue(drag.contains("setDockDragging(false, null)"));
+        assertTrue(glass.contains("Miuix307DragCaptureHook.bind(glass)"));
+        assertTrue(pipeline.contains("Miuix307DragCaptureHook.install(classLoader)"));
+
+        // Never restore the complete legacy capture lifecycle just to regain drag exclusion.
         assertFalse(pipeline.contains("installLiquidGlassCaptureHooks"));
     }
 
