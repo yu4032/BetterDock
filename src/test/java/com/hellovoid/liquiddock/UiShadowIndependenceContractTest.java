@@ -19,11 +19,12 @@ public class UiShadowIndependenceContractTest {
     public void firstLevelWorkstationLabelDropsDockSuffix() throws Exception {
         String zh = read("src/main/res/values-zh-rCN/strings.xml");
         String en = read("src/main/res/values/strings.xml");
+        String ui = read("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
 
-        assertTrue(zh.contains("<string name=\"page_workstation\">工作台</string>"));
-        assertTrue(en.contains("<string name=\"page_workstation\">Workstation</string>"));
-        assertFalse(zh.contains("<string name=\"page_workstation\">工作台 Dock</string>"));
-        assertFalse(en.contains("<string name=\"page_workstation\">Workstation Dock</string>"));
+        assertTrue(zh.contains("<string name=\"home_workstation_title\">工作台</string>"));
+        assertTrue(en.contains("<string name=\"home_workstation_title\">Workstation</string>"));
+        assertTrue("only the first-level item should use the shorter title",
+                ui.contains("ArrowPreference(stringResource(R.string.home_workstation_title)"));
     }
 
     @Test
@@ -51,28 +52,27 @@ public class UiShadowIndependenceContractTest {
     }
 
     @Test
-    public void wholeDockShadowHooksInstallBeforeDockCustomizationEarlyReturn() throws Exception {
-        String main = read("src/main/java/com/hellovoid/liquiddock/MainHook.java");
-        int shadowInstall = main.indexOf("installDockShadowHooks(classLoader, config.dock)");
-        int dockCustomization = main.indexOf("boolean dockCustomization = config.dock.enabled;");
+    public void wholeDockShadowHasRuntimePathWhenDockCustomizationIsDisabled() throws Exception {
+        String entry = read("src/main/java/com/hellovoid/liquiddock/ModuleMain.java");
+        String shadow = read("src/main/java/com/hellovoid/liquiddock/DockShadowIndependenceHook.java");
 
-        assertTrue("shadow ownership must initialize before dock_customization is consulted",
-                shadowInstall >= 0 && dockCustomization > shadowInstall);
+        assertTrue("launcher entry must install independent shadow ownership",
+                entry.contains("DockShadowIndependenceHook.install(classLoader)"));
+        assertTrue("the compatibility hook is specifically active when Dock customization is off",
+                shadow.contains("if (config.dock.enabled) return;"));
+        assertTrue("global LiquidDock master must remain authoritative",
+                shadow.contains("if (!config.enabled) return;"));
     }
 
     @Test
     public void wholeDockShadowUsesOwnDpScaleAndStrokeRadiusBasis() throws Exception {
-        String main = read("src/main/java/com/hellovoid/liquiddock/MainHook.java");
-        int start = main.indexOf("private static void installDockShadowHooks");
-        int end = main.indexOf("private static DockLiquidGlassView installLiquidGlassLayer", start);
-        assertTrue(start >= 0 && end > start);
-        String shadowHooks = main.substring(start, end);
+        String shadow = read("src/main/java/com/hellovoid/liquiddock/DockShadowIndependenceHook.java");
 
         assertTrue("shadow radius/size/Y are dp settings and must always use density",
-                shadowHooks.contains("getDisplayMetrics().density"));
-        assertFalse("shadow settings must not inherit dock_dimensions_dp",
-                shadowHooks.contains("dimensionsDp ?"));
+                shadow.contains("float shadowScale = background.getResources().getDisplayMetrics().density;"));
         assertTrue("shadow contour must use the same configured/native radius basis as stroke",
-                shadowHooks.contains("DockStrokeRenderer.resolveConfiguredRadius("));
+                shadow.contains("DockStrokeRenderer.resolveConfiguredRadius("));
+        assertTrue("workstation must suppress the ordinary Dock shadow",
+                shadow.contains("MainHook.isWorkstationMode()"));
     }
 }
