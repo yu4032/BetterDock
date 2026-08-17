@@ -27,6 +27,8 @@ final class MiuixGlassHook {
     private static View backgroundRef;
     private static ViewTreeObserver nativeBackgroundObserver;
     private static ViewTreeObserver.OnPreDrawListener nativeBackgroundPreserver;
+    private static int nativeBlurRadiusPx = -1;
+    private static boolean nativeBlurRadiusFailureLogged;
 
     private MiuixGlassHook() {}
 
@@ -60,9 +62,12 @@ final class MiuixGlassHook {
         hostRef = null;
         glassRef = null;
         backgroundRef = null;
+        nativeBlurRadiusPx = -1;
+        nativeBlurRadiusFailureLogged = false;
 
         float density = dockBg.getResources().getDisplayMetrics().density;
         int blurPx = Math.round(config.glass.blur * density);
+        nativeBlurRadiusPx = blurPx;
         boolean passOk = MiBlurBridge.applyPassWindowBlur(dockBg, blurPx);
         MainHook.log(TAG + " passWindowBlur radius=" + blurPx + " ok=" + passOk);
         if (!passOk) {
@@ -156,6 +161,10 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = hostRef;
         if (host == null || host.getParent() == null) return;
 
+        float density = dockBg.getResources().getDisplayMetrics().density;
+        nativeBlurRadiusPx = Math.round(config.glass.blur * density);
+        enforceNativeBlurRadius(dockBg);
+
         float radius = readRadius(dockBg);
         host.setVisibility(dockBg.getVisibility());
         host.setGeometry(radius, false, SQUIRCLE_CP);
@@ -174,6 +183,22 @@ final class MiuixGlassHook {
         if (glass == null) return;
         glass.setBlurMode(LiquidBlurMode.SHADER);
         glass.setBlurRadiusPx(0);
+    }
+
+    /**
+     * HyperOS 307 reapplies its own MaterialConfig on APP/HOME/RECENTS transitions and can
+     * overwrite the Dock radius (device log: 14 -> 201) without replacing the background View.
+     * Reassert only the user-configured radius; leave vendor blur mode/blend colors untouched.
+     */
+    private static void enforceNativeBlurRadius(View dockBg) {
+        if (dockBg == null || dockBg != backgroundRef || nativeBlurRadiusPx < 0) return;
+        boolean ok = MiBlurBridge.setPassWindowBlurRadius(dockBg, nativeBlurRadiusPx);
+        if (!ok && !nativeBlurRadiusFailureLogged) {
+            nativeBlurRadiusFailureLogged = true;
+            MainHook.log(TAG + " native blur radius clamp unavailable");
+        } else if (ok) {
+            nativeBlurRadiusFailureLogged = false;
+        }
     }
 
     /**
@@ -205,8 +230,10 @@ final class MiuixGlassHook {
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             if (backgroundRef != dockBg || glassRef != glass) return true;
             // DockLiquidGlassView can hot-reload the persisted legacy blur mode/radius at 1 Hz.
-            // Reassert the 307 contract after that reload but before this frame is drawn.
+            // Reassert the 307 optical contract and native radius after vendor state updates but
+            // before this frame reaches SurfaceFlinger.
             enforcePrismalOpticalOnly(glass);
+            enforceNativeBlurRadius(dockBg);
             try {
                 hiddenField.setBoolean(glass, false);
             } catch (Throwable ignored) {}
@@ -217,11 +244,13 @@ final class MiuixGlassHook {
         nativeBackgroundObserver = observer;
         nativeBackgroundPreserver = listener;
 
-        // A capture callback may complete between setupViews and the next pre-draw. Restore once
-        // on the main queue as well so the native material never remains hidden for a full frame.
+        // A capture/vendor material callback may complete between setupViews and the next
+        // pre-draw. Restore once on the main queue as well so the native material never remains
+        // hidden or keeps a vendor-overwritten blur radius for a full frame.
         dockBg.post(() -> {
             if (backgroundRef != dockBg || glassRef != glass) return;
             enforcePrismalOpticalOnly(glass);
+            enforceNativeBlurRadius(dockBg);
             try {
                 hiddenField.setBoolean(glass, false);
             } catch (Throwable ignored) {}
