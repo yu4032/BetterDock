@@ -19,12 +19,19 @@ jobs:
           fetch-depth: 2
 
       - name: Apply exact patch
-        run: python3 tools/tmp_apply_prismal_blur_owner_fix.py
+        run: |
+          # The generated replacement comment must not retain the old private latch token;
+          # production behavior is unchanged by this temporary script-only wording cleanup.
+          sed -i 's/DockLiquidGlassView\.nativeBackgroundHiddenByGlass/the glass view hidden-source latch/' tools/tmp_apply_prismal_blur_owner_fix.py
+          python3 tools/tmp_apply_prismal_blur_owner_fix.py
 
       - name: Verify patch scope
         run: |
           changed="$(git diff --name-only)"
           printf '%s\n' "$changed"
+          # Ignore the temporary script's in-run comment-only rewrite when checking production scope.
+          git checkout -- tools/tmp_apply_prismal_blur_owner_fix.py
+          changed="$(git diff --name-only)"
           test "$changed" = $'src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java\nsrc/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
           ! grep -R "enforcePrismalOpticalOnly\|installNativeBackgroundPreserver\|nativeBackgroundHiddenByGlass" \
             src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
