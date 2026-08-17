@@ -289,6 +289,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
     // freezes into the captured background.
     private volatile boolean dockDragging = false;
+    // MIUI system Dock drag uses WMS/Shell-owned startDragAndDrop surfaces. Unlike ordinary
+    // Launcher DragView motion, those surfaces cannot be excluded using a Launcher-owned
+    // SurfaceControl, so keep the last clean backdrop installed until the system drag ends.
+    private volatile boolean systemDockDragActive = false;
     private volatile String dragLayerName = null;
     private volatile android.view.SurfaceControl dragSurfaceControl = null;
     private final CaptureCadence captureCadence;
@@ -1348,6 +1352,29 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
                 && rawY <= tmpDockLocation[1] + h + margin;
     }
 
+    /** Freeze capture while MIUI's system DragAndDrop owns the moving Dock icon. */
+    void setSystemDockDragActive(boolean active) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> setSystemDockDragActive(active));
+            return;
+        }
+        if (systemDockDragActive == active) return;
+        systemDockDragActive = active;
+        if (active) {
+            logI("Liquid capture frozen: system Dock drag");
+            mainHandler.removeCallbacks(cancelGrace);
+            cancelPendingCaptureWork();
+            invalidate();
+            return;
+        }
+        logI("Liquid capture resumed: system Dock drag ended");
+        resetCaptureCircuit("system-dock-drag-end");
+        beginObservationBurst();
+        observationValid = false;
+        lastCaptureStartNanos = 0L;
+        requestStateCapture("system-dock-drag-end");
+    }
+
     /** Dock icon drag state (MainHook hooks DragController.startDrag/endDrag).  While
      *  dragging, the glass keeps capturing continuously so the background follows the icon
      *  rearrangement; the drag surface layer is excluded from captures. */
@@ -1776,6 +1803,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // This gate must precede drag/recents exceptions: SystemUI is above both and capturing
         // while it is expanded only wastes GPU/binder work and risks sampling its animation.
         if (systemUiPanelExpanded) return false;
+        // The system Dock drag is rendered by WMS/Shell-owned surfaces created by
+        // startDragAndDrop(). Freeze the last clean frame before the ordinary dockDragging /
+        // Recents visibility exception below can keep sampling those surfaces.
+        if (systemDockDragActive) return false;
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 

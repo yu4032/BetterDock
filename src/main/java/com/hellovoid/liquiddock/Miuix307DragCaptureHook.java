@@ -5,6 +5,7 @@ import android.view.ViewGroup;
 import android.view.SurfaceControl;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.List;
@@ -40,11 +41,6 @@ final class Miuix307DragCaptureHook {
 
     static void bind(View background) {
         backgroundRef = new WeakReference<>(background);
-    }
-
-    /** Package-private read-only state for the mode-1 exclusion policy. */
-    static boolean isDragActive() {
-        return dragActive;
     }
 
     static void install(ClassLoader classLoader) {
@@ -83,10 +79,73 @@ final class Miuix307DragCaptureHook {
                         onEndDrag();
                         return result;
                     });
+            installSystemDockDragHooks(classLoader);
             MainHook.log(TAG + " drag-only capture hook installed startOverloads=" + startHooks);
         } catch (Throwable error) {
             MainHook.log(TAG + " drag-only capture hook unavailable: " + error);
         }
+    }
+
+    /**
+     * 307 Dock system drag is not the Launcher DragView surface. Decompiled
+     * HotSeatsListContent.startDragInDockForSystem() calls View.startDragAndDrop(), and the
+     * resulting mask/leash surfaces are owned by MIUI WMS/Shell. Freeze capture before that
+     * call can create those surfaces; IMiuiDragListener/onEnd and resetDraggingView are
+     * idempotent resume boundaries.
+     */
+    private static void installSystemDockDragHooks(ClassLoader classLoader) {
+        try {
+            Class<?> content = Class.forName(
+                    "com.miui.home.launcher.hotseats.HotSeatsListContent", false, classLoader);
+            HookUtil.hookMethod(content, "startDragInDockForSystem", new Class<?>[0], chain -> {
+                setSystemDockDragActive(true);
+                try {
+                    return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                } catch (Throwable error) {
+                    setSystemDockDragActive(false);
+                    throw error;
+                }
+            });
+            HookUtil.hookMethod(content, "resetDraggingView", new Class<?>[0], chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                setSystemDockDragActive(false);
+                return result;
+            });
+
+            Class<?> listenerInterface = Class.forName(
+                    "android.view.IMiuiDragListener", false, classLoader);
+            int listenerHooks = 0;
+            for (int i = 1; i <= 16; i++) {
+                try {
+                    Class<?> candidate = Class.forName(
+                            "com.miui.home.launcher.hotseats.HotSeatsListContent$" + i,
+                            false, classLoader);
+                    if (!listenerInterface.isAssignableFrom(candidate)) continue;
+                    HookUtil.hookMethod(candidate, "onStart", new Class<?>[0], chain -> {
+                        setSystemDockDragActive(true);
+                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    });
+                    HookUtil.hookMethod(candidate, "onEnd", new Class<?>[]{boolean.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        setSystemDockDragActive(false);
+                        return result;
+                    });
+                    listenerHooks++;
+                } catch (ClassNotFoundException ignored) {
+                }
+            }
+            MainHook.log(TAG + " system Dock drag freeze hooks installed listeners=" + listenerHooks);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " system Dock drag freeze hook unavailable: " + error);
+        }
+    }
+
+    private static void setSystemDockDragActive(boolean active) {
+        DockLiquidGlassView glass = currentGlass();
+        if (glass != null) glass.setSystemDockDragActive(active);
+        MainHook.log(TAG + (active
+                ? " system Dock drag start -> capture frozen"
+                : " system Dock drag end -> capture resumed"));
     }
 
     private static void onStartDrag(Object dragController, String signature) {
@@ -193,8 +252,16 @@ final class Miuix307DragCaptureHook {
             Object dragObject = HookUtil.getField(dragController, "mDragObject");
             if (dragObject == null) return null;
             Object views = HookUtil.getField(dragObject, "mDragViews");
-            if (!(views instanceof List) || ((List<?>) views).isEmpty()) return null;
-            Object dragView = ((List<?>) views).get(0);
+            Object dragView;
+            if (views instanceof List) {
+                if (((List<?>) views).isEmpty()) return null;
+                dragView = ((List<?>) views).get(0);
+            } else if (views != null && views.getClass().isArray()) {
+                if (Array.getLength(views) == 0) return null;
+                dragView = Array.get(views, 0);
+            } else {
+                return null;
+            }
             if (!(dragView instanceof View)) return null;
 
             Method getSurfaceControl = View.class.getDeclaredMethod("getSurfaceControl");

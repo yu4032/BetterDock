@@ -176,6 +176,24 @@ final class Miuix307MaterialPipeline {
      */
     private static void installThemedBackgroundHooks(
             Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
+        // Decompiled BlurBackground2.addBlur() is invoked by both attach and radius updates.
+        // Run our sync after those originals so MiuixGlassHook can clear the just-reapplied blur.
+        HookUtil.hookMethod(backgroundClass, "onAttachedToWindow", new Class<?>[0], chain -> {
+            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+            View background = (View) chain.getThisObject();
+            ensureGlassBound(background, config, classLoader);
+            MiuixGlassHook.syncGeometry(background, config);
+            return result;
+        });
+        HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
+                new Class<?>[]{float.class}, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncGeometry(background, config);
+                    return result;
+                });
+
         int hooked = 0;
         Class<?> cursor = backgroundClass;
         while (cursor != null && cursor != Object.class) {
