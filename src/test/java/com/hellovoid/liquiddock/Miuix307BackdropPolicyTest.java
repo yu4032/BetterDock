@@ -15,25 +15,6 @@ import org.junit.Test;
 
 /** Contracts derived from the decompiled HyperOS 3.0.307+ native Dock backdrop behavior. */
 public class Miuix307BackdropPolicyTest {
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static CaptureSourcePolicy.Source sourceFor307(
-            String sceneName, boolean recentsLiveConfirmed, boolean homeTransition)
-            throws Exception {
-        final Method method;
-        try {
-            method = CaptureSourcePolicy.class.getDeclaredMethod(
-                    "sourceForMiuix307", CaptureScene.class, boolean.class, boolean.class);
-        } catch (NoSuchMethodException missing) {
-            fail("CaptureSourcePolicy must expose a 307-native backdrop selector");
-            throw missing;
-        }
-        method.setAccessible(true);
-        Class<?> scene = Class.forName("com.hellovoid.liquiddock.CaptureScene");
-        Object sceneValue = Enum.valueOf((Class<? extends Enum>) scene, sceneName);
-        return (CaptureSourcePolicy.Source) method.invoke(
-                null, sceneValue, recentsLiveConfirmed, homeTransition);
-    }
-
     private static String[] exclusions307(String dock, String drag, Collection<String> freeform)
             throws Exception {
         final Method method;
@@ -49,22 +30,14 @@ public class Miuix307BackdropPolicyTest {
     }
 
     @Test public void miuix307BackdropMatchesNativeSemantics() throws Exception {
-        // Native MiuiX switches HOME / APP->HOME to wallpaper-backed blur, so Launcher icon
-        // flight animation must never be frozen into Prismal's sampled bitmap.
+        // Reuse the existing scene policy: HOME is wallpaper-backed, while APP and confirmed
+        // RECENTS remain composed full-display sources.
         assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
-                sourceFor307("APP", false, true));
-        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
-                sourceFor307("HOME", false, false));
-        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
-                sourceFor307("UNKNOWN", false, false));
-
-        // APP and confirmed RECENTS still need the composed content behind the floating Dock.
+                CaptureSourcePolicy.sourceFor(CaptureScene.HOME, false, false));
         assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
-                sourceFor307("APP", false, false));
+                CaptureSourcePolicy.sourceFor(CaptureScene.APP, false, false));
         assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
-                sourceFor307("RECENTS", true, false));
-        assertEquals(CaptureSourcePolicy.Source.WALLPAPER,
-                sourceFor307("RECENTS", false, false));
+                CaptureSourcePolicy.sourceFor(CaptureScene.RECENTS, false, true));
 
         // Mode-1 capture must not sample SystemUI layers that native pass-window blur sees above
         // the Dock rather than as part of its backdrop. Generic prefixes intentionally match
@@ -76,6 +49,8 @@ public class Miuix307BackdropPolicyTest {
                 exclusions307("Floating Dock", "drag-layer",
                         Arrays.asList("freeform#1", "NavigationBar", "")));
 
+        String exclusions = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/CaptureExclusionNames.java"));
         String dock = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
         String glassHook = Files.readString(Path.of(
@@ -83,14 +58,26 @@ public class Miuix307BackdropPolicyTest {
         String pipeline = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java"));
 
-        assertTrue(glassHook.contains("glass.setMiuix307BackdropPolicy(true)"));
+        // The generic Dock capture code already has the correct scene barrier: a HOME target
+        // immediately makes the scene revision stale for any in-flight APP bitmap, requests a
+        // fresh capture, and expires after 1550 ms if the gesture is cancelled.
+        assertTrue(dock.contains("void setGestureCaptureTarget(String target)"));
+        assertTrue(dock.contains("sceneState.setGestureTarget(target"));
+        assertTrue(dock.contains("requestStateCapture(\"gesture-target-\""));
+        assertTrue(dock.contains("1550L"));
+
+        // 307 must opt its existing full-display exclusion merge into the SystemUI-safe set;
+        // legacy paths keep the old merge unchanged while Miuix307MaterialPipeline is inactive.
+        assertTrue(exclusions.contains("Miuix307MaterialPipeline.isInstalled()"));
+
+        // Decompiled 307 Launcher emits StateNotifyUtils.sendStateBroadcast(..., \"toHome\", ...)
+        // at the start of APP->HOME. Bridge only that native transition to the existing HOME
+        // capture target; do not restore the old generic gesture/Recents hook bundle.
         assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
         assertTrue(pipeline.contains("sendStateBroadcast"));
         assertTrue(pipeline.contains("\"toHome\""));
         assertTrue(pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
-        assertTrue(dock.contains("void onMiuix307HomeTransitionStart()"));
-        assertTrue(dock.contains("cancelPendingCaptureWork()"));
-        assertTrue(dock.contains("miuix307-to-home-wallpaper"));
-        assertTrue(dock.contains("CaptureExclusionNames.mergeMiuix307"));
+        assertTrue(glassHook.contains("static void onHomeTransitionStart()"));
+        assertTrue(glassHook.contains("glass.setGestureCaptureTarget(\"HOME\")"));
     }
 }
