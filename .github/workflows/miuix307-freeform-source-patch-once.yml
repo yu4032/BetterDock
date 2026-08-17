@@ -1,0 +1,82 @@
+name: MiuiX307 one-shot Dock source patch
+
+on:
+  push:
+    branches:
+      - demo/miuix307-material-pipeline
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: enable one-shot Dock source patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 0
+      - name: Patch APP freeform source selection
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java')
+          s = p.read_text()
+          old = '''        final boolean liveHomeBehindFreeform = useFullscreen
+                  && !workstationMode
+                  && requestScene == CaptureScene.HOME
+                  && freeformLayerResolver.hasVisibleFreeformTasks();
+          final android.view.SurfaceControl localCaptureSurface = useFullscreen
+                  ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
+          CaptureSourcePolicy.Source selectedSource;
+          if (!useFullscreen) {
+              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
+          } else if (workstationMode) {
+              selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
+                      requestScene, localCaptureSurface != null);
+          } else {
+              selectedSource = CaptureSourcePolicy.sourceFor(
+                      requestScene, localCaptureSurface != null, isRecentsVisible(),
+                      liveHomeBehindFreeform);
+          }
+          '''
+          new = '''        final boolean visibleFreeform = useFullscreen
+                  && !workstationMode
+                  && freeformLayerResolver.hasVisibleFreeformTasks();
+          final boolean liveHomeBehindFreeform = visibleFreeform
+                  && requestScene == CaptureScene.HOME;
+          final android.view.SurfaceControl localCaptureSurface = useFullscreen
+                  ? resolveLauncherOwnedCaptureSurface(requestScene) : null;
+          CaptureSourcePolicy.Source selectedSource;
+          if (!useFullscreen) {
+              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
+          } else if (workstationMode) {
+              selectedSource = CaptureSourcePolicy.sourceForWorkstationScene(
+                      requestScene, localCaptureSurface != null);
+          } else if (requestScene == CaptureScene.APP && visibleFreeform) {
+              // A visible freeform task is wallpaper-owned for the floating Dock. Decide this
+              // before mode-1 submission so the app/freeform composition is never sampled even
+              // for the short interval before the final FreeformCaptureLeashHook race guard.
+              selectedSource = CaptureSourcePolicy.Source.WALLPAPER;
+          } else {
+              selectedSource = CaptureSourcePolicy.sourceFor(
+                      requestScene, localCaptureSurface != null, isRecentsVisible(),
+                      liveHomeBehindFreeform);
+          }
+          '''
+          if old not in s:
+              raise SystemExit('exact Dock source-selection block not found; refusing broad edit')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+      - name: Commit exact patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
+          git commit -m 'fix: select wallpaper before freeform capture'
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
