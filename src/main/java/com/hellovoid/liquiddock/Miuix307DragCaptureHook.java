@@ -38,11 +38,17 @@ final class Miuix307DragCaptureHook {
     private static volatile SurfaceControl activeDragSurface;
     private static volatile long dragSessionId;
 
-    // DragController.endDrag() clears mDragObject before returning, while MIUI's DragViews may
-    // still be settling into place. Retain only that finishing DragObject until its own
-    // mDropAnimationCounter reaches zero; this also handles multi-icon drops correctly.
+    // DragController.endDrag() clears mDragObject before returning while the visible DragViews may
+    // still be settling. Device logs show that on 307 mDropAnimationCounter can already read zero
+    // at endDrag, so zero is not a safe release boundary. Keep an explicit settling session until
+    // either DragObject's final completion or HotSeatsListContent.resetDraggingView() confirms the
+    // vendor cleanup boundary. The local callback count protects multi-icon drops when the vendor
+    // counter is transiently zero.
     private static volatile Object settlingDragObject;
+    private static volatile boolean dropSettling;
+    private static volatile int settlingDropCallbacksRemaining;
     private static volatile boolean dropAnimationFinishHookInstalled;
+    private static volatile boolean systemDockDragActive;
 
     private Miuix307DragCaptureHook() {}
 
@@ -98,9 +104,9 @@ final class Miuix307DragCaptureHook {
     }
 
     /**
-     * MIUI increments DragObject.mDropAnimationCounter once for every settling DragView and
-     * decrements it inside DragObject.onDropAnimationFinished(). Hook after the vendor method so
-     * only the callback that observes the final zero releases the frozen backdrop.
+     * MIUI normally decrements DragObject.mDropAnimationCounter once for every settling DragView.
+     * Hook after the vendor method. A local expected-callback count is kept as a second gate because
+     * the 307 build can report counter==0 already at DragController.endDrag().
      */
     private static void installDropAnimationFinishHook(ClassLoader classLoader) {
         try {
@@ -115,8 +121,7 @@ final class Miuix307DragCaptureHook {
             dropAnimationFinishHookInstalled = true;
             MainHook.log(TAG + " drop animation lifecycle hook installed");
         } catch (Throwable error) {
-            // Fail open to the old endDrag boundary if a vendor build changes this lifecycle.
-            // Never leave capture frozen waiting for a completion callback we cannot observe.
+            // HotSeatsListContent.resetDraggingView() remains a device-proven lifecycle fallback.
             dropAnimationFinishHookInstalled = false;
             MainHook.log(TAG + " drop animation lifecycle hook unavailable: " + error);
         }
@@ -127,7 +132,8 @@ final class Miuix307DragCaptureHook {
      * HotSeatsListContent.startDragInDockForSystem() calls View.startDragAndDrop(), and the
      * resulting mask/leash surfaces are owned by MIUI WMS/Shell. Freeze capture before that
      * call can create those surfaces; IMiuiDragListener/onEnd and resetDraggingView are
-     * idempotent resume boundaries.
+     * idempotent resume boundaries. resetDraggingView is also the device-observed final cleanup
+     * boundary for the ordinary Launcher drop-settling path.
      */
     private static void installSystemDockDragHooks(ClassLoader classLoader) {
         try {
@@ -144,7 +150,10 @@ final class Miuix307DragCaptureHook {
             });
             HookUtil.hookMethod(content, "resetDraggingView", new Class<?>[0], chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                // Clear a genuine WMS/Shell drag first. For an ordinary Launcher drag this is a
+                // no-op, then the same vendor cleanup callback releases our settling freeze.
                 setSystemDockDragActive(false);
+                onHotseatDragCleanup();
                 return result;
             });
 
@@ -177,6 +186,10 @@ final class Miuix307DragCaptureHook {
     }
 
     private static void setSystemDockDragActive(boolean active) {
+        // Keep our own transition state so helper callbacks such as resetDraggingView do not emit
+        // a fake "system Dock drag end" line when no system drag was active.
+        if (systemDockDragActive == active) return;
+        systemDockDragActive = active;
         DockLiquidGlassView glass = currentGlass();
         if (glass != null) glass.setSystemDockDragActive(active);
         MainHook.log(TAG + (active
@@ -202,6 +215,10 @@ final class Miuix307DragCaptureHook {
         if (!firstCallback && !betterLayer && !betterSurface) return;
 
         if (firstCallback) {
+            // A stale completion from an older drag must never be allowed to release this drag.
+            dropSettling = false;
+            settlingDragObject = null;
+            settlingDropCallbacksRemaining = 0;
             dragActive = true;
             dragSessionId++;
         }
@@ -254,45 +271,63 @@ final class Miuix307DragCaptureHook {
         if (!dragActive && activeDragLayerName == null && activeDragSurface == null) return;
 
         // Stop all logical-drag capture activity immediately and invalidate any queued Surface
-        // retry. The retained DragObject below is the only state allowed to outlive endDrag().
+        // retry. Never interpret a zero counter here as "animation finished": device evidence
+        // shows the visible settling animation continues after this exact point.
         dragActive = false;
         activeDragLayerName = null;
         activeDragSurface = null;
         dragSessionId++;
 
+        settlingDragObject = dragObject;
+        dropSettling = true;
+        settlingDropCallbacksRemaining = Math.max(1, countDragViews(dragObject));
+
+        DockLiquidGlassView glass = currentGlass();
+        if (glass != null) {
+            // Force the Surface-aware live path back into frozen mode. Even if the drag Surface
+            // had been excludable, the settling icon is now animation content that must not be
+            // sampled into the glass.
+            glass.setDockDragging(true, null, null);
+        }
+
         int dropAnimationCounter = dropAnimationFinishHookInstalled
                 ? readDropAnimationCounter(dragObject) : 0;
-        if (dropAnimationCounter > 0) {
-            settlingDragObject = dragObject;
-            DockLiquidGlassView glass = currentGlass();
-            if (glass != null) {
-                // Force the Surface-aware live path back into frozen mode. Even if the drag
-                // Surface was excludable, the settling icon is now animation content that must
-                // not be sampled into the glass.
-                glass.setDockDragging(true, null, null);
-            }
-            MainHook.log(TAG + " drag end -> drop settling counter=" + dropAnimationCounter
-                    + "; capture remains frozen");
-            return;
-        }
-
-        settlingDragObject = null;
-        finishDockDragCapture("drag end");
+        MainHook.log(TAG + " drag end -> drop settling counter=" + dropAnimationCounter
+                + " callbacks=" + settlingDropCallbacksRemaining
+                + "; capture remains frozen");
     }
 
-    /** Called after MIUI has decremented mDropAnimationCounter for one DragView. */
+    /** Called after MIUI has updated mDropAnimationCounter for one DragView. */
     private static void onDropAnimationFinished(Object dragObject) {
-        if (dragObject == null || settlingDragObject != dragObject) return;
+        if (!dropSettling || dragObject == null || settlingDragObject != dragObject) return;
 
+        if (settlingDropCallbacksRemaining > 0) {
+            settlingDropCallbacksRemaining--;
+        }
         int dropAnimationCounter = readDropAnimationCounter(dragObject);
-        if (dropAnimationCounter > 0) {
-            MainHook.log(TAG + " drop animation finished; remaining=" + dropAnimationCounter);
+        if (dropAnimationCounter > 0 || settlingDropCallbacksRemaining > 0) {
+            MainHook.log(TAG + " drop animation finished; counter=" + dropAnimationCounter
+                    + " callbacksRemaining=" + settlingDropCallbacksRemaining);
             return;
         }
-        if (dropAnimationCounter == 0) {
-            settlingDragObject = null;
-            finishDockDragCapture("drag release anim end");
-        }
+        finishDropSettling("drag release anim end");
+    }
+
+    /**
+     * Device logs place HotSeatsListContent.resetDraggingView() after the visible ~300 ms settle.
+     * Use that vendor lifecycle callback as a fallback/final boundary, never a guessed delay.
+     */
+    private static void onHotseatDragCleanup() {
+        if (!dropSettling || dragActive) return;
+        finishDropSettling("hotseat drag cleanup");
+    }
+
+    private static void finishDropSettling(String reason) {
+        if (!dropSettling) return;
+        dropSettling = false;
+        settlingDragObject = null;
+        settlingDropCallbacksRemaining = 0;
+        finishDockDragCapture(reason);
     }
 
     private static void finishDockDragCapture(String reason) {
@@ -312,7 +347,7 @@ final class Miuix307DragCaptureHook {
         }
     }
 
-    /** Vendor compatibility is fail-open: an unreadable counter must never freeze forever. */
+    /** Vendor compatibility: an unreadable counter is treated as zero, with local/fallback gates. */
     private static int readDropAnimationCounter(Object dragObject) {
         if (dragObject == null) return 0;
         try {
@@ -322,6 +357,18 @@ final class Miuix307DragCaptureHook {
             MainHook.log(TAG + " drop animation counter unavailable: " + error);
             return 0;
         }
+    }
+
+    private static int countDragViews(Object dragObject) {
+        if (dragObject == null) return 0;
+        try {
+            Object views = HookUtil.getField(dragObject, "mDragViews");
+            if (views instanceof List) return ((List<?>) views).size();
+            if (views != null && views.getClass().isArray()) return Array.getLength(views);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " drag view count unavailable: " + error);
+        }
+        return 0;
     }
 
     /** Resolve the currently bound Prismal view from the MiuiX background's sibling host. */
