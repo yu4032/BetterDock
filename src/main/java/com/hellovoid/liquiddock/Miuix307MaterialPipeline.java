@@ -37,6 +37,7 @@ final class Miuix307MaterialPipeline {
             // specialized 307 early-return would otherwise bypass. This intentionally does NOT
             // install MainHook's complete legacy capture/gesture lifecycle.
             Miuix307DragCaptureHook.install(classLoader);
+            installHomeGesturePrearm(classLoader);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -126,6 +127,31 @@ final class Miuix307MaterialPipeline {
         } catch (Throwable error) {
             MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
+        }
+    }
+
+    /**
+     * 307's specialized early return intentionally skips LauncherSceneController. Restore only
+     * the native side-swipe HOME event that the legacy controller used to observe, and converge
+     * it on the same wallpaper prearm as the existing StateNotifyUtils("toHome") signal.
+     */
+    private static void installHomeGesturePrearm(ClassLoader classLoader) {
+        try {
+            Class<?> eventClass = Class.forName(
+                    "com.miui.home.launcher.dock.v3.GestureToHome", false, classLoader);
+            int hooked = 0;
+            for (java.lang.reflect.Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
+                HookUtil.hook(ctor, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    MiuixGlassHook.onHomeTransitionStart();
+                    return result;
+                });
+                hooked++;
+            }
+            MainHook.log("[DC] MiuiX 307 GestureToHome wallpaper prearm installed constructors="
+                    + hooked);
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 GestureToHome prearm unavailable: " + error);
         }
     }
 
