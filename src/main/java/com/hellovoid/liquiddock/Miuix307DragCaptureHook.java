@@ -42,6 +42,11 @@ final class Miuix307DragCaptureHook {
         backgroundRef = new WeakReference<>(background);
     }
 
+    /** Package-private read-only state for the mode-1 exclusion policy. */
+    static boolean isDragActive() {
+        return dragActive;
+    }
+
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         try {
