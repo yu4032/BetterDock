@@ -8,6 +8,9 @@ final class CaptureExclusionNames {
     private static final String[] MIUIX_307_SYSTEM_UI_LAYERS = {
             "NavigationBar", "StatusBar", "GestureStub", "DockAssistantView"
     };
+    private static final String[] MIUIX_307_DRAG_ICON_LAYERS = {
+            "MaskSnapshotLayer_dragIcon", "MaskDark_dragIcon", "MaskIcon_dragIcon"
+    };
 
     private CaptureExclusionNames() {}
 
@@ -36,6 +39,9 @@ final class CaptureExclusionNames {
         add(names, dragLayer);
         if (miuix307) {
             for (String name : MIUIX_307_SYSTEM_UI_LAYERS) add(names, name);
+            if (Miuix307DragCaptureHook.isDragActive()) {
+                for (String name : MIUIX_307_DRAG_ICON_LAYERS) add(names, name);
+            }
         }
         if (freeformLayers != null) {
             for (String name : freeformLayers) add(names, name);
