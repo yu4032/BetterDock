@@ -46,6 +46,9 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             FreeformCaptureLeashHook.install();
             new MainHook().install(classLoader);
+            // MainHook/307 may have installed the historical DeviceConfig margin delta.
+            // Neutralize that compatibility path, then own the visible HotSeats Y directly.
+            DockBottomGeometryHook.install(classLoader);
             // 10x6 intentionally overlays only profile-sized hook points after the stable
             // 8x4 core has installed its generic CellLayout/widget/margin behavior.
             HomeGridProfileOverlayHook.install(classLoader);

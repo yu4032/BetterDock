@@ -1,7 +1,6 @@
 package com.hellovoid.liquiddock;
 
 import android.content.Context;
-import android.content.res.Configuration;
 
 import com.hellovoid.liquiddock.config.GridProfileConfig;
 
@@ -57,8 +56,6 @@ final class HomeGridProfileOverlayHook {
             MainHook.log("[DC] extended home grid overlay active profile="
                     + profile.persistedValue());
         } catch (Throwable error) {
-            // The stable 8x4 core remains installed underneath. Fail closed instead of
-            // applying a partial 10x6 profile if one Launcher hook point is unavailable.
             MainHook.log("[DC] 10x6 profile overlay unavailable: " + error);
         }
     }
@@ -70,11 +67,10 @@ final class HomeGridProfileOverlayHook {
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_HIGHEST)
                 .intercept(chain -> {
-                    if (MainHook.isWorkstationMode()) return chain.proceed();
-                    Context context = (Context) chain.getArg(0);
-                    boolean portrait = context.getResources().getConfiguration().orientation
-                            == Configuration.ORIENTATION_PORTRAIT;
-                    return xAxis ? profile.columns(portrait) : profile.rows(portrait);
+                    Object result = chain.proceed();
+                    if (!(result instanceof Integer) || MainHook.isWorkstationMode()) return result;
+                    return HomeGridCountPolicy.profileRewrite(
+                            profile, false, xAxis, (Integer) result);
                 });
     }
 
@@ -82,20 +78,15 @@ final class HomeGridProfileOverlayHook {
                                             boolean xAxis) throws NoSuchMethodException {
         Method method = HookUtil.findMethodExact(gridConfig, methodName,
                 new Class<?>[]{int.class});
-        // The stable HomeGridHook setter has default priority and rewrites any stock 6 to 8.
-        // Run after it and recover that intermediate value according to the selected axis.
-        // This is essential for the 6-row/column side of 10x6, where 8 is not the legacy
-        // axis value but is still the value delivered by the stable core.
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_LOWEST)
                 .intercept(chain -> {
                     if (MainHook.isWorkstationMode() || isExcludedGridConfigCall()) {
                         return chain.proceed();
                     }
-                    boolean portrait = isPortrait();
                     int current = (Integer) chain.getArg(0);
-                    int target = HomeGridCountPolicy.profileRewrite(
-                            profile, portrait, xAxis, current);
+                    int target = HomeGridCountPolicy.profileRewriteForGridName(
+                            profile, gridName(chain.getThisObject()), xAxis, current);
                     if (target == current) return chain.proceed();
                     Object[] args = chain.getArgs().toArray(new Object[0]);
                     args[0] = target;
@@ -112,12 +103,19 @@ final class HomeGridProfileOverlayHook {
                     Object result = chain.proceed();
                     if (!(result instanceof Integer) || MainHook.isWorkstationMode()
                             || isExcludedGridConfigCall()) return result;
-                    boolean portrait = isPortrait();
-                    return HomeGridCountPolicy.profileRewrite(
-                            profile, portrait, xAxis, (Integer) result);
+                    return HomeGridCountPolicy.profileRewriteForGridName(
+                            profile, gridName(chain.getThisObject()), xAxis, (Integer) result);
                 });
     }
 
+    /**
+     * Extend only the profile-sized metadata of MIUI's native transpose transform.
+     * LayoutTransformRule.init() creates source occupancy as [mVCells][mHCells] and
+     * destination occupancy as [mHCells][mVCells]. Therefore mH/mV describe the target
+     * grid while the source grid is their transpose. The native block and icon movers are
+     * retained; only their 10x6 metadata and stock hard-coded orientation/block constants
+     * are generalized.
+     */
     private static void installRotationTransform(ClassLoader classLoader) throws Exception {
         Class<?> rule = Class.forName(ROTATION_RULE, false, classLoader);
         for (Constructor<?> ctor : rule.getDeclaredConstructors()) {
@@ -160,15 +158,15 @@ final class HomeGridProfileOverlayHook {
                 });
 
         installRotationDirectionFix(rule);
+        installOtherWidgetBlockRemap(rule);
     }
 
     /**
-     * MIUI's stock 6x4/4x6 transform writes
-     * mIsVerticalCellCount = (getMHCells() != 4) inside transformToDstLayout().
-     * That accidentally still distinguishes 8x4 from 4x8, but 10x6 and 6x10 both
-     * evaluate true. get4x2WidgetCase() is the first call immediately after that write,
-     * so this hook is the narrowest point where the native transform direction can be
-     * corrected before any block or icon movement occurs.
+     * Stock transformToDstLayout() writes mIsVerticalCellCount = (mHCells != 4).
+     * mH/mV are target counts, so a target 6x10 comes from a horizontal 10x6 source
+     * and must use hScreenCoordinate; a target 10x6 comes from vertical 6x10 and must
+     * use vScreenCoordinate. get4x2WidgetCase() is the first native call after the
+     * stock write, making it the narrowest safe re-latch point.
      */
     private static void installRotationDirectionFix(Class<?> rule) throws NoSuchMethodException {
         Method directionLatch = null;
@@ -194,12 +192,12 @@ final class HomeGridProfileOverlayHook {
                             int h = (Integer) hValue;
                             int v = (Integer) vValue;
                             if (profile.matchesCounts(h, v)) {
-                                boolean horizontal =
+                                boolean sourceHorizontal =
                                         HomeGridRotationPolicy.sourceUsesHorizontalCoordinates(h, v);
-                                HookUtil.setField(target, "mIsVerticalCellCount", horizontal);
-                                MainHook.log("[DC] 10x6 rotation direction source="
-                                        + (horizontal ? "horizontal" : "vertical")
-                                        + " h=" + h + " v=" + v);
+                                HookUtil.setField(target, "mIsVerticalCellCount", sourceHorizontal);
+                                MainHook.log("[DC] 10x6 rotation source="
+                                        + (sourceHorizontal ? "horizontal" : "vertical")
+                                        + " target=" + h + "x" + v);
                             }
                         }
                     }
@@ -207,21 +205,69 @@ final class HomeGridProfileOverlayHook {
                 });
     }
 
+    /**
+     * Native getDstBlockXY() contains literal block indices 4 and 2 for the second
+     * 4x2 SPECIAL_WIDGET. Those constants are valid only for the stock six-block grid.
+     * Keep native special-widget copying, switchBlock(), and switchIcons(), but map each
+     * remaining source block to the same ordinal free destination block on the 15-block grid.
+     */
+    private static void installOtherWidgetBlockRemap(Class<?> rule) throws NoSuchMethodException {
+        Method mapper = null;
+        for (Method candidate : rule.getDeclaredMethods()) {
+            if ("getDstBlockXY".equals(candidate.getName())
+                    && candidate.getParameterCount() == 2) {
+                mapper = candidate;
+                break;
+            }
+        }
+        if (mapper == null) {
+            throw new NoSuchMethodException(rule.getName() + "#getDstBlockXY");
+        }
+        mapper.setAccessible(true);
+        Api101Bridge.module().hook(mapper)
+                .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                .intercept(chain -> {
+                    Object target = chain.getThisObject();
+                    if (MainHook.isWorkstationMode()) return chain.proceed();
+                    Object hValue = HookUtil.invoke(target, "getMHCells");
+                    Object vValue = HookUtil.invoke(target, "getMVCells");
+                    if (!(hValue instanceof Integer) || !(vValue instanceof Integer)
+                            || !(chain.getArg(0) instanceof boolean[])
+                            || !(chain.getArg(1) instanceof Integer)) {
+                        return chain.proceed();
+                    }
+                    int h = (Integer) hValue;
+                    int v = (Integer) vValue;
+                    if (!profile.matchesCounts(h, v)) return chain.proceed();
+                    boolean[] special = (boolean[]) chain.getArg(0);
+                    int sourceIndex = (Integer) chain.getArg(1);
+                    boolean firstSpecial = special.length > 0 && special[0];
+                    boolean secondSpecial = special.length > 1 && special[1];
+                    int targetIndex = HomeGridRotationPolicy.mapOtherWidgetBlockIndex(
+                            h, v, firstSpecial, secondSpecial, sourceIndex);
+                    int[][] targetBlocks = blocks(v > h);
+                    if (targetIndex < 0 || targetIndex >= targetBlocks.length) {
+                        return chain.proceed();
+                    }
+                    return targetBlocks[targetIndex];
+                });
+    }
+
     private static int[][] blocks(boolean portrait) {
         return profile.blockOrigins(portrait);
     }
 
-    private static boolean isPortrait() {
-        return android.content.res.Resources.getSystem().getConfiguration().orientation
-                == Configuration.ORIENTATION_PORTRAIT;
+    private static String gridName(Object gridConfig) {
+        Object value = HookUtil.invoke(gridConfig, "getName");
+        if (value instanceof String) return (String) value;
+        try {
+            Object field = HookUtil.getField(gridConfig, "name");
+            return field instanceof String ? (String) field : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
-    /**
-     * GridConfig is also used by folders, All Apps, the laptop launcher and HotSeats.
-     * These are explicit non-Workspace owners and must never inherit the normal 10x6 grid.
-     * Unknown normal-launcher callers are left eligible because the stock GridConfig can be
-     * created before a Workspace View exists; the old-value guard above is the second gate.
-     */
     private static boolean isExcludedGridConfigCall() {
         for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
             String name = frame.getClassName().toLowerCase(Locale.ROOT);
