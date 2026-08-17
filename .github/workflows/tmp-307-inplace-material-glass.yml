@@ -25,14 +25,11 @@ jobs:
         run: |
           changed="$(git diff --name-only)"
           printf '%s\n' "$changed"
-          expected=$(cat <<'EOF'
-src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java
-src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java
-src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
-src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
-EOF
-          )
-          test "$changed" = "$expected"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 4
+          printf '%s\n' "$changed" | grep -qx 'src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java'
+          printf '%s\n' "$changed" | grep -qx 'src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java'
+          printf '%s\n' "$changed" | grep -qx 'src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java'
+          printf '%s\n' "$changed" | grep -qx 'src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
           grep -q 'setPreserveGeometrySourceVisuals(true)' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
           grep -q 'materialHost.addView(host' src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
           grep -q 'reloadOpticsOnly' src/main/java/com/hellovoid/liquiddock/DockLiquidGlassHostView.java
