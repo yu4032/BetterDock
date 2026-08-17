@@ -62,9 +62,12 @@ final class Miuix307CaptureOwnershipHook {
     }
 
     /**
-     * MainHook still owns the authoritative workstation transition even on 307, but its legacy
-     * liquidGlassView field does not point at MiuixGlassHook's in-place glass. Forward the state to
-     * the actual 307 owner after MainHook has committed its own mode flag.
+     * MainHook remains the authoritative workstation transition source on 307. The legacy
+     * DockLiquidGlassView.setWorkstationMode(true) API is deliberately NOT forwarded: that API
+     * means "hide the normal glass because another workstation background owns the Dock". The
+     * MiuiX 307 material is itself that visible glass, so only request a new capture here. Its
+     * workstation source policy is scoped to startCapture() below and never becomes lifecycle
+     * state on the View.
      */
     private static void installWorkstationModeBridge() {
         try {
@@ -76,8 +79,10 @@ final class Miuix307CaptureOwnershipHook {
                         boolean enabled = Boolean.TRUE.equals(chain.getArgs().get(0));
                         DockLiquidGlassView glass = boundGlass();
                         if (glass != null) {
-                            glass.setWorkstationMode(enabled);
                             if (!enabled) clearWorkstationExclusion(glass);
+                            glass.requestCapture(enabled
+                                    ? "miuix307-workstation-enter"
+                                    : "miuix307-workstation-exit");
                         }
                         MainHook.log(TAG + " workstation capture ownership=" + enabled);
                         return result;
@@ -111,14 +116,22 @@ final class Miuix307CaptureOwnershipHook {
 
         glass.setSystemUiPanelExpanded(systemUiPanelExpanded);
         boolean workstation = MainHook.isWorkstationMode();
-        glass.setWorkstationMode(workstation);
         if (!workstation) clearWorkstationExclusion(glass);
+        glass.requestCapture(workstation
+                ? "miuix307-workstation-bind"
+                : "miuix307-normal-bind");
     }
 
     /**
      * Workstation live capture is safe only after its separate Dock window has been resolved.
      * Never substitute the ordinary type-2997 Floating Dock. If the workstation Surface is not
      * present yet, keep the previously installed/native safe frame and refuse this capture turn.
+     *
+     * DockLiquidGlassView already has the correct workstation mode-1 source/exclusion policy,
+     * but its persistent workstationMode lifecycle deliberately hides the legacy normal glass.
+     * Enter that policy only for the synchronous startCapture decision and restore the original
+     * fields before returning. The async request keeps the selected source/exclusion values in its
+     * locals, while the visible 307 glass never enters legacy workstation suspension.
      */
     private static void installWorkstationCaptureGate() {
         try {
@@ -144,7 +157,19 @@ final class Miuix307CaptureOwnershipHook {
                         HookUtil.setField(glass, "dockWindowSurface", target.surface);
                         HookUtil.setField(glass, "dockWindowLayerName", target.layerName);
                         workstationInjectedGlass = new WeakReference<>(glass);
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+
+                        boolean originalWorkstationMode = Boolean.TRUE.equals(
+                                HookUtil.getField(glass, "workstationMode"));
+                        boolean originalFullscreenCapture = Boolean.TRUE.equals(
+                                HookUtil.getField(glass, "fullscreenCapture"));
+                        HookUtil.setField(glass, "workstationMode", true);
+                        HookUtil.setField(glass, "fullscreenCapture", true);
+                        try {
+                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        } finally {
+                            HookUtil.setField(glass, "workstationMode", originalWorkstationMode);
+                            HookUtil.setField(glass, "fullscreenCapture", originalFullscreenCapture);
+                        }
                     });
             MainHook.log(TAG + " workstation mode-1 Dock exclusion gate installed");
         } catch (Throwable error) {
