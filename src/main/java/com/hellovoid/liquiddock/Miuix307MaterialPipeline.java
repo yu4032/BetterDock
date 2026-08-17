@@ -59,7 +59,7 @@ final class Miuix307MaterialPipeline {
             // install MainHook's complete legacy capture/gesture lifecycle.
             Miuix307DragCaptureHook.install(classLoader);
             installHomeGesturePrearm(classLoader);
-            installCompatMiShadowSuppression(classLoader);
+            installCompatBackgroundBlurClamp(classLoader, config);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -142,42 +142,28 @@ final class Miuix307MaterialPipeline {
     }
 
     /**
-     * HotSeats applies the same MiShadow utility to several UI surfaces. Intercept the utility
-     * once, but skip the original call only for the exact live compat Dock background selected
-     * by MiuixGlassHook. This leaves default MiuiX, Recents and shortcut-menu shadows intact.
+     * BlurBackground2.addBlur() delegates its hard-coded positive radius through this exact
+     * utility boundary before reflection reaches hidden View.setBackgroundBlur. Clamp only the
+     * themed HotSeats background argument; default MiuiX and every other BlurUtilities consumer
+     * pass through unchanged, as do radius<=0 disable calls and both vendor blend arrays.
      */
-    private static void installCompatMiShadowSuppression(ClassLoader classLoader) {
+    private static void installCompatBackgroundBlurClamp(
+            ClassLoader classLoader, LiquidDockConfig config) {
         try {
-            Class<?> shadowUtils = Class.forName(
-                    "com.miui.home.launcher.common.MiShadowUtils", false, classLoader);
-            int hooked = 0;
-            for (Method method : shadowUtils.getDeclaredMethods()) {
-                Class<?>[] params = method.getParameterTypes();
-                if (!"applyViewShadow".equals(method.getName())
-                        || !Modifier.isStatic(method.getModifiers())
-                        || method.getReturnType() != void.class
-                        || params.length == 0
-                        || !View.class.isAssignableFrom(params[0])) {
-                    continue;
-                }
-                HookUtil.hook(method, chain -> {
-                    Object[] args = chain.getArgs().toArray(new Object[0]);
-                    if (args.length > 0 && args[0] instanceof View
-                            && MiuixGlassHook.shouldSuppressCompatMiShadow((View) args[0])) {
-                        return null;
-                    }
-                    return chain.proceed(args);
-                });
-                hooked++;
-            }
-            if (hooked == 0) {
-                MainHook.log("[DC] MiuiX 307 compat MiShadow suppression unavailable: no overload");
-            } else {
-                MainHook.log("[DC] MiuiX 307 compat MiShadow suppression installed count="
-                        + hooked);
-            }
+            HookUtil.hookMethod(classLoader,
+                    "com.miui.home.launcher.common.BlurUtilities", "setBackgroundBlur",
+                    chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        if (args.length >= 2 && args[0] instanceof View
+                                && args[1] instanceof Integer) {
+                            args[1] = MiuixGlassHook.clampCompatBackgroundBlurRadius(
+                                    (View) args[0], (Integer) args[1], config);
+                        }
+                        return chain.proceed(args);
+                    }, View.class, int.class, float[].class, int[][].class);
+            MainHook.log("[DC] MiuiX 307 compat background blur clamp installed");
         } catch (Throwable error) {
-            MainHook.log("[DC] MiuiX 307 compat MiShadow suppression unavailable: " + error);
+            MainHook.log("[DC] MiuiX 307 compat background blur clamp unavailable: " + error);
         }
     }
 
@@ -218,7 +204,8 @@ final class Miuix307MaterialPipeline {
     private static void installThemedBackgroundHooks(
             Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
         // Decompiled BlurBackground2.addBlur() is invoked by both attach and radius updates.
-        // Run our sync after those originals so MiuixGlassHook can clear the just-reapplied blur.
+        // Its hard-coded utility radius is already clamped before the original reaches View;
+        // run geometry sync afterwards to keep the pass-window radius and Prismal shape aligned.
         HookUtil.hookMethod(backgroundClass, "onAttachedToWindow", new Class<?>[0], chain -> {
             Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
             View background = (View) chain.getThisObject();

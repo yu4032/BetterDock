@@ -33,9 +33,9 @@ final class MiuixGlassHook {
     private static ViewTreeObserver.OnPreDrawListener nativeBackgroundPreserver;
     private static int nativeBlurRadiusPx = -1;
     private static boolean nativeBlurRadiusFailureLogged;
-    // Log the themed shadow suppression once per live background instance. HotSeats can
-    // reapply MiShadow on every translation frame, so per-call logging would be unusable.
-    private static View compatMiShadowLoggedFor;
+    // BlurBackground2 can issue the same hard-coded utility blur repeatedly during layout.
+    // Keep one concise diagnostic per themed background instance.
+    private static View compatBackgroundBlurLoggedFor;
 
     private MiuixGlassHook() {}
 
@@ -49,23 +49,26 @@ final class MiuixGlassHook {
     }
 
     /**
-     * Device DEX/logs show the legacy themed background receives HotSeats' 143px MiShadow
-     * in addition to its own backdrop blur. Suppress that shadow only for the exact themed
-     * background instance currently bound to a live Prismal host. Default MiuiX material,
-     * stale themed instances and every other MiShadowUtils consumer must pass unchanged.
+     * BlurBackground2.addBlur() hard-codes a 100-unit background blur before delegating to
+     * BlurUtilities.setBackgroundBlur(View,int,float[],int[][]). The full default->theme device
+     * trace shows this is the themed-only visual difference: default MiuiX uses the configured
+     * radius while both implementations intentionally keep the same HotSeats MiShadow. Clamp
+     * only positive themed utility radii; preserve vendor disable semantics and blend arrays.
+     * This deliberately does not require a live Prismal binding because the vendor can call the
+     * utility while constructing the replacement background, before hierarchy rebind completes.
      */
-    static boolean shouldSuppressCompatMiShadow(View dockBg) {
-        if (dockBg == null || dockBg != backgroundRef) return false;
-        if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return false;
-        ViewGroup parent = dockBg.getParent() instanceof ViewGroup
-                ? (ViewGroup) dockBg.getParent() : null;
-        DockLiquidGlassHostView host = hostRef;
-        if (parent == null || host == null || host.getParent() != parent) return false;
-        if (compatMiShadowLoggedFor != dockBg) {
-            compatMiShadowLoggedFor = dockBg;
-            MainHook.log(TAG + " compat BlurBackground2 MiShadow suppressed");
+    static int clampCompatBackgroundBlurRadius(
+            View dockBg, int requestedRadius, LiquidDockConfig config) {
+        if (dockBg == null || config == null || requestedRadius <= 0) return requestedRadius;
+        if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;
+        int targetRadius = Math.round(
+                config.glass.blur * dockBg.getResources().getDisplayMetrics().density);
+        if (requestedRadius != targetRadius && compatBackgroundBlurLoggedFor != dockBg) {
+            compatBackgroundBlurLoggedFor = dockBg;
+            MainHook.log(TAG + " compat BlurBackground2 background blur clamped "
+                    + requestedRadius + " -> " + targetRadius);
         }
-        return true;
+        return targetRadius;
     }
 
     /**
@@ -103,7 +106,7 @@ final class MiuixGlassHook {
         hostRef = null;
         glassRef = null;
         backgroundRef = null;
-        compatMiShadowLoggedFor = null;
+        compatBackgroundBlurLoggedFor = null;
         nativeBlurRadiusPx = -1;
         nativeBlurRadiusFailureLogged = false;
 
@@ -120,9 +123,9 @@ final class MiuixGlassHook {
                 MainHook.log(TAG + " fallback to content blur ok=" + contentOk);
             }
         } else if (nativeVisualOwner) {
-            // BlurBackground2.addBlur() already enables the vendor pass-window blur and owns
-            // its backdrop/outline state. Keep that stack, but suppress HotSeats' separate
-            // 143px MiShadow at MiShadowUtils so it cannot add a second wide shadow blur.
+            // BlurBackground2 owns its vendor backdrop/outline stack. Its separate utility
+            // background-blur radius is clamped at BlurUtilities; keep the normal HotSeats
+            // MiShadow because the working default MiuiX path uses the same shadow parameters.
             MainHook.log(TAG + " compat BlurBackground2 keeps vendor blur/outline radius="
                     + blurPx);
         }
@@ -233,7 +236,7 @@ final class MiuixGlassHook {
         return dockBg != null && NATIVE_BACKGROUND_CLASS.equals(dockBg.getClass().getName());
     }
 
-    /** Both 307 implementations own native backdrop blur/outline; compat MiShadow is separate. */
+    /** Both 307 implementations own the native backdrop/outline/shadow visual stack. */
     private static boolean isNativeVisualOwner(View dockBg) {
         if (dockBg == null) return false;
         String name = dockBg.getClass().getName();
@@ -296,8 +299,8 @@ final class MiuixGlassHook {
 
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             if (backgroundRef != dockBg || glassRef != glass) return true;
-            // Keep the vendor geometry/background stack alive underneath Prismal. Both
-            // supported 307 backgrounds own native blur; compat MiShadow is filtered earlier.
+            // Keep the complete vendor geometry/background stack alive underneath Prismal.
+            // The themed hard-coded radius is clamped at BlurUtilities before it reaches View.
             if (nativeVisualOwner) {
                 enforcePrismalOpticalOnly(glass);
                 enforceNativeBlurRadius(dockBg);
