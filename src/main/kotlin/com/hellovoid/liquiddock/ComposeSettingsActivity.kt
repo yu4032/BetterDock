@@ -302,18 +302,13 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
             )
         },
     ) { padding ->
-        // MIUI-style horizontal slide between pages: entering a submenu slides in from
-        // the right (old page slides out left); going back reverses.  Uses AnimatedContent
-        // so the page transition animates instead of snapping.
         AnimatedContent(
             targetState = page,
             transitionSpec = {
                 if (targetState.ordinal > initialState.ordinal) {
-                    // Forward (into a submenu): new page slides in from the right.
                     (slideInHorizontally { it } + fadeIn()) togetherWith
                             (slideOutHorizontally { -it / 3 } + fadeOut())
                 } else {
-                    // Back: current page slides out to the right, home peeks in from left.
                     (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
                             (slideOutHorizontally { it } + fadeOut())
                 }
@@ -353,7 +348,7 @@ private fun HomePage(
                 ArrowPreference(stringResource(R.string.page_grid), summary = stringResource(R.string.home_grid_summary), onClick = { open(Page.Grid) })
                 ArrowPreference(stringResource(R.string.page_dock), summary = stringResource(R.string.home_dock_summary), onClick = { open(Page.Dock) })
                 ArrowPreference(stringResource(R.string.page_divider), summary = stringResource(R.string.home_divider_summary), onClick = { open(Page.Divider) })
-                ArrowPreference(stringResource(R.string.page_workstation), summary = stringResource(R.string.home_workstation_summary), onClick = { open(Page.Workstation) })
+                ArrowPreference(stringResource(R.string.home_workstation_title), summary = stringResource(R.string.home_workstation_summary), onClick = { open(Page.Workstation) })
                 ArrowPreference(stringResource(R.string.page_liquid), summary = stringResource(R.string.home_liquid_summary), onClick = { open(Page.Liquid) })
                 ArrowPreference(stringResource(R.string.page_stroke), summary = stringResource(R.string.home_stroke_summary), onClick = { open(Page.Stroke) })
                 ArrowPreference(stringResource(R.string.page_shadow), summary = stringResource(R.string.home_shadow_summary), onClick = { open(Page.Shadow) })
@@ -496,14 +491,13 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterE
 
 @Composable
 private fun ShadowPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    val dockEnabled = prefs.getBoolean(ConfigSchema.Dock.ENABLED.name(), ConfigSchema.Dock.ENABLED.uiDefault())
     var dockShadow by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SHADOW_ENABLED.name(), ConfigSchema.Dock.SHADOW_ENABLED.uiDefault())) }
     var strokeShadow by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.STROKE_SHADOW.name(), ConfigSchema.Dock.STROKE_SHADOW.uiDefault())) }
     SettingsList(padding, "阴影") {
-        BooleanSetting(prefs, ConfigSchema.Dock.SHADOW_ENABLED, "整个 Dock 下方阴影", "跟随 Dock 长宽、高度和圆角", masterEnabled && dockEnabled) { dockShadow = it }
-        BooleanSetting(prefs, ConfigSchema.Dock.STROKE_SHADOW, "描边阴影", "描边下方的柔和阴影", masterEnabled && dockEnabled) { strokeShadow = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.SHADOW_ENABLED, "整个 Dock 下方阴影", "跟随 Dock 长宽、高度和圆角", masterEnabled) { dockShadow = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.STROKE_SHADOW, "描边阴影", "描边下方的柔和阴影", masterEnabled) { strokeShadow = it }
         shadowSpecs.forEach {
-            IntSetting(prefs, it, masterEnabled && dockEnabled && when (it.dependency) {
+            IntSetting(prefs, it, masterEnabled && when (it.dependency) {
                 "dock_shadow" -> dockShadow
                 "stroke_shadow" -> strokeShadow
                 else -> true
