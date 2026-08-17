@@ -16,15 +16,16 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     @Test
     public void dragExcludesActualSurfaceFlingerDragIconLayersWhenViewSurfaceIsUnavailable()
             throws Exception {
-        String glass = read("DockLiquidGlassView.java");
+        String drag = read("Miuix307DragCaptureHook.java");
+        String exclusions = read("CaptureExclusionNames.java");
 
         // Device evidence: DragView.getSurfaceControl() remains null through all retries while
         // SurfaceFlinger exposes the visible drag composition as these three stable name prefixes.
-        assertTrue(glass.contains("MaskSnapshotLayer_dragIcon"));
-        assertTrue(glass.contains("MaskDark_dragIcon"));
-        assertTrue(glass.contains("MaskIcon_dragIcon"));
-        assertTrue(glass.contains("dockDragging"));
-        assertTrue(glass.contains("CaptureExclusionNames.merge"));
+        assertTrue(drag.contains("isDragActive"));
+        assertTrue(exclusions.contains("MaskSnapshotLayer_dragIcon"));
+        assertTrue(exclusions.contains("MaskDark_dragIcon"));
+        assertTrue(exclusions.contains("MaskIcon_dragIcon"));
+        assertTrue(exclusions.contains("Miuix307DragCaptureHook.isDragActive()"));
     }
 
     @Test
