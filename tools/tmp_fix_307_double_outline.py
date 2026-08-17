@@ -38,10 +38,12 @@ if s.count(host_token) != 2:
 s = s.replace(host_token,
     '        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);\n',
     1)
-s = replace_once(s,
-    '        DockStrokeRenderer.configure(dockBg, config.dock, radius);\n',
+stroke_token = '        DockStrokeRenderer.configure(dockBg, config.dock, radius);\n'
+if s.count(stroke_token) != 2:
+    raise SystemExit(f'stroke configure token: expected 2, found {s.count(stroke_token)}')
+s = s.replace(stroke_token,
     '        DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);\n',
-    'install replacing foreground')
+    1)
 s = replace_once(s,
     '''        float radius = readRadius(dockBg);\n        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);\n        host.reloadOpticsOnly(config.dock, config.glass);\n        DockStrokeRenderer.configure(dockBg, config.dock, radius);\n''',
     '''        float nativeRadius = readRadius(dockBg);\n        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(\n                dockBg, config.dock, nativeRadius);\n        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);\n        host.reloadOpticsOnly(config.dock, config.glass);\n        DockStrokeRenderer.configureReplacingForeground(\n                dockBg, config.dock, nativeRadius);\n''',
