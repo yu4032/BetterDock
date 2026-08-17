@@ -26,13 +26,26 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
+    public void ordinaryDockDragWithoutExcludableSurfaceFreezesLastCleanBackdrop() throws Exception {
+        String glass = read("DockLiquidGlassView.java");
+
+        // Device log: View.getSurfaceControl() does not exist on this 307 build, so the normal
+        // DragController path reaches setDockDragging(true, ..., null). It must not fall through
+        // to the old dockDragging capture exception and sample the moving icon.
+        assertTrue(glass.contains("dockDragCaptureFrozen"));
+        assertTrue(glass.contains("Liquid capture frozen: Dock drag has no excludable Surface"));
+        assertTrue(glass.contains("if (dockDragCaptureFrozen) return false;"));
+        assertTrue(glass.contains("dock-drag-end"));
+    }
+
+    @Test
     public void systemDockDragFreezesCaptureAtMiuiDragListenerBoundary() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
         String glass = read("DockLiquidGlassView.java");
 
-        // startDragInDockForSystem() delegates to MIUI startDragAndDrop; its anonymous listener
-        // implements IMiuiDragListener. These system-owned drag surfaces cannot be reliably
-        // addressed by Launcher SurfaceControl, so preserve the last clean backdrop instead.
+        // startDragInDockForSystem() is no-arg in the decompiled build and delegates to MIUI
+        // startDragAndDrop. Keep this separate fallback for the system-drag path even though the
+        // device trace in this regression used ordinary DragController.startDrag(View[], ...).
         assertTrue(drag.contains("android.view.IMiuiDragListener"));
         assertTrue(drag.contains("setSystemDockDragActive(true)"));
         assertTrue(drag.contains("setSystemDockDragActive(false)"));
@@ -53,19 +66,21 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
-    public void thirdPartyBackground2ClearsVendorBlurAndLetsPrismalOwnBlur() throws Exception {
+    public void thirdPartyBackground2KeepsVendorVisualOwnerAndPrismalOpticalOnly() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // Decompiled BlurBackground2.onAttachedToWindow/setBackgroundRadius call addBlur(), whose
-        // implementation calls BlurUtilities.setBackgroundBlur + setBackgroundBlurAlpha.
-        // It is therefore not the MiuiX native-material owner and must not be stacked underneath
-        // an optical-only Prismal layer.
+        // Decompiled BlurBackground2 already owns pass-window blur and MiShadow. Device RenderEngine
+        // logs show that making Prismal own blur adds Floating Dock regionblurRadius:100 above that
+        // visual owner, blurring the native shadow/stroke. Both supported backgrounds must keep
+        // native visual ownership; Prismal is optical-only and we only clamp native blur radius.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
-        assertTrue(glassHook.contains("isNativeMaterialBackground"));
-        assertTrue(glassHook.contains("com.miui.home.launcher.common.BlurUtilities"));
-        assertTrue(glassHook.contains("clearAllBlur"));
-        assertTrue(glassHook.contains("compat BlurBackground2 native blur cleared"));
+        assertTrue(glassHook.contains("isNativeVisualOwner"));
+        assertTrue(glassHook.contains("COMPAT_BACKGROUND_CLASS.equals"));
+        assertTrue(glassHook.contains("enforcePrismalOpticalOnly(glass);"));
+        assertTrue(glassHook.contains("enforceNativeBlurRadius(dockBg);"));
+        assertFalse(glassHook.contains("clearAllBlur"));
+        assertFalse(glassHook.contains("Prismal owns blur"));
     }
 }
