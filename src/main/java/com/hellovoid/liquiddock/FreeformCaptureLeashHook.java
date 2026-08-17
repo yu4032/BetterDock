@@ -6,10 +6,16 @@ import android.view.SurfaceControl;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Final fail-closed gate immediately before LiquidDock submits a mode-1 display capture. */
 final class FreeformCaptureLeashHook {
     private static final AtomicBoolean INSTALL_ATTEMPTED = new AtomicBoolean();
+    // Dynamic APP capture can submit many mode-1 requests per second. Diagnostics are useful
+    // only at a semantic boundary, so emit one line when this final gate's state changes rather
+    // than one line per frame.
+    private static final AtomicReference<String> LAST_GATE_LOG_SIGNATURE =
+            new AtomicReference<>("");
 
     private FreeformCaptureLeashHook() {}
 
@@ -33,26 +39,35 @@ final class FreeformCaptureLeashHook {
                 }
 
                 FreeformTaskLeashResolver.Resolution resolution = null;
+                int displayId = args[2] instanceof Integer ? (Integer) args[2] : -1;
                 try {
                     try {
-                        int displayId = (Integer) args[2];
                         resolution = FreeformLeashRuntime.resolveForCapture(displayId);
-                        if (resolution.hasVisibleFreeformTasks()) {
+                        boolean visibleFreeform = resolution.hasVisibleFreeformTasks();
+                        boolean safe = resolution.isSafe();
+                        int remoteLeashCount = 0;
+                        String action = "PASS_THROUGH";
+
+                        if (visibleFreeform) {
                             SurfaceControl[] remote = resolution.borrowedRemoteLeashes();
-                            if (!resolution.isSafe() || !allValid(remote)) {
+                            remoteLeashCount = remote != null ? remote.length : 0;
+                            if (!safe || !allValid(remote)) {
                                 args[3] = null;
                                 args[4] = null;
                                 args[5] = 2;
+                                action = "WALLPAPER_FAIL_CLOSED";
                             } else {
                                 SurfaceControl[] existing = args[3] instanceof SurfaceControl[]
                                         ? (SurfaceControl[]) args[3] : null;
                                 args[3] = merge(existing, remote);
+                                action = "EXCLUDE_TASK_LEASHES";
                             }
                         }
+                        logGateStateIfChanged(displayId, visibleFreeform, safe,
+                                remoteLeashCount, action);
                     } catch (Throwable gateError) {
-                        Api101Bridge.log(
-                                "[DC] freeform leash capture gate failed; wallpaper fallback",
-                                gateError);
+                        logGateStateIfChanged(displayId, true, false, 0,
+                                "ERROR_WALLPAPER_" + gateError.getClass().getSimpleName());
                         args[3] = null;
                         args[4] = null;
                         args[5] = 2;
@@ -71,6 +86,25 @@ final class FreeformCaptureLeashHook {
         } catch (Throwable error) {
             FreeformLeashRuntime.setCaptureGateInstalled(false);
             Api101Bridge.log("[DC] freeform task-leash capture gate unavailable", error);
+        }
+    }
+
+    private static void logGateStateIfChanged(int displayId, boolean visibleFreeform,
+                                              boolean safe, int remoteLeashes,
+                                              String action) {
+        String signature = "display=" + displayId
+                + " visibleFreeform=" + visibleFreeform
+                + " safe=" + safe
+                + " remoteLeashes=" + remoteLeashes
+                + " action=" + action
+                + " miuix307=" + Miuix307MaterialPipeline.isInstalled();
+        while (true) {
+            String previous = LAST_GATE_LOG_SIGNATURE.get();
+            if (signature.equals(previous)) return;
+            if (LAST_GATE_LOG_SIGNATURE.compareAndSet(previous, signature)) {
+                Api101Bridge.log("[DC] freeform capture gate " + signature);
+                return;
+            }
         }
     }
 
