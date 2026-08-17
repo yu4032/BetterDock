@@ -87,6 +87,24 @@ final class MiBlurBridge {
         }
     }
 
+    /**
+     * Restore only the compositor backdrop radius without replaying the vendor blur mode or
+     * pass-window enable state. HyperOS 307 rewrites this radius during HOME/RECENTS transitions.
+     */
+    static boolean setPassWindowBlurRadius(View view, int radiusPx) {
+        if (!PASS_BLUR_AVAILABLE || view == null) return false;
+        int safeRadius = Math.max(0, Math.min(400, radiusPx));
+        try {
+            Object result = SET_MI_BACKGROUND_BLUR_RADIUS.invoke(view, safeRadius);
+            return !(result instanceof Boolean) || (Boolean) result;
+        } catch (Throwable e) {
+            // Radius repair is deliberately non-destructive: do not disable the vendor material
+            // when one repair attempt fails.
+            MainHook.log("[DC] pass window blur radius repair failed: " + e);
+            return false;
+        }
+    }
+
     /** Apply realtime blur to content behind {@code view}; this is not self/content blur. */
     static boolean applyPassWindowBlur(View view, int radiusPx) {
         if (!PASS_BLUR_AVAILABLE || view == null) return false;
