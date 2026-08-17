@@ -66,7 +66,10 @@ final class MiuixGlassHook {
         boolean passOk = MiBlurBridge.applyPassWindowBlur(dockBg, blurPx);
         MainHook.log(TAG + " passWindowBlur radius=" + blurPx + " ok=" + passOk);
         if (!passOk) {
-            boolean contentOk = MiBlurBridge.applyContentBlur(dockBg, blurPx, 0.5f);
+            // Keep every 307 sampling-quality knob tied to the existing GUI value. This is only
+            // a compatibility fallback; normal 307 operation uses compositor pass-window blur.
+            boolean contentOk = MiBlurBridge.applyContentBlur(
+                    dockBg, blurPx, config.glass.captureScale);
             MainHook.log(TAG + " fallback to content blur ok=" + contentOk);
         }
 
@@ -84,6 +87,13 @@ final class MiuixGlassHook {
         // remaining UNKNOWN -> WALLPAPER. Force the composed-display capability for this mode;
         // historical preferences must not turn an app backdrop back into wallpaper.
         glass.setFullscreenCapture(true);
+        // 307 uses the same user-facing capture controls as legacy Liquid Glass. Keep these
+        // explicit here so this specialized path can never drift back to demo constants.
+        glass.setCaptureScale(config.glass.captureScale);
+        glass.setCapturePowerLimitFps(config.glass.captureFps);
+        enforcePrismalOpticalOnly(glass);
+        MainHook.log(TAG + " capture tuning fps=" + config.glass.captureFps
+                + " scale=" + config.glass.captureScale);
 
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
         host.setId(View.generateViewId());
@@ -155,6 +165,18 @@ final class MiuixGlassHook {
     }
 
     /**
+     * MiuiX already owns the actual backdrop blur. Prismal must only refract the raw sampled
+     * backdrop and draw its optical highlight; otherwise its shader/self-blur stacks on top of
+     * the native pass-window blur and produces the heavy second blur seen after HOME/RECENTS
+     * transitions. This is intentionally re-applied after config hot reloads.
+     */
+    private static void enforcePrismalOpticalOnly(DockLiquidGlassView glass) {
+        if (glass == null) return;
+        glass.setBlurMode(LiquidBlurMode.SHADER);
+        glass.setBlurRadiusPx(0);
+    }
+
+    /**
      * Keep the native MiuiX material visible without changing DockLiquidGlassView's legacy
      * behavior. Its installCapture() sets geometrySource alpha=0 and marks the private
      * nativeBackgroundHiddenByGlass latch. Because this listener is registered after the glass
@@ -182,6 +204,9 @@ final class MiuixGlassHook {
 
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             if (backgroundRef != dockBg || glassRef != glass) return true;
+            // DockLiquidGlassView can hot-reload the persisted legacy blur mode/radius at 1 Hz.
+            // Reassert the 307 contract after that reload but before this frame is drawn.
+            enforcePrismalOpticalOnly(glass);
             try {
                 hiddenField.setBoolean(glass, false);
             } catch (Throwable ignored) {}
@@ -196,6 +221,7 @@ final class MiuixGlassHook {
         // on the main queue as well so the native material never remains hidden for a full frame.
         dockBg.post(() -> {
             if (backgroundRef != dockBg || glassRef != glass) return;
+            enforcePrismalOpticalOnly(glass);
             try {
                 hiddenField.setBoolean(glass, false);
             } catch (Throwable ignored) {}
