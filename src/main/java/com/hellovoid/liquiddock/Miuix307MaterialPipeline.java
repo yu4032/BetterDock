@@ -14,6 +14,7 @@ final class Miuix307MaterialPipeline {
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
     private static boolean installed;
+    private static View workspaceRef;
 
     private Miuix307MaterialPipeline() {}
 
@@ -51,9 +52,9 @@ final class Miuix307MaterialPipeline {
                                 Object value = HookUtil.getField(launcher, "mWorkspace");
                                 if (value instanceof View) workspace = (View) value;
                             } catch (Throwable ignored) {}
+                            if (workspace != null) workspaceRef = workspace;
 
-                            if (!MiuixGlassHook.install(
-                                    background, workspace, config, launcher, classLoader)) {
+                            if (!ensureGlassBound(background, config, classLoader)) {
                                 MainHook.log("[DC] MiuiX 307 real glass install returned false");
                             }
                         } catch (Throwable error) {
@@ -62,24 +63,31 @@ final class Miuix307MaterialPipeline {
                         return result;
                     });
 
-            // setupViews can run before the vendor has its final dimensions. These callbacks
-            // are the authoritative geometry boundary on 307 and keep the glass host aligned.
+            // setupViews can run before the vendor has its final dimensions. It can also keep
+            // the Launcher hierarchy while replacing only the MiuiX background during APP->HOME.
+            // Treat each geometry callback instance as authoritative: bind first, then sync.
             HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.syncSize((View) chain.getThisObject());
+                        View background = (View) chain.getThisObject();
+                        ensureGlassBound(background, config, classLoader);
+                        MiuixGlassHook.syncSize(background);
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
                     new Class<?>[]{int.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.syncSize((View) chain.getThisObject());
+                        View background = (View) chain.getThisObject();
+                        ensureGlassBound(background, config, classLoader);
+                        MiuixGlassHook.syncSize(background);
                         return result;
                     });
             HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
                     new Class<?>[]{float.class}, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        MiuixGlassHook.syncGeometry((View) chain.getThisObject(), config);
+                        View background = (View) chain.getThisObject();
+                        ensureGlassBound(background, config, classLoader);
+                        MiuixGlassHook.syncGeometry(background, config);
                         return result;
                     });
 
@@ -90,6 +98,27 @@ final class Miuix307MaterialPipeline {
             MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
         }
+    }
+
+    /**
+     * Self-heal when HyperOS replaces only the MiuiX background view. setupViews is not a
+     * reliable per-instance boundary on 307, but the background geometry callbacks are.
+     */
+    private static boolean ensureGlassBound(
+            View background, LiquidDockConfig config, ClassLoader classLoader) {
+        if (background == null) return false;
+        if (MiuixGlassHook.isBoundTo(background)) return true;
+
+        MainHook.log("[DC] MiuiX 307 background instance changed; rebinding Prismal glass"
+                + " instance=" + Integer.toHexString(System.identityHashCode(background)));
+        boolean installedNow = MiuixGlassHook.install(
+                background, workspaceRef, config, null, classLoader);
+        if (!installedNow) {
+            // Width may arrive before the new background is parented. Height/radius callbacks
+            // will retry naturally, so do not add a polling loop or delayed lifecycle guess.
+            MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
+        }
+        return installedNow;
     }
 
     private static View resolveBackground(Object hotSeats) {
