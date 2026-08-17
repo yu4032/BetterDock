@@ -60,6 +60,19 @@ public class Miuix307CaptureCompatibilityTest {
         assertFalse(drag.contains("android.graphics.drawable.Drawable.class, boolean.class,"));
     }
 
+    @Test public void null307DragSurfaceRetriesWithinTheSameSessionAndStopsAtEnd()
+            throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        // Device evidence shows the real runtime startDrag callback can arrive before the drag
+        // View owns its SurfaceControl. Retry only while this drag is active and no exclusion has
+        // been resolved; a later frame must be able to upgrade the same session.
+        assertTrue(drag.contains("scheduleDragSurfaceRetry"));
+        assertTrue(drag.contains("postOnAnimation"));
+        assertTrue(drag.contains("!dragActive || activeDragLayerName != null"));
+        assertTrue(drag.contains("drag surface retry"));
+    }
+
     @Test public void freeformGateDiagnosticIsStateDeduplicatedNotPerFrame() throws Exception {
         String gate = read("FreeformCaptureLeashHook.java");
 
@@ -73,7 +86,7 @@ public class Miuix307CaptureCompatibilityTest {
         assertTrue(gate.contains("miuix307="));
         assertTrue(gate.contains("compareAndSet"));
 
-        // Preserve the existing fail-closed and real-leash mechanisms.
+        // Preserve real-leash exclusion and a last-resort fail-closed path for unexpected errors.
         assertTrue(gate.contains("resolution.borrowedRemoteLeashes()"));
         assertTrue(gate.contains("args[5] = 2"));
     }
