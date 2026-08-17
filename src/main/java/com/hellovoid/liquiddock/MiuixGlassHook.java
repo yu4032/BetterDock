@@ -103,10 +103,13 @@ final class MiuixGlassHook {
         // must stay disabled because SurfaceFlinger would otherwise post-process the whole Dock.
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
 
-        float radius = readRadius(dockBg);
+        float nativeRadius = readRadius(dockBg);
+        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(
+                dockBg, config.dock, nativeRadius);
         int dockW = readDimension(dockBg, "mWidth", true);
         int dockH = readDimension(dockBg, "mHeight", false);
-        MainHook.log(TAG + " in-place material radius=" + radius
+        MainHook.log(TAG + " in-place material nativeRadius=" + nativeRadius
+                + " glassRadius=" + glassRadius
                 + " dock size=" + dockW + "x" + dockH);
 
         DockLiquidGlassView glass = LiquidGlassFactory.create(
@@ -123,7 +126,7 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(dockBg.getContext());
         host.setId(View.generateViewId());
         host.setLayers(glass);
-        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);
+        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);
         host.reloadOpticsOnly(config.dock, config.glass);
 
         FrameLayout.LayoutParams hostLp = new FrameLayout.LayoutParams(
@@ -140,7 +143,7 @@ final class MiuixGlassHook {
 
         // Stroke + stroke-shadow deliberately live on the vendor foreground, which Android draws
         // after child dispatch, so they remain sharp and above the in-place glass.
-        DockStrokeRenderer.configure(dockBg, config.dock, radius);
+        DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);
         MainHook.log(TAG + " Prismal composed inside native 307 material shell class="
                 + dockBg.getClass().getSimpleName());
         return true;
@@ -166,10 +169,13 @@ final class MiuixGlassHook {
 
         if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
 
-        float radius = readRadius(dockBg);
-        host.setGeometry(radius, config.dock.squircle, config.dock.squircleCp);
+        float nativeRadius = readRadius(dockBg);
+        float glassRadius = DockStrokeRenderer.resolveConfiguredRadius(
+                dockBg, config.dock, nativeRadius);
+        host.setGeometry(glassRadius, config.dock.squircle, config.dock.squircleCp);
         host.reloadOpticsOnly(config.dock, config.glass);
-        DockStrokeRenderer.configure(dockBg, config.dock, radius);
+        DockStrokeRenderer.configureReplacingForeground(
+                dockBg, config.dock, nativeRadius);
         host.bringToFront();
         host.invalidate();
     }
