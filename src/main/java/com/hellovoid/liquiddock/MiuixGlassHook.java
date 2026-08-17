@@ -30,6 +30,15 @@ final class MiuixGlassHook {
 
     private MiuixGlassHook() {}
 
+    /** True only when this exact vendor background instance still owns the live Prismal host. */
+    static boolean isBoundTo(View dockBg) {
+        if (dockBg == null || dockBg != backgroundRef) return false;
+        ViewGroup parent = dockBg.getParent() instanceof ViewGroup
+                ? (ViewGroup) dockBg.getParent() : null;
+        DockLiquidGlassHostView host = hostRef;
+        return parent != null && host != null && host.getParent() == parent;
+    }
+
     static boolean install(View dockBg, View workspace, LiquidDockConfig config,
                            Object launcher, ClassLoader cl) {
         if (dockBg == null || config == null) return false;
