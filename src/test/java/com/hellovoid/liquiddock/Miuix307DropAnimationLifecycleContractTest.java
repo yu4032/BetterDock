@@ -84,6 +84,40 @@ public class Miuix307DropAnimationLifecycleContractTest {
     }
 
     @Test
+    public void releaseWaitsForActualDragViewsToBecomeVisuallyAbsent() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        int end = drag.indexOf("private static void onEndDrag(Object dragObject)");
+        int nextEnd = drag.indexOf("\n    private static void ", end + 1);
+        String endBody = nextEnd > end ? drag.substring(end, nextEnd) : drag.substring(end);
+        assertTrue("endDrag must retain the actual DragViews, not only a numeric counter",
+                drag.contains("settlingDragViews") && endBody.contains("snapshotDragViews(dragObject)"));
+
+        int finish = drag.indexOf("private static void finishDropSettling(String reason)");
+        int nextFinish = drag.indexOf("\n    private static void ", finish + 1);
+        String finishBody = nextFinish > finish
+                ? drag.substring(finish, nextFinish) : drag.substring(finish);
+        int visibleGate = finishBody.indexOf("hasVisibleSettlingDragView()");
+        int releaseArmed = finishBody.indexOf("dropReleaseScheduled = true;");
+        assertTrue("a visible DragView must block the compositor release barrier",
+                visibleGate >= 0 && releaseArmed > visibleGate);
+        assertTrue("visible DragViews must be rechecked on later display frames",
+                finishBody.contains("scheduleSettlingDragViewCheck(reason);")
+                        && finishBody.indexOf("scheduleSettlingDragViewCheck(reason);") < releaseArmed);
+
+        int check = drag.indexOf("private static void scheduleSettlingDragViewCheck(String reason)");
+        int nextCheck = drag.indexOf("\n    private static void ", check + 1);
+        String checkBody = nextCheck > check ? drag.substring(check, nextCheck) : drag.substring(check);
+        assertTrue("DragView visibility gate must be VSYNC-driven, not timer-driven",
+                checkBody.contains("postOnAnimation") && !checkBody.contains("postDelayed("));
+        assertTrue("visual presence must be tested from the real View state",
+                drag.contains("isAttachedToWindow()")
+                        && drag.contains("getVisibility() == View.VISIBLE")
+                        && drag.contains("isShown()")
+                        && drag.contains("getAlpha() > 0.01f"));
+    }
+
+    @Test
     public void compositorBarrierKeepsFreezeUntilNextAnimationFrame() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
 
