@@ -41,6 +41,18 @@ final class MiuixGlassHook {
         return parent != null && host != null && host.getParent() == parent;
     }
 
+    /**
+     * Native 307 emits its toHome state before the Launcher icon-flight animation starts.
+     * Reuse DockLiquidGlassView's existing gesture target barrier so HOME becomes wallpaper-
+     * backed immediately and every in-flight APP bitmap becomes stale by scene revision.
+     */
+    static void onHomeTransitionStart() {
+        DockLiquidGlassView glass = glassRef;
+        if (glass == null) return;
+        glass.setGestureCaptureTarget("HOME");
+        MainHook.log(TAG + " native toHome -> HOME wallpaper capture target");
+    }
+
     static boolean install(View dockBg, View workspace, LiquidDockConfig config,
                            Object launcher, ClassLoader cl) {
         if (dockBg == null || config == null) return false;
