@@ -56,8 +56,8 @@ final class FreeformTaskLeashResolver {
                     FreeformLeashProtocol.TRANSACTION_REQUEST_VISIBLE_LEASH_SNAPSHOT,
                     request, null, IBinder.FLAG_ONEWAY);
             if (!accepted) {
-                // Mixed module generations are a normal restart window. Stay fail-closed but
-                // do not poison this Launcher process; a later SystemUI restart can recover.
+                // Mixed module generations are a normal restart window. The snapshot is
+                // unknown, not proof that a visible freeform task exists.
                 state.expire();
                 return Resolution.unavailable(true);
             }
@@ -108,26 +108,35 @@ final class FreeformTaskLeashResolver {
     }
 
     static final class Resolution implements AutoCloseable {
+        private final boolean known;
         private final boolean visibleFreeform;
         private final boolean safe;
         private SurfaceControl[] ownedRemoteLeashes;
         private boolean closed;
 
-        private Resolution(boolean visibleFreeform, boolean safe, SurfaceControl[] owned) {
+        private Resolution(boolean known, boolean visibleFreeform, boolean safe,
+                           SurfaceControl[] owned) {
+            this.known = known;
             this.visibleFreeform = visibleFreeform;
             this.safe = safe;
             this.ownedRemoteLeashes = owned != null ? owned : new SurfaceControl[0];
         }
 
         static Resolution noFreeform() {
-            return new Resolution(false, true, null);
+            return new Resolution(true, false, true, null);
         }
 
-        static Resolution unavailable(boolean visibleFreeform) {
-            return new Resolution(visibleFreeform, !visibleFreeform, null);
+        /**
+         * No authoritative snapshot was obtained. The legacy boolean is intentionally ignored:
+         * provider absence, timeout, malformed IPC and infrastructure failure are UNKNOWN state,
+         * not evidence that a visible freeform task exists.
+         */
+        static Resolution unavailable(boolean ignoredVisibleFreeform) {
+            return new Resolution(false, false, false, null);
         }
 
-        boolean hasVisibleFreeformTasks() { return visibleFreeform; }
+        boolean isKnown() { return known; }
+        boolean hasVisibleFreeformTasks() { return known && visibleFreeform; }
         boolean isSafe() { return safe; }
 
         synchronized SurfaceControl[] borrowedRemoteLeashes() {
@@ -255,7 +264,7 @@ final class FreeformTaskLeashResolver {
                 }
             }
             expired = true;
-            return new Resolution(true, true, surfaces);
+            return new Resolution(true, true, true, surfaces);
         }
     }
 }
