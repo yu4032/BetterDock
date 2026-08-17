@@ -14,16 +14,16 @@ import static org.junit.Assert.assertTrue;
 public class DockBottomGeometryContractTest {
 
     @Test
-    public void bottomOffsetNoLongerHooksDeviceConfigMarginGetter() throws Exception {
-        String mainHook = Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/MainHook.java"),
-                StandardCharsets.UTF_8);
-        String material = Files.readString(
-                Paths.get("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java"),
-                StandardCharsets.UTF_8);
-
-        assertFalse(mainHook.contains("getHotSeatsMarginBottom"));
-        assertFalse(material.contains("getHotSeatsMarginBottom"));
+    public void legacyMarginDeltaIsNeutralizedInsteadOfOwningVisibleGeometry() throws Exception {
+        Path path = Paths.get(
+                "src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
+        assertTrue(Files.exists(path));
+        String source = Files.readString(path, StandardCharsets.UTF_8);
+        // Existing MainHook/307 compatibility hooks can remain binary-compatible, but their
+        // custom delta is canceled before layout so DeviceConfig no longer owns the feature.
+        assertTrue(source.contains("getHotSeatsMarginBottom"));
+        assertTrue(source.contains("PRIORITY_HIGHEST"));
+        assertTrue(source.contains("result - bottomOffsetPx"));
     }
 
     @Test
