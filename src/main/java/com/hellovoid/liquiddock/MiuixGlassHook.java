@@ -9,7 +9,6 @@ import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 /**
  * MiuiX-specific glass installer for OS3.0.307+ docks.
@@ -34,7 +33,6 @@ final class MiuixGlassHook {
     private static ViewTreeObserver.OnPreDrawListener nativeBackgroundPreserver;
     private static int nativeBlurRadiusPx = -1;
     private static boolean nativeBlurRadiusFailureLogged;
-    private static ClassLoader launcherClassLoader;
 
     private MiuixGlassHook() {}
 
@@ -65,8 +63,8 @@ final class MiuixGlassHook {
         ViewGroup parent = dockBg.getParent() instanceof ViewGroup
                 ? (ViewGroup) dockBg.getParent() : null;
         if (parent == null) return false;
-        launcherClassLoader = cl;
         boolean nativeMaterial = isNativeMaterialBackground(dockBg);
+        boolean nativeVisualOwner = isNativeVisualOwner(dockBg);
 
         if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == parent) {
             syncSize(dockBg);
@@ -87,20 +85,22 @@ final class MiuixGlassHook {
 
         float density = dockBg.getResources().getDisplayMetrics().density;
         int blurPx = Math.round(config.glass.blur * density);
+        nativeBlurRadiusPx = nativeVisualOwner ? blurPx : -1;
         if (nativeMaterial) {
-            nativeBlurRadiusPx = blurPx;
             boolean passOk = MiBlurBridge.applyPassWindowBlur(dockBg, blurPx);
             MainHook.log(TAG + " passWindowBlur radius=" + blurPx + " ok=" + passOk);
             if (!passOk) {
-                // Native MiuiX normally owns compositor pass-window blur. Content blur is only
-                // its compatibility fallback; BlurBackground2 deliberately never enters here.
+                // The true MiuiX material normally owns compositor pass-window blur.
                 boolean contentOk = MiBlurBridge.applyContentBlur(
                         dockBg, blurPx, config.glass.captureScale);
                 MainHook.log(TAG + " fallback to content blur ok=" + contentOk);
             }
-        } else {
-            nativeBlurRadiusPx = -1;
-            clearCompatBackgroundBlur(dockBg, cl);
+        } else if (nativeVisualOwner) {
+            // BlurBackground2.addBlur() already enables the vendor pass-window blur and also
+            // owns MiShadow / outline state. Do not clear or re-enable that stack here; the
+            // pre-draw preserver below only clamps its existing blur radius.
+            MainHook.log(TAG + " compat BlurBackground2 keeps vendor visual owner radius="
+                    + blurPx);
         }
 
         float radius = readRadius(dockBg);
@@ -121,7 +121,7 @@ final class MiuixGlassHook {
         // explicit here so this specialized path can never drift back to demo constants.
         glass.setCaptureScale(config.glass.captureScale);
         glass.setCapturePowerLimitFps(config.glass.captureFps);
-        if (nativeMaterial) enforcePrismalOpticalOnly(glass);
+        if (nativeVisualOwner) enforcePrismalOpticalOnly(glass);
         MainHook.log(TAG + " capture tuning fps=" + config.glass.captureFps
                 + " scale=" + config.glass.captureScale);
 
@@ -147,12 +147,13 @@ final class MiuixGlassHook {
         backgroundRef = dockBg;
         glassRef = glass;
         hostRef = host;
-        installNativeBackgroundPreserver(dockBg, glass, nativeMaterial);
+        if (nativeVisualOwner) enforceNativeBlurRadius(dockBg);
+        installNativeBackgroundPreserver(dockBg, glass, nativeVisualOwner);
         HomeOwnershipRuntime.bind(glass, glass.getContext());
 
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
-        MainHook.log(TAG + " Prismal glass installed above "
-                + (nativeMaterial ? "MiuiX native material" : "BlurBackground2 compatibility")
+        MainHook.log(TAG + " Prismal optical layer installed above "
+                + (nativeMaterial ? "MiuiX native material" : "BlurBackground2 vendor visual")
                 + " background with live ownership");
         return true;
     }
@@ -188,13 +189,12 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = hostRef;
         if (host == null || host.getParent() == null) return;
 
-        if (isNativeMaterialBackground(dockBg)) {
+        if (isNativeVisualOwner(dockBg)) {
             float density = dockBg.getResources().getDisplayMetrics().density;
             nativeBlurRadiusPx = Math.round(config.glass.blur * density);
             enforceNativeBlurRadius(dockBg);
         } else {
             nativeBlurRadiusPx = -1;
-            clearCompatBackgroundBlur(dockBg, launcherClassLoader);
         }
 
         float radius = readRadius(dockBg);
@@ -209,21 +209,11 @@ final class MiuixGlassHook {
         return dockBg != null && NATIVE_BACKGROUND_CLASS.equals(dockBg.getClass().getName());
     }
 
-    /** Clear the legacy blur that BlurBackground2.addBlur() reapplies on attach/radius changes. */
-    private static void clearCompatBackgroundBlur(View dockBg, ClassLoader classLoader) {
-        if (dockBg == null || isNativeMaterialBackground(dockBg)
-                || !COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return;
-        try {
-            ClassLoader cl = classLoader != null ? classLoader : dockBg.getClass().getClassLoader();
-            Class<?> utilities = Class.forName(
-                    "com.miui.home.launcher.common.BlurUtilities", false, cl);
-            Method clearAllBlur = utilities.getDeclaredMethod("clearAllBlur", View.class);
-            clearAllBlur.setAccessible(true);
-            clearAllBlur.invoke(null, dockBg);
-            MainHook.log(TAG + " compat BlurBackground2 native blur cleared; Prismal owns blur");
-        } catch (Throwable error) {
-            MainHook.log(TAG + " compat BlurBackground2 native blur clear failed: " + error);
-        }
+    /** Both 307 implementations own the native blur/shadow/outline visual stack. */
+    private static boolean isNativeVisualOwner(View dockBg) {
+        if (dockBg == null) return false;
+        String name = dockBg.getClass().getName();
+        return NATIVE_BACKGROUND_CLASS.equals(name) || COMPAT_BACKGROUND_CLASS.equals(name);
     }
 
     /**
@@ -261,7 +251,7 @@ final class MiuixGlassHook {
      * attaches its own pre-draw listener, it clears that latch and restores alpha before drawing.
      */
     private static void installNativeBackgroundPreserver(
-            View dockBg, DockLiquidGlassView glass, boolean nativeMaterial) {
+            View dockBg, DockLiquidGlassView glass, boolean nativeVisualOwner) {
         removeNativeBackgroundPreserver();
         final Field hiddenField;
         try {
@@ -282,10 +272,9 @@ final class MiuixGlassHook {
 
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             if (backgroundRef != dockBg || glassRef != glass) return true;
-            // Keep the geometry/background View itself alive. Only the true MiuiX material
-            // owns native blur; BlurBackground2 has already had its legacy blur cleared and
-            // Prismal must retain the user's configured blur radius.
-            if (nativeMaterial) {
+            // Keep the vendor geometry/background/shadow stack alive underneath Prismal.
+            // Both supported 307 backgrounds own native blur; Prismal only refracts/highlights.
+            if (nativeVisualOwner) {
                 enforcePrismalOpticalOnly(glass);
                 enforceNativeBlurRadius(dockBg);
             }
@@ -304,7 +293,7 @@ final class MiuixGlassHook {
         // hidden or keeps a vendor-overwritten blur radius for a full frame.
         dockBg.post(() -> {
             if (backgroundRef != dockBg || glassRef != glass) return;
-            if (nativeMaterial) {
+            if (nativeVisualOwner) {
                 enforcePrismalOpticalOnly(glass);
                 enforceNativeBlurRadius(dockBg);
             }

@@ -289,6 +289,10 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
     // re-arrangement, and the drag surface layer is excluded so the floating icon never
     // freezes into the captured background.
     private volatile boolean dockDragging = false;
+    // Ordinary 307 DragController has no reflectable View.getSurfaceControl(). If no valid
+    // drag Surface can be excluded, freeze the last clean backdrop instead of sampling the
+    // moving icon into the glass. A later valid Surface automatically resumes live capture.
+    private volatile boolean dockDragCaptureFrozen = false;
     // MIUI system Dock drag uses WMS/Shell-owned startDragAndDrop surfaces. Unlike ordinary
     // Launcher DragView motion, those surfaces cannot be excluded using a Launcher-owned
     // SurfaceControl, so keep the last clean backdrop installed until the system drag ends.
@@ -1384,14 +1388,40 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
 
     void setDockDragging(boolean dragging, String dragSurfaceLayerName,
                          android.view.SurfaceControl dragSurface) {
+        boolean wasFrozen = dockDragCaptureFrozen;
+        boolean hasExcludableSurface = dragging && isValidCaptureSurface(dragSurface);
         dockDragging = dragging;
         dragLayerName = dragging ? dragSurfaceLayerName : null;
-        dragSurfaceControl = dragging && isValidCaptureSurface(dragSurface) ? dragSurface : null;
+        dragSurfaceControl = hasExcludableSurface ? dragSurface : null;
+        dockDragCaptureFrozen = dragging && !hasExcludableSurface;
+
+        if (dockDragCaptureFrozen) {
+            if (!wasFrozen) {
+                logI("Liquid capture frozen: Dock drag has no excludable Surface");
+                mainHandler.removeCallbacks(cancelGrace);
+                cancelPendingCaptureWork();
+                invalidate();
+            }
+            return;
+        }
+
         if (dragging) {
+            if (wasFrozen) logI("Liquid capture resumed: Dock drag Surface became excludable");
             resetCaptureCircuit("drag-start");
             beginObservationBurst();
             observationValid = false;
+            lastCaptureStartNanos = 0L;
             requestStateCapture("drag-start");
+            return;
+        }
+
+        if (wasFrozen) {
+            logI("Liquid capture resumed: Dock drag ended");
+            resetCaptureCircuit("dock-drag-end");
+            beginObservationBurst();
+            observationValid = false;
+            lastCaptureStartNanos = 0L;
+            requestStateCapture("dock-drag-end");
         }
     }
 
@@ -1807,6 +1837,9 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
         // startDragAndDrop(). Freeze the last clean frame before the ordinary dockDragging /
         // Recents visibility exception below can keep sampling those surfaces.
         if (systemDockDragActive) return false;
+        // Ordinary DragController is safe to capture only when its moving Surface can be
+        // excluded. On this 307 build View.getSurfaceControl() is absent, so freeze instead.
+        if (dockDragCaptureFrozen) return false;
         // Screen-off/doze is a hard stop. Unlike Dock visibility, Recents does NOT bypass this.
         if (!isDisplayInteractive()) return false;
 
