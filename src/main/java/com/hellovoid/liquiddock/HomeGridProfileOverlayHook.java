@@ -1,7 +1,6 @@
 package com.hellovoid.liquiddock;
 
 import android.content.Context;
-import android.content.res.Configuration;
 
 import com.hellovoid.liquiddock.config.GridProfileConfig;
 
@@ -70,11 +69,12 @@ final class HomeGridProfileOverlayHook {
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_HIGHEST)
                 .intercept(chain -> {
-                    if (MainHook.isWorkstationMode()) return chain.proceed();
-                    Context context = (Context) chain.getArg(0);
-                    boolean portrait = context.getResources().getConfiguration().orientation
-                            == Configuration.ORIENTATION_PORTRAIT;
-                    return xAxis ? profile.columns(portrait) : profile.rows(portrait);
+                    Object result = chain.proceed();
+                    if (!(result instanceof Integer) || MainHook.isWorkstationMode()) return result;
+                    // The default-priority 8x4 core runs inside this highest-priority wrapper.
+                    // Rewrite the observed 4/8 result, never a potentially stale Configuration.
+                    return HomeGridCountPolicy.profileRewrite(
+                            profile, false, xAxis, (Integer) result);
                 });
     }
 
@@ -83,19 +83,17 @@ final class HomeGridProfileOverlayHook {
         Method method = HookUtil.findMethodExact(gridConfig, methodName,
                 new Class<?>[]{int.class});
         // The stable HomeGridHook setter has default priority and rewrites any stock 6 to 8.
-        // Run after it and recover that intermediate value according to the selected axis.
-        // This is essential for the 6-row/column side of 10x6, where 8 is not the legacy
-        // axis value but is still the value delivered by the stable core.
+        // Run after it, then map the actually observed short/long axis 4/8 to 6/10. Rotation
+        // Configuration is deliberately not consulted because it can lead GridConfig.
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_LOWEST)
                 .intercept(chain -> {
                     if (MainHook.isWorkstationMode() || isExcludedGridConfigCall()) {
                         return chain.proceed();
                     }
-                    boolean portrait = isPortrait();
                     int current = (Integer) chain.getArg(0);
                     int target = HomeGridCountPolicy.profileRewrite(
-                            profile, portrait, xAxis, current);
+                            profile, false, xAxis, current);
                     if (target == current) return chain.proceed();
                     Object[] args = chain.getArgs().toArray(new Object[0]);
                     args[0] = target;
@@ -112,9 +110,8 @@ final class HomeGridProfileOverlayHook {
                     Object result = chain.proceed();
                     if (!(result instanceof Integer) || MainHook.isWorkstationMode()
                             || isExcludedGridConfigCall()) return result;
-                    boolean portrait = isPortrait();
                     return HomeGridCountPolicy.profileRewrite(
-                            profile, portrait, xAxis, (Integer) result);
+                            profile, false, xAxis, (Integer) result);
                 });
     }
 
@@ -209,11 +206,6 @@ final class HomeGridProfileOverlayHook {
 
     private static int[][] blocks(boolean portrait) {
         return profile.blockOrigins(portrait);
-    }
-
-    private static boolean isPortrait() {
-        return android.content.res.Resources.getSystem().getConfiguration().orientation
-                == Configuration.ORIENTATION_PORTRAIT;
     }
 
     /**
