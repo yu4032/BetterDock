@@ -85,4 +85,24 @@ public class Miuix307GlassContractTest {
         assertTrue(source.contains("nativeBackgroundHiddenByGlass"));
         assertTrue(source.contains("dockBg.setAlpha(1f)"));
     }
+
+    @Test
+    public void recreatedMiuixBackgroundRebindsGlassWithoutLauncherSetupViews() throws IOException {
+        String pipeline = read("Miuix307MaterialPipeline.java");
+        String hook = read("MiuixGlassHook.java");
+
+        // HyperOS may replace the MiuiX background during APP -> HOME without rebuilding the
+        // whole Launcher. Every authoritative geometry callback must therefore ensure that the
+        // callback instance owns a Prismal host before merely synchronizing its geometry.
+        assertTrue(hook.contains("isBoundTo"));
+        assertTrue(pipeline.contains("ensureGlassBound"));
+        assertTrue(pipeline.contains("MiuiX 307 background instance changed"));
+
+        int width = pipeline.indexOf("setBackgroundWidth");
+        int height = pipeline.indexOf("setBackgroundHeight");
+        int radius = pipeline.indexOf("setBackgroundRadius");
+        assertTrue(width >= 0 && pipeline.indexOf("ensureGlassBound", width) > width);
+        assertTrue(height >= 0 && pipeline.indexOf("ensureGlassBound", height) > height);
+        assertTrue(radius >= 0 && pipeline.indexOf("ensureGlassBound", radius) > radius);
+    }
 }
