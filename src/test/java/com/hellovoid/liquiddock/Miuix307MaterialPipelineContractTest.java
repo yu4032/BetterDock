@@ -38,7 +38,7 @@ public class Miuix307MaterialPipelineContractTest {
     }
 
     @Test
-    public void materialPipelineKeepsNativeMiuixBlurAndAddsPrismalGlass() throws IOException {
+    public void materialPipelineUsesNativeGeometryAndAddsPrismalGlass() throws IOException {
         Path pipelinePath = Paths.get(
                 "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
         Path glassHookPath = Paths.get(
@@ -51,11 +51,15 @@ public class Miuix307MaterialPipelineContractTest {
         String blurBridge = read("src/main/java/com/hellovoid/liquiddock/MiBlurBridge.java");
 
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
+        assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(pipeline.contains("MiuixGlassHook.install"));
         assertTrue(glassHook.contains("LiquidGlassFactory.create"));
         assertTrue(glassHook.contains("DockLiquidGlassHostView"));
-        assertTrue(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
+        assertTrue(glassHook.contains("suppressVendorGpuBlur"));
+        assertTrue(glassHook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
         assertTrue(blurBridge.contains("setPassWindowBlurEnabled"));
+        assertTrue(blurBridge.contains("clearPassWindowBlur"));
+        assertFalse(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
         assertFalse(glassHook.contains("setBackground(null)"));
         assertFalse(pipeline.contains("LiveScreenCapture"));
         assertFalse(pipeline.contains("CaptureSceneState"));
@@ -75,8 +79,6 @@ public class Miuix307MaterialPipelineContractTest {
         assertTrue("side-swipe HOME must reuse the existing wallpaper prearm",
                 pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
 
-        // Keep the already-working vendor state-broadcast boundary as a second signal. Both
-        // paths must converge on the same semantic entry point instead of duplicating state.
         assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
         assertTrue(pipeline.contains("\"toHome\""));
         int first = pipeline.indexOf("MiuixGlassHook.onHomeTransitionStart()");
