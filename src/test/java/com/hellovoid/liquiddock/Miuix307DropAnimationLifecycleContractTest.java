@@ -66,6 +66,26 @@ public class Miuix307DropAnimationLifecycleContractTest {
     }
 
     @Test
+    public void compositorBarrierKeepsFreezeUntilNextAnimationFrame() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        int finish = drag.indexOf("private static void finishDropSettling(String reason)");
+        int next = drag.indexOf("\n    private static void ", finish + 1);
+        String body = next > finish ? drag.substring(finish, next) : drag.substring(finish);
+
+        assertTrue("drop completion needs an explicit release-scheduled guard",
+                drag.contains("dropReleaseScheduled"));
+        assertTrue("drop completion must cross a VSYNC barrier before fresh capture",
+                body.contains("postOnAnimation"));
+        assertTrue("the deferred release must be tied to the current drag session",
+                body.contains("releaseSession") && body.contains("dragSessionId"));
+        assertTrue("fresh capture belongs inside the deferred compositor-barrier callback",
+                body.indexOf("postOnAnimation") < body.indexOf("finishDockDragCapture(reason)"));
+        assertFalse("do not replace the frame barrier with a guessed time delay",
+                body.contains("postDelayed("));
+    }
+
+    @Test
     public void dropAnimationCompletionIsCheckedAfterMiuiDecrementsItsCounter() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
 
