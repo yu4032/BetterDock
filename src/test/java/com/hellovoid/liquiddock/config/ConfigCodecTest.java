@@ -11,10 +11,12 @@ import static org.junit.Assert.assertFalse;
 
 public class ConfigCodecTest {
     @Test
-    public void representativeExportPreservesLegacyFieldsAndAddsWidgetAdaptation() {
+    public void representativeExportPreservesCurrentFieldsAndAddsGridProfile() {
         Map<String, Object> prefs = new HashMap<>();
         prefs.put("liquiddock_enabled", false);
-        prefs.put("home_grid_8x4", true);
+        prefs.put("home_grid_extended", true);
+        prefs.put("grid_profile", "10x6");
+        prefs.put("home_grid_8x4", true); // legacy key must not leak back into exports
         prefs.put("grid_widget_adaptation", true);
         prefs.put("grid_landscape_horizontal_distance", -3);
         prefs.put("grid_landscape_horizontal_distance_tenths", -27);
@@ -39,7 +41,8 @@ public class ConfigCodecTest {
 
         Map<String, Object> expected = new LinkedHashMap<>();
         expected.put("liquiddock_enabled", false);
-        expected.put("home_grid_8x4", true);
+        expected.put("home_grid_extended", true);
+        expected.put("grid_profile", "10x6");
         expected.put("grid_widget_adaptation", true);
         expected.put("grid_landscape_horizontal_distance", -2.7d);
         expected.put("indicator_landscape_y", -7.7d);
@@ -61,6 +64,7 @@ public class ConfigCodecTest {
         for (Map.Entry<String, Object> entry : expected.entrySet()) {
             assertEquals(entry.getValue(), exported.get(entry.getKey()));
         }
+        assertFalse(exported.containsKey("home_grid_8x4"));
         assertFalse(exported.containsKey("dock_divider_height_scale"));
         assertFalse(exported.containsKey("dock_divider_y_offset"));
         assertFalse(exported.containsKey("dock_divider_color_r"));
@@ -100,6 +104,32 @@ public class ConfigCodecTest {
         expected.put("workstation_all_apps_vertical_offset_tenths", -34);
 
         assertEquals(expected, ConfigCodec.importValues(json));
+    }
+
+    @Test
+    public void legacyGridBooleanImportsAsMasterSwitchAndEightByFourProfile() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("home_grid_8x4", true);
+
+        Map<String, Object> imported = ConfigCodec.importValues(json);
+
+        assertEquals(Boolean.TRUE, imported.get("home_grid_extended"));
+        assertEquals("8x4", imported.get("grid_profile"));
+        assertFalse(imported.containsKey("home_grid_8x4"));
+    }
+
+    @Test
+    public void canonicalGridImportWinsOverLegacyBoolean() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("home_grid_extended", false);
+        json.put("grid_profile", "10x6");
+        json.put("home_grid_8x4", true);
+
+        Map<String, Object> imported = ConfigCodec.importValues(json);
+
+        assertEquals(Boolean.FALSE, imported.get("home_grid_extended"));
+        assertEquals("10x6", imported.get("grid_profile"));
+        assertFalse(imported.containsKey("home_grid_8x4"));
     }
 
     @Test
@@ -193,12 +223,14 @@ public class ConfigCodecTest {
     }
 
     @Test
-    public void absentPreferencesExportCompleteHistoricalDefaults() {
+    public void absentPreferencesExportCompleteCurrentDefaults() {
         Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
 
-        assertEquals(104, exported.size());
+        assertEquals(105, exported.size());
         assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
-        assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
+        assertEquals(Boolean.FALSE, exported.get("home_grid_extended"));
+        assertEquals("8x4", exported.get("grid_profile"));
+        assertFalse(exported.containsKey("home_grid_8x4"));
         assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
         assertEquals(Boolean.TRUE, exported.get("grid_margins_dp"));
         assertEquals(100, exported.get("blur_radius"));
