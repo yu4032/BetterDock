@@ -107,6 +107,44 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
+    public void detachedThemeHierarchySchedulesOneShotGlassRebind() throws IOException {
+        String pipeline = read("Miuix307MaterialPipeline.java");
+        String hook = read("MiuixGlassHook.java");
+
+        // Theme/icon-pack changes can mutate only the HotSeats hierarchy. setupViews and geometry
+        // callbacks are not guaranteed after the injected host is detached, so retain the owner
+        // weakly and repair from the actual View detach boundary instead of polling theme state.
+        assertTrue("HotSeats owner must not be retained strongly",
+                pipeline.contains("WeakReference<Object> hotSeatsRef"));
+        assertTrue("setupViews must refresh the weak HotSeats owner",
+                pipeline.contains("new WeakReference<>(hotSeats)"));
+        assertTrue("bound hierarchy must observe real attach/detach lifecycle",
+                pipeline.contains("View.OnAttachStateChangeListener"));
+        assertTrue("theme recovery must have a coalescing latch",
+                pipeline.contains("hierarchyRebindPosted"));
+        assertTrue("detach must schedule a one-shot hierarchy repair",
+                pipeline.contains("scheduleHierarchyRebind"));
+        assertTrue("repair must be queued on the main thread without a delay",
+                pipeline.contains("MAIN_HANDLER.post("));
+        assertFalse("theme recovery must not poll with delayed retries",
+                pipeline.contains("MAIN_HANDLER.postDelayed("));
+
+        // Re-resolve the current vendor background from HotSeats rather than reinstalling into
+        // a stale detached View, then reuse the one authoritative installer/binding path.
+        assertTrue(pipeline.contains("resolveBackground(hotSeats)"));
+        assertTrue(pipeline.contains("ensureGlassBound(currentBackground, config, classLoader)"));
+        assertTrue(pipeline.contains("Miuix307DragCaptureHook.bind(background)"));
+
+        // The host itself can be removed while the vendor background survives. Expose only the
+        // current host View so the pipeline can observe its detach; do not duplicate glass state.
+        assertTrue(hook.contains("boundHostView()"));
+        assertTrue(pipeline.contains("MiuixGlassHook.boundHostView()"));
+
+        // Existing binding identity remains the no-op guard, preventing duplicate Prismal hosts.
+        assertTrue(pipeline.contains("MiuixGlassHook.isBoundTo(background)"));
+    }
+
+    @Test
     public void miuixUsesGuiCaptureTuningAndOnlyNativeBackdropBlur() throws IOException {
         String source = read("MiuixGlassHook.java");
 
