@@ -76,18 +76,17 @@ public class Miuix307CaptureCompatibilityTest {
     @Test public void freeformGateDiagnosticIsStateDeduplicatedNotPerFrame() throws Exception {
         String gate = read("FreeformCaptureLeashHook.java");
 
-        // The final task-leash gate already owns the correct semantic decision. Instrument only
-        // that boundary and dedupe identical states so dynamic APP capture cannot flood logcat.
+        // Instrument only the final capture boundary and dedupe identical states so dynamic APP
+        // capture cannot flood logcat. Visible freeform now has one terminal action: wallpaper.
         assertTrue(gate.contains("LAST_GATE_LOG_SIGNATURE"));
         assertTrue(gate.contains("logGateStateIfChanged"));
         assertTrue(gate.contains("visibleFreeform="));
-        assertTrue(gate.contains("remoteLeashes="));
         assertTrue(gate.contains("action="));
         assertTrue(gate.contains("miuix307="));
         assertTrue(gate.contains("compareAndSet"));
-
-        // Preserve real-leash exclusion and a last-resort fail-closed path for unexpected errors.
-        assertTrue(gate.contains("resolution.borrowedRemoteLeashes()"));
+        assertTrue(gate.contains("WALLPAPER_VISIBLE_FREEFORM"));
         assertTrue(gate.contains("args[5] = 2"));
+        assertFalse(gate.contains("PASS_THROUGH_UNRESOLVED_FREEFORM"));
+        assertFalse(gate.contains("EXCLUDE_TASK_LEASHES"));
     }
 }
