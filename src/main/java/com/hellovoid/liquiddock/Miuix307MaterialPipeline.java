@@ -7,16 +7,21 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 /**
- * Hook coordinator for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
+ * Hook coordinator for HyperOS 3.0.307+ HotSeats material backgrounds.
  *
- * The MiuiX background stays installed and remains the backdrop-blur/gradient owner.
- * MiuixGlassHook places the existing LiquidDock Prismal glass stack directly above it.
+ * HyperOS can switch the live HotSeats background implementation when an icon theme is applied.
+ * Keep the vendor background installed as the backdrop-blur/gradient owner and place LiquidDock's
+ * existing Prismal glass stack directly above whichever supported implementation is active.
  */
 final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
+    static final String THEMED_BACKGROUND_CLASS =
+            "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
 
     // Construct lazily at the first real hierarchy-detach boundary. Eager construction during
     // class initialization breaks host-side JVM contract tests where Android's Looper is absent.
@@ -41,11 +46,10 @@ final class Miuix307MaterialPipeline {
 
     static boolean install(ClassLoader classLoader, LiquidDockConfig config) {
         if (installed) return true;
-        final Class<?> backgroundClass;
-        try {
-            backgroundClass = Class.forName(BACKGROUND_CLASS, false, classLoader);
-        } catch (Throwable unavailable) {
-            MainHook.log("[DC] MiuiX 307 material unavailable: background class missing");
+        final Class<?> backgroundClass = loadOptionalClass(classLoader, BACKGROUND_CLASS);
+        final Class<?> themedBackgroundClass = loadOptionalClass(classLoader, THEMED_BACKGROUND_CLASS);
+        if (backgroundClass == null && themedBackgroundClass == null) {
+            MainHook.log("[DC] MiuiX 307 material unavailable: supported background classes missing");
             return false;
         }
 
@@ -68,7 +72,7 @@ final class Miuix307MaterialPipeline {
                             hotSeatsRef = new WeakReference<>(hotSeats);
                             View background = resolveBackground(hotSeats);
                             if (background == null) {
-                                MainHook.log("[DC] MiuiX 307 background not found in setupViews");
+                                MainHook.log("[DC] MiuiX 307 supported background not found in setupViews");
                                 return result;
                             }
 
@@ -88,33 +92,12 @@ final class Miuix307MaterialPipeline {
                         return result;
                     });
 
-            // setupViews can run before the vendor has its final dimensions. It can also keep
-            // the Launcher hierarchy while replacing only the MiuiX background during APP->HOME.
-            // Treat each geometry callback instance as authoritative: bind first, then sync.
-            HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
-                    new Class<?>[]{int.class}, chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        View background = (View) chain.getThisObject();
-                        ensureGlassBound(background, config, classLoader);
-                        MiuixGlassHook.syncSize(background);
-                        return result;
-                    });
-            HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
-                    new Class<?>[]{int.class}, chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        View background = (View) chain.getThisObject();
-                        ensureGlassBound(background, config, classLoader);
-                        MiuixGlassHook.syncSize(background);
-                        return result;
-                    });
-            HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
-                    new Class<?>[]{float.class}, chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        View background = (View) chain.getThisObject();
-                        ensureGlassBound(background, config, classLoader);
-                        MiuixGlassHook.syncGeometry(background, config);
-                        return result;
-                    });
+            if (backgroundClass != null) {
+                installMiuixGeometryHooks(backgroundClass, config, classLoader);
+            }
+            if (themedBackgroundClass != null) {
+                installThemedBackgroundHooks(themedBackgroundClass, config, classLoader);
+            }
 
             // Decompiled 307 Launcher emits StateNotifyUtils.sendStateBroadcast(..., "toHome",
             // ...) before the APP->HOME icon-flight animation. Feed only that native boundary
@@ -149,6 +132,76 @@ final class Miuix307MaterialPipeline {
         }
     }
 
+    private static Class<?> loadOptionalClass(ClassLoader classLoader, String name) {
+        try {
+            return Class.forName(name, false, classLoader);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Native MiuiX implementation exposes explicit width/height/radius setters. */
+    private static void installMiuixGeometryHooks(
+            Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
+        HookUtil.hookMethod(backgroundClass, "setBackgroundWidth",
+                new Class<?>[]{int.class}, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncSize(background);
+                    return result;
+                });
+        HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
+                new Class<?>[]{int.class}, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncSize(background);
+                    return result;
+                });
+        HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
+                new Class<?>[]{float.class}, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    View background = (View) chain.getThisObject();
+                    ensureGlassBound(background, config, classLoader);
+                    MiuixGlassHook.syncGeometry(background, config);
+                    return result;
+                });
+    }
+
+    /**
+     * Third-party icon themes switch 307 to HotSeatsListContentBlurBackground2. Device logs show
+     * that implementation drives geometry through triggerMeasure rather than the MiuiX setters,
+     * so hook every runtime overload by Method identity and reuse the same Prismal installer.
+     */
+    private static void installThemedBackgroundHooks(
+            Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
+        int hooked = 0;
+        Class<?> cursor = backgroundClass;
+        while (cursor != null && cursor != Object.class) {
+            for (Method method : cursor.getDeclaredMethods()) {
+                if (!"triggerMeasure".equals(method.getName())
+                        || Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
+                HookUtil.hook(method, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    Object owner = chain.getThisObject();
+                    if (owner instanceof View) {
+                        View background = (View) owner;
+                        ensureGlassBound(background, config, classLoader);
+                        MiuixGlassHook.syncSize(background);
+                        MiuixGlassHook.syncGeometry(background, config);
+                    }
+                    return result;
+                });
+                hooked++;
+            }
+            cursor = cursor.getSuperclass();
+        }
+        MainHook.log("[DC] MiuiX 307 themed background geometry hooks installed count=" + hooked);
+    }
+
     /**
      * 307's specialized early return intentionally skips LauncherSceneController. Restore only
      * the native side-swipe HOME event that the legacy controller used to observe, and converge
@@ -175,12 +228,12 @@ final class Miuix307MaterialPipeline {
     }
 
     /**
-     * Self-heal when HyperOS replaces only the MiuiX background view. setupViews is not a
-     * reliable per-instance boundary on 307, but the background geometry callbacks are.
+     * Self-heal when HyperOS replaces the active HotSeats material background. setupViews is not
+     * a reliable per-instance boundary on 307, so each supported geometry callback can rebind.
      */
     private static boolean ensureGlassBound(
             View background, LiquidDockConfig config, ClassLoader classLoader) {
-        if (background == null) return false;
+        if (background == null || !isSupportedBackground(background)) return false;
         if (MiuixGlassHook.isBoundTo(background)) {
             Miuix307DragCaptureHook.bind(background);
             observeBoundHierarchy(background, config, classLoader);
@@ -194,12 +247,13 @@ final class Miuix307MaterialPipeline {
         // Do not leave a detached previous hierarchy as the drag target during an instance swap.
         Miuix307DragCaptureHook.bind(null);
         MainHook.log("[DC] MiuiX 307 background instance changed; rebinding Prismal glass"
+                + " class=" + background.getClass().getSimpleName()
                 + " instance=" + Integer.toHexString(System.identityHashCode(background)));
         boolean installedNow = MiuixGlassHook.install(
                 background, workspaceRef, config, null, classLoader);
         if (!installedNow) {
-            // Width may arrive before the new background is parented. Height/radius callbacks
-            // will retry naturally, so do not add a polling loop or delayed lifecycle guess.
+            // Geometry may arrive before the new background is parented. The matching geometry
+            // callback or hierarchy recovery will retry naturally; never poll with a fixed delay.
             MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
         } else {
             Miuix307DragCaptureHook.bind(background);
@@ -370,12 +424,11 @@ final class Miuix307MaterialPipeline {
     private static View resolveBackground(Object hotSeats) {
         if (hotSeats == null) return null;
 
-        // New Launcher exposes the active dock background through this accessor. Prefer it
-        // over old field names so the 307 path never accidentally binds mBlurBackground2.
+        // New Launcher exposes whichever material background is currently active. Theme packs can
+        // switch between the MiuiX implementation and BlurBackground2 without restarting Launcher.
         try {
             Object value = HookUtil.invoke(hotSeats, "getHotSeatsBackground");
-            if (value instanceof View
-                    && BACKGROUND_CLASS.equals(value.getClass().getName())) {
+            if (value instanceof View && isSupportedBackground((View) value)) {
                 MainHook.log("[DC] getHotSeatsBackground returned " + value.getClass().getName());
                 return (View) value;
             }
@@ -384,9 +437,15 @@ final class Miuix307MaterialPipeline {
         return hotSeats instanceof View ? findBackground((View) hotSeats) : null;
     }
 
+    private static boolean isSupportedBackground(View view) {
+        if (view == null) return false;
+        String name = view.getClass().getName();
+        return BACKGROUND_CLASS.equals(name) || THEMED_BACKGROUND_CLASS.equals(name);
+    }
+
     private static View findBackground(View root) {
         if (root == null) return null;
-        if (BACKGROUND_CLASS.equals(root.getClass().getName())) return root;
+        if (isSupportedBackground(root)) return root;
         if (!(root instanceof ViewGroup)) return null;
         ViewGroup group = (ViewGroup) root;
         for (int i = 0; i < group.getChildCount(); i++) {
