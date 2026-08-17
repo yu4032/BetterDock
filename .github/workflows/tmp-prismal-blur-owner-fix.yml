@@ -1,0 +1,41 @@
+name: Temporary Prismal blur ownership patch
+
+on:
+  push:
+    branches:
+      - fix/miuix307-drag-freeform-followup
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 2
+
+      - name: Apply exact patch
+        run: python3 tools/tmp_apply_prismal_blur_owner_fix.py
+
+      - name: Verify patch scope
+        run: |
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          test "$changed" = $'src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java\nsrc/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'
+          ! grep -R "enforcePrismalOpticalOnly\|installNativeBackgroundPreserver\|nativeBackgroundHiddenByGlass" \
+            src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q "suppressVendorGpuBlur" src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          grep -q "installCompatBackgroundBlurSuppression" src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+
+      - name: Commit production changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
+                  src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+          git commit -m "fix: let Prismal own dock blur"
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
