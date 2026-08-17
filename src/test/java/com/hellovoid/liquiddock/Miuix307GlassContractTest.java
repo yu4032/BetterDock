@@ -123,4 +123,23 @@ public class Miuix307GlassContractTest {
         assertTrue(source.contains("glass.setBlurMode(LiquidBlurMode.SHADER)"));
         assertTrue(source.contains("glass.setBlurRadiusPx(0)"));
     }
+
+    @Test
+    public void miuixNativeBlurRadiusIsReassertedAfterVendorStateTransitions() throws IOException {
+        String bridge = read("MiBlurBridge.java");
+        String hook = read("MiuixGlassHook.java");
+
+        // HyperOS 307 rewrites the same HotSeats background from radius 14 to 201 during
+        // GestureToHome. The 307 layer must be able to restore only the configured radius without
+        // replaying setPassWindowBlurEnabled/setMiViewBlurMode and disturbing the vendor material.
+        assertTrue(bridge.contains("setPassWindowBlurRadius"));
+        assertTrue(hook.contains("enforceNativeBlurRadius"));
+        assertTrue(hook.contains("config.glass.blur"));
+        assertTrue(hook.contains("MiBlurBridge.setPassWindowBlurRadius"));
+
+        int helper = bridge.indexOf("setPassWindowBlurRadius");
+        int apply = bridge.indexOf("applyPassWindowBlur");
+        assertTrue("radius-only helper must be independent of full pass-blur setup",
+                helper >= 0 && apply >= 0 && helper != apply);
+    }
 }
