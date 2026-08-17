@@ -33,6 +33,11 @@ final class Miuix307MaterialPipeline {
         }
 
         try {
+            // Restore only the old DragController -> drag-surface exclusion behavior that the
+            // specialized 307 early-return would otherwise bypass. This intentionally does NOT
+            // install MainHook's complete legacy capture/gesture lifecycle.
+            Miuix307DragCaptureHook.install(classLoader);
+
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
@@ -131,8 +136,13 @@ final class Miuix307MaterialPipeline {
     private static boolean ensureGlassBound(
             View background, LiquidDockConfig config, ClassLoader classLoader) {
         if (background == null) return false;
-        if (MiuixGlassHook.isBoundTo(background)) return true;
+        if (MiuixGlassHook.isBoundTo(background)) {
+            Miuix307DragCaptureHook.bind(background);
+            return true;
+        }
 
+        // Do not leave a detached previous hierarchy as the drag target during an instance swap.
+        Miuix307DragCaptureHook.bind(null);
         MainHook.log("[DC] MiuiX 307 background instance changed; rebinding Prismal glass"
                 + " instance=" + Integer.toHexString(System.identityHashCode(background)));
         boolean installedNow = MiuixGlassHook.install(
@@ -141,6 +151,8 @@ final class Miuix307MaterialPipeline {
             // Width may arrive before the new background is parented. Height/radius callbacks
             // will retry naturally, so do not add a polling loop or delayed lifecycle guess.
             MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
+        } else {
+            Miuix307DragCaptureHook.bind(background);
         }
         return installedNow;
     }
