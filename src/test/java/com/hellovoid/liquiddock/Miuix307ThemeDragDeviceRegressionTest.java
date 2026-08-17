@@ -66,21 +66,24 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
-    public void thirdPartyBackground2KeepsVendorVisualOwnerAndPrismalOpticalOnly() throws Exception {
+    public void native307BackgroundIsGeometryOnlyAndPrismalOwnsConfiguredBlur() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // Both native 307 backgrounds remain the visual owner underneath Prismal. The themed
-        // implementation's hard-coded positive blur radius is corrected at BlurUtilities before
-        // it reaches hidden View.setBackgroundBlur; vendor blend/outline state remains intact.
+        // theme(3): SurfaceFlinger reports Floating Dock regionblurRadius=5 even while LiquidDock
+        // captures a raw blurRadius=0 frame. Keeping the vendor background visible and forcing
+        // Prismal blur to zero therefore post-processes/overlays the already rendered liquid
+        // glass at the Floating Dock Surface. Both native backgrounds are geometry sources only:
+        // disable vendor GPU blur, let DockLiquidGlassView hide the source after capture, and
+        // leave the blur configured by LiquidGlassFactory intact for Prismal itself.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
-        assertTrue(glassHook.contains("isNativeVisualOwner"));
-        assertTrue(glassHook.contains("COMPAT_BACKGROUND_CLASS.equals"));
-        assertTrue(glassHook.contains("enforcePrismalOpticalOnly(glass);"));
-        assertTrue(glassHook.contains("enforceNativeBlurRadius(dockBg);"));
-        assertFalse(glassHook.contains("clearAllBlur"));
-        assertFalse(glassHook.contains("Prismal owns blur"));
+        assertTrue(glassHook.contains("suppressVendorGpuBlur"));
+        assertTrue(glassHook.contains("setPassWindowBlurRadius(dockBg, 0)"));
+        assertFalse(glassHook.contains("enforcePrismalOpticalOnly"));
+        assertFalse(glassHook.contains("installNativeBackgroundPreserver"));
+        assertFalse(glassHook.contains("nativeBackgroundHiddenByGlass"));
+        assertTrue(glassHook.contains("Prismal owns blur"));
     }
 
     @Test
@@ -98,23 +101,24 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
-    public void thirdPartyBackground2ClampsHardcodedBlurAtBlurUtilitiesBoundary() throws Exception {
+    public void thirdPartyBackground2DisablesVendorGpuBlurAtBlurUtilitiesBoundary() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // Decompiled BlurBackground2.addBlur(View,float) loads literal 100, scales it, then calls
-        // BlurUtilities.setBackgroundBlur(View,int,float[],int[][]). Device trace confirms those
-        // calls become View.setBackgroundBlur blurRadius=100 after the theme switch, while the
-        // ordinary setBackgroundBlurRadius(5) clamp is already active. Clamp the utility's
-        // positive radius before reflection, preserve radius=0 disable semantics and all arrays.
-        assertTrue(pipeline.contains("installCompatBackgroundBlurClamp(classLoader, config)"));
+        // BlurBackground2.addBlur() reaches BlurUtilities.setBackgroundBlur(View,int,...), whose
+        // result becomes compositor region blur on the entire Floating Dock Surface. Correcting
+        // 100 to LiquidDock's 5 still leaves a vendor post-process above Prismal. For the exact
+        // themed HotSeats background, every positive vendor radius must become zero before it
+        // reaches View; radius<=0 and all vendor blend arrays still pass through unchanged.
+        assertTrue(pipeline.contains("installCompatBackgroundBlurSuppression(classLoader)"));
         assertTrue(pipeline.contains("com.miui.home.launcher.common.BlurUtilities"));
         assertTrue(pipeline.contains("\"setBackgroundBlur\""));
         assertTrue(pipeline.contains("View.class, int.class, float[].class, int[][].class"));
-        assertTrue(pipeline.contains("MiuixGlassHook.clampCompatBackgroundBlurRadius"));
-        assertTrue(glassHook.contains("clampCompatBackgroundBlurRadius"));
+        assertTrue(pipeline.contains("MiuixGlassHook.suppressCompatBackgroundBlurRadius"));
+        assertTrue(glassHook.contains("suppressCompatBackgroundBlurRadius"));
         assertTrue(glassHook.contains("requestedRadius <= 0"));
         assertTrue(glassHook.contains("COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())"));
-        assertTrue(glassHook.contains("compat BlurBackground2 background blur clamped"));
+        assertTrue(glassHook.contains("compat BlurBackground2 GPU background blur suppressed"));
+        assertFalse(glassHook.contains("targetRadius = Math.round"));
     }
 }
