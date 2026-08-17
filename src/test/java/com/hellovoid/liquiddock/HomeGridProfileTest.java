@@ -6,6 +6,8 @@ import org.junit.Test;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -55,6 +57,53 @@ public class HomeGridProfileTest {
     public void invalidPersistedProfileFallsBackToEightByFour() throws Exception {
         Object profile = profile("definitely-not-a-grid");
         assertEquals("8x4", call(profile, "persistedValue", new Class<?>[0]));
+    }
+
+    @Test
+    public void generatedTwoByTwoBlocksCoverEightByFourWithoutDuplicates() throws Exception {
+        assertBlockGrid(profile("8x4"), false, 8, 4, 8);
+        assertBlockGrid(profile("8x4"), true, 4, 8, 8);
+    }
+
+    @Test
+    public void generatedTwoByTwoBlocksCoverTenBySixWithoutDuplicates() throws Exception {
+        assertBlockGrid(profile("10x6"), false, 10, 6, 15);
+        assertBlockGrid(profile("10x6"), true, 6, 10, 15);
+    }
+
+    @Test
+    public void countMatchingAcceptsOnlySelectedProfileAndTranspose() throws Exception {
+        Object eight = profile("8x4");
+        Object ten = profile("10x6");
+        assertTrue((Boolean) call(eight, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 8, 4));
+        assertTrue((Boolean) call(eight, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 4, 8));
+        assertFalse((Boolean) call(eight, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 10, 6));
+        assertTrue((Boolean) call(ten, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 10, 6));
+        assertTrue((Boolean) call(ten, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 6, 10));
+        assertFalse((Boolean) call(ten, "matchesCounts",
+                new Class<?>[]{int.class, int.class}, 8, 4));
+    }
+
+    private static void assertBlockGrid(Object profile, boolean portrait,
+                                        int columns, int rows, int expectedCount) throws Exception {
+        int[][] origins = (int[][]) call(profile, "blockOrigins",
+                new Class<?>[]{boolean.class}, portrait);
+        assertEquals(expectedCount, origins.length);
+        assertEquals(expectedCount, call(profile, "totalBlocks", new Class<?>[0]));
+        Set<String> unique = new HashSet<>();
+        for (int[] origin : origins) {
+            assertEquals(2, origin.length);
+            assertTrue(origin[0] >= 0 && origin[0] + 1 < columns);
+            assertTrue(origin[1] >= 0 && origin[1] + 1 < rows);
+            assertEquals(0, origin[0] % 2);
+            assertEquals(0, origin[1] % 2);
+            assertTrue(unique.add(origin[0] + ":" + origin[1]));
+        }
     }
 
     @Test
