@@ -30,14 +30,32 @@ public class Miuix307WorkstationSystemUiCaptureContractTest {
     }
 
     @Test
-    public void workstationModeReachesMiuix307OwnedGlass() throws Exception {
+    public void workstationModeReachesMiuix307CapturePolicyWithoutLegacySuspension() throws Exception {
         String ownership = read("Miuix307CaptureOwnershipHook.java");
+        String view = read("DockLiquidGlassView.java");
 
         assertTrue("307 must bridge MainHook workstation transitions after the early return",
                 ownership.contains("\"setWorkstationMode\"")
                         && ownership.contains("MainHook.class"));
-        assertTrue("workstation state must reach the actually bound 307 glass",
+        assertTrue("307 workstation state must use a capture-only setter",
+                ownership.contains("glass.setMiuix307WorkstationCaptureMode(enabled)"));
+        assertFalse("307 must never invoke the legacy workstation setter that hides the glass",
                 ownership.contains("glass.setWorkstationMode(enabled)"));
+
+        int setter = view.indexOf("void setMiuix307WorkstationCaptureMode(boolean enabled)");
+        assertTrue("DockLiquidGlassView needs a dedicated 307 workstation capture setter",
+                setter >= 0);
+        int nextMethod = view.indexOf("\n    void ", setter + 1);
+        String body = nextMethod > setter ? view.substring(setter, nextMethod) : view.substring(setter);
+        assertFalse("307 capture-only setter must not suspend workstation glass",
+                body.contains("suspendWorkstationGlass"));
+        assertFalse("307 capture-only setter must not hide the glass",
+                body.contains("setVisibility(INVISIBLE)"));
+        assertFalse("307 capture-only setter must not zero the geometry source",
+                body.contains("geometrySource.setAlpha(0f)"));
+
+        assertTrue("capture source selection must recognize the dedicated 307 workstation flag",
+                view.contains("workstationMode || miuix307WorkstationCaptureMode"));
         assertTrue("freshly composed 307 glass must inherit current workstation mode",
                 ownership.contains("MainHook.isWorkstationMode()"));
     }
