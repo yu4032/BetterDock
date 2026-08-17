@@ -38,7 +38,7 @@ public class Miuix307GlassContractTest {
 
         assertTrue(hook.contains("LiquidGlassFactory.create"));
         assertTrue(hook.contains("DockLiquidGlassHostView"));
-        assertTrue(hook.contains("applyPassWindowBlur"));
+        assertTrue(hook.contains("suppressVendorGpuBlur"));
         assertTrue(pipeline.contains("setBackgroundWidth"));
         assertTrue(pipeline.contains("setBackgroundHeight"));
         assertFalse(pipeline.contains("new Miuix307RefractionView"));
@@ -58,23 +58,26 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void nativeMiuixDrawableIsPreserved() throws IOException {
+    public void nativeMiuixDrawableIsPreservedAsGeometrySource() throws IOException {
         Path hookPath = MAIN.resolve("MiuixGlassHook.java");
         assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
         String source = read("MiuixGlassHook.java");
         assertFalse(source.contains("setBackground(null)"));
         assertTrue(source.contains("mBackground"));
+        assertTrue(source.contains("geometry source"));
     }
 
     @Test
-    public void appBackdropUsesOwnershipAndKeepsNativeMiuixVisible() throws IOException {
+    public void appBackdropUsesOwnershipAndAllowsNativeGeometrySourceToHide() throws IOException {
         String source = read("MiuixGlassHook.java");
 
         assertTrue(source.contains("HomeOwnershipRuntime.bind(glass, glass.getContext())"));
         assertTrue(source.contains("glass.setFullscreenCapture(true)"));
-        assertTrue(source.contains("installNativeBackgroundPreserver"));
-        assertTrue(source.contains("nativeBackgroundHiddenByGlass"));
-        assertTrue(source.contains("dockBg.setAlpha(1f)"));
+        assertTrue(source.contains("installVendorGpuBlurSuppressor"));
+        assertTrue(source.contains("suppressVendorGpuBlur"));
+        assertFalse(source.contains("installNativeBackgroundPreserver"));
+        assertFalse(source.contains("nativeBackgroundHiddenByGlass"));
+        assertFalse(source.contains("dockBg.setAlpha(1f)"));
     }
 
     @Test
@@ -98,9 +101,6 @@ public class Miuix307GlassContractTest {
     public void detachedThemeHierarchyWaitsForRealReattachBeforeGlassRebind() throws IOException {
         String pipeline = read("Miuix307MaterialPipeline.java");
 
-        // Icon/theme changes can replace the background and, on some builds, the HotSeats owner.
-        // Recovery therefore keeps the Launcher weakly and re-resolves mHotSeats instead of
-        // trusting a detached owner captured during setupViews.
         assertTrue("Launcher owner must not be retained strongly",
                 pipeline.contains("WeakReference<Object> launcherRef"));
         assertTrue("setupViews must refresh the weak Launcher owner",
@@ -120,9 +120,6 @@ public class Miuix307GlassContractTest {
         assertTrue("repair must reject a stale detached background",
                 pipeline.contains("currentBackground.isAttachedToWindow()"));
 
-        // If the first main-turn repair runs before the replacement hierarchy is attached, wait
-        // on a stable Launcher/workspace root. Listening only to the detached old HotSeats tree
-        // can never observe the replacement hierarchy's first layout.
         assertTrue(pipeline.contains("ViewTreeObserver.OnGlobalLayoutListener"));
         assertTrue(pipeline.contains("armHierarchyLayoutRecovery"));
         assertTrue(pipeline.contains("workspaceRef != null && workspaceRef.isAttachedToWindow()"));
@@ -138,32 +135,37 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void miuixUsesGuiCaptureTuningAndOnlyNativeBackdropBlur() throws IOException {
+    public void miuixUsesGuiCaptureTuningAndPrismalConfiguredBlur() throws IOException {
         String source = read("MiuixGlassHook.java");
+        String factory = read("LiquidGlassFactory.java");
 
         assertTrue(source.contains("glass.setCaptureScale(config.glass.captureScale)"));
         assertTrue(source.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
         assertFalse(source.contains("glass.setCaptureScale(0.5f)"));
         assertFalse(source.contains("glass.setCapturePowerLimitFps(30)"));
 
-        assertTrue(source.contains("enforcePrismalOpticalOnly"));
-        assertTrue(source.contains("glass.setBlurMode(LiquidBlurMode.SHADER)"));
-        assertTrue(source.contains("glass.setBlurRadiusPx(0)"));
+        assertTrue(factory.contains("Math.round(config.blur * scale)"));
+        assertTrue(factory.contains("view.setBlurMode(config.blurMode)"));
+        assertFalse(source.contains("enforcePrismalOpticalOnly"));
+        assertFalse(source.contains("glass.setBlurRadiusPx(0)"));
     }
 
     @Test
-    public void miuixNativeBlurRadiusIsReassertedAfterVendorStateTransitions() throws IOException {
+    public void vendorGpuBlurIsReassertivelyDisabledAfterStateTransitions() throws IOException {
         String bridge = read("MiBlurBridge.java");
         String hook = read("MiuixGlassHook.java");
 
         assertTrue(bridge.contains("setPassWindowBlurRadius"));
-        assertTrue(hook.contains("enforceNativeBlurRadius"));
-        assertTrue(hook.contains("config.glass.blur"));
-        assertTrue(hook.contains("MiBlurBridge.setPassWindowBlurRadius"));
+        assertTrue(bridge.contains("clearPassWindowBlur"));
+        assertTrue(hook.contains("suppressVendorGpuBlur"));
+        assertTrue(hook.contains("MiBlurBridge.setPassWindowBlurRadius(dockBg, 0)"));
+        assertTrue(hook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
+        assertTrue(hook.contains("ViewTreeObserver.OnPreDrawListener"));
+        assertTrue(hook.contains("vendor GPU background blur disabled; Prismal owns blur"));
 
         int helper = bridge.indexOf("setPassWindowBlurRadius");
         int apply = bridge.indexOf("applyPassWindowBlur");
-        assertTrue("radius-only helper must be independent of full pass-blur setup",
+        assertTrue("radius-only helper must remain independent of full pass-blur setup",
                 helper >= 0 && apply >= 0 && helper != apply);
     }
 }
