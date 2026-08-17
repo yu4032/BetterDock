@@ -3,6 +3,8 @@ package com.hellovoid.liquiddock;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import com.hellovoid.liquiddock.config.GridProfileConfig;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -73,8 +75,8 @@ public class ConfigReader {
         Object tenths = prefs.get(key + "_tenths");
         if (tenths instanceof Number) return ((Number) tenths).intValue() / 10f;
         if (tenths instanceof String) {
-            try { return Integer.parseInt((String) tenths) / 10f; }
-            catch (NumberFormatException ignored) {}
+            try { return Integer.parseInt((String) tenths) / 10f;
+            } catch (NumberFormatException ignored) {}
         }
 
         Object value = prefs.get(key);
@@ -87,6 +89,13 @@ public class ConfigReader {
     }
 
     public boolean b(String key, boolean def) {
+        // Preserve the old ConfigSchema.Grid.ENABLED read contract while allowing the
+        // new explicit master switch to be authoritative. Legacy-only snapshots still
+        // work exactly as before until the settings-side migration is written.
+        if (GridProfileConfig.LEGACY_8X4_KEY.equals(key)
+                && prefs.containsKey(GridProfileConfig.ENABLED_KEY)) {
+            key = GridProfileConfig.ENABLED_KEY;
+        }
         Object value = prefs.get(key);
         if (value instanceof Boolean) return (Boolean) value;
         if (value instanceof String) return Boolean.parseBoolean((String) value);
