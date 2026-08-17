@@ -8,14 +8,14 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Regression contract for the 307 Launcher DragObject drop-animation lifecycle. */
+/** Regression contract for the 307 Launcher drop-settling lifecycle. */
 public class Miuix307DropAnimationLifecycleContractTest {
     private static String read(String file) throws Exception {
         return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + file));
     }
 
     @Test
-    public void endDragWaitsForTheFinalMiuiDropAnimationBeforeFreshCapture() throws Exception {
+    public void endDragFreezesEvenWhenMiuiCounterIsAlreadyZero() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
 
         int endHook = drag.indexOf("HookUtil.hookMethod(dragController, \"endDrag\"");
@@ -23,6 +23,11 @@ public class Miuix307DropAnimationLifecycleContractTest {
                 "Object dragObject = currentDragObject(chain.getThisObject());", endHook);
         int proceed = drag.indexOf("chain.proceed", retain);
         int handoff = drag.indexOf("onEndDrag(dragObject)", proceed);
+        int handler = drag.indexOf("private static void onEndDrag(Object dragObject)");
+        int freeze = drag.indexOf("glass.setDockDragging(true, null, null);", handler);
+        int nextMethod = drag.indexOf("\n    private static void ", handler + 1);
+        String endDragBody = nextMethod > handler
+                ? drag.substring(handler, nextMethod) : drag.substring(handler);
 
         assertTrue("307 endDrag hook must exist", endHook >= 0);
         assertTrue("DragObject must be retained before endDrag clears mDragObject",
@@ -31,18 +36,30 @@ public class Miuix307DropAnimationLifecycleContractTest {
                 proceed > retain);
         assertTrue("retained DragObject must be handed to the logical end handler",
                 handoff > proceed);
+        assertTrue("endDrag must enter settling even if mDropAnimationCounter reads zero",
+                endDragBody.contains("dropSettling = true;"));
+        assertTrue("endDrag must retain the finishing DragObject",
+                endDragBody.contains("settlingDragObject = dragObject;"));
+        assertTrue("endDrag must keep the last clean backdrop frozen", freeze > handler);
+        assertFalse("endDrag must not immediately resume capture on counter == 0",
+                endDragBody.contains("finishDockDragCapture(\"drag end\")"));
+    }
+
+    @Test
+    public void completionUsesVendorCallbacksNotAGuessedDelay() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
 
         assertTrue(drag.contains("com.miui.home.launcher.DragObject"));
         assertTrue(drag.contains("\"onDropAnimationFinished\""));
         assertTrue(drag.contains("mDropAnimationCounter"));
-        assertTrue(drag.contains("settlingDragObject"));
-        assertTrue(drag.contains("dropAnimationCounter > 0"));
-        assertTrue(drag.contains("dropAnimationCounter == 0"));
+        assertTrue(drag.contains("settlingDropCallbacksRemaining"));
+        assertTrue(drag.contains("finishDropSettling("));
 
-        // A settling drop must deliberately remove any excludable drag Surface so the
-        // last clean backdrop stays frozen until MIUI's own final animation completion.
-        assertTrue(drag.contains("glass.setDockDragging(true, null, null);"));
-        assertTrue(drag.contains("glass.setDockDragging(false, null, null);"));
+        int resetHook = drag.indexOf("\"resetDraggingView\"");
+        int resetProceed = drag.indexOf("chain.proceed", resetHook);
+        int cleanup = drag.indexOf("onHotseatDragCleanup()", resetProceed);
+        assertTrue("HotSeats resetDraggingView is an observed final cleanup boundary",
+                resetHook >= 0 && resetProceed > resetHook && cleanup > resetProceed);
 
         // Completion is lifecycle-driven, never guessed from a fixed animation duration.
         assertFalse(drag.contains("postDelayed("));
@@ -58,8 +75,15 @@ public class Miuix307DropAnimationLifecycleContractTest {
                 "onDropAnimationFinished(chain.getThisObject())", proceed);
 
         assertTrue("DragObject completion hook must exist", finishHook >= 0);
-        assertTrue("MIUI must decrement mDropAnimationCounter first", proceed > finishHook);
-        assertTrue("LiquidDock must inspect the post-proceed counter", callback > proceed);
+        assertTrue("MIUI must update its animation state first", proceed > finishHook);
+        assertTrue("LiquidDock must inspect the post-proceed state", callback > proceed);
+    }
+
+    @Test
+    public void systemDockLogsOnlyRealStateTransitions() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+        assertTrue(drag.contains("private static volatile boolean systemDockDragActive;"));
+        assertTrue(drag.contains("if (systemDockDragActive == active) return;"));
     }
 
     @Test
