@@ -11,7 +11,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-/** Regression coverage for the 10x6 profile fighting the historical 6->8 core rewrite. */
+/** Regression coverage for the 10x6 overlay recovering the historical core's 6->8 rewrite. */
 public class HomeGridCountOwnershipTest {
     private static Class<?> policyClass() {
         try {
@@ -22,13 +22,6 @@ public class HomeGridCountOwnershipTest {
         }
     }
 
-    private static int coreRewrite(boolean tenBySixOwnsCounts, int value) throws Exception {
-        Method method = policyClass().getDeclaredMethod(
-                "coreRewrite", boolean.class, int.class);
-        method.setAccessible(true);
-        return (Integer) method.invoke(null, tenBySixOwnsCounts, value);
-    }
-
     private static int profileRewrite(boolean portrait, boolean xAxis, int value) throws Exception {
         Method method = policyClass().getDeclaredMethod(
                 "profileRewrite", HomeGridProfile.class, boolean.class, boolean.class, int.class);
@@ -37,47 +30,46 @@ public class HomeGridCountOwnershipTest {
     }
 
     @Test
-    public void tenBySixCoreMustPreserveLiteralSixForOverlayOwnership() throws Exception {
-        assertEquals(6, coreRewrite(true, 6));
-        assertEquals(8, coreRewrite(false, 6));
-    }
-
-    @Test
-    public void landscapeTenBySixResolvesExactlyTenColumnsBySixRows() throws Exception {
-        int x = profileRewrite(false, true, coreRewrite(true, 6));
-        int y = profileRewrite(false, false, coreRewrite(true, 6));
-        assertEquals(10, x);
-        assertEquals(6, y);
-    }
-
-    @Test
-    public void portraitTenBySixResolvesExactlySixColumnsByTenRows() throws Exception {
-        int x = profileRewrite(true, true, coreRewrite(true, 6));
-        int y = profileRewrite(true, false, coreRewrite(true, 6));
-        assertEquals(6, x);
-        assertEquals(10, y);
-    }
-
-    @Test
-    public void overlayRecoversStockLegacyAndPreviouslyCorruptedCounts() throws Exception {
+    public void landscapeCoreEightResolvesExactlyTenColumnsBySixRows() throws Exception {
+        // Stable HomeGridHook rewrites stock 6 to 8 before the lowest-priority overlay setter.
         assertEquals(10, profileRewrite(false, true, 8));
-        assertEquals(6, profileRewrite(false, false, 4));
+        assertEquals(6, profileRewrite(false, false, 8));
+    }
+
+    @Test
+    public void portraitCoreEightResolvesExactlySixColumnsByTenRows() throws Exception {
+        assertEquals(6, profileRewrite(true, true, 8));
+        assertEquals(10, profileRewrite(true, false, 8));
+    }
+
+    @Test
+    public void overlayAlsoAcceptsStockAndLegacyAxisCounts() throws Exception {
         assertEquals(10, profileRewrite(false, true, 6));
         assertEquals(6, profileRewrite(false, false, 6));
-        assertEquals(6, profileRewrite(false, false, 8));
-        assertEquals(6, profileRewrite(true, true, 8));
+        assertEquals(10, profileRewrite(false, true, 8));
+        assertEquals(6, profileRewrite(false, false, 4));
+        assertEquals(6, profileRewrite(true, true, 4));
+        assertEquals(10, profileRewrite(true, false, 8));
     }
 
     @Test
-    public void productionHooksShareTheCountOwnershipPolicy() throws Exception {
+    public void unrelatedGridCountsRemainUntouched() throws Exception {
+        assertEquals(5, profileRewrite(false, true, 5));
+        assertEquals(7, profileRewrite(false, false, 7));
+        assertEquals(12, profileRewrite(true, false, 12));
+    }
+
+    @Test
+    public void productionOverlayUsesSharedCountRecoveryPolicy() throws Exception {
         String core = Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"),
                 StandardCharsets.UTF_8);
         String overlay = Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java"),
                 StandardCharsets.UTF_8);
-        assertTrue(core.contains("HomeGridCountPolicy.coreRewrite"));
-        assertTrue(core.contains("HomeGridProfileOverlayHook.ownsTenBySixCounts()"));
+        // Preserve the device-verified 8x4 core instead of rewriting its count ownership.
+        assertTrue(core.contains("if ((Integer) args[0] == 6) args[0] = 8;"));
+        assertTrue(core.contains("if ((Integer) result == 6) result = 8;"));
         assertTrue(overlay.contains("HomeGridCountPolicy.profileRewrite"));
     }
 }
