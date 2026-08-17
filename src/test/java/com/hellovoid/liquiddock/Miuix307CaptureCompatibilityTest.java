@@ -33,7 +33,7 @@ public class Miuix307CaptureCompatibilityTest {
         assertTrue(drag.contains("mDragViews"));
         assertTrue(drag.contains("getSurfaceControl"));
         assertTrue(drag.contains("setDockDragging(true"));
-        assertTrue(drag.contains("setDockDragging(false, null)"));
+        assertTrue(drag.contains("setDockDragging(false"));
         assertTrue(pipeline.contains("Miuix307DragCaptureHook.install(classLoader)"));
         assertTrue(pipeline.contains("Miuix307DragCaptureHook.bind(background)"));
 
@@ -71,6 +71,23 @@ public class Miuix307CaptureCompatibilityTest {
         assertTrue(drag.contains("postOnAnimation"));
         assertTrue(drag.contains("!dragActive || activeDragLayerName != null"));
         assertTrue(drag.contains("drag surface retry"));
+    }
+
+    @Test public void dragUsesSurfaceControlHandleNotOnlyLayerName() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+        String glass = read("DockLiquidGlassView.java");
+
+        // Layer-name exclusion alone is not reliable on the 307 drag surface. Retain the actual
+        // SurfaceControl returned by the DragView and pass it into the capture exclusion array.
+        assertTrue(drag.contains("SurfaceControl activeDragSurface"));
+        assertTrue(drag.contains("resolveDragSurfaceControl"));
+        assertTrue(drag.contains("setDockDragging(true, activeDragLayerName, activeDragSurface)"));
+        assertTrue(drag.contains("setDockDragging(false, null, null)"));
+
+        assertTrue(glass.contains("SurfaceControl dragSurfaceControl"));
+        assertTrue(glass.contains("buildFullDisplaySurfaceExcludes"));
+        assertTrue(glass.contains("dragSurfaceControl"));
+        assertTrue(glass.contains("dockWindowSurface"));
     }
 
     @Test public void freeformGateDiagnosticIsStateDeduplicatedNotPerFrame() throws Exception {
