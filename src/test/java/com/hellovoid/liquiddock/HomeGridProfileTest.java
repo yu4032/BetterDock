@@ -5,6 +5,7 @@ import com.hellovoid.liquiddock.config.ConfigMigration;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -36,23 +37,14 @@ public class HomeGridProfileTest {
 
     @Test
     public void profilesExposeExactOrientationCounts() throws Exception {
-        Object stock = profile("stock");
         Object eight = profile("8x4");
         Object ten = profile("10x6");
 
-        assertFalse((Boolean) call(stock, "isCustom", new Class<?>[0]));
-        assertEquals(6, call(stock, "columns", new Class<?>[]{boolean.class}, false));
-        assertEquals(4, call(stock, "rows", new Class<?>[]{boolean.class}, false));
-        assertEquals(4, call(stock, "columns", new Class<?>[]{boolean.class}, true));
-        assertEquals(6, call(stock, "rows", new Class<?>[]{boolean.class}, true));
-
-        assertTrue((Boolean) call(eight, "isCustom", new Class<?>[0]));
         assertEquals(8, call(eight, "columns", new Class<?>[]{boolean.class}, false));
         assertEquals(4, call(eight, "rows", new Class<?>[]{boolean.class}, false));
         assertEquals(4, call(eight, "columns", new Class<?>[]{boolean.class}, true));
         assertEquals(8, call(eight, "rows", new Class<?>[]{boolean.class}, true));
 
-        assertTrue((Boolean) call(ten, "isCustom", new Class<?>[0]));
         assertEquals(10, call(ten, "columns", new Class<?>[]{boolean.class}, false));
         assertEquals(6, call(ten, "rows", new Class<?>[]{boolean.class}, false));
         assertEquals(6, call(ten, "columns", new Class<?>[]{boolean.class}, true));
@@ -60,14 +52,13 @@ public class HomeGridProfileTest {
     }
 
     @Test
-    public void invalidPersistedProfileFallsBackToStock() throws Exception {
+    public void invalidPersistedProfileFallsBackToEightByFour() throws Exception {
         Object profile = profile("definitely-not-a-grid");
-        assertFalse((Boolean) call(profile, "isCustom", new Class<?>[0]));
-        assertEquals("stock", call(profile, "persistedValue", new Class<?>[0]));
+        assertEquals("8x4", call(profile, "persistedValue", new Class<?>[0]));
     }
 
     @Test
-    public void legacyEightByFourMigratesOnlyWhenCanonicalProfileIsMissing() throws Exception {
+    public void legacyEightByFourMigratesToMasterSwitchAndProfile() throws Exception {
         Method method;
         try {
             method = ConfigMigration.class.getDeclaredMethod(
@@ -78,24 +69,39 @@ public class HomeGridProfileTest {
         }
         method.setAccessible(true);
 
-        TestSharedPreferences legacyOn = new TestSharedPreferences();
+        TestSharedPreferences legacyOn = new TestSharedPreferences(Collections.emptyMap());
         legacyOn.edit().putBoolean("home_grid_8x4", true).commit();
         method.invoke(null, legacyOn);
+        assertTrue(legacyOn.getBoolean("home_grid_extended", false));
         assertEquals("8x4", legacyOn.getString("grid_profile", null));
 
-        TestSharedPreferences legacyOff = new TestSharedPreferences();
+        TestSharedPreferences legacyOff = new TestSharedPreferences(Collections.emptyMap());
         legacyOff.edit().putBoolean("home_grid_8x4", false).commit();
         method.invoke(null, legacyOff);
-        assertEquals("stock", legacyOff.getString("grid_profile", null));
+        assertFalse(legacyOff.getBoolean("home_grid_extended", true));
+        assertEquals("8x4", legacyOff.getString("grid_profile", null));
 
-        TestSharedPreferences absent = new TestSharedPreferences();
+        TestSharedPreferences absent = new TestSharedPreferences(Collections.emptyMap());
         method.invoke(null, absent);
-        assertEquals("stock", absent.getString("grid_profile", null));
+        assertFalse(absent.getBoolean("home_grid_extended", true));
+        assertEquals("8x4", absent.getString("grid_profile", null));
+    }
 
-        TestSharedPreferences canonical = new TestSharedPreferences();
-        canonical.edit().putString("grid_profile", "10x6")
-                .putBoolean("home_grid_8x4", true).commit();
+    @Test
+    public void canonicalMasterAndProfileAreNeverOverwrittenByLegacyState() throws Exception {
+        Method method = ConfigMigration.class.getDeclaredMethod(
+                "migrateGridProfile", android.content.SharedPreferences.class);
+        method.setAccessible(true);
+
+        TestSharedPreferences canonical = new TestSharedPreferences(Collections.emptyMap());
+        canonical.edit()
+                .putBoolean("home_grid_extended", false)
+                .putString("grid_profile", "10x6")
+                .putBoolean("home_grid_8x4", true)
+                .commit();
         method.invoke(null, canonical);
+
+        assertFalse(canonical.getBoolean("home_grid_extended", true));
         assertEquals("10x6", canonical.getString("grid_profile", null));
     }
 }
