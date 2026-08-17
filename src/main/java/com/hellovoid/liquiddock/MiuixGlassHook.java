@@ -116,7 +116,7 @@ final class MiuixGlassHook {
                 + " dock size=" + dockW + "x" + dockH);
 
         DockLiquidGlassView glass = LiquidGlassFactory.create(
-                dockBg, workspace, config.glass, config.dock, false, SQUIRCLE_CP);
+                dockBg, workspace, config.glass, config.dock, true, SQUIRCLE_CP);
         glass.setId(View.generateViewId());
         // The specialized 307 path bypasses MainHook's legacy capture hooks. Rebind only the
         // authoritative SystemUI HOME/APP ownership so APP resolves to FULL_DISPLAY instead of
@@ -135,7 +135,7 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
         host.setId(View.generateViewId());
         host.setLayers(glass);
-        host.setGeometry(radius, false, SQUIRCLE_CP);
+        host.setGeometry(radius, true, SQUIRCLE_CP);
         host.reloadOverlay(config.dock, config.glass);
 
         FrameLayout.LayoutParams hostLp = new FrameLayout.LayoutParams(
@@ -199,7 +199,7 @@ final class MiuixGlassHook {
 
         float radius = readRadius(dockBg);
         host.setVisibility(dockBg.getVisibility());
-        host.setGeometry(radius, false, SQUIRCLE_CP);
+        host.setGeometry(radius, true, SQUIRCLE_CP);
         host.reloadOverlay(config.dock, config.glass);
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
         host.invalidate();
