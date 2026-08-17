@@ -4,7 +4,6 @@ import android.view.View;
 import android.view.ViewParent;
 
 import java.lang.reflect.Method;
-import java.util.Locale;
 import java.util.WeakHashMap;
 
 import io.github.libxposed.api.XposedInterface;
@@ -124,10 +123,8 @@ final class DockBottomGeometryHook {
         ViewParent parent = view == null ? null : view.getParent();
         int depth = 0;
         while (parent != null && depth++ < 8) {
-            String name = parent.getClass().getName().toLowerCase(Locale.ROOT);
-            if (name.contains(".laptop.")
-                    || name.contains("dockcontainerview")
-                    || name.contains("laptopdock")) return true;
+            if (DockBottomGeometryPolicy.isLaptopHierarchyClassName(
+                    parent.getClass().getName())) return true;
             parent = parent.getParent();
         }
         return false;
