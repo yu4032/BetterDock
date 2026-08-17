@@ -1,0 +1,27 @@
+name: Temporary API101 307 integration
+
+on:
+  push:
+    branches:
+      - integrate/api101-miuix307-impl
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: ${{ !contains(github.event.head_commit.message, '[api101-307-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+      - name: Apply validated 307 integration with RED/GREEN verification
+        run: python3 tools/tmp_integrate_api101_miuix307.py
