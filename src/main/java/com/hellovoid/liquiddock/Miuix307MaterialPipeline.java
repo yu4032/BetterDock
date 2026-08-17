@@ -24,6 +24,7 @@ final class Miuix307MaterialPipeline {
 
     private static boolean installed;
     private static View workspaceRef;
+    private static WeakReference<Object> launcherRef = new WeakReference<>(null);
     private static WeakReference<Object> hotSeatsRef = new WeakReference<>(null);
     private static View observedBackground;
     private static View observedHost;
@@ -62,6 +63,7 @@ final class Miuix307MaterialPipeline {
                         if (MainHook.isWorkstationMode()) return result;
                         try {
                             Object launcher = chain.getThisObject();
+                            launcherRef = new WeakReference<>(launcher);
                             Object hotSeats = HookUtil.getField(launcher, "mHotSeats");
                             hotSeatsRef = new WeakReference<>(hotSeats);
                             View background = resolveBackground(hotSeats);
@@ -281,7 +283,7 @@ final class Miuix307MaterialPipeline {
 
     private static boolean tryHierarchyRebind(
             LiquidDockConfig config, ClassLoader classLoader) {
-        Object hotSeats = hotSeatsRef.get();
+        Object hotSeats = resolveCurrentHotSeats();
         if (hotSeats == null) {
             MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; HotSeats owner gone");
             return false;
@@ -307,9 +309,10 @@ final class Miuix307MaterialPipeline {
 
     private static void armHierarchyLayoutRecovery(
             LiquidDockConfig config, ClassLoader classLoader) {
-        Object hotSeats = hotSeatsRef.get();
-        if (!(hotSeats instanceof View)) return;
-        View owner = (View) hotSeats;
+        Object hotSeats = resolveCurrentHotSeats();
+        View owner = workspaceRef != null && workspaceRef.isAttachedToWindow()
+                ? workspaceRef : hotSeats instanceof View ? (View) hotSeats : null;
+        if (owner == null) return;
         View root = owner.getRootView();
         ViewTreeObserver observer = (root != null ? root : owner).getViewTreeObserver();
         if (observer == null || !observer.isAlive()) return;
@@ -347,6 +350,21 @@ final class Miuix307MaterialPipeline {
             if (child instanceof DockLiquidGlassHostView) return child;
         }
         return null;
+    }
+
+    /** Re-read the current HotSeats from Launcher because theme changes may replace it. */
+    private static Object resolveCurrentHotSeats() {
+        Object launcher = launcherRef.get();
+        if (launcher != null) {
+            try {
+                Object current = HookUtil.getField(launcher, "mHotSeats");
+                if (current != null) {
+                    hotSeatsRef = new WeakReference<>(current);
+                    return current;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return hotSeatsRef.get();
     }
 
     private static View resolveBackground(Object hotSeats) {
