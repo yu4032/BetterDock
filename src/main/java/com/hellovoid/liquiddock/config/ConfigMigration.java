@@ -10,6 +10,7 @@ public final class ConfigMigration {
     private ConfigMigration() { }
 
     public static void migrate(Context context, SharedPreferences preferences) {
+        migrateGridProfile(preferences);
         migrateMergedHorizontal(preferences);
         migrateLegacyGridKeys(preferences);
         migrateGridToDp(context, preferences);
@@ -18,6 +19,22 @@ public final class ConfigMigration {
         migrateLiquidDimensionsToDp(context, preferences);
         migrateDockDimensionsToDp(context, preferences);
         migrateAxisDistances(preferences);
+    }
+
+    private static void migrateGridProfile(SharedPreferences sp) {
+        SharedPreferences.Editor editor = sp.edit();
+        boolean changed = false;
+        if (!sp.contains(GridProfileConfig.ENABLED_KEY)) {
+            boolean enabled = sp.contains(GridProfileConfig.LEGACY_8X4_KEY)
+                    && sp.getBoolean(GridProfileConfig.LEGACY_8X4_KEY, false);
+            editor.putBoolean(GridProfileConfig.ENABLED_KEY, enabled);
+            changed = true;
+        }
+        if (!sp.contains(GridProfileConfig.PROFILE_KEY)) {
+            editor.putString(GridProfileConfig.PROFILE_KEY, GridProfileConfig.DEFAULT_PROFILE);
+            changed = true;
+        }
+        if (changed) editor.commit();
     }
 
     private static void migrateAxisDistances(SharedPreferences sp) {
