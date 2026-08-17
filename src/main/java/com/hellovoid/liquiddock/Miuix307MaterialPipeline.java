@@ -14,8 +14,8 @@ import java.lang.reflect.Modifier;
  * Hook coordinator for HyperOS 3.0.307+ HotSeats material backgrounds.
  *
  * HyperOS can switch the live HotSeats background implementation when an icon theme is applied.
- * Keep the vendor background installed as the backdrop-blur/gradient owner and place LiquidDock's
- * existing Prismal glass stack directly above whichever supported implementation is active.
+ * Keep either vendor background only as a geometry source while LiquidDock's Prismal glass owns
+ * the real blur/optical pass; vendor compositor blur is explicitly suppressed.
  */
 final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
@@ -59,7 +59,7 @@ final class Miuix307MaterialPipeline {
             // install MainHook's complete legacy capture/gesture lifecycle.
             Miuix307DragCaptureHook.install(classLoader);
             installHomeGesturePrearm(classLoader);
-            installCompatBackgroundBlurClamp(classLoader, config);
+            installCompatBackgroundBlurSuppression(classLoader);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -142,13 +142,12 @@ final class Miuix307MaterialPipeline {
     }
 
     /**
-     * BlurBackground2.addBlur() delegates its hard-coded positive radius through this exact
-     * utility boundary before reflection reaches hidden View.setBackgroundBlur. Clamp only the
-     * themed HotSeats background argument; default MiuiX and every other BlurUtilities consumer
-     * pass through unchanged, as do radius<=0 disable calls and both vendor blend arrays.
+     * BlurBackground2.addBlur() delegates positive vendor blur through this exact utility before
+     * reflection reaches hidden View APIs. On 307 that becomes a post-composition region blur on
+     * the Floating Dock Surface, so the themed HotSeats radius must be zero while Prismal is the
+     * visual owner. Other BlurUtilities consumers, disable calls and vendor arrays pass through.
      */
-    private static void installCompatBackgroundBlurClamp(
-            ClassLoader classLoader, LiquidDockConfig config) {
+    private static void installCompatBackgroundBlurSuppression(ClassLoader classLoader) {
         try {
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.common.BlurUtilities", "setBackgroundBlur",
@@ -156,14 +155,15 @@ final class Miuix307MaterialPipeline {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         if (args.length >= 2 && args[0] instanceof View
                                 && args[1] instanceof Integer) {
-                            args[1] = MiuixGlassHook.clampCompatBackgroundBlurRadius(
-                                    (View) args[0], (Integer) args[1], config);
+                            args[1] = MiuixGlassHook.suppressCompatBackgroundBlurRadius(
+                                    (View) args[0], (Integer) args[1]);
                         }
                         return chain.proceed(args);
                     }, View.class, int.class, float[].class, int[][].class);
-            MainHook.log("[DC] MiuiX 307 compat background blur clamp installed");
+            MainHook.log("[DC] MiuiX 307 compat background blur suppression installed");
         } catch (Throwable error) {
-            MainHook.log("[DC] MiuiX 307 compat background blur clamp unavailable: " + error);
+            MainHook.log("[DC] MiuiX 307 compat background blur suppression unavailable: "
+                    + error);
         }
     }
 
@@ -204,8 +204,8 @@ final class Miuix307MaterialPipeline {
     private static void installThemedBackgroundHooks(
             Class<?> backgroundClass, LiquidDockConfig config, ClassLoader classLoader) {
         // Decompiled BlurBackground2.addBlur() is invoked by both attach and radius updates.
-        // Its hard-coded utility radius is already clamped before the original reaches View;
-        // run geometry sync afterwards to keep the pass-window radius and Prismal shape aligned.
+        // Its positive utility radius is suppressed before it reaches View; geometry sync then
+        // reasserts vendor GPU-blur disable while keeping the Prismal shape aligned.
         HookUtil.hookMethod(backgroundClass, "onAttachedToWindow", new Class<?>[0], chain -> {
             Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
             View background = (View) chain.getThisObject();

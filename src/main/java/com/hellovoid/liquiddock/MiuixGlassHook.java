@@ -13,8 +13,9 @@ import java.lang.reflect.Field;
 /**
  * MiuiX-specific glass installer for OS3.0.307+ docks.
  *
- * The vendor background remains intact and owns the realtime backdrop blur/gradient. This
- * class overlays LiquidDock's existing Prismal glass stack above it. The generic Launcher
+ * The vendor background remains only as a geometry source. Its compositor/pass-window blur is
+ * disabled so LiquidDock's existing Prismal glass stack owns the actual blur and optical pass.
+ * The generic Launcher
  * gesture/Recents capture hooks stay disabled; only SystemUI HOME/APP ownership is rebound so
  * the glass can choose FULL_DISPLAY while the floating Dock is shown over an app.
  */
@@ -29,10 +30,9 @@ final class MiuixGlassHook {
     private static DockLiquidGlassView glassRef;
     private static DockLiquidGlassHostView hostRef;
     private static View backgroundRef;
-    private static ViewTreeObserver nativeBackgroundObserver;
-    private static ViewTreeObserver.OnPreDrawListener nativeBackgroundPreserver;
-    private static int nativeBlurRadiusPx = -1;
-    private static boolean nativeBlurRadiusFailureLogged;
+    private static ViewTreeObserver vendorBlurObserver;
+    private static ViewTreeObserver.OnPreDrawListener vendorBlurSuppressor;
+    private static View vendorGpuBlurLoggedFor;
     // BlurBackground2 can issue the same hard-coded utility blur repeatedly during layout.
     // Keep one concise diagnostic per themed background instance.
     private static View compatBackgroundBlurLoggedFor;
@@ -49,26 +49,21 @@ final class MiuixGlassHook {
     }
 
     /**
-     * BlurBackground2.addBlur() hard-codes a 100-unit background blur before delegating to
-     * BlurUtilities.setBackgroundBlur(View,int,float[],int[][]). The full default->theme device
-     * trace shows this is the themed-only visual difference: default MiuiX uses the configured
-     * radius while both implementations intentionally keep the same HotSeats MiShadow. Clamp
-     * only positive themed utility radii; preserve vendor disable semantics and blend arrays.
-     * This deliberately does not require a live Prismal binding because the vendor can call the
-     * utility while constructing the replacement background, before hierarchy rebind completes.
+     * BlurBackground2.addBlur() routes a positive vendor blur radius through this utility before
+     * it reaches hidden View background-blur APIs. theme(3) shows that even radius=5 becomes a
+     * SurfaceFlinger region blur on the whole Floating Dock, post-processing Prismal. For the
+     * exact themed HotSeats background, suppress every positive vendor radius to zero. Disable
+     * calls and every other BlurUtilities consumer pass through unchanged.
      */
-    static int clampCompatBackgroundBlurRadius(
-            View dockBg, int requestedRadius, LiquidDockConfig config) {
-        if (dockBg == null || config == null || requestedRadius <= 0) return requestedRadius;
+    static int suppressCompatBackgroundBlurRadius(View dockBg, int requestedRadius) {
+        if (dockBg == null || requestedRadius <= 0) return requestedRadius;
         if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;
-        int targetRadius = Math.round(
-                config.glass.blur * dockBg.getResources().getDisplayMetrics().density);
-        if (requestedRadius != targetRadius && compatBackgroundBlurLoggedFor != dockBg) {
+        if (compatBackgroundBlurLoggedFor != dockBg) {
             compatBackgroundBlurLoggedFor = dockBg;
-            MainHook.log(TAG + " compat BlurBackground2 background blur clamped "
-                    + requestedRadius + " -> " + targetRadius);
+            MainHook.log(TAG + " compat BlurBackground2 GPU background blur suppressed "
+                    + requestedRadius + " -> 0");
         }
-        return targetRadius;
+        return 0;
     }
 
     /**
@@ -99,36 +94,20 @@ final class MiuixGlassHook {
         }
 
         // Detached/old host: never stack a second glass layer on a recreated Dock hierarchy.
-        removeNativeBackgroundPreserver();
+        removeVendorGpuBlurSuppressor();
         if (hostRef != null && hostRef.getParent() instanceof ViewGroup) {
             ((ViewGroup) hostRef.getParent()).removeView(hostRef);
         }
         hostRef = null;
         glassRef = null;
         backgroundRef = null;
+        vendorGpuBlurLoggedFor = null;
         compatBackgroundBlurLoggedFor = null;
-        nativeBlurRadiusPx = -1;
-        nativeBlurRadiusFailureLogged = false;
 
-        float density = dockBg.getResources().getDisplayMetrics().density;
-        int blurPx = Math.round(config.glass.blur * density);
-        nativeBlurRadiusPx = nativeVisualOwner ? blurPx : -1;
-        if (nativeMaterial) {
-            boolean passOk = MiBlurBridge.applyPassWindowBlur(dockBg, blurPx);
-            MainHook.log(TAG + " passWindowBlur radius=" + blurPx + " ok=" + passOk);
-            if (!passOk) {
-                // The true MiuiX material normally owns compositor pass-window blur.
-                boolean contentOk = MiBlurBridge.applyContentBlur(
-                        dockBg, blurPx, config.glass.captureScale);
-                MainHook.log(TAG + " fallback to content blur ok=" + contentOk);
-            }
-        } else if (nativeVisualOwner) {
-            // BlurBackground2 owns its vendor backdrop/outline stack. Its separate utility
-            // background-blur radius is clamped at BlurUtilities; keep the normal HotSeats
-            // MiShadow because the working default MiuiX path uses the same shadow parameters.
-            MainHook.log(TAG + " compat BlurBackground2 keeps vendor blur/outline radius="
-                    + blurPx);
-        }
+        // Both 307 backgrounds can attach pass-window blur to the whole Floating Dock Surface.
+        // Disable that compositor stage before Prismal is installed; the vendor View remains only
+        // as geometry until DockLiquidGlassView hides it after the first valid capture.
+        if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
 
         float radius = readRadius(dockBg);
         int dockW = readDimension(dockBg, "mWidth", true);
@@ -148,7 +127,8 @@ final class MiuixGlassHook {
         // explicit here so this specialized path can never drift back to demo constants.
         glass.setCaptureScale(config.glass.captureScale);
         glass.setCapturePowerLimitFps(config.glass.captureFps);
-        if (nativeVisualOwner) enforcePrismalOpticalOnly(glass);
+        // LiquidGlassFactory already applied config.blur/config.blurMode. Do not override them:
+        // the GPU capture is the input and Prismal itself owns blur/refraction/highlight.
         MainHook.log(TAG + " capture tuning fps=" + config.glass.captureFps
                 + " scale=" + config.glass.captureScale);
 
@@ -168,20 +148,18 @@ final class MiuixGlassHook {
                 : Math.min(parent.getChildCount(), bgIdx + 1);
         parent.addView(host, insertIndex, hostLp);
 
-        // Preserve the MiuiX drawable/pass-window blur. DockLiquidGlassView normally hides its
-        // geometrySource after the first captured frame; on 307 that source is the actual native
-        // material background and must stay visible underneath the Prismal layer.
+        // Keep the vendor View only as DockLiquidGlassView's geometry source. Once a capture is
+        // installed, the normal glass lifecycle hides that source; do not restore its alpha/latch.
         backgroundRef = dockBg;
         glassRef = glass;
         hostRef = host;
-        if (nativeVisualOwner) enforceNativeBlurRadius(dockBg);
-        installNativeBackgroundPreserver(dockBg, glass, nativeVisualOwner);
+        if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
+        installVendorGpuBlurSuppressor(dockBg);
         HomeOwnershipRuntime.bind(glass, glass.getContext());
 
         DockStrokeRenderer.configure(dockBg, config.dock, radius);
-        MainHook.log(TAG + " Prismal optical layer installed above "
-                + (nativeMaterial ? "MiuiX native material" : "BlurBackground2 vendor visual")
-                + " background with live ownership");
+        MainHook.log(TAG + " Prismal owns blur; native 307 background is geometry only class="
+                + dockBg.getClass().getSimpleName());
         return true;
     }
 
@@ -206,6 +184,7 @@ final class MiuixGlassHook {
             }
             if (changed) host.setLayoutParams(params);
         }
+        if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
         host.setVisibility(dockBg.getVisibility());
         host.invalidate();
     }
@@ -216,13 +195,7 @@ final class MiuixGlassHook {
         DockLiquidGlassHostView host = hostRef;
         if (host == null || host.getParent() == null) return;
 
-        if (isNativeVisualOwner(dockBg)) {
-            float density = dockBg.getResources().getDisplayMetrics().density;
-            nativeBlurRadiusPx = Math.round(config.glass.blur * density);
-            enforceNativeBlurRadius(dockBg);
-        } else {
-            nativeBlurRadiusPx = -1;
-        }
+        if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
 
         float radius = readRadius(dockBg);
         host.setVisibility(dockBg.getVisibility());
@@ -236,7 +209,7 @@ final class MiuixGlassHook {
         return dockBg != null && NATIVE_BACKGROUND_CLASS.equals(dockBg.getClass().getName());
     }
 
-    /** Both 307 implementations own the native backdrop/outline/shadow visual stack. */
+    /** Both supported 307 implementations are vendor geometry sources for the injected host. */
     private static boolean isNativeVisualOwner(View dockBg) {
         if (dockBg == null) return false;
         String name = dockBg.getClass().getName();
@@ -244,98 +217,52 @@ final class MiuixGlassHook {
     }
 
     /**
-     * MiuiX already owns the actual backdrop blur. Prismal must only refract the raw sampled
-     * backdrop and draw its optical highlight; otherwise its shader/self-blur stacks on top of
-     * the native pass-window blur and produces the heavy second blur seen after HOME/RECENTS
-     * transitions. This is intentionally re-applied after config hot reloads.
+     * Disable every vendor compositor/pass-window blur stage on the bound 307 background.
+     * SurfaceFlinger applies that effect to the Floating Dock Surface after child composition,
+     * so leaving even the correct radius active would blur/cover Prismal's rendered output.
      */
-    private static void enforcePrismalOpticalOnly(DockLiquidGlassView glass) {
-        if (glass == null) return;
-        glass.setBlurMode(LiquidBlurMode.SHADER);
-        glass.setBlurRadiusPx(0);
-    }
-
-    /**
-     * HyperOS 307 reapplies its own MaterialConfig on APP/HOME/RECENTS transitions and can
-     * overwrite the Dock radius (device log: 14 -> 201) without replacing the background View.
-     * Reassert only the user-configured radius; leave vendor blur mode/blend colors untouched.
-     */
-    private static void enforceNativeBlurRadius(View dockBg) {
-        if (dockBg == null || dockBg != backgroundRef || nativeBlurRadiusPx < 0) return;
-        boolean ok = MiBlurBridge.setPassWindowBlurRadius(dockBg, nativeBlurRadiusPx);
-        if (!ok && !nativeBlurRadiusFailureLogged) {
-            nativeBlurRadiusFailureLogged = true;
-            MainHook.log(TAG + " native blur radius clamp unavailable");
-        } else if (ok) {
-            nativeBlurRadiusFailureLogged = false;
+    static void suppressVendorGpuBlur(View dockBg) {
+        if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
+        // Radius-zero first gives a narrow fail-safe even if one hidden disable entry point fails.
+        MiBlurBridge.setPassWindowBlurRadius(dockBg, 0);
+        MiBlurBridge.clearPassWindowBlur(dockBg);
+        if (vendorGpuBlurLoggedFor != dockBg) {
+            vendorGpuBlurLoggedFor = dockBg;
+            MainHook.log(TAG + " vendor GPU background blur disabled; Prismal owns blur class="
+                    + dockBg.getClass().getSimpleName());
         }
     }
 
     /**
-     * Keep the native MiuiX material visible without changing DockLiquidGlassView's legacy
-     * behavior. Its installCapture() sets geometrySource alpha=0 and marks the private
-     * nativeBackgroundHiddenByGlass latch. Because this listener is registered after the glass
-     * attaches its own pre-draw listener, it clears that latch and restores alpha before drawing.
+     * HyperOS can reapply its material state during animation without replacing the background.
+     * Reassert only GPU-blur suppression before draw. Crucially, this listener never restores
+     * dockBg alpha and never touches the glass view hidden-source latch: the
+     * ordinary glass lifecycle must be free to hide the native geometry source after capture.
      */
-    private static void installNativeBackgroundPreserver(
-            View dockBg, DockLiquidGlassView glass, boolean nativeVisualOwner) {
-        removeNativeBackgroundPreserver();
-        final Field hiddenField;
-        try {
-            hiddenField = findField(DockLiquidGlassView.class, "nativeBackgroundHiddenByGlass");
-            hiddenField.setAccessible(true);
-        } catch (Throwable error) {
-            MainHook.log(TAG + " native background latch unavailable: " + error);
-            dockBg.setAlpha(1f);
-            return;
-        }
-
+    private static void installVendorGpuBlurSuppressor(View dockBg) {
+        removeVendorGpuBlurSuppressor();
         View root = dockBg.getRootView();
         ViewTreeObserver observer = root != null ? root.getViewTreeObserver() : null;
-        if (observer == null || !observer.isAlive()) {
-            dockBg.setAlpha(1f);
-            return;
-        }
+        if (observer == null || !observer.isAlive()) return;
 
         ViewTreeObserver.OnPreDrawListener listener = () -> {
-            if (backgroundRef != dockBg || glassRef != glass) return true;
-            // Keep the complete vendor geometry/background stack alive underneath Prismal.
-            // The themed hard-coded radius is clamped at BlurUtilities before it reaches View.
-            if (nativeVisualOwner) {
-                enforcePrismalOpticalOnly(glass);
-                enforceNativeBlurRadius(dockBg);
-            }
-            try {
-                hiddenField.setBoolean(glass, false);
-            } catch (Throwable ignored) {}
-            if (dockBg.getAlpha() != 1f) dockBg.setAlpha(1f);
+            if (backgroundRef == dockBg) suppressVendorGpuBlur(dockBg);
             return true;
         };
         observer.addOnPreDrawListener(listener);
-        nativeBackgroundObserver = observer;
-        nativeBackgroundPreserver = listener;
+        vendorBlurObserver = observer;
+        vendorBlurSuppressor = listener;
 
-        // A capture/vendor material callback may complete between setupViews and the next
-        // pre-draw. Restore once on the main queue as well so the native material never remains
-        // hidden or keeps a vendor-overwritten blur radius for a full frame.
         dockBg.post(() -> {
-            if (backgroundRef != dockBg || glassRef != glass) return;
-            if (nativeVisualOwner) {
-                enforcePrismalOpticalOnly(glass);
-                enforceNativeBlurRadius(dockBg);
-            }
-            try {
-                hiddenField.setBoolean(glass, false);
-            } catch (Throwable ignored) {}
-            dockBg.setAlpha(1f);
+            if (backgroundRef == dockBg) suppressVendorGpuBlur(dockBg);
         });
     }
 
-    private static void removeNativeBackgroundPreserver() {
-        ViewTreeObserver observer = nativeBackgroundObserver;
-        ViewTreeObserver.OnPreDrawListener listener = nativeBackgroundPreserver;
-        nativeBackgroundObserver = null;
-        nativeBackgroundPreserver = null;
+    private static void removeVendorGpuBlurSuppressor() {
+        ViewTreeObserver observer = vendorBlurObserver;
+        ViewTreeObserver.OnPreDrawListener listener = vendorBlurSuppressor;
+        vendorBlurObserver = null;
+        vendorBlurSuppressor = null;
         if (observer == null || listener == null) return;
         try {
             if (observer.isAlive()) observer.removeOnPreDrawListener(listener);
