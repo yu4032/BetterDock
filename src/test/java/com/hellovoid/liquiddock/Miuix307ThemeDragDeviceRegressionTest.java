@@ -70,10 +70,9 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // Decompiled BlurBackground2 already owns pass-window blur. Device RenderEngine logs show
-        // that making Prismal own blur adds a second large Floating Dock region blur. Keep the
-        // vendor backdrop-blur owner, while Prismal remains optical-only and only the native blur
-        // radius is clamped to LiquidDock's configured value.
+        // Both native 307 backgrounds remain the visual owner underneath Prismal. The themed
+        // implementation's hard-coded positive blur radius is corrected at BlurUtilities before
+        // it reaches hidden View.setBackgroundBlur; vendor blend/outline state remains intact.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(glassHook.contains("isNativeVisualOwner"));
@@ -85,22 +84,37 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
-    public void thirdPartyBackground2SuppressesOnlyItsBoundMiShadow() throws Exception {
+    public void thirdPartyBackground2PreservesVendorMiShadowLikeDefaultMaterial() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // DEX + device trace: HotSeats.showViewShadow() invokes MiShadowUtils.applyViewShadow()
-        // on the active Dock background, and radius=143 reaches hidden View.setMiShadow(). Only
-        // the currently bound compat BlurBackground2 must skip that call. Default MiuiX material,
-        // stale themed instances, Recents TaskView, shortcut menus and arbitrary Views must pass.
-        assertTrue(pipeline.contains("installCompatMiShadowSuppression(classLoader)"));
-        assertTrue(pipeline.contains("com.miui.home.launcher.common.MiShadowUtils"));
-        assertTrue(pipeline.contains("applyViewShadow"));
-        assertTrue(pipeline.contains("MiuixGlassHook.shouldSuppressCompatMiShadow"));
-        assertTrue(glassHook.contains("shouldSuppressCompatMiShadow"));
+        // Full default->theme trace: both backgrounds receive the same HotSeats MiShadow
+        // (radius=143, offsetY=34). The themed instance gets its first shadow before LiquidDock
+        // rebinds it, so bound-instance suppression is both late and conceptually wrong.
+        assertFalse(pipeline.contains("installCompatMiShadowSuppression(classLoader)"));
+        assertFalse(pipeline.contains("shouldSuppressCompatMiShadow"));
+        assertFalse(glassHook.contains("shouldSuppressCompatMiShadow"));
+        assertFalse(glassHook.contains("compat BlurBackground2 MiShadow suppressed"));
+    }
+
+    @Test
+    public void thirdPartyBackground2ClampsHardcodedBlurAtBlurUtilitiesBoundary() throws Exception {
+        String pipeline = read("Miuix307MaterialPipeline.java");
+        String glassHook = read("MiuixGlassHook.java");
+
+        // Decompiled BlurBackground2.addBlur(View,float) loads literal 100, scales it, then calls
+        // BlurUtilities.setBackgroundBlur(View,int,float[],int[][]). Device trace confirms those
+        // calls become View.setBackgroundBlur blurRadius=100 after the theme switch, while the
+        // ordinary setBackgroundBlurRadius(5) clamp is already active. Clamp the utility's
+        // positive radius before reflection, preserve radius=0 disable semantics and all arrays.
+        assertTrue(pipeline.contains("installCompatBackgroundBlurClamp(classLoader, config)"));
+        assertTrue(pipeline.contains("com.miui.home.launcher.common.BlurUtilities"));
+        assertTrue(pipeline.contains("\"setBackgroundBlur\""));
+        assertTrue(pipeline.contains("View.class, int.class, float[].class, int[][].class"));
+        assertTrue(pipeline.contains("MiuixGlassHook.clampCompatBackgroundBlurRadius"));
+        assertTrue(glassHook.contains("clampCompatBackgroundBlurRadius"));
+        assertTrue(glassHook.contains("requestedRadius <= 0"));
         assertTrue(glassHook.contains("COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())"));
-        assertTrue(glassHook.contains("dockBg != backgroundRef"));
-        assertTrue(glassHook.contains("compat BlurBackground2 MiShadow suppressed"));
-        assertFalse(pipeline.contains("setMiShadow"));
+        assertTrue(glassHook.contains("compat BlurBackground2 background blur clamped"));
     }
 }
