@@ -59,6 +59,7 @@ final class Miuix307MaterialPipeline {
             // install MainHook's complete legacy capture/gesture lifecycle.
             Miuix307DragCaptureHook.install(classLoader);
             installHomeGesturePrearm(classLoader);
+            installCompatMiShadowSuppression(classLoader);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -137,6 +138,46 @@ final class Miuix307MaterialPipeline {
             return Class.forName(name, false, classLoader);
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    /**
+     * HotSeats applies the same MiShadow utility to several UI surfaces. Intercept the utility
+     * once, but skip the original call only for the exact live compat Dock background selected
+     * by MiuixGlassHook. This leaves default MiuiX, Recents and shortcut-menu shadows intact.
+     */
+    private static void installCompatMiShadowSuppression(ClassLoader classLoader) {
+        try {
+            Class<?> shadowUtils = Class.forName(
+                    "com.miui.home.launcher.common.MiShadowUtils", false, classLoader);
+            int hooked = 0;
+            for (Method method : shadowUtils.getDeclaredMethods()) {
+                Class<?>[] params = method.getParameterTypes();
+                if (!"applyViewShadow".equals(method.getName())
+                        || !Modifier.isStatic(method.getModifiers())
+                        || method.getReturnType() != void.class
+                        || params.length == 0
+                        || !View.class.isAssignableFrom(params[0])) {
+                    continue;
+                }
+                HookUtil.hook(method, chain -> {
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    if (args.length > 0 && args[0] instanceof View
+                            && MiuixGlassHook.shouldSuppressCompatMiShadow((View) args[0])) {
+                        return null;
+                    }
+                    return chain.proceed(args);
+                });
+                hooked++;
+            }
+            if (hooked == 0) {
+                MainHook.log("[DC] MiuiX 307 compat MiShadow suppression unavailable: no overload");
+            } else {
+                MainHook.log("[DC] MiuiX 307 compat MiShadow suppression installed count="
+                        + hooked);
+            }
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 compat MiShadow suppression unavailable: " + error);
         }
     }
 
