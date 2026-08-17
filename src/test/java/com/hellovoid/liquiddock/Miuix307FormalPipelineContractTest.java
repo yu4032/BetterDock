@@ -49,7 +49,9 @@ public class Miuix307FormalPipelineContractTest {
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("MiuixGlassHook.install"));
         assertTrue(glassHook.contains("LiquidGlassFactory.create"));
-        assertTrue(glassHook.contains("applyPassWindowBlur"));
+        assertTrue(glassHook.contains("suppressVendorGpuBlur"));
+        assertTrue(glassHook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
+        assertFalse(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
         assertFalse(pipeline.contains("LiveScreenCapture"));
         assertFalse(pipeline.contains("CaptureSceneState"));
         assertFalse(pipeline.contains("CaptureSource"));
