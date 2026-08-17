@@ -37,6 +37,8 @@ final class Miuix307MaterialPipeline {
     private static boolean hierarchyRebindPosted;
     private static ViewTreeObserver hierarchyRecoveryObserver;
     private static ViewTreeObserver.OnGlobalLayoutListener hierarchyRecoveryListener;
+    // Log only once while one vendor instance is still in its startup placeholder geometry.
+    private static View geometryDeferredLoggedFor;
 
     private Miuix307MaterialPipeline() {}
 
@@ -86,7 +88,7 @@ final class Miuix307MaterialPipeline {
                             if (workspace != null) workspaceRef = workspace;
 
                             if (!ensureGlassBound(background, config, classLoader)) {
-                                MainHook.log("[DC] MiuiX 307 real glass install returned false");
+                                MainHook.log("[DC] MiuiX 307 real glass handoff pending");
                             }
                         } catch (Throwable error) {
                             MainHook.log("[DC] MiuiX 307 real glass bind failed: " + error);
@@ -400,9 +402,31 @@ final class Miuix307MaterialPipeline {
             View background, LiquidDockConfig config, ClassLoader classLoader) {
         if (background == null || !isSupportedBackground(background)) return false;
         if (MiuixGlassHook.isBoundTo(background)) {
+            geometryDeferredLoggedFor = null;
             Miuix307DragCaptureHook.bind(background);
             observeBoundHierarchy(background, config, classLoader);
             return true;
+        }
+
+        // setupViews/onAttachedToWindow run before BlurBackground2 has committed its real radius.
+        // Preserve the untouched vendor material during that placeholder phase. Existing vendor
+        // setBackgroundRadius/triggerMeasure callbacks naturally retry this method once geometry
+        // is valid, so no fixed-delay polling is needed.
+        if (!MiuixGlassHook.hasReadyNativeGeometry(background)) {
+            if (geometryDeferredLoggedFor != background) {
+                geometryDeferredLoggedFor = background;
+                MainHook.log("[DC] MiuiX 307 Prismal handoff deferred; native geometry not ready"
+                        + " class=" + background.getClass().getSimpleName()
+                        + " size=" + background.getWidth() + "x" + background.getHeight()
+                        + " radius=" + MiuixGlassHook.readNativeOpticsRadius(background));
+            }
+            return false;
+        }
+        if (geometryDeferredLoggedFor == background) {
+            MainHook.log("[DC] MiuiX 307 native geometry ready; committing Prismal handoff"
+                    + " size=" + background.getWidth() + "x" + background.getHeight()
+                    + " radius=" + MiuixGlassHook.readNativeOpticsRadius(background));
+            geometryDeferredLoggedFor = null;
         }
 
         // Remove observers before MiuixGlassHook replaces an old host so our own controlled

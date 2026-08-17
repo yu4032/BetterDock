@@ -51,6 +51,26 @@ final class MiuixGlassHook {
     }
 
     /**
+     * A 307 material View exists before its real Dock geometry is committed. During Launcher
+     * startup the themed BlurBackground2 can be attached with width=0 and mCornerRadius=0, then
+     * receive its final geometry through the normal radius/measure callbacks. Never hand Prismal
+     * ownership to that placeholder state: doing so creates a transient second inner outline.
+     */
+    static boolean hasReadyNativeGeometry(View dockBg) {
+        if (dockBg == null || !isNativeVisualOwner(dockBg)) return false;
+        if (!dockBg.isAttachedToWindow() || !(dockBg.getParent() instanceof ViewGroup)) {
+            return false;
+        }
+        if (dockBg.getWidth() <= 0 || dockBg.getHeight() <= 0) return false;
+        float radius = readRadius(dockBg);
+        return !Float.isNaN(radius) && !Float.isInfinite(radius) && radius > 0.5f;
+    }
+
+    static float readNativeOpticsRadius(View dockBg) {
+        return readRadius(dockBg);
+    }
+
+    /**
      * BlurBackground2.addBlur() routes a positive vendor blur radius through this utility before
      * it reaches hidden View background-blur APIs. theme(3) shows that even radius=5 becomes a
      * SurfaceFlinger region blur on the whole Floating Dock, post-processing Prismal. For the
@@ -91,6 +111,10 @@ final class MiuixGlassHook {
             syncGeometry(dockBg, config);
             return true;
         }
+
+        // Belt-and-suspenders guard: the coordinator normally filters this already, but direct
+        // callers must never make the placeholder 0-radius material state visible either.
+        if (!hasReadyNativeGeometry(dockBg)) return false;
 
         // Remove only LiquidDock's previous child host. Never replace or hide the vendor shell.
         removeVendorGpuBlurSuppressor();
