@@ -46,6 +46,10 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             FreeformCaptureLeashHook.install();
             new MainHook().install(classLoader);
+            // MainHook's legacy whole-Dock shadow lives in the full Dock-customization path.
+            // Install the complementary owner after MainHook so Shadow stays functional when
+            // Dock size/blur customization is disabled, without duplicating the normal path.
+            DockShadowIndependenceHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
