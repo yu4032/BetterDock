@@ -1,0 +1,37 @@
+name: Temporary device feedback patch v2
+
+on:
+  push:
+    branches:
+      - fix/miuix307-drag-freeform-followup
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/miuix307-drag-freeform-followup
+          fetch-depth: 0
+      - name: Patch and commit only on trigger commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          subject="$(git log -1 --pretty=%s)"
+          if [ "$subject" != "chore: run device feedback patch v2" ]; then
+            echo "No patch for commit: $subject"
+            exit 0
+          fi
+          python3 tools/tmp_device_feedback_patch.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/Miuix307DragCaptureHook.java \
+                  src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java \
+                  src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java \
+                  src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java
+          git diff --cached --check
+          git commit -m "fix: address MiuiX drag theme and thin stroke regressions"
+          git push origin HEAD:fix/miuix307-drag-freeform-followup
