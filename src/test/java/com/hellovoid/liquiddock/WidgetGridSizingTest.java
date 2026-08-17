@@ -156,6 +156,38 @@ public class WidgetGridSizingTest {
     }
 
     @Test
+    public void fourByTwoFitsExactlyAtTenBySixLandscapeEdge() {
+        int[] xs = positions(10, 112);
+        int[] ys = positions(6, 108);
+
+        int[] rect = WidgetGridSizing.gridRect(
+                6, 4, 4, 2, xs, ys, 100, 100, 12, 8);
+
+        assertArrayEquals(new int[]{672, 432, 448, 216}, rect);
+        assertArrayEquals(new int[]{0, 0, 0, 0},
+                WidgetGridSizing.gridRect(7, 4, 4, 2, xs, ys, 100, 100, 12, 8));
+    }
+
+    @Test
+    public void fourByTwoFitsExactlyAtSixByTenPortraitEdge() {
+        int[] xs = positions(6, 112);
+        int[] ys = positions(10, 108);
+
+        int[] rect = WidgetGridSizing.gridRect(
+                2, 8, 4, 2, xs, ys, 100, 100, 12, 8);
+
+        assertArrayEquals(new int[]{224, 864, 448, 216}, rect);
+        assertArrayEquals(new int[]{0, 0, 0, 0},
+                WidgetGridSizing.gridRect(3, 8, 4, 2, xs, ys, 100, 100, 12, 8));
+    }
+
+    private static int[] positions(int count, int pitch) {
+        int[] values = new int[count];
+        for (int i = 0; i < count; i++) values[i] = i * pitch;
+        return values;
+    }
+
+    @Test
     public void invalidGridGeometryReturnsEmptyRect() {
         int[] xs = {0, 112};
         int[] ys = {0, 108};
