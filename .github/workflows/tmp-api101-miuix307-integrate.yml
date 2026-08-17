@@ -23,5 +23,9 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Configure integration commit identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Apply validated 307 integration with RED/GREEN verification
         run: python3 tools/tmp_integrate_api101_miuix307.py
