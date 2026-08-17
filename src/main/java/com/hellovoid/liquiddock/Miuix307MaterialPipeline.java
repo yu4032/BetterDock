@@ -1,7 +1,11 @@
 package com.hellovoid.liquiddock;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+
+import java.lang.ref.WeakReference;
 
 /**
  * Hook coordinator for HyperOS 3.0.307+ HotSeatsListContentMiuiXBlurBackground.
@@ -13,8 +17,15 @@ final class Miuix307MaterialPipeline {
     static final String BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
 
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
     private static boolean installed;
     private static View workspaceRef;
+    private static WeakReference<Object> hotSeatsRef = new WeakReference<>(null);
+    private static View observedBackground;
+    private static View observedHost;
+    private static View.OnAttachStateChangeListener hierarchyListener;
+    private static boolean hierarchyRebindPosted;
 
     private Miuix307MaterialPipeline() {}
 
@@ -47,6 +58,7 @@ final class Miuix307MaterialPipeline {
                         try {
                             Object launcher = chain.getThisObject();
                             Object hotSeats = HookUtil.getField(launcher, "mHotSeats");
+                            hotSeatsRef = new WeakReference<>(hotSeats);
                             View background = resolveBackground(hotSeats);
                             if (background == null) {
                                 MainHook.log("[DC] MiuiX 307 background not found in setupViews");
@@ -164,8 +176,13 @@ final class Miuix307MaterialPipeline {
         if (background == null) return false;
         if (MiuixGlassHook.isBoundTo(background)) {
             Miuix307DragCaptureHook.bind(background);
+            observeBoundHierarchy(background, config, classLoader);
             return true;
         }
+
+        // Remove observers before MiuixGlassHook replaces an old host so our own controlled
+        // rebind cannot be mistaken for an external theme/hierarchy invalidation.
+        clearHierarchyObservation();
 
         // Do not leave a detached previous hierarchy as the drag target during an instance swap.
         Miuix307DragCaptureHook.bind(null);
@@ -179,8 +196,97 @@ final class Miuix307MaterialPipeline {
             MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
         } else {
             Miuix307DragCaptureHook.bind(background);
+            observeBoundHierarchy(background, config, classLoader);
         }
         return installedNow;
+    }
+
+    /** Observe both pieces that define a valid binding: vendor background and injected host. */
+    private static void observeBoundHierarchy(
+            View background, LiquidDockConfig config, ClassLoader classLoader) {
+        if (background == null) return;
+        View host = resolveBoundHost(background);
+        if (host == null) {
+            MainHook.log("[DC] MiuiX 307 bound host not found for hierarchy observation");
+            return;
+        }
+        if (observedBackground == background && observedHost == host
+                && hierarchyListener != null) {
+            return;
+        }
+
+        clearHierarchyObservation();
+        final View watchedBackground = background;
+        final View watchedHost = host;
+        View.OnAttachStateChangeListener listener = new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View v) {}
+
+            @Override public void onViewDetachedFromWindow(View v) {
+                if (v != watchedBackground && v != watchedHost) return;
+                MainHook.log("[DC] MiuiX 307 hierarchy invalidated; rebind scheduled source="
+                        + (v == watchedHost ? "host" : "background"));
+                scheduleHierarchyRebind(config, classLoader);
+            }
+        };
+        background.addOnAttachStateChangeListener(listener);
+        host.addOnAttachStateChangeListener(listener);
+        observedBackground = background;
+        observedHost = host;
+        hierarchyListener = listener;
+    }
+
+    private static void clearHierarchyObservation() {
+        View background = observedBackground;
+        View host = observedHost;
+        View.OnAttachStateChangeListener listener = hierarchyListener;
+        observedBackground = null;
+        observedHost = null;
+        hierarchyListener = null;
+        if (listener == null) return;
+        try {
+            if (background != null) background.removeOnAttachStateChangeListener(listener);
+        } catch (Throwable ignored) {}
+        try {
+            if (host != null) host.removeOnAttachStateChangeListener(listener);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Coalesce a theme/hierarchy burst into one next-main-turn repair. If the vendor replacement
+     * background is not parented yet, stop here; setupViews or a real geometry callback will
+     * retry later. This deliberately has no delayed polling loop.
+     */
+    private static void scheduleHierarchyRebind(
+            LiquidDockConfig config, ClassLoader classLoader) {
+        if (hierarchyRebindPosted) return;
+        hierarchyRebindPosted = true;
+        MAIN_HANDLER.post(() -> {
+            hierarchyRebindPosted = false;
+            Object hotSeats = hotSeatsRef.get();
+            if (hotSeats == null) {
+                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; HotSeats owner gone");
+                return;
+            }
+            View currentBackground = resolveBackground(hotSeats);
+            if (currentBackground == null || !(currentBackground.getParent() instanceof ViewGroup)) {
+                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; background not ready");
+                return;
+            }
+            if (!ensureGlassBound(currentBackground, config, classLoader)) {
+                MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; install not ready");
+            }
+        });
+    }
+
+    /** Resolve only the host injected beside this exact background in its current parent. */
+    private static View resolveBoundHost(View background) {
+        if (background == null || !(background.getParent() instanceof ViewGroup)) return null;
+        ViewGroup parent = (ViewGroup) background.getParent();
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child instanceof DockLiquidGlassHostView) return child;
+        }
+        return null;
     }
 
     private static View resolveBackground(Object hotSeats) {
