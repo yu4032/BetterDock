@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public class CaptureCadenceTest {
-    @Test public void appPowerLimitWins() {
+    @Test public void appPowerLimitWinsWhenIdle() {
         CaptureCadence cadence = new CaptureCadence(60);
         cadence.setDynamicFps(120, 10);
         cadence.setPowerLimitFps(20);
@@ -12,12 +12,31 @@ public class CaptureCadenceTest {
                 cadence.intervalNanos(CaptureScene.APP, true, 100L, 1L));
     }
 
-    @Test public void staticAppUsesProbeRate() {
+    @Test public void staticAppUsesProbeRateWhenIdle() {
         CaptureCadence cadence = new CaptureCadence(60);
         cadence.setDynamicFps(60, 4);
         cadence.setPowerLimitFps(60);
         assertEquals(250_000_000L,
                 cadence.intervalNanos(CaptureScene.APP, true, 0L, 1L));
+    }
+
+    @Test public void activePointerOverridesStaticAppProbeAndPowerLimit() {
+        CaptureCadence cadence = new CaptureCadence(60);
+        cadence.setDynamicFps(5, 1);
+        cadence.setPowerLimitFps(5);
+        cadence.noteInteraction(1_000_000_000L);
+        assertEquals(16_666_666L,
+                cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
+    }
+
+    @Test public void clearingPointerReturnsAppToIdlePolicy() {
+        CaptureCadence cadence = new CaptureCadence(60);
+        cadence.setDynamicFps(5, 1);
+        cadence.setPowerLimitFps(5);
+        cadence.noteInteraction(1_000_000_000L);
+        cadence.clearInteraction();
+        assertEquals(1_000_000_000L / 5,
+                cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
     }
 
     @Test public void homeUsesBaseRate() {
