@@ -29,13 +29,13 @@ public class CaptureCadenceTest {
                 cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
     }
 
-    @Test public void clearingPointerReturnsAppToIdlePolicy() {
+    @Test public void clearingPointerReturnsAppToIdleProbePolicy() {
         CaptureCadence cadence = new CaptureCadence(60);
         cadence.setDynamicFps(5, 1);
         cadence.setPowerLimitFps(5);
         cadence.noteInteraction(1_000_000_000L);
         cadence.clearInteraction();
-        assertEquals(1_000_000_000L / 5,
+        assertEquals(1_000_000_000L,
                 cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
     }
 
