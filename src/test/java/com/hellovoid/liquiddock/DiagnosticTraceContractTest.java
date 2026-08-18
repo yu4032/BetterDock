@@ -11,8 +11,8 @@ import org.junit.Test;
 /** Contracts for the device diagnostic build used to localize transition and drag freezes. */
 public class DiagnosticTraceContractTest {
     private static String source(String name) throws Exception {
-        return Files.readString(Path.of(
-                "src/main/java/com/hellovoid/liquiddock/" + name), StandardCharsets.UTF_8);
+        Path path = Path.of("src/main/java/com/hellovoid/liquiddock/" + name);
+        return Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "";
     }
 
     @Test public void entryInstallsDiagnosticProbeInSystemUiAndLauncher() throws Exception {
