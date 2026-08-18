@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -50,40 +51,20 @@ public class Miuix307BackdropPolicyTest {
                 "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java"));
         String entry = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/ModuleMain.java"));
-        String freeze = Files.readString(Path.of(
-                "src/main/java/com/hellovoid/liquiddock/Miuix307HomeTransitionFreezeHook.java"));
+        String glassHook = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java"));
 
         assertTrue(exclusions.contains("Miuix307MaterialPipeline.isInstalled()"));
 
-        // Device regression: GestureToHome is emitted while APP->HOME still contains
-        // SHOW_WALLPAPER/IS_WALLPAPER transition layers. Both native 307 HOME hints keep calling
-        // onHomeTransitionStart(), but a specialized hook must replace that legacy immediate-HOME
-        // body before it can switch Prismal to wallpaper.
+        // The specialized 307 pipeline already exposes native toHome/GestureToHome boundaries.
+        // Keep that route simple: it may select HOME through the established scene target, but it
+        // must not install a second freeze/ownership state machine on top of the system gesture.
         assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
         assertTrue(pipeline.contains("sendStateBroadcast"));
         assertTrue(pipeline.contains("\"toHome\""));
         assertTrue(pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
-        assertTrue(entry.contains("Miuix307HomeTransitionFreezeHook.install()"));
-        assertTrue(freeze.contains("MiuixGlassHook.class, \"onHomeTransitionStart\""));
-        assertTrue(freeze.contains("freezeLastAppBackdrop"));
-        assertTrue(freeze.contains("cancelPendingCaptureWork"));
-        assertTrue(freeze.contains("return null"));
-
-        // Once the legacy immediate HOME target is suppressed, the request/response ownership
-        // resolver must be explicitly refreshed at this same native transition boundary. Otherwise
-        // launcherResumed can remain APP indefinitely and the preserved APP bitmap never hands off.
-        assertTrue("307 HOME freeze must trigger a fresh SystemUI ownership query",
-                freeze.contains("HomeOwnershipRuntime.request(\"miuix307-toHome\")"));
-
-        // While frozen, no observation/pointer/lifecycle request may replace the installed APP
-        // bitmap. Existing onLauncherFocused() owns the configured settle timing; its focus-home
-        // request is the normal release point. Exact Overview or a new Dock touch while APP is
-        // still authoritative are safe cancellation paths for an interrupted HOME transition.
-        assertTrue(freeze.contains("DockLiquidGlassView.class, \"requestStateCapture\""));
-        assertTrue(freeze.contains("\"focus-home\""));
-        assertTrue(freeze.contains("\"overview-enter-\""));
-        assertTrue(freeze.contains("\"dock-touch\""));
-        assertTrue(freeze.contains("launcherResumed"));
-        assertTrue(freeze.contains("releaseFrozenBackdrop"));
+        assertTrue(glassHook.contains("static void onHomeTransitionStart()"));
+        assertTrue(glassHook.contains("glass.setGestureCaptureTarget(\"HOME\")"));
+        assertFalse(entry.contains("Miuix307HomeTransitionFreezeHook.install()"));
     }
 }
