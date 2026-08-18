@@ -126,7 +126,7 @@ final class Miuix307RecentsInputHook {
             ClassLoader classLoader, String simpleName, boolean active) {
         try {
             Class<?> eventClass = Class.forName(
-                    "com.miui.home.launcher.dock.v3." + simpleName, false, classLoader);
+                    "com.miui.home.recents.event." + simpleName, false, classLoader);
             int hooked = 0;
             for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
                 HookUtil.hook(ctor, chain -> {
