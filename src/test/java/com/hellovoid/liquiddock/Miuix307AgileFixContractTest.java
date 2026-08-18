@@ -15,24 +15,30 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void appGestureHoldStartsBeforeOriginalPointerCaptureAndNeverGuessesDestination()
+    public void appGestureHoldStartsAtVendorInputBeforeTransformedCaptureAndNeverGuessesDestination()
             throws Exception {
         String hold = read("Miuix307GestureBackdropHoldHook.java");
         String module = read("ModuleMain.java");
 
-        int inputHook = hold.indexOf("\"onInputMotion\"");
-        int arm = hold.indexOf("maybeArm(rawX, rawY, dockWindow)", inputHook);
+        int vendorClass = hold.indexOf("com.miui.home.recents.GestureInputHelper");
+        int inputHook = hold.indexOf("\"onInputEvent\".equals(method.getName())", vendorClass);
+        int arm = hold.indexOf("maybeArm(rawX, rawY, true)", inputHook);
         int proceed = hold.indexOf("chain.proceed(args)", arm);
-        assertTrue("gesture hold must be installed from the API101 Launcher entry point",
-                module.contains("Miuix307GestureBackdropHoldHook.install()"));
-        assertTrue("APP hold must arm before the existing pointer observer can request capture",
+        assertTrue("gesture hold must receive the Launcher class loader",
+                module.contains("Miuix307GestureBackdropHoldHook.install(classLoader)"));
+        assertTrue("the device-confirmed vendor GestureInputHelper must be the primary boundary",
+                vendorClass >= 0 && inputHook > vendorClass);
+        assertTrue("APP hold must arm before vendor input processing can start transformed capture",
                 inputHook >= 0 && arm > inputHook && proceed > arm);
+        assertTrue("vendor hidden signatures must be discovered by overload/class-hierarchy scan",
+                hold.contains("cursor.getDeclaredMethods()")
+                        && hold.contains("cursor = cursor.getSuperclass()"));
         assertTrue("arming must cancel a readback already in flight at ACTION_DOWN",
                 hold.contains("cancelPendingCaptureWork"));
         assertTrue("hold must apply only to the current APP scene",
                 hold.contains("desiredScene(glass) != CaptureScene.APP"));
-        assertTrue("hold must require the real Dock pointer boundary",
-                hold.contains("dockWindow") && hold.contains("glass.isTouchInDockArea(rawX, rawY)"));
+        assertTrue("the previous LiquidDock input observer remains only a fallback",
+                hold.contains("installCompatInputBoundary") && hold.contains("\"onInputMotion\""));
         assertFalse("gesture hold must not predict HOME",
                 hold.contains("setGestureCaptureTarget(\"HOME\")"));
         assertFalse("gesture hold must not predict RECENTS",
