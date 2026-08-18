@@ -26,14 +26,16 @@ final class Miuix307ZeroCopyRenderer {
     static boolean install(ViewGroup materialHost, DockLiquidGlassHostView host,
                            LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
         if (materialHost == null || host == null || glassConfig == null) return false;
-        if (!MiBlurBridge.isPassWindowBlurAvailable()) {
+        boolean exactBackgroundBlur =
+                Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost);
+        if (!exactBackgroundBlur && !MiBlurBridge.isPassWindowBlurAvailable()) {
             MainHook.log(TAG + " pass-window blur API unavailable");
             return false;
         }
 
         int effectiveBlurRadiusPx = EXPERIMENT_BLUR_RADIUS_PX;
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
-                materialHost.getContext(), effectiveBlurRadiusPx);
+                materialHost.getContext(), effectiveBlurRadiusPx, !exactBackgroundBlur);
         backdrop.setId(View.generateViewId());
         backdrop.setGlassRadius(readHostRadius(host));
         Miuix307ZeroCopyToneView tone = new Miuix307ZeroCopyToneView(
@@ -62,9 +64,12 @@ final class Miuix307ZeroCopyRenderer {
             if (backdropRef.get() != backdrop) return;
             if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
                     materialHost, backdrop, readHostRadius(host), effectiveBlurRadiusPx)) {
+                if (exactBackgroundBlur) {
+                    backdrop.setExternalCompositorBlurActive(true);
+                }
                 backdrop.setBlurRadius(effectiveBlurRadiusPx);
                 MainHook.log(TAG + " exact background blur calibration radius="
-                        + effectiveBlurRadiusPx);
+                        + effectiveBlurRadiusPx + " passWindow=" + !exactBackgroundBlur);
             }
             // Retain the completed shared-root diagnostic only; no refraction transaction is sent.
             Miuix307SurfaceRefractionProbe.probe(backdrop, materialHost);
@@ -85,8 +90,13 @@ final class Miuix307ZeroCopyRenderer {
             float cornerRadiusPx = host != null ? readHostRadius(host) : 0f;
             if (host != null) backdrop.setGlassRadius(cornerRadiusPx);
             if (materialHost != null) {
-                Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
-                        materialHost, backdrop, cornerRadiusPx, effectiveBlurRadiusPx);
+                boolean exactBackgroundBlur =
+                        Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost);
+                if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
+                        materialHost, backdrop, cornerRadiusPx, effectiveBlurRadiusPx)
+                        && exactBackgroundBlur) {
+                    backdrop.setExternalCompositorBlurActive(true);
+                }
             }
             backdrop.setBlurRadius(effectiveBlurRadiusPx);
         }
