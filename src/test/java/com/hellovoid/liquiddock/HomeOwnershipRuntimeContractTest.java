@@ -39,6 +39,18 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
+    @Test public void confirmedHomeReleases307TransitionFreezeAfterHomeStateIsApplied()
+            throws Exception {
+        String runtime = source("HomeOwnershipRuntime.java");
+        int homeState = runtime.indexOf("glass.setLauncherState(true, true)");
+        int focus = runtime.indexOf("glass.onLauncherFocused()", homeState);
+        int release = runtime.indexOf("glass.releaseBackdropFromHomeTransition(", homeState);
+        assertTrue("HOME ownership must be applied before releasing the frozen APP frame",
+                homeState >= 0 && release > homeState);
+        assertTrue("APP->HOME settle scheduling must be armed before the freeze is released",
+                focus > homeState && release > focus);
+    }
+
     @Test public void brokerExposesProviderLifecycleWithoutPolling() throws Exception {
         String broker = source("FreeformLeashBrokerClient.java");
         assertTrue(broker.contains("ProviderListener"));
