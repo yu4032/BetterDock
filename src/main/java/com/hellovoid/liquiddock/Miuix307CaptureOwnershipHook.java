@@ -15,9 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Capture-state compatibility for the specialized MiuiX 307 pipeline.
  *
  * MainHook deliberately returns early once the 307 material pipeline is installed. That keeps the
- * old capture/gesture hooks from fighting the native material owner, but it also skips ownership
- * refresh, SystemUI panel expansion and workstation state. Restore only those authoritative
- * signals here; Launcher focus is merely a refresh trigger and never classifies HOME/APP itself.
+ * old capture/gesture hooks from fighting the native material owner, but it also skips SystemUI
+ * panel expansion and workstation state. Restore only those authoritative signals here.
  */
 final class Miuix307CaptureOwnershipHook {
     private static final String TAG = "[DC][MG]";
@@ -32,37 +31,10 @@ final class Miuix307CaptureOwnershipHook {
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         installSystemUiPanelBridge(classLoader);
-        installHomeOwnershipRefreshBridge(classLoader);
         installWorkstationModeBridge();
         installGlassBindBridge();
         installWorkstationCaptureGate();
         MainHook.log(TAG + " 307 capture ownership bridge installed");
-    }
-
-    /**
-     * Restore the narrow ownership-refresh boundary skipped by MainHook's 307 early return.
-     * This is the Launcher Activity window, not the NOT_FOCUSABLE Floating Dock overlay. Focus is
-     * never interpreted as HOME/APP; every change only asks the authoritative SystemUI repository
-     * for a fresh baseline, matching the legacy pipeline's approved ownership contract.
-     */
-    private static void installHomeOwnershipRefreshBridge(ClassLoader classLoader) {
-        try {
-            Class<?> launcherClass = Class.forName(
-                    "com.miui.home.launcher.Launcher", false, classLoader);
-            HookUtil.hookMethod(launcherClass, "onWindowFocusChanged",
-                    new Class<?>[]{boolean.class}, chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (!Miuix307MaterialPipeline.isInstalled()) return result;
-                        boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        HomeOwnershipRuntime.request("miuix307-focus");
-                        MainHook.log(TAG + " Launcher focus refresh=" + hasFocus
-                                + "; querying SystemUI ownership");
-                        return result;
-                    });
-            MainHook.log(TAG + " Launcher focus SystemUI ownership refresh installed");
-        } catch (Throwable error) {
-            MainHook.log(TAG + " Launcher focus ownership refresh unavailable: " + error);
-        }
     }
 
     /** Device-proven Launcher state for both Control Center and notification shade expansion. */
