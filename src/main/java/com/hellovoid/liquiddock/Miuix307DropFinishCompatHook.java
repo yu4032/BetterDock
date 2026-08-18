@@ -9,9 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Compatibility fallback for HyperOS builds whose DragObject completion callback is not the exact
  * zero-argument declaration expected by Miuix307DragCaptureHook.
  *
- * The primary hook remains untouched. This scanner activates only when that hook did not install,
- * then hooks every instance overload named onDropAnimationFinished across the class hierarchy.
- * Nested overload forwarding is collapsed to one notification per outer vendor callback.
+ * The primary hook remains untouched. If it already owns the zero-argument declaration, this
+ * scanner skips only that one method and still hooks every other instance overload across the
+ * class hierarchy. Nested overload forwarding is collapsed to one notification per outer vendor
+ * callback.
  */
 final class Miuix307DropFinishCompatHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
@@ -23,20 +24,21 @@ final class Miuix307DropFinishCompatHook {
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
 
-        if (primaryHookInstalled()) {
-            Api101Bridge.log("[DC][DRAG] primary vendor finish hook already active");
-            return;
-        }
-
+        final boolean primaryInstalled = primaryHookInstalled();
         try {
             Class<?> dragObjectClass = Class.forName(
                     "com.miui.home.launcher.DragObject", false, classLoader);
             int hooked = 0;
+            int skippedPrimary = 0;
             Class<?> cursor = dragObjectClass;
             while (cursor != null && cursor != Object.class) {
                 for (Method method : cursor.getDeclaredMethods()) {
                     if (!"onDropAnimationFinished".equals(method.getName())
                             || Modifier.isStatic(method.getModifiers())) {
+                        continue;
+                    }
+                    if (primaryInstalled && method.getParameterCount() == 0) {
+                        skippedPrimary++;
                         continue;
                     }
                     HookUtil.hook(method, chain -> {
@@ -63,9 +65,10 @@ final class Miuix307DropFinishCompatHook {
                 cursor = cursor.getSuperclass();
             }
 
-            if (hooked > 0) {
+            if (hooked > 0 || primaryInstalled) {
                 setPrimaryHookInstalled(true);
-                Api101Bridge.log("[DC][DRAG] compat vendor finish hooks=" + hooked);
+                Api101Bridge.log("[DC][DRAG] vendor finish coverage primary=" + primaryInstalled
+                        + " compat=" + hooked + " skippedPrimary=" + skippedPrimary);
             } else {
                 Api101Bridge.log("[DC][DRAG] no vendor finish overload found; fallback remains active");
             }
