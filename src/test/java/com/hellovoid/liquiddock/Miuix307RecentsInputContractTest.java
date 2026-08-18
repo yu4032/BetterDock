@@ -43,4 +43,21 @@ public class Miuix307RecentsInputContractTest {
         assertFalse(hook.contains("glass.onDockGestureMotion("));
         assertFalse(hook.contains("glass.prearmRecentsCapture("));
     }
+
+    @Test public void specialized307RejectsOnlyPointerAppFramesThatCollapseToWallpaper() throws Exception {
+        String hook = read("Miuix307RecentsInputHook.java");
+        String policy = read("BackdropVisualPolicy.java");
+
+        assertTrue(hook.contains("\"installCapture\""));
+        assertTrue(hook.contains("isPointerInteractionActive(glass)"));
+        assertTrue(hook.contains("isWallpaperSignatureCurrent(glass)"));
+        assertTrue(hook.contains("BackdropVisualPolicy.shouldRejectWallpaperLikeFrame"));
+        assertTrue(hook.contains("BackdropVisualPolicy.isWallpaperLikeSignature"));
+        assertTrue(hook.contains("recycleFrame(args[0])"));
+        assertTrue(hook.contains("keeping previous backdrop"));
+
+        assertTrue(policy.contains("scene == CaptureScene.APP"));
+        assertTrue(policy.contains("pointerInteraction"));
+        assertTrue(policy.contains("wallpaperSignatureValid"));
+    }
 }
