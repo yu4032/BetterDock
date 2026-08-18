@@ -25,6 +25,7 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(backdrop.contains("MiBlurBridge.clearPassWindowBlur(this)"));
         assertTrue(backdrop.contains("postOnAnimation"));
         assertTrue(backdrop.contains("isBlurActive()"));
+        assertTrue(backdrop.contains("isActivationExhausted()"));
     }
 
     @Test
@@ -50,8 +51,8 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(fallback > zeroCopy);
         assertTrue(hook.contains("zeroCopyRef"));
         assertTrue(hook.contains("isZeroCopyActive()"));
-        assertTrue(hook.contains("[DC][ZC] zero-copy active"));
-        assertTrue(hook.contains("[DC][ZC] zero-copy unavailable; capture fallback"));
+        assertTrue(hook.contains("ZERO_COPY_TAG + \" zero-copy active"));
+        assertTrue(hook.contains("ZERO_COPY_TAG + \" zero-copy unavailable; capture fallback"));
     }
 
     @Test
