@@ -7,17 +7,13 @@ import android.view.Display;
 
 import java.lang.ref.WeakReference;
 
-/** Launcher-process bridge from async SystemUI baseline results to the current glass view. */
+/** Launcher-process bootstrap bridge from async SystemUI HOME/APP baseline results. */
 final class HomeOwnershipRuntime {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private static WeakReference<DockLiquidGlassView> currentView = new WeakReference<>(null);
     private static HomeOwnershipResolver resolver;
     private static HomeOwnershipPolicy.Baseline appliedBaseline =
-            HomeOwnershipPolicy.Baseline.UNKNOWN;
-    // Retained only to choose transition side effects (APP prearm / HOME settle). It is never
-    // used as capture ownership while appliedBaseline is UNKNOWN.
-    private static HomeOwnershipPolicy.Baseline lastConfirmedBaseline =
             HomeOwnershipPolicy.Baseline.UNKNOWN;
 
     private HomeOwnershipRuntime() {}
@@ -30,7 +26,7 @@ final class HomeOwnershipRuntime {
         }
         currentView = new WeakReference<>(glass);
         appliedBaseline = HomeOwnershipPolicy.Baseline.UNKNOWN;
-        lastConfirmedBaseline = HomeOwnershipPolicy.Baseline.UNKNOWN;
+        SystemUiTransitionRuntime.bind(glass, context);
         glass.setLauncherState(false, false);
 
         if (resolver == null) {
@@ -49,6 +45,9 @@ final class HomeOwnershipRuntime {
             MAIN.post(() -> request(reason));
             return;
         }
+        // Launcher focus is not a transition authority. Old compatibility hooks may still emit
+        // this refresh on non-307 builds; keep it inert instead of manufacturing UNKNOWN churn.
+        if ("focus".equals(reason) || "miuix307-focus".equals(reason)) return;
         DockLiquidGlassView glass = currentView.get();
         HomeOwnershipResolver currentResolver = resolver;
         if (glass == null || currentResolver == null) return;
@@ -64,36 +63,28 @@ final class HomeOwnershipRuntime {
         }
         DockLiquidGlassView glass = currentView.get();
         if (glass == null) return;
+        if (SystemUiTransitionRuntime.isVisualHoldActive(glass)) {
+            Api101Bridge.log("[DC] HOME bootstrap ignored during transition reason=" + reason);
+            return;
+        }
         HomeOwnershipPolicy.Baseline next = baseline != null
                 ? baseline : HomeOwnershipPolicy.Baseline.UNKNOWN;
-        HomeOwnershipPolicy.Baseline previousConfirmed = lastConfirmedBaseline;
         appliedBaseline = next;
 
         if (next == HomeOwnershipPolicy.Baseline.UNKNOWN) {
             glass.setLauncherState(false, false);
-            Api101Bridge.log("[DC] HOME ownership baseline=UNKNOWN reason=" + reason);
+            Api101Bridge.log("[DC] HOME bootstrap baseline=UNKNOWN reason=" + reason);
             return;
         }
 
         if (next == HomeOwnershipPolicy.Baseline.APP) {
-            if (previousConfirmed != HomeOwnershipPolicy.Baseline.APP) {
-                glass.onLauncherFocusLost();
-            }
             glass.setLauncherState(true, false);
-            if (previousConfirmed != HomeOwnershipPolicy.Baseline.APP) {
-                glass.prearmAppBackdrop("systemui-ownership-" + reason);
-            }
-            lastConfirmedBaseline = HomeOwnershipPolicy.Baseline.APP;
-            Api101Bridge.log("[DC] HOME ownership baseline=APP reason=" + reason);
+            Api101Bridge.log("[DC] HOME bootstrap baseline=APP reason=" + reason);
             return;
         }
 
         glass.setLauncherState(true, true);
-        if (previousConfirmed == HomeOwnershipPolicy.Baseline.APP) {
-            glass.onLauncherFocused();
-        }
-        lastConfirmedBaseline = HomeOwnershipPolicy.Baseline.HOME;
-        Api101Bridge.log("[DC] HOME ownership baseline=HOME reason=" + reason);
+        Api101Bridge.log("[DC] HOME bootstrap baseline=HOME reason=" + reason);
     }
 
     static HomeOwnershipPolicy.Baseline appliedBaselineForTests() {

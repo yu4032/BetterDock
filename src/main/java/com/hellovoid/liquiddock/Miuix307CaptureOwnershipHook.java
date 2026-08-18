@@ -15,10 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Capture-state compatibility for the specialized MiuiX 307 pipeline.
  *
  * MainHook deliberately returns early once the 307 material pipeline is installed. That keeps the
- * old capture/gesture hooks from fighting the native material owner, but it also skips two pieces
- * of state that are still authoritative: SystemUI panel expansion and workstation mode. This
- * bridge restores only those ownership signals and resolves the workstation Dock's own window
- * Surface before a workstation mode-1 capture is allowed to start.
+ * old capture/gesture hooks from fighting the native material owner, but it also skips SystemUI
+ * panel expansion and workstation state. Restore only those authoritative signals here.
  */
 final class Miuix307CaptureOwnershipHook {
     private static final String TAG = "[DC][MG]";
@@ -198,11 +196,6 @@ final class Miuix307CaptureOwnershipHook {
                     CharSequence title = lp.getTitle();
                     boolean workstationTitle = isWorkstationWindowTitle(title);
 
-                    // The device-proven workstation window is titled "Laptop overlay". Accept
-                    // that identity before applying the generic type-2997 rejection: HyperOS is
-                    // free to reuse private window types across releases. The ordinary Floating
-                    // Dock remains explicitly forbidden by title and, absent the workstation
-                    // identity, by type.
                     if (title != null && "Floating Dock".contentEquals(title)) continue;
                     if (!workstationTitle && lp.type == 2997) continue;
 

@@ -11,6 +11,7 @@ import android.os.RemoteException;
  */
 final class SystemUiTaskStateProvider {
     private static volatile FreeformLeashBrokerClient brokerClient;
+    private static volatile Context providerContext;
 
     private SystemUiTaskStateProvider() {}
 
@@ -18,6 +19,7 @@ final class SystemUiTaskStateProvider {
         if (context == null) return;
         Context app = context.getApplicationContext();
         Context safeContext = app != null ? app : context;
+        providerContext = safeContext;
         FreeformLeashBrokerClient client = brokerClient;
         if (client == null) {
             synchronized (SystemUiTaskStateProvider.class) {
@@ -30,6 +32,10 @@ final class SystemUiTaskStateProvider {
             }
         }
         client.setSystemUiProvider(PROVIDER_BINDER);
+    }
+
+    static Context context() {
+        return providerContext;
     }
 
     static boolean callerIsLauncher(Context context) {
@@ -47,6 +53,9 @@ final class SystemUiTaskStateProvider {
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                 throws RemoteException {
             try {
+                if (SystemUiTransitionSource.handles(code)) {
+                    return SystemUiTransitionSource.handleTransaction(code, data);
+                }
                 if (SystemUiHomeOwnershipSource.handles(code)) {
                     return SystemUiHomeOwnershipSource.handleTransaction(code, data);
                 }

@@ -139,6 +139,7 @@ public class Miuix307GlassContractTest {
         String source = read("MiuixGlassHook.java");
         String factory = read("LiquidGlassFactory.java");
 
+        // These settings remain mandatory for the runtime capture fallback.
         assertTrue(source.contains("glass.setCaptureScale(config.glass.captureScale)"));
         assertTrue(source.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
         assertFalse(source.contains("glass.setCaptureScale(0.5f)"));
@@ -161,7 +162,8 @@ public class Miuix307GlassContractTest {
         assertTrue(hook.contains("MiBlurBridge.setPassWindowBlurRadius(dockBg, 0)"));
         assertTrue(hook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
         assertTrue(hook.contains("ViewTreeObserver.OnPreDrawListener"));
-        assertTrue(hook.contains("vendor GPU background blur disabled; Prismal owns blur"));
+        assertTrue(hook.contains("vendor parent GPU blur disabled"));
+        assertTrue(hook.contains("dedicated bottom child"));
 
         int helper = bridge.indexOf("setPassWindowBlurRadius");
         int apply = bridge.indexOf("applyPassWindowBlur");

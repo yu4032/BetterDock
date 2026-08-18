@@ -56,11 +56,9 @@ final class Miuix307MaterialPipeline {
         }
 
         try {
-            // Restore only the old DragController -> drag-surface exclusion behavior that the
-            // specialized 307 early-return would otherwise bypass. This intentionally does NOT
-            // install MainHook's complete legacy capture/gesture lifecycle.
+            // Restore only DragController -> drag-surface exclusion behavior skipped by the
+            // specialized early-return. APP/HOME visual handoff is owned by SystemUI transitions.
             Miuix307DragCaptureHook.install(classLoader);
-            installHomeGesturePrearm(classLoader);
             installCompatBackgroundBlurSuppression(classLoader);
             installDockCustomizationCompatibility(classLoader, config);
 
@@ -101,30 +99,6 @@ final class Miuix307MaterialPipeline {
             }
             if (themedBackgroundClass != null) {
                 installThemedBackgroundHooks(themedBackgroundClass, config, classLoader);
-            }
-
-            // Decompiled 307 Launcher emits StateNotifyUtils.sendStateBroadcast(..., "toHome",
-            // ...) before the APP->HOME icon-flight animation. Feed only that native boundary
-            // into DockLiquidGlassView's existing HOME gesture target so the old APP capture is
-            // scene-stale before animation pixels can be installed. This is optional/fail-open:
-            // a vendor signature change must not disable the entire 307 material pipeline.
-            try {
-                HookUtil.hookMethod(classLoader,
-                        "com.miui.home.recents.util.StateNotifyUtils", "sendStateBroadcast",
-                        chain -> {
-                            Object[] args = chain.getArgs().toArray(new Object[0]);
-                            for (Object arg : args) {
-                                if ("toHome".equals(arg)) {
-                                    MiuixGlassHook.onHomeTransitionStart();
-                                    break;
-                                }
-                            }
-                            return chain.proceed(args);
-                        }, android.content.Context.class,
-                        String.class, String.class, String.class);
-                MainHook.log("[DC] MiuiX 307 native toHome backdrop hook installed");
-            } catch (Throwable error) {
-                MainHook.log("[DC] MiuiX 307 native toHome hook unavailable: " + error);
             }
 
             installed = true;
@@ -169,7 +143,6 @@ final class Miuix307MaterialPipeline {
                     + error);
         }
     }
-
 
     /** Restore the non-glass Dock customization hooks skipped by MainHook's 307 early return. */
     private static void installDockCustomizationCompatibility(
@@ -367,31 +340,6 @@ final class Miuix307MaterialPipeline {
             cursor = cursor.getSuperclass();
         }
         MainHook.log("[DC] MiuiX 307 themed background geometry hooks installed count=" + hooked);
-    }
-
-    /**
-     * 307's specialized early return intentionally skips LauncherSceneController. Restore only
-     * the native side-swipe HOME event that the legacy controller used to observe, and converge
-     * it on the same wallpaper prearm as the existing StateNotifyUtils("toHome") signal.
-     */
-    private static void installHomeGesturePrearm(ClassLoader classLoader) {
-        try {
-            Class<?> eventClass = Class.forName(
-                    "com.miui.home.launcher.dock.v3.GestureToHome", false, classLoader);
-            int hooked = 0;
-            for (java.lang.reflect.Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    MiuixGlassHook.onHomeTransitionStart();
-                    return result;
-                });
-                hooked++;
-            }
-            MainHook.log("[DC] MiuiX 307 GestureToHome wallpaper prearm installed constructors="
-                    + hooked);
-        } catch (Throwable error) {
-            MainHook.log("[DC] MiuiX 307 GestureToHome prearm unavailable: " + error);
-        }
     }
 
     /**
