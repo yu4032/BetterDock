@@ -49,7 +49,6 @@ public final class ModuleMain extends XposedModule {
             new MainHook().install(classLoader);
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
-            Miuix307HomeTransitionFreezeHook.install();
             Miuix307RecentsInputHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
