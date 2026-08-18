@@ -10,7 +10,9 @@ on:
       - 'feat/**'
       - 'demo/**'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+      - ci/miuix307-passblur-gate
   workflow_dispatch:
 
 jobs:
