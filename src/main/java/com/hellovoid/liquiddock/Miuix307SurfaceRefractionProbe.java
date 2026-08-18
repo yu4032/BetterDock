@@ -18,6 +18,9 @@ import java.lang.reflect.Method;
 final class Miuix307SurfaceRefractionProbe {
     private static final String TAG = "[DC][ZC][REFR]";
     private static boolean logged;
+    private static SurfaceControl loggedChildSurface;
+    private static int loggedChildWidth = -1;
+    private static int loggedChildHeight = -1;
 
     private Miuix307SurfaceRefractionProbe() {}
 
@@ -63,6 +66,48 @@ final class Miuix307SurfaceRefractionProbe {
                     + " materialSurface=" + describeSurface(materialSurface));
         } catch (Throwable error) {
             MainHook.log(TAG + " transaction refraction APIs unavailable: " + error);
+        }
+    }
+
+    static synchronized void probeChildSurface(SurfaceView childView, View materialHost) {
+        if (childView == null || materialHost == null) return;
+        try {
+            SurfaceControl childSurface = childView.getSurfaceControl();
+            Object materialRoot = readViewRoot(materialHost);
+            SurfaceControl rootSurface = readRootSurfaceControl(materialRoot, "child-materialHost");
+            boolean childValid = childSurface != null && childSurface.isValid();
+            boolean childIndependent = childValid && rootSurface != null && childSurface != rootSurface;
+            int width = childView.getWidth();
+            int height = childView.getHeight();
+
+            if (loggedChildSurface != childSurface
+                    || loggedChildWidth != width
+                    || loggedChildHeight != height) {
+                loggedChildSurface = childSurface;
+                loggedChildWidth = width;
+                loggedChildHeight = height;
+                MainHook.log(TAG + " child surface"
+                        + " childIndependent=" + childIndependent
+                        + " childValid=" + childValid
+                        + " childSurface=" + describeSurface(childSurface)
+                        + " rootSurface=" + describeSurface(rootSurface)
+                        + " size=" + width + "x" + height);
+            }
+        } catch (Throwable error) {
+            MainHook.log(TAG + " child surface probe unavailable: " + error);
+        }
+    }
+
+    static synchronized void noteChildSurfaceDestroyed(SurfaceView childView) {
+        SurfaceControl surface = null;
+        try {
+            if (childView != null) surface = childView.getSurfaceControl();
+        } catch (Throwable ignored) {}
+        MainHook.log(TAG + " child surface destroyed childSurface=" + describeSurface(surface));
+        if (surface == loggedChildSurface) {
+            loggedChildSurface = null;
+            loggedChildWidth = -1;
+            loggedChildHeight = -1;
         }
     }
 
