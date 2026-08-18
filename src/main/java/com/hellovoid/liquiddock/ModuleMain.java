@@ -63,7 +63,6 @@ public final class ModuleMain extends XposedModule {
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
             Miuix307RecentsInputHook.install(classLoader);
             Miuix307GestureBackdropHoldHook.install(classLoader);
-            Miuix307IconFlightSurfaceHook.install(classLoader);
             Miuix307DropFinishCompatHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
