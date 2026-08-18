@@ -74,7 +74,7 @@ final class Miuix307RecentsInputHook {
         root.setOnTouchListener((view, event) -> {
             if (event == null || !Miuix307MaterialPipeline.isInstalled()) return false;
             onInputMotion(event.getActionMasked(), event.getRawX(), event.getRawY(), true);
-            // Observation only. Never consume or replace MIUI's gesture handling.
+            // Observation only. Never consume MIUI's gesture handling.
             return false;
         });
         dockRootRef = new WeakReference<>(root);
@@ -123,9 +123,11 @@ final class Miuix307RecentsInputHook {
             // its DOWN began in/near the Dock before it can own the rest of that pointer stream.
             gestureActive = dockWindow || glass.isTouchInDockArea(rawX, rawY);
             if (gestureActive) {
+                notePointerInteraction(glass);
                 glass.onDockTouchEvent();
                 glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
+                notePointerInteraction(glass);
                 glass.requestCapture("miuix307-overview-touch-down");
             }
             return;
@@ -135,9 +137,11 @@ final class Miuix307RecentsInputHook {
             if (gestureActive) {
                 // Do not re-check Dock bounds here. After a valid DOWN, the finger itself owns
                 // capture cadence for the entire swipe, including slow motion above the Dock.
+                notePointerInteraction(glass);
                 glass.onDockTouchEvent();
                 glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
+                notePointerInteraction(glass);
                 glass.requestCapture("miuix307-overview-touch-move");
             }
             return;
@@ -145,7 +149,30 @@ final class Miuix307RecentsInputHook {
 
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             if (gestureActive) glass.onDockGestureMotion(action, rawY);
+            clearPointerInteraction(glass);
             gestureActive = false;
+        }
+    }
+
+    private static void notePointerInteraction(DockLiquidGlassView glass) {
+        try {
+            Object value = HookUtil.getField(glass, "captureCadence");
+            if (value instanceof CaptureCadence) {
+                ((CaptureCadence) value).noteInteraction(System.nanoTime());
+            }
+        } catch (Throwable error) {
+            MainHook.log(TAG + " pointer cadence note unavailable: " + error);
+        }
+    }
+
+    private static void clearPointerInteraction(DockLiquidGlassView glass) {
+        try {
+            Object value = HookUtil.getField(glass, "captureCadence");
+            if (value instanceof CaptureCadence) {
+                ((CaptureCadence) value).clearInteraction();
+            }
+        } catch (Throwable error) {
+            MainHook.log(TAG + " pointer cadence clear unavailable: " + error);
         }
     }
 
@@ -184,6 +211,7 @@ final class Miuix307RecentsInputHook {
                     overviewActive = active;
                     DockLiquidGlassView glass = boundGlass();
                     if (glass != null) {
+                        if (!active) clearPointerInteraction(glass);
                         glass.setOverviewActive(active, "miuix307-" + simpleName);
                         glass.requestCapture("miuix307-" + simpleName);
                     }
