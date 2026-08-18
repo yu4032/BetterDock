@@ -1,17 +1,17 @@
 package com.hellovoid.liquiddock;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Continuous APP-transition capture for HyperOS 3.0.7 / Launcher 4.50.
  *
- * 4.50 decompilation gives reliable lifecycle boundaries, but those boundaries control
- * capture cadence/source authority rather than freezing the last bitmap. During APP→HOME/RECENTS
- * the foreground task remains a live SurfaceFlinger composition, so LiquidDock samples every
- * animation frame and keeps the capture scene pinned to APP/FULL_DISPLAY until an exact
- * destination authority (Overview or WMShell finish/abort) takes over.
+ * APP pull frames stay live/full-display until Launcher itself commits HOME through GestureToHome.
+ * From that vendor boundary onward the same capture burst continues with HOME/wallpaper source;
+ * existing scene revisioning rejects any APP frame that was already in flight. Exact Overview and
+ * WMShell still own RECENTS handoff, abort handling and final stable-state confirmation.
  */
 final class Miuix307GestureBackdropHoldHook {
     private static final String TAG = "[DC][GH]";
@@ -19,6 +19,7 @@ final class Miuix307GestureBackdropHoldHook {
 
     private static volatile boolean vendorTransitionActive;
     private static volatile boolean systemUiTransitionActive;
+    private static volatile boolean vendorHomeCommitted;
     private static volatile boolean captureBurstRunning;
     private static volatile long captureBurstSession;
     private static WeakReference<DockLiquidGlassView> transitionGlassRef =
@@ -29,6 +30,7 @@ final class Miuix307GestureBackdropHoldHook {
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         installVendorAppLifecycle(classLoader);
+        installVendorHomeAuthority(classLoader);
         try {
             installOverviewHandoff();
         } catch (Throwable error) {
@@ -43,6 +45,7 @@ final class Miuix307GestureBackdropHoldHook {
                     "com.miui.home.recents.GestureModeApp", false, classLoader);
 
             HookUtil.hookMethod(appMode, "onStartGesture", new Class<?>[0], chain -> {
+                vendorHomeCommitted = false;
                 DockLiquidGlassView glass = boundGlass();
                 if (glass != null) transitionGlassRef = new WeakReference<>(glass);
                 setVendorTransitionActive(true, "GestureModeApp.onStartGesture");
@@ -67,6 +70,33 @@ final class Miuix307GestureBackdropHoldHook {
                     + appEndHooks + " homeEnd=" + homeEndHooks);
         } catch (Throwable error) {
             Api101Bridge.log(TAG + " 4.50 vendor gesture lifecycle unavailable", error);
+        }
+    }
+
+    /**
+     * The legacy pipeline already used this exact 4.50 Dock-state event. It is emitted after
+     * CLOSE_TO_HOME is committed but before FloatingIconView2 starts drawing, so it is the correct
+     * source boundary: switch APP/full-display -> HOME/wallpaper without stopping capture cadence.
+     */
+    private static void installVendorHomeAuthority(ClassLoader classLoader) {
+        try {
+            Class<?> eventClass = Class.forName(
+                    "com.miui.home.launcher.dock.v3.GestureToHome", false, classLoader);
+            int hooked = 0;
+            for (Constructor<?> constructor : eventClass.getDeclaredConstructors()) {
+                HookUtil.hook(constructor, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    DockLiquidGlassView glass = transitionGlass();
+                    if (glass != null && isTransitionCaptureActive()) {
+                        commitVendorHome(glass, "GestureToHome");
+                    }
+                    return result;
+                });
+                hooked++;
+            }
+            Api101Bridge.log(TAG + " 4.50 GestureToHome source authority hooks=" + hooked);
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " 4.50 GestureToHome source authority unavailable", error);
         }
     }
 
@@ -123,6 +153,7 @@ final class Miuix307GestureBackdropHoldHook {
     static void stopAllTransitionCapture(String reason) {
         vendorTransitionActive = false;
         systemUiTransitionActive = false;
+        vendorHomeCommitted = false;
         updateCaptureBurst(reason);
     }
 
@@ -142,9 +173,7 @@ final class Miuix307GestureBackdropHoldHook {
             return;
         }
 
-        // Destination ownership may flip HOME immediately after ACTION_UP. The transition itself is
-        // still APP/FULL_DISPLAY until exact Overview or Shell finish commits the destination.
-        pinTransitionSceneToApp(glass);
+        pinTransitionScene(glass);
 
         if (captureBurstRunning) {
             renewTransitionCapture(glass, "miuix307-transition-refresh-" + reason);
@@ -188,7 +217,7 @@ final class Miuix307GestureBackdropHoldHook {
 
     private static void renewTransitionCapture(DockLiquidGlassView glass, String reason) {
         if (glass == null) return;
-        pinTransitionSceneToApp(glass);
+        pinTransitionScene(glass);
         try {
             Object cadence = HookUtil.getField(glass, "captureCadence");
             if (cadence != null) HookUtil.invoke(cadence, "noteInteraction", System.nanoTime());
@@ -198,14 +227,32 @@ final class Miuix307GestureBackdropHoldHook {
         glass.requestCapture(reason);
     }
 
-    private static void pinTransitionSceneToApp(DockLiquidGlassView glass) {
+    private static void commitVendorHome(DockLiquidGlassView glass, String reason) {
         if (glass == null || !isTransitionCaptureActive()) return;
+        vendorHomeCommitted = true;
+        keepAppVisibilityPrearm(glass, false);
+        pinTransitionScene(glass);
+        try {
+            Object cadence = HookUtil.getField(glass, "captureCadence");
+            if (cadence != null) HookUtil.invoke(cadence, "noteInteraction", System.nanoTime());
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " HOME cadence renewal unavailable", error);
+        }
+        glass.requestCapture("miuix307-vendor-home-commit");
+        Api101Bridge.log(TAG + " vendor GestureToHome committed HOME source reason=" + reason
+                + " burst=" + captureBurstRunning);
+    }
+
+    /** Keep source authority explicit throughout the burst; HOME replaces APP once committed. */
+    private static void pinTransitionScene(DockLiquidGlassView glass) {
+        if (glass == null || !isTransitionCaptureActive()) return;
+        String target = vendorHomeCommitted ? "HOME" : "APP";
         try {
             Object state = HookUtil.getField(glass, "sceneState");
-            if (state != null) HookUtil.invoke(state, "setGestureTarget", "APP", System.nanoTime());
+            if (state != null) HookUtil.invoke(state, "setGestureTarget", target, System.nanoTime());
             HookUtil.invoke(glass, "updateDesiredScene");
         } catch (Throwable error) {
-            Api101Bridge.log(TAG + " transition APP scene pin unavailable", error);
+            Api101Bridge.log(TAG + " transition " + target + " scene pin unavailable", error);
         }
     }
 
