@@ -25,7 +25,8 @@ public class Miuix307RecentsInputContractTest {
 
     @Test public void specialized307PipelineRestoresExactOverviewBoundaries() throws Exception {
         String hook = read("Miuix307RecentsInputHook.java");
-        assertTrue(hook.contains("\"GestureToRecent\""));
+        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.GestureToRecent"));
+        assertTrue(hook.contains("com.miui.home.recents.event."));
         assertTrue(hook.contains("\"EnterOverviewStateEvent\""));
         assertTrue(hook.contains("\"ExitOverviewStateEvent\""));
         assertTrue(hook.contains("setOverviewActive"));
