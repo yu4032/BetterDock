@@ -6,15 +6,12 @@ import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
-/** Builds the HyperOS 307 PassBlur -> OES diagnostic composition. */
+/** Builds the optically neutral HyperOS 307 PassBlur -> OES diagnostic composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
 
     private static WeakReference<Miuix307PassBlurGpuView> gpuBackdropRef =
-            new WeakReference<>(null);
-    private static WeakReference<Miuix307ZeroCopyToneView> toneRef =
             new WeakReference<>(null);
     private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
@@ -26,9 +23,6 @@ final class Miuix307ZeroCopyRenderer {
                            LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
         if (materialHost == null || host == null || glassConfig == null) return false;
 
-        // This first GPU demo intentionally targets the decompiled Launcher 4.50 Background2 path
-        // only. Other 307 material implementations keep the proven capture fallback until the
-        // PassBlur data path is device-validated.
         if (!Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)) {
             MainHook.log(TAG + " PassBlur GLES demo unsupported source="
                     + materialHost.getClass().getSimpleName());
@@ -40,30 +34,22 @@ final class Miuix307ZeroCopyRenderer {
         gpuBackdrop.setId(View.generateViewId());
         gpuBackdrop.setGlassRadius(readHostRadius(host));
 
-        Miuix307ZeroCopyToneView tone = new Miuix307ZeroCopyToneView(
-                materialHost.getContext(), glassConfig);
-        tone.setId(View.generateViewId());
-
+        // Diagnostic rule: the live GPU backdrop is the only visual child. Tone/tint, legacy
+        // highlight and stroke stay out of this path so center passthrough can be judged directly.
         host.removeAllViews();
         host.addView(gpuBackdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        host.addView(tone, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        host.reloadOpticsPreservingGeometry(glassConfig);
-        if (!enableSharpOptics(host)) {
-            host.removeAllViews();
-            gpuBackdrop.shutdown();
-            MainHook.log(TAG + " sharp optical overlay activation unavailable");
-            return false;
-        }
 
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
-        toneRef = new WeakReference<>(tone);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
-        MainHook.log(TAG + " PassBlur GLES demo installed; awaiting first GPU frame"
+        MainHook.log(TAG + " PassBlur GLES neutral lens installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx);
         return true;
+    }
+
+    static boolean isInstalled() {
+        return gpuBackdropRef.get() != null;
     }
 
     static boolean isActive() {
@@ -92,14 +78,11 @@ final class Miuix307ZeroCopyRenderer {
         if (gpuBackdrop != null) {
             gpuBackdrop.setGlassRadius(host != null ? readHostRadius(host) : 0f);
         }
-        Miuix307ZeroCopyToneView tone = toneRef.get();
-        if (tone != null) tone.setTone(glassConfig);
     }
 
     static void clear() {
         Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
         gpuBackdropRef = new WeakReference<>(null);
-        toneRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
         if (gpuBackdrop != null) gpuBackdrop.shutdown();
@@ -117,18 +100,5 @@ final class Miuix307ZeroCopyRenderer {
         }
         int min = Math.min(host.getWidth(), host.getHeight());
         return min > 0 ? min * 0.5f : 0f;
-    }
-
-    private static boolean enableSharpOptics(DockLiquidGlassHostView host) {
-        try {
-            Method method = DockLiquidGlassHostView.class.getDeclaredMethod(
-                    "setActiveBlurBackend", LiquidBlurMode.class);
-            method.setAccessible(true);
-            method.invoke(host, LiquidBlurMode.ADVANCED_MATERIAL);
-            return true;
-        } catch (Throwable error) {
-            MainHook.log(TAG + " host optical backend unavailable: " + error);
-            return false;
-        }
     }
 }
