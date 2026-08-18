@@ -37,11 +37,15 @@ final class CaptureCadence {
         interactionActiveUntilNanos = 0L;
     }
 
+    boolean isInteractionActive(long nowNanos) {
+        return nowNanos < interactionActiveUntilNanos;
+    }
+
     long intervalNanos(CaptureScene scene, boolean dynamicEnabled,
                        long dynamicActiveUntilNanos, long nowNanos) {
         // Pointer activity wins before scene-specific adaptive policy. In particular, the first
         // part of a Dock-to-Recents swipe is still APP, but must not run at APP probe/power FPS.
-        if (nowNanos < interactionActiveUntilNanos) return INTERACTION_INTERVAL_NANOS;
+        if (isInteractionActive(nowNanos)) return INTERACTION_INTERVAL_NANOS;
 
         // Exact/target Recents remains responsive between pointer events while launcher animation
         // state continues to dirty the source.
