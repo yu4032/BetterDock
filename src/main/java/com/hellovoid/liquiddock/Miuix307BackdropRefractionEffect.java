@@ -21,7 +21,9 @@ final class Miuix307BackdropRefractionEffect {
             "uniform shader content;"
           + "uniform float2 size;"
           + "uniform float strengthPx;"
+          + "uniform float diagnosticSolid;"
           + "half4 main(float2 p){"
+          + "if(diagnosticSolid>0.5){return half4(1.0,0.0,1.0,1.0);}"
           + "float2 halfSize=max(size*0.5,float2(1.0));"
           + "float2 q=(p-halfSize)/halfSize;"
           + "float r=length(q);"
@@ -50,6 +52,7 @@ final class Miuix307BackdropRefractionEffect {
                     ? activeShader : new RuntimeShader(SHADER_SOURCE);
             shader.setFloatUniform("size", (float) target.getWidth(), (float) target.getHeight());
             shader.setFloatUniform("strengthPx", EXPERIMENT_STRENGTH_PX);
+            shader.setFloatUniform("diagnosticSolid", 1.0f);
             RenderEffect effect = RenderEffect.createRuntimeShaderEffect(shader, "content");
             setter.invoke(target, effect);
 
@@ -57,8 +60,7 @@ final class Miuix307BackdropRefractionEffect {
             activeShader = shader;
             if (!loggedActive) {
                 loggedActive = true;
-                MainHook.log(TAG + " runtime refraction active strengthPx="
-                        + EXPERIMENT_STRENGTH_PX
+                MainHook.log(TAG + " runtime diagnostic active solid=magenta"
                         + " size=" + target.getWidth() + "x" + target.getHeight());
             }
             return true;
