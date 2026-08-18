@@ -26,6 +26,12 @@ public final class ModuleMain extends XposedModule {
                 Api101Bridge.log("[DC] SystemUI task executor source unavailable", error);
             }
             try {
+                SystemUiTransitionSource.install(classLoader);
+            } catch (Throwable error) {
+                // Transition observation is passive/fail-open and must never destabilize SystemUI.
+                Api101Bridge.log("[DC] SystemUI transition source unavailable", error);
+            }
+            try {
                 SystemUiHomeOwnershipSource.install(classLoader);
             } catch (Throwable error) {
                 // HOME ownership fails closed independently from freeform exclusion.
@@ -46,6 +52,7 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
             FreeformCaptureLeashHook.install();
+            SystemUiTransitionRuntime.install();
             new MainHook().install(classLoader);
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
