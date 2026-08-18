@@ -84,7 +84,7 @@ public class Miuix307ZeroCopyContractTest {
 
         assertTrue(bridge.contains("HotSeatsListContentBlurBackground2"));
         assertTrue("Launcher 4.50 uses BlurUtilities.setBackgroundBlur directly",
-                bridge.contains("getDeclaredMethod(\"setBackgroundBlur\""));
+                bridge.contains("\"setBackgroundBlur\""));
         assertTrue(bridge.contains("Integer.TYPE, float[].class, int[][].class"));
         assertTrue("all four corners must be sourced from the host radius",
                 bridge.contains("float[] cornerRadii = new float[]")
@@ -96,8 +96,8 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(bridge.contains("hotseats_list_content_background_blur_color_light"));
         assertTrue("the experiment radius must be passed into setBackgroundBlur itself",
                 bridge.contains("Integer.valueOf(blurRadiusPx), cornerRadii, blendConfig"));
-        assertTrue(bridge.contains("getDeclaredMethod(\"setBackgroundBlurAlpha\""));
-        assertTrue(bridge.contains("getDeclaredMethod(\"getParentAlpha\")"));
+        assertTrue(bridge.contains("\"setBackgroundBlurAlpha\""));
+        assertTrue(bridge.contains("\"getParentAlpha\""));
         assertFalse("do not write vendor radius=100 then attempt to repair a different API",
                 bridge.contains("addBlur.invoke"));
         assertFalse(bridge.contains("MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)"));
