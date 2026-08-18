@@ -1,11 +1,16 @@
 package com.hellovoid.liquiddock;
 
+import android.graphics.Rect;
 import android.view.View;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Reuses the vendor Dock compositor configuration on LiquidDock's dedicated zero-copy backdrop.
@@ -37,6 +42,14 @@ final class Miuix307CompositorOpticsBridge {
     private static View compatProbeLoggedTarget;
     private static String compatProbeLoggedSignature;
 
+    /**
+     * Second-stage read-only probe for hidden View optics calls reached from addBlur(). Signatures
+     * are logged once per target so repeated geometry synchronization does not flood logcat.
+     */
+    private static boolean compatViewSetterProbeInstalled;
+    private static View compatViewSetterLoggedTarget;
+    private static final Set<String> compatViewSetterLoggedSignatures = new HashSet<>();
+
     private Miuix307CompositorOpticsBridge() {}
 
     static boolean applyVendorBlurConfig(
@@ -62,6 +75,7 @@ final class Miuix307CompositorOpticsBridge {
         Class<?> sourceClass = vendorMaterial.getClass();
         try {
             installCompatBlurProbe(sourceClass.getClassLoader());
+            installCompatViewSetterProbe(sourceClass.getClassLoader());
             Method addBlur = sourceClass.getDeclaredMethod("addBlur", View.class, float.class);
             addBlur.setAccessible(true);
 
@@ -142,6 +156,95 @@ final class Miuix307CompositorOpticsBridge {
                 MainHook.log(TAG + " compat blur argument probe unavailable: " + error);
             }
         }
+    }
+
+    /**
+     * Installs narrow hooks for hidden View optics setters known to exist on HyperOS variants.
+     * Every hook is observational: it only logs calls whose receiver is the current ThreadLocal
+     * target while vendor addBlur() is on the stack, then proceeds with the original call unchanged.
+     */
+    static synchronized void installCompatViewSetterProbe(ClassLoader classLoader) {
+        if (compatViewSetterProbeInstalled || classLoader == null) return;
+
+        ArrayList<String> unavailable = new ArrayList<>();
+        int installed = 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiBackgroundBlurType", int.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiBackgroundBlurScaleRatio", float.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiBackgroundBlurEnhanceFlag", int.class, int.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setBackgroundBlurAlpha", float.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setBackgroundBlurCrop", boolean.class, Rect.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setBackgroundGradientBlurParams", float[].class, int.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiColorAdjust", ArrayList.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiBackgroundBlendColors", ArrayList.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMixEffectEnabled", boolean.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setPassTextureScale", float.class) ? 1 : 0;
+        installed += hookCompatViewSetter(classLoader, unavailable,
+                "setMiBloomStroke", float[].class) ? 1 : 0;
+
+        compatViewSetterProbeInstalled = true;
+        MainHook.log(TAG + " compat view setter probe installed hooks=" + installed
+                + " unavailable=" + unavailable);
+    }
+
+    private static boolean hookCompatViewSetter(
+            ClassLoader classLoader, List<String> unavailable,
+            String methodName, Class<?>... parameterTypes) {
+        try {
+            HookUtil.hookMethod(classLoader, View.class.getName(), methodName, chain -> {
+                View expectedTarget = compatProbeTarget.get();
+                Object actualTarget = chain.getThisObject();
+                if (expectedTarget != null && actualTarget == expectedTarget) {
+                    String signature = methodName + formatProbeArgs(chain.getArgs());
+                    synchronized (Miuix307CompositorOpticsBridge.class) {
+                        if (compatViewSetterLoggedTarget != expectedTarget) {
+                            compatViewSetterLoggedTarget = expectedTarget;
+                            compatViewSetterLoggedSignatures.clear();
+                        }
+                        if (compatViewSetterLoggedSignatures.add(signature)) {
+                            MainHook.log(TAG + " compat view setter target="
+                                    + expectedTarget.getClass().getSimpleName()
+                                    + " method=" + methodName
+                                    + " args=" + formatProbeArgs(chain.getArgs()));
+                        }
+                    }
+                }
+                return chain.proceed();
+            }, parameterTypes);
+            return true;
+        } catch (Throwable error) {
+            unavailable.add(methodName + ":" + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private static String formatProbeArgs(List<Object> args) {
+        StringBuilder out = new StringBuilder("[");
+        for (int index = 0; index < args.size(); index++) {
+            if (index > 0) out.append(',');
+            Object arg = args.get(index);
+            if (arg instanceof float[]) {
+                out.append(Arrays.toString((float[]) arg));
+            } else if (arg instanceof int[]) {
+                out.append(Arrays.toString((int[]) arg));
+            } else if (arg instanceof int[][]) {
+                out.append(formatBlendConfig((int[][]) arg));
+            } else if (arg instanceof Object[]) {
+                out.append(Arrays.deepToString((Object[]) arg));
+            } else {
+                out.append(String.valueOf(arg));
+            }
+        }
+        return out.append(']').toString();
     }
 
     private static String formatBlendConfig(int[][] blendConfig) {
