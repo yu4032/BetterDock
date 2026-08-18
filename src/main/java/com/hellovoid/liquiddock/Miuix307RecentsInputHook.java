@@ -1,7 +1,9 @@
 package com.hellovoid.liquiddock;
 
 import android.view.MotionEvent;
+import android.view.View;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -10,11 +12,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Input/Overview compatibility for the specialized MiuiX 307 material pipeline.
  *
  * MainHook deliberately skips its generic Launcher gesture lifecycle when the 307 pipeline owns
- * the Dock. That is correct for ownership, but it also removed the input stream that kept Recents
- * backdrop captures moving with the user's finger. Observe Launcher dispatch without consuming or
- * replacing listeners: a gesture only becomes ours when ACTION_DOWN starts in/near the Dock, then
- * every MOVE remains authoritative until UP/CANCEL even after the finger has left Dock bounds.
- * Exact Overview events keep later task-card touches live as well.
+ * the Dock. That is correct for ownership, but it also removes the input stream that kept Recents
+ * backdrop captures moving with the user's finger. Restore only observation: the Floating Dock
+ * root gets the same non-consuming touch observer used by the legacy pipeline, while Launcher
+ * dispatch remains a fallback and keeps later Overview-card gestures live.
  */
 final class Miuix307RecentsInputHook {
     private static final String TAG = "[DC][MG]";
@@ -22,18 +23,69 @@ final class Miuix307RecentsInputHook {
 
     private static volatile boolean gestureActive;
     private static volatile boolean overviewActive;
+    private static WeakReference<View> dockRootRef = new WeakReference<>(null);
 
     private Miuix307RecentsInputHook() {}
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
+        installGlassBindBridge();
         installLauncherInput(classLoader);
         installGestureToRecent(classLoader);
         installOverviewBoundary(classLoader, "EnterOverviewStateEvent", true);
         installOverviewBoundary(classLoader, "ExitOverviewStateEvent", false);
+        bindExistingDockRoot();
         MainHook.log(TAG + " 307 Recents input bridge installed");
     }
 
+    /**
+     * The 307 Dock lives in its own Floating Dock window. Observe that window root directly after
+     * every native/themed Prismal bind; Launcher Activity dispatch alone cannot be assumed to own
+     * the pointer stream of a separate overlay window.
+     */
+    private static void installGlassBindBridge() {
+        try {
+            HookUtil.hookMethod(MiuixGlassHook.class, "install",
+                    new Class<?>[]{View.class, View.class, LiquidDockConfig.class,
+                            Object.class, ClassLoader.class}, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        Object result = chain.proceed(args);
+                        if (Boolean.TRUE.equals(result) && args.length > 0 && args[0] instanceof View) {
+                            bindDockRoot((View) args[0]);
+                        }
+                        return result;
+                    });
+            MainHook.log(TAG + " Floating Dock input rebind hook installed");
+        } catch (Throwable error) {
+            MainHook.log(TAG + " Floating Dock input rebind hook unavailable: " + error);
+        }
+    }
+
+    private static void bindExistingDockRoot() {
+        View background = boundBackground();
+        if (background != null) bindDockRoot(background);
+    }
+
+    private static void bindDockRoot(View dockBackground) {
+        if (dockBackground == null) return;
+        View root = dockBackground.getRootView();
+        if (root == null || root == dockRootRef.get()) return;
+
+        root.setOnTouchListener((view, event) -> {
+            if (event == null || !Miuix307MaterialPipeline.isInstalled()) return false;
+            onInputMotion(event.getActionMasked(), event.getRawX(), event.getRawY(), true);
+            // Observation only. Never consume or replace MIUI's gesture handling.
+            return false;
+        });
+        dockRootRef = new WeakReference<>(root);
+        MainHook.log(TAG + " Floating Dock root touch observer bound class="
+                + root.getClass().getName());
+    }
+
+    /**
+     * Launcher dispatch is a fallback for builds that route the initial gesture through Launcher,
+     * and it also keeps pointer-driven capture alive for later gestures inside exact Overview.
+     */
     private static void installLauncherInput(ClassLoader classLoader) {
         try {
             Class<?> launcherClass = Class.forName(
@@ -49,12 +101,8 @@ final class Miuix307RecentsInputHook {
 
                         Object result = chain.proceed(args);
                         if (!launcherClass.isInstance(chain.getThisObject())) return result;
-                        if (!Miuix307MaterialPipeline.isInstalled()) {
-                            gestureActive = false;
-                            overviewActive = false;
-                            return result;
-                        }
-                        onLauncherMotion(action, rawX, rawY);
+                        if (!Miuix307MaterialPipeline.isInstalled()) return result;
+                        onInputMotion(action, rawX, rawY, false);
                         return result;
                     });
             MainHook.log(TAG + " Launcher dispatchTouchEvent Recents capture observer installed");
@@ -63,7 +111,7 @@ final class Miuix307RecentsInputHook {
         }
     }
 
-    private static void onLauncherMotion(int action, float rawX, float rawY) {
+    private static void onInputMotion(int action, float rawX, float rawY, boolean dockWindow) {
         DockLiquidGlassView glass = boundGlass();
         if (glass == null) {
             gestureActive = false;
@@ -71,12 +119,13 @@ final class Miuix307RecentsInputHook {
         }
 
         if (action == MotionEvent.ACTION_DOWN) {
-            gestureActive = glass.isTouchInDockArea(rawX, rawY);
+            // The Floating Dock root is itself authoritative. Launcher fallback must prove that
+            // its DOWN began in/near the Dock before it can own the rest of that pointer stream.
+            gestureActive = dockWindow || glass.isTouchInDockArea(rawX, rawY);
             if (gestureActive) {
                 glass.onDockTouchEvent();
                 glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
-                // A later Recents-card gesture can start anywhere in Overview.
                 glass.requestCapture("miuix307-overview-touch-down");
             }
             return;
@@ -84,8 +133,8 @@ final class Miuix307RecentsInputHook {
 
         if (action == MotionEvent.ACTION_MOVE) {
             if (gestureActive) {
-                // Do not re-check Dock bounds here. The finger itself owns capture cadence for the
-                // entire swipe, including the slow region after it has moved above the Dock.
+                // Do not re-check Dock bounds here. After a valid DOWN, the finger itself owns
+                // capture cadence for the entire swipe, including slow motion above the Dock.
                 glass.onDockTouchEvent();
                 glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
@@ -156,6 +205,18 @@ final class Miuix307RecentsInputHook {
             return value instanceof DockLiquidGlassView ? (DockLiquidGlassView) value : null;
         } catch (Throwable error) {
             MainHook.log(TAG + " 307 Recents glass unavailable: " + error);
+            return null;
+        }
+    }
+
+    private static View boundBackground() {
+        try {
+            Field field = MiuixGlassHook.class.getDeclaredField("backgroundRef");
+            field.setAccessible(true);
+            Object value = field.get(null);
+            return value instanceof View ? (View) value : null;
+        } catch (Throwable error) {
+            MainHook.log(TAG + " 307 Dock background unavailable: " + error);
             return null;
         }
     }
