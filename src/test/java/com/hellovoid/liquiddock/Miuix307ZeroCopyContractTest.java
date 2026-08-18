@@ -15,13 +15,15 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
-    public void zeroCopyRendererUsesPassBlurGpuBackdropAndExistingSharpOpticsHost() throws Exception {
+    public void zeroCopyRendererUsesNeutralPassBlurGpuBackdropOnly() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
         assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
         assertTrue(renderer.contains("host.addView(gpuBackdrop"));
-        assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
-        assertTrue(renderer.contains("host.reloadOpticsPreservingGeometry(glassConfig)"));
+        assertTrue(renderer.contains("materialHost.setForeground(null)"));
         assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)"));
+        assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertFalse(renderer.contains("host.reloadOpticsPreservingGeometry(glassConfig)"));
+        assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
         assertFalse("demo successful path must retire the fixed charge child",
                 renderer.contains("new Miuix307RefractionSurfaceProbeView"));
         assertFalse("demo successful path must not cover the OES output with framework blur",
@@ -31,11 +33,12 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
-    public void zeroCopyToneLayerStillCarriesGuiTintAndBrightness() throws Exception {
+    public void historicalToneLayerRemainsAvailableButNeutralRendererDoesNotInstantiateIt()
+            throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
         String tone = read("Miuix307ZeroCopyToneView.java");
-        assertTrue(renderer.contains("new Miuix307ZeroCopyToneView"));
-        assertTrue(renderer.contains("host.addView(tone"));
+        assertFalse(renderer.contains("new Miuix307ZeroCopyToneView"));
+        assertFalse(renderer.contains("host.addView(tone"));
         assertTrue(tone.contains("glassConfig.tintAlpha"));
         assertTrue(tone.contains("glassConfig.tintR"));
         assertTrue(tone.contains("glassConfig.tintG"));
@@ -44,8 +47,9 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
-    public void rendererExposesGpuActivationAndGeometryContracts() throws Exception {
+    public void rendererExposesGpuActivationGeometryAndInstallContracts() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
+        assertTrue(renderer.contains("static boolean isInstalled()"));
         assertTrue(renderer.contains("static boolean isActive()"));
         assertTrue(renderer.contains("gpuBackdrop.isGpuBackdropActive()"));
         assertTrue(renderer.contains("static boolean isActivationExhausted()"));
@@ -53,9 +57,11 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(renderer.contains("static int activeWidth()"));
         assertTrue(renderer.contains("static int activeHeight()"));
         assertTrue(renderer.contains("gpuBackdrop.setGlassRadius"));
-        assertTrue(renderer.contains("tone.setTone(glassConfig)"));
+        assertFalse(renderer.contains("tone.setTone(glassConfig)"));
         assertTrue("clear must stop the PassBlur producer before dropping refs",
                 renderer.contains("gpuBackdrop.shutdown()"));
+        assertTrue("clear must remove foreground suppression listener",
+                renderer.contains("removeForegroundSuppressor()"));
     }
 
     @Test
@@ -68,26 +74,28 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(hook.contains("backend=passblur-gles"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.activeWidth()"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.activeHeight()"));
-        assertTrue(hook.contains("zero-copy unavailable; capture fallback"));
+        assertTrue("validation timeout must stay neutral instead of masking the GPU demo",
+                hook.contains("zero-copy still pending; legacy capture disabled"));
     }
 
     @Test
-    public void materialBindingTriesGpuDemoFirstAndKeepsCaptureFallback() throws Exception {
+    public void materialBindingTriesGpuDemoFirstAndKeepsInstallFallback() throws Exception {
         String hook = read("MiuixGlassHook.java");
         int zeroCopy = hook.indexOf("Miuix307ZeroCopyRenderer.install");
-        int fallback = hook.indexOf("installCaptureFallback");
+        int fallback = hook.indexOf("private static void installCaptureFallback");
         assertTrue(zeroCopy >= 0);
         assertTrue(fallback > zeroCopy);
         assertTrue(hook.contains("isZeroCopyActive()"));
         assertTrue(hook.contains("ZERO_COPY_TAG + \" zero-copy active"));
-        assertTrue(hook.contains("ZERO_COPY_TAG + \" zero-copy unavailable; capture fallback"));
+        assertTrue("unsupported install path may still use archived capture fallback",
+                hook.contains("zero-copy unavailable; capture fallback reason=install"));
     }
 
     @Test
     public void successfulGpuDemoPathDoesNotBindCaptureOwnership() throws Exception {
         String hook = read("MiuixGlassHook.java");
         int zeroCopy = hook.indexOf("Miuix307ZeroCopyRenderer.install");
-        int fallback = hook.indexOf("installCaptureFallback");
+        int fallback = hook.indexOf("private static void installCaptureFallback");
         String successRegion = hook.substring(zeroCopy, fallback);
         assertFalse(successRegion.contains("LiquidGlassFactory.create"));
         assertFalse(successRegion.contains("HomeOwnershipRuntime.bind"));
