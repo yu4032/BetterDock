@@ -2,23 +2,25 @@ package com.hellovoid.liquiddock;
 
 import android.view.View;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
  * Reuses the vendor Dock compositor configuration on LiquidDock's dedicated zero-copy backdrop.
  *
- * Launcher 4.50 has two material implementations. The compatibility
- * HotSeatsListContentBlurBackground2 path does not expose MaterialConfig; instead its private
- * addBlur(View,float) method builds the exact four-corner geometry and blend colors, then calls
- * View.setBackgroundBlur(...) through Launcher BlurUtilities. Reusing that method keeps the
- * vendor's native compositor setup without reconstructing hidden parameters or reading pixels
- * back. Newer MiuiX material implementations can still use the MaterialConfig fallback below.
+ * JADX of Launcher 4.50 confirms HotSeatsListContentBlurBackground2.addBlur() calls
+ * BlurUtilities.setBackgroundBlur(view, 100, cornerRadii, blendConfig) and then
+ * setBackgroundBlurAlpha(view, getParentAlpha()). The previous experiment incorrectly tried to
+ * replace that 100 through setMiBackgroundBlurRadius(), which is a different API channel.
  */
 final class Miuix307CompositorOpticsBridge {
     private static final String TAG = "[DC][ZC]";
     private static final String COMPAT_BLUR_BACKGROUND2 =
             "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
+    private static final String BLUR_UTILITIES =
+            "com.miui.home.launcher.common.BlurUtilities";
+    private static final String COLOR_RESOURCES = "com.miui.home.R$color";
 
     private static Class<?> loggedAppliedClass;
     private static Class<?> loggedUnavailableClass;
@@ -37,34 +39,56 @@ final class Miuix307CompositorOpticsBridge {
         return applyMaterialConfig(vendorMaterial, target);
     }
 
-    /**
-     * Exact Launcher 4.50 compatibility path. addBlur() internally creates the vendor corner
-     * array and theme blend-color table and applies them through View.setBackgroundBlur(). The
-     * vendor method uses its own blur radius, so restore LiquidDock's GUI-selected radius
-     * immediately afterwards through the same setMiBackgroundBlurRadius API family.
-     */
+    /** Exact Launcher 4.50 addBlur semantics, with only the literal blur radius substituted. */
     private static boolean applyCompatBlurBackground2(
             View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
         Class<?> sourceClass = vendorMaterial.getClass();
         try {
-            Method addBlur = sourceClass.getDeclaredMethod("addBlur", View.class, float.class);
-            addBlur.setAccessible(true);
-            addBlur.invoke(vendorMaterial, target, cornerRadiusPx);
+            ClassLoader loader = sourceClass.getClassLoader();
+            Class<?> blurUtilities = Class.forName(BLUR_UTILITIES, false, loader);
+            Method setBackgroundBlur = blurUtilities.getDeclaredMethod("setBackgroundBlur",
+                    View.class, Integer.TYPE, float[].class, int[][].class);
+            setBackgroundBlur.setAccessible(true);
+            Method setBackgroundBlurAlpha = blurUtilities.getDeclaredMethod(
+                    "setBackgroundBlurAlpha", View.class, Float.TYPE);
+            setBackgroundBlurAlpha.setAccessible(true);
 
-            if (!MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)) {
-                logUnavailableOnce(sourceClass, "restore-radius");
-                return false;
-            }
+            Class<?> colors = Class.forName(COLOR_RESOURCES, false, loader);
+            int darkResId = readStaticInt(colors,
+                    "hotseats_list_content_background_blur_color_dark");
+            int lightResId = readStaticInt(colors,
+                    "hotseats_list_content_background_blur_color_light");
+            int darkColor = vendorMaterial.getContext().getColor(darkResId);
+            int lightColor = vendorMaterial.getContext().getColor(lightResId);
+
+            float[] cornerRadii = new float[]{
+                    cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx};
+            int[][] blendConfig = new int[][]{
+                    new int[]{106, darkColor},
+                    new int[]{100, lightColor}
+            };
+
+            setBackgroundBlur.invoke(null, target,
+                    Integer.valueOf(blurRadiusPx), cornerRadii, blendConfig);
+
+            Method getParentAlpha = sourceClass.getDeclaredMethod("getParentAlpha");
+            getParentAlpha.setAccessible(true);
+            Object alphaValue = getParentAlpha.invoke(vendorMaterial);
+            float parentAlpha = alphaValue instanceof Number
+                    ? ((Number) alphaValue).floatValue() : 1.0f;
+            setBackgroundBlurAlpha.invoke(null, target, Float.valueOf(parentAlpha));
+
             if (loggedAppliedClass != sourceClass) {
                 loggedAppliedClass = sourceClass;
-                MainHook.log(TAG + " compat compositor optics active source="
+                MainHook.log(TAG + " exact Launcher background blur active source="
                         + sourceClass.getSimpleName()
-                        + " cornerRadius=" + cornerRadiusPx
-                        + " blurRadius=" + blurRadiusPx);
+                        + " radius=" + blurRadiusPx
+                        + " cornerRadius=" + cornerRadiusPx);
             }
             return true;
         } catch (Throwable error) {
-            logUnavailableOnce(sourceClass, "addBlur-" + error.getClass().getSimpleName());
+            logUnavailableOnce(sourceClass,
+                    "exact-background-blur-" + error.getClass().getSimpleName());
             return false;
         }
     }
@@ -117,6 +141,12 @@ final class Miuix307CompositorOpticsBridge {
             logUnavailableOnce(sourceClass, error.getClass().getSimpleName());
             return false;
         }
+    }
+
+    private static int readStaticInt(Class<?> cls, String name) throws Exception {
+        Field field = cls.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.getInt(null);
     }
 
     private static Method findNoArg(Class<?> start, String name) {
