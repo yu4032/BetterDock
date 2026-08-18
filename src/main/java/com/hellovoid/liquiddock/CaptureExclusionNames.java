@@ -40,8 +40,14 @@ final class CaptureExclusionNames {
 
     static String[] merge(String dockLayer, String dragLayer,
                           Collection<String> freeformLayers) {
+        // The transition exclusion is a runtime capture authority, not a material-pipeline
+        // capability. On the target Launcher 4.50 device the 307 glass is live while the
+        // material-pipeline installation flag can be false at capture time. If APP_TO_LAUNCHER
+        // supplied a closing-app prefix, force the 307 exclusion path so that prefix reaches
+        // captureScreenAsync() instead of being silently dropped.
+        boolean transitionExclusionActive = transitionAppLayerPrefix != null;
         return mergeInternal(dockLayer, dragLayer, freeformLayers,
-                Miuix307MaterialPipeline.isInstalled());
+                Miuix307MaterialPipeline.isInstalled() || transitionExclusionActive);
     }
 
     /**
