@@ -1,6 +1,8 @@
 package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class CaptureCadenceTest {
@@ -25,8 +27,10 @@ public class CaptureCadenceTest {
         cadence.setDynamicFps(5, 1);
         cadence.setPowerLimitFps(5);
         cadence.noteInteraction(1_000_000_000L);
+        assertTrue(cadence.isInteractionActive(1_050_000_000L));
         assertEquals(16_666_666L,
                 cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
+        assertFalse(cadence.isInteractionActive(1_130_000_000L));
     }
 
     @Test public void clearingPointerReturnsAppToIdleProbePolicy() {
@@ -35,6 +39,7 @@ public class CaptureCadenceTest {
         cadence.setPowerLimitFps(5);
         cadence.noteInteraction(1_000_000_000L);
         cadence.clearInteraction();
+        assertFalse(cadence.isInteractionActive(1_050_000_000L));
         assertEquals(1_000_000_000L,
                 cadence.intervalNanos(CaptureScene.APP, true, 0L, 1_050_000_000L));
     }
