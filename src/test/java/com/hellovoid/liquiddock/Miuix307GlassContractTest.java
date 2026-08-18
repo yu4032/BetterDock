@@ -30,18 +30,28 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void materialPipelineUsesExistingPrismalGlassStack() throws IOException {
+    public void materialPipelineUsesZeroCopyPrimaryWithPrismalHostAndCaptureFallback()
+            throws IOException {
         Path hookPath = MAIN.resolve("MiuixGlassHook.java");
         assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
         String hook = read("MiuixGlassHook.java");
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
         String pipeline = read("Miuix307MaterialPipeline.java");
 
-        assertTrue(hook.contains("LiquidGlassFactory.create"));
+        assertTrue(hook.contains("Miuix307ZeroCopyRenderer.install"));
         assertTrue(hook.contains("DockLiquidGlassHostView"));
+        assertTrue(renderer.contains("new Miuix307ZeroCopyBackdropView"));
+        assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertTrue(hook.contains("suppressVendorGpuBlur"));
         assertTrue(pipeline.contains("setBackgroundWidth"));
         assertTrue(pipeline.contains("setBackgroundHeight"));
         assertFalse(pipeline.contains("new Miuix307RefractionView"));
+
+        int zeroCopy = hook.indexOf("Miuix307ZeroCopyRenderer.install");
+        int fallback = hook.indexOf("private static void installCaptureFallback");
+        assertTrue(zeroCopy >= 0 && fallback > zeroCopy);
+        assertFalse(hook.substring(zeroCopy, fallback).contains("LiquidGlassFactory.create"));
+        assertTrue(hook.substring(fallback).contains("LiquidGlassFactory.create"));
     }
 
     @Test
@@ -68,11 +78,19 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void appBackdropUsesOwnershipAndAllowsNativeGeometrySourceToHide() throws IOException {
+    public void captureOwnershipIsFallbackOnly() throws IOException {
         String source = read("MiuixGlassHook.java");
+        int zeroCopy = source.indexOf("Miuix307ZeroCopyRenderer.install");
+        int fallback = source.indexOf("private static void installCaptureFallback");
+        assertTrue(zeroCopy >= 0 && fallback > zeroCopy);
 
-        assertTrue(source.contains("HomeOwnershipRuntime.bind(glass, glass.getContext())"));
-        assertTrue(source.contains("glass.setFullscreenCapture(true)"));
+        String primaryRegion = source.substring(zeroCopy, fallback);
+        String fallbackRegion = source.substring(fallback);
+        assertFalse(primaryRegion.contains("HomeOwnershipRuntime.bind"));
+        assertFalse(primaryRegion.contains("glass.setFullscreenCapture(true)"));
+        assertTrue(fallbackRegion.contains("HomeOwnershipRuntime.bind(glass, glass.getContext())"));
+        assertTrue(fallbackRegion.contains("glass.setFullscreenCapture(true)"));
+
         assertTrue(source.contains("installVendorGpuBlurSuppressor"));
         assertTrue(source.contains("suppressVendorGpuBlur"));
         assertFalse(source.contains("installNativeBackgroundPreserver"));
@@ -135,13 +153,15 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void miuixUsesGuiCaptureTuningAndPrismalConfiguredBlur() throws IOException {
+    public void captureFallbackUsesGuiTuningAndConfiguredBlur() throws IOException {
         String source = read("MiuixGlassHook.java");
         String factory = read("LiquidGlassFactory.java");
+        int fallback = source.indexOf("private static void installCaptureFallback");
+        assertTrue(fallback >= 0);
+        String fallbackRegion = source.substring(fallback);
 
-        // These settings remain mandatory for the runtime capture fallback.
-        assertTrue(source.contains("glass.setCaptureScale(config.glass.captureScale)"));
-        assertTrue(source.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
+        assertTrue(fallbackRegion.contains("glass.setCaptureScale(config.glass.captureScale)"));
+        assertTrue(fallbackRegion.contains("glass.setCapturePowerLimitFps(config.glass.captureFps)"));
         assertFalse(source.contains("glass.setCaptureScale(0.5f)"));
         assertFalse(source.contains("glass.setCapturePowerLimitFps(30)"));
 
