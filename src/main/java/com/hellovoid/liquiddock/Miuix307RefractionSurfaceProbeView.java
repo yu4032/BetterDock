@@ -11,11 +11,7 @@ import android.view.View;
 
 import java.lang.ref.WeakReference;
 
-/**
- * Historical child-surface probe retained only as evidence that SurfaceView owns an independent
- * SurfaceControl. JADX call-graph analysis of MiuiSystemUI shows MiuiShaderChargeView instead
- * targets getViewRootImpl().getSurfaceControl(), so this child must never receive setChargeAnim*.
- */
+/** Independent child SurfaceControl used only for the corrected charge-refraction feasibility spike. */
 final class Miuix307RefractionSurfaceProbeView extends SurfaceView
         implements SurfaceHolder.Callback {
     private final WeakReference<View> materialHostRef;
@@ -36,6 +32,7 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
         clearTransparent(holder);
         getSurfaceControl();
         Miuix307SurfaceRefractionProbe.probeChildSurface(this, materialHostRef.get());
+        Miuix307RefractionExperiment.apply(this);
     }
 
     @Override
@@ -45,6 +42,7 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        Miuix307RefractionExperiment.stop(this);
         Miuix307SurfaceRefractionProbe.noteChildSurfaceDestroyed(this);
     }
 
