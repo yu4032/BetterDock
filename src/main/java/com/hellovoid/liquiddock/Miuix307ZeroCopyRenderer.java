@@ -11,6 +11,8 @@ import java.lang.reflect.Method;
 /** Builds the experimental MiuiX 307 zero-readback composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
+    private static WeakReference<Miuix307RefractionSurfaceProbeView> refractionSurfaceRef =
+            new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyBackdropView> backdropRef =
             new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyToneView> toneRef =
@@ -29,6 +31,12 @@ final class Miuix307ZeroCopyRenderer {
             return false;
         }
 
+        // SurfaceView is deliberately below the existing normal-View blur backdrop. Its only job in
+        // this diagnostic build is to prove an independent compositor child SurfaceControl exists.
+        Miuix307RefractionSurfaceProbeView refractionSurface =
+                new Miuix307RefractionSurfaceProbeView(materialHost.getContext(), materialHost);
+        refractionSurface.setId(View.generateViewId());
+
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
                 materialHost.getContext(), blurRadiusPx);
         backdrop.setId(View.generateViewId());
@@ -37,10 +45,11 @@ final class Miuix307ZeroCopyRenderer {
                 materialHost.getContext(), glassConfig);
         tone.setId(View.generateViewId());
 
-        FrameLayout.LayoutParams match = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         host.removeAllViews();
-        host.addView(backdrop, match);
+        host.addView(refractionSurface, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        host.addView(backdrop, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         host.addView(tone, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         host.reloadOpticsPreservingGeometry(glassConfig);
@@ -51,6 +60,7 @@ final class Miuix307ZeroCopyRenderer {
             return false;
         }
 
+        refractionSurfaceRef = new WeakReference<>(refractionSurface);
         backdropRef = new WeakReference<>(backdrop);
         toneRef = new WeakReference<>(tone);
         hostRef = new WeakReference<>(host);
@@ -66,7 +76,7 @@ final class Miuix307ZeroCopyRenderer {
                 backdrop.setBlurRadius(blurRadiusPx);
             }
             // Discovery only: resolve the SystemUI compositor-refraction transaction signatures and
-            // inspect SurfaceControl ownership. The probe never invokes setChargeAnim*.
+            // inspect shared ViewRoot ownership. SurfaceView separately reports its child surface.
             Miuix307SurfaceRefractionProbe.probe(backdrop, materialHost);
         });
         return true;
@@ -95,6 +105,7 @@ final class Miuix307ZeroCopyRenderer {
 
     static void clear() {
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
+        refractionSurfaceRef = new WeakReference<>(null);
         backdropRef = new WeakReference<>(null);
         toneRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
