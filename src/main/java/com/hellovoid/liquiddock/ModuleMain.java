@@ -26,6 +26,17 @@ public final class ModuleMain extends XposedModule {
                 Api101Bridge.log("[DC] SystemUI task executor source unavailable", error);
             }
             try {
+                SystemUiTransitionSource.install(classLoader);
+            } catch (Throwable error) {
+                // Transition observation is passive/fail-open and must never destabilize SystemUI.
+                Api101Bridge.log("[DC] SystemUI transition source unavailable", error);
+            }
+            try {
+                DiagnosticTraceHook.installSystemUi(classLoader);
+            } catch (Throwable error) {
+                Api101Bridge.log("[DC] SystemUI diagnostic probes unavailable", error);
+            }
+            try {
                 SystemUiHomeOwnershipSource.install(classLoader);
             } catch (Throwable error) {
                 // HOME ownership fails closed independently from freeform exclusion.
@@ -44,10 +55,19 @@ public final class ModuleMain extends XposedModule {
         try {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
+            LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
             FreeformCaptureLeashHook.install();
+            SystemUiTransitionRuntime.install();
             new MainHook().install(classLoader);
+            WorkspaceDropRuleHook.install(classLoader,
+                    runtimeConfig.enabled && runtimeConfig.grid.enabled);
+            Miuix307RecentsInputHook.install(classLoader);
+            Miuix307GestureBackdropHoldHook.install(classLoader);
+            Miuix307DropFinishCompatHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
+            DiagnosticTraceHook.installLauncher(classLoader);
+            AlwaysOnDiagnosticTrace.installLauncher(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }

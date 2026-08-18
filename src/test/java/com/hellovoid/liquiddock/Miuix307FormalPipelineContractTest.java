@@ -43,17 +43,34 @@ public class Miuix307FormalPipelineContractTest {
     }
 
     @Test
-    public void formalCoordinatorHasNoLegacySceneStateDependencies() throws IOException {
+    public void formalCoordinatorPrefersZeroCopyAndScopesCaptureToFallback() throws IOException {
         String pipeline = read("src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
         String glassHook = read("src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java");
+
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("MiuixGlassHook.install"));
-        assertTrue(glassHook.contains("LiquidGlassFactory.create"));
-        assertTrue(glassHook.contains("suppressVendorGpuBlur"));
-        assertTrue(glassHook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
-        assertFalse(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
         assertFalse(pipeline.contains("LiveScreenCapture"));
         assertFalse(pipeline.contains("CaptureSceneState"));
         assertFalse(pipeline.contains("CaptureSource"));
+
+        int zeroCopy = glassHook.indexOf("Miuix307ZeroCopyRenderer.install");
+        int fallback = glassHook.indexOf("private static void installCaptureFallback");
+        assertTrue("zero-copy renderer must be the primary 307 path", zeroCopy >= 0);
+        assertTrue("capture fallback must be declared after the zero-copy path", fallback > zeroCopy);
+
+        String primaryRegion = glassHook.substring(zeroCopy, fallback);
+        String fallbackRegion = glassHook.substring(fallback);
+        assertFalse("successful zero-copy must not construct the capture renderer",
+                primaryRegion.contains("LiquidGlassFactory.create"));
+        assertFalse("successful zero-copy must not bind capture ownership",
+                primaryRegion.contains("HomeOwnershipRuntime.bind"));
+        assertTrue("capture renderer must remain available only in the fallback",
+                fallbackRegion.contains("LiquidGlassFactory.create"));
+        assertTrue("capture ownership must remain fallback-only",
+                fallbackRegion.contains("HomeOwnershipRuntime.bind"));
+
+        assertTrue(glassHook.contains("suppressVendorGpuBlur"));
+        assertTrue(glassHook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
+        assertFalse(glassHook.contains("MiBlurBridge.applyPassWindowBlur"));
     }
 }

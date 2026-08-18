@@ -32,21 +32,15 @@ final class Miuix307DragCaptureHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static volatile WeakReference<View> backgroundRef = new WeakReference<>(null);
 
-    // A vendor startDrag overload may delegate to another startDrag overload. Treat those nested
-    // callbacks as one drag session, but allow a later callback or short frame retry to upgrade a
-    // temporarily-null Surface name to the concrete "drag surface#..." name.
     private static volatile boolean dragActive;
     private static volatile String activeDragLayerName;
     private static volatile SurfaceControl activeDragSurface;
     private static volatile long dragSessionId;
 
-    // DragController.endDrag() clears mDragObject before returning while the visible DragViews may
-    // still be settling. Device logs show that on 307 mDropAnimationCounter can already read zero
-    // at endDrag, so zero is not a safe release boundary. Prefer DragObject's real final completion;
-    // HotSeatsListContent.resetDraggingView() is fallback-only when that hook/object is unavailable.
-    // Most importantly, neither callback is itself proof that the pixels are gone: the 307 launcher
-    // continues touching DragView for later frames. Retain weak references to the actual mDragViews
-    // and do not arm the final compositor barrier until every retained view is visually absent.
+    // endDrag is earlier than the real release animation. Keep the captured APP/HOME backdrop
+    // frozen until MIUI's DragObject lifecycle completes. A retained DragView may stay attached
+    // and report isShown() even after that authoritative callback, so View visibility is only a
+    // fallback gate when the vendor finish hook/object is unavailable.
     private static volatile Object settlingDragObject;
     private static volatile List<WeakReference<View>> settlingDragViews = Collections.emptyList();
     private static volatile boolean dropSettling;
@@ -92,8 +86,6 @@ final class Miuix307DragCaptureHook {
 
             installDropAnimationFinishHook(classLoader);
 
-            // The no-arg endDrag callback is device-proven to execute on 307. DragController
-            // clears mDragObject inside the original method, so retain it before proceed().
             HookUtil.hookMethod(dragController, "endDrag", new Class<?>[0],
                     chain -> {
                         Object dragObject = currentDragObject(chain.getThisObject());
@@ -109,11 +101,6 @@ final class Miuix307DragCaptureHook {
         }
     }
 
-    /**
-     * MIUI normally decrements DragObject.mDropAnimationCounter once for every settling DragView.
-     * Hook after the vendor method. A local expected-callback count is kept as a second gate because
-     * the 307 build can report counter==0 already at DragController.endDrag().
-     */
     private static void installDropAnimationFinishHook(ClassLoader classLoader) {
         try {
             Class<?> dragObjectClass = Class.forName(
@@ -127,21 +114,11 @@ final class Miuix307DragCaptureHook {
             dropAnimationFinishHookInstalled = true;
             MainHook.log(TAG + " drop animation lifecycle hook installed");
         } catch (Throwable error) {
-            // HotSeatsListContent.resetDraggingView() remains a device-proven lifecycle fallback.
             dropAnimationFinishHookInstalled = false;
             MainHook.log(TAG + " drop animation lifecycle hook unavailable: " + error);
         }
     }
 
-    /**
-     * 307 Dock system drag is not the Launcher DragView surface. Decompiled
-     * HotSeatsListContent.startDragInDockForSystem() calls View.startDragAndDrop(), and the
-     * resulting mask/leash surfaces are owned by MIUI WMS/Shell. Freeze capture before that
-     * call can create those surfaces; IMiuiDragListener/onEnd and resetDraggingView are
-     * idempotent resume boundaries. For ordinary Launcher drops, resetDraggingView is deliberately
-     * fallback-only because device logs show it can run several milliseconds before DragObject's
-     * real "drag release anim end" callback.
-     */
     private static void installSystemDockDragHooks(ClassLoader classLoader) {
         try {
             Class<?> content = Class.forName(
@@ -157,8 +134,6 @@ final class Miuix307DragCaptureHook {
             });
             HookUtil.hookMethod(content, "resetDraggingView", new Class<?>[0], chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                // Clear a genuine WMS/Shell drag first. For an ordinary Launcher drag this is a
-                // no-op; onHotseatDragCleanup() cannot bypass the retained DragView visual gate.
                 setSystemDockDragActive(false);
                 onHotseatDragCleanup();
                 return result;
@@ -193,8 +168,6 @@ final class Miuix307DragCaptureHook {
     }
 
     private static void setSystemDockDragActive(boolean active) {
-        // Keep our own transition state so helper callbacks such as resetDraggingView do not emit
-        // a fake "system Dock drag end" line when no system drag was active.
         if (systemDockDragActive == active) return;
         systemDockDragActive = active;
         DockLiquidGlassView glass = currentGlass();
@@ -222,7 +195,6 @@ final class Miuix307DragCaptureHook {
         if (!firstCallback && !betterLayer && !betterSurface) return;
 
         if (firstCallback) {
-            // A stale completion from an older drag must never be allowed to release this drag.
             dropSettling = false;
             dropReleaseScheduled = false;
             settlingDragViewCheckScheduled = false;
@@ -280,9 +252,6 @@ final class Miuix307DragCaptureHook {
     private static void onEndDrag(Object dragObject) {
         if (!dragActive && activeDragLayerName == null && activeDragSurface == null) return;
 
-        // Stop all logical-drag capture activity immediately and invalidate any queued Surface
-        // retry. Never interpret a zero counter here as "animation finished": device evidence
-        // shows the visible settling animation continues after this exact point.
         dragActive = false;
         activeDragLayerName = null;
         activeDragSurface = null;
@@ -297,9 +266,6 @@ final class Miuix307DragCaptureHook {
 
         DockLiquidGlassView glass = currentGlass();
         if (glass != null) {
-            // Force the Surface-aware live path back into frozen mode. Even if the drag Surface
-            // had been excludable, the settling icon is now animation content that must not be
-            // sampled into the glass.
             glass.setDockDragging(true, null, null);
         }
 
@@ -324,14 +290,12 @@ final class Miuix307DragCaptureHook {
                     + " callbacksRemaining=" + settlingDropCallbacksRemaining);
             return;
         }
-        finishDropSettling("drag release anim end");
+        finishDropSettling("drag release anim end", true);
     }
 
     /**
-     * resetDraggingView() is useful only as a compatibility fallback. On the 307 build captured in
-     * device logs it runs before DragObject logs "drag release anim end", so allowing it to arm the
-     * compositor barrier directly would still release capture while the DragView exists. The final
-     * release function independently enforces the actual retained-DragView visibility gate.
+     * resetDraggingView() is fallback-only when the real DragObject finish hook/object exists.
+     * On 307 it can run before the release animation is actually complete.
      */
     private static void onHotseatDragCleanup() {
         if (!dropSettling || dragActive) return;
@@ -339,20 +303,19 @@ final class Miuix307DragCaptureHook {
             MainHook.log(TAG + " hotseat drag cleanup observed; waiting for DragObject animation end");
             return;
         }
-        finishDropSettling("hotseat drag cleanup fallback");
+        finishDropSettling("hotseat drag cleanup fallback", false);
     }
 
     /**
-     * A vendor lifecycle callback is only permission to check whether the drop visual is gone.
-     * It is not itself a safe capture boundary. On the observed 307 build DragView is still touched
-     * after both resetDraggingView() and the vendor "drag release anim end" log. Keep polling the
-     * retained real Views on VSYNC while any remains visibly attached. Once none is visible, cross
-     * one additional display frame so SurfaceFlinger can present the corresponding transaction.
+     * The real DragObject completion callback is authoritative even if its DragView remains
+     * attached/shown for bookkeeping. That exact condition caused a permanent freeze when Dock
+     * width changed during icon removal. Fallback cleanup still uses real View visibility before
+     * crossing the final compositor frame.
      */
-    private static void finishDropSettling(String reason) {
+    private static void finishDropSettling(String reason, boolean vendorFinished) {
         if (!dropSettling || dropReleaseScheduled) return;
 
-        if (hasVisibleSettlingDragView()) {
+        if (!vendorFinished && hasVisibleSettlingDragView()) {
             scheduleSettlingDragViewCheck(reason);
             return;
         }
@@ -366,10 +329,8 @@ final class Miuix307DragCaptureHook {
 
         dropReleaseScheduled = true;
         MainHook.log(TAG + " " + reason + " -> compositor barrier armed session="
-                + releaseSession);
+                + releaseSession + " vendorFinished=" + vendorFinished);
         scheduler.postOnAnimation(() -> {
-            // A new drag increments dragSessionId and owns the freeze now. Never let an old
-            // frame callback release it.
             if (!dropSettling || dragActive || releaseSession != dragSessionId) return;
 
             dropReleaseScheduled = false;
@@ -383,7 +344,7 @@ final class Miuix307DragCaptureHook {
         });
     }
 
-    /** Recheck the retained DragViews on display frames until their pixels can no longer be shown. */
+    /** Recheck retained DragViews only for the lifecycle fallback path. */
     private static void scheduleSettlingDragViewCheck(String reason) {
         if (!dropSettling || dragActive || dropReleaseScheduled || settlingDragViewCheckScheduled) {
             return;
@@ -410,15 +371,10 @@ final class Miuix307DragCaptureHook {
 
             MainHook.log(TAG + " " + reason + " -> DragView visually absent session="
                     + releaseSession);
-            finishDropSettling(reason);
+            finishDropSettling(reason, false);
         });
     }
 
-    /**
-     * Visual presence is deliberately stricter than a lifecycle counter. A retained DragView blocks
-     * capture only while it is attached and actually eligible to draw. Invisible/GONE/alpha-zero or
-     * detached views are safe to hand to the final compositor-frame barrier.
-     */
     private static boolean hasVisibleSettlingDragView() {
         List<WeakReference<View>> snapshot = settlingDragViews;
         for (WeakReference<View> reference : snapshot) {
@@ -440,7 +396,6 @@ final class Miuix307DragCaptureHook {
         MainHook.log(TAG + " " + reason);
     }
 
-    /** Read the DragObject before DragController.endDrag() clears mDragObject. */
     private static Object currentDragObject(Object dragController) {
         if (dragController == null) return null;
         try {
@@ -451,7 +406,6 @@ final class Miuix307DragCaptureHook {
         }
     }
 
-    /** Vendor compatibility: an unreadable counter is treated as zero, with local/fallback gates. */
     private static int readDropAnimationCounter(Object dragObject) {
         if (dragObject == null) return 0;
         try {
@@ -463,7 +417,6 @@ final class Miuix307DragCaptureHook {
         }
     }
 
-    /** Snapshot the actual DragView objects before the vendor can clear or mutate mDragViews. */
     private static List<WeakReference<View>> snapshotDragViews(Object dragObject) {
         if (dragObject == null) return Collections.emptyList();
         ArrayList<WeakReference<View>> result = new ArrayList<>();
@@ -498,7 +451,6 @@ final class Miuix307DragCaptureHook {
         return 0;
     }
 
-    /** Resolve the currently bound Prismal view from the MiuiX background's sibling host. */
     private static DockLiquidGlassView currentGlass() {
         View background = backgroundRef.get();
         if (background == null) return null;

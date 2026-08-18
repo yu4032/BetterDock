@@ -50,7 +50,7 @@ final class HomeOwnershipResolver {
         cancelConfirmation();
         clearPending();
         // A request boundary invalidates the previous ordinary baseline immediately.
-        // This is the approved fail-closed behavior, not a transition animation heuristic.
+        // This is the approved fail-closed bootstrap behavior, not a transition heuristic.
         deliver(HomeOwnershipPolicy.Baseline.UNKNOWN, safeReason(reason) + "-pending");
         if (displayId < 0) return;
         submit(nextGeneration, displayId, safeReason(reason), false);
@@ -61,6 +61,8 @@ final class HomeOwnershipResolver {
             mainHandler.post(() -> onProviderChanged(provider));
             return;
         }
+        // Reuse the existing event-driven provider watcher for transition push registration.
+        SystemUiTransitionRuntime.onProviderChanged(provider);
         if (provider == null) {
             generation++;
             cancelConfirmation();
