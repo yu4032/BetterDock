@@ -30,7 +30,7 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void materialPipelineUsesPassBlurGpuPrimaryWithPrismalHostAndCaptureFallback()
+    public void materialPipelineUsesNeutralPassBlurGpuPrimaryWithCaptureFallback()
             throws IOException {
         Path hookPath = MAIN.resolve("MiuixGlassHook.java");
         assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
@@ -41,7 +41,10 @@ public class Miuix307GlassContractTest {
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.install"));
         assertTrue(hook.contains("DockLiquidGlassHostView"));
         assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
-        assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertTrue(renderer.contains("host.addView(gpuBackdrop"));
+        assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
+        assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertTrue(renderer.contains("materialHost.setForeground(null)"));
         assertTrue(hook.contains("suppressVendorGpuBlur"));
         assertTrue(pipeline.contains("setBackgroundWidth"));
         assertTrue(pipeline.contains("setBackgroundHeight"));
