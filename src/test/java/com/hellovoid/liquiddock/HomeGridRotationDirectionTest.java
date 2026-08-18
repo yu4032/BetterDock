@@ -50,18 +50,20 @@ public class HomeGridRotationDirectionTest {
     }
 
     @Test
-    public void tenBySixWorkspaceUsesGenericDropAndSqueezeRules() throws Exception {
+    public void tenBySixWorkspaceReinitializesNativeGenericDragRules() throws Exception {
         String source = Files.readString(
                 Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java"),
                 StandardCharsets.UTF_8);
         assertTrue("10x6 overlay must own GridOccupancy drag rules after counts are loaded",
                 source.contains("installDragRuleOwnership"));
-        assertTrue(source.contains("GridOccupancyController"));
-        assertTrue(source.contains("mLayoutDropRule"));
-        assertTrue(source.contains("mLayoutSqueezeDataTransform"));
-        assertTrue(source.contains("setLayoutSqueezeRule"));
-        assertTrue("10x6 must switch away from Pad's fixed SwapPlaces rules",
-                source.contains("createLayoutSqueezeRule(false)"));
+        assertTrue(source.contains("com.miui.home.GridOccupancyController"));
+        assertTrue(source.contains("\"loadGridConfig\""));
+        assertTrue("Pad's boolean inversion selects the generic SqueezePlaces rules",
+                source.contains("\"initSqueezeAndDropRule\", true"));
+        assertTrue("new generic transform must be initialized with the loaded 6x10/10x6 counts",
+                source.contains("\"initLayoutSqueezeDataTransform\""));
+        assertFalse("drag fix must not change no-vacant layout semantics",
+                source.contains("mIsNoVacantMode"));
     }
 
     private static void assertBlocksFit(int[][] blocks, int sourceColumns, int sourceRows) {
