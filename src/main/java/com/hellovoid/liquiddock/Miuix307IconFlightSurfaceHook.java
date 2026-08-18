@@ -1,258 +1,134 @@
 package com.hellovoid.liquiddock;
 
-import android.view.SurfaceControl;
-
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Excludes Launcher 4.50's dedicated FloatingIconLayer2 surfaces from APP->HOME mode-1 captures.
+ * Filters Launcher 4.50's final APP->HOME icon-flight from LiquidDock mode-1 capture.
  *
- * 4.50 DEX inspection shows WindowElement.mFloatingIconLayerLeash is only the HOME/root leash used
- * as a parent. The actual icon pixels are produced by FloatingIconLayer2's
- * mFloatingIconSurfaceControl and mFloatingIconShaderSurfaceControl, both SurfaceControlCompat
- * wrappers around raw android.view.SurfaceControl handles. Capture those exact child surfaces and
- * append them to DockLiquidGlassView's normal SurfaceControl[] exclusion list while the accepted
- * APP->HOME transition is active. Closing APP, Launcher and wallpaper remain continuously visible.
+ * Device logs and direct 4.50 inspection show the target build uses FloatingIconView2, a normal
+ * Launcher View rendered into the Launcher root Surface, not FloatingIconLayer2 child surfaces.
+ * Therefore there is no independent icon SurfaceControl to exclude. The reliable compositor
+ * boundary is GestureModeApp.performAppToHome(): the user's pull remains fully live up to this
+ * vendor HOME commit; before the method proceeds into CLOSE_TO_HOME, exclude the closing APP task
+ * package and its package-less auxiliary layers while Launcher/wallpaper continue streaming.
  */
 final class Miuix307IconFlightSurfaceHook {
     private static final String TAG = "[DC][IX]";
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
 
-    private static volatile SurfaceControl floatingIconSurface;
-    private static volatile SurfaceControl floatingIconShaderSurface;
-    private static volatile boolean homeTransitionActive;
-    private static volatile int lastLoggedExcludedIdentity;
-
     private Miuix307IconFlightSurfaceHook() {}
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
-        installFloatingIconLayerCapture(classLoader);
-        installCaptureSurfaceExclusion();
-        installTransitionLifecycle();
-        Api101Bridge.log(TAG + " 4.50 exact FloatingIconLayer2 Surface exclusion installed");
+        installVendorHomeCommitFilter(classLoader);
+        installVendorCleanup(classLoader);
+        Api101Bridge.log(TAG + " 4.50 performAppToHome closing-task filter installed");
     }
 
-    private static void installFloatingIconLayerCapture(ClassLoader classLoader) {
+    private static void installVendorHomeCommitFilter(ClassLoader classLoader) {
         try {
-            Class<?> floatingIconLayer = Class.forName(
-                    "com.miui.home.recents.views.FloatingIconLayer2", false, classLoader);
-            int refreshHooks = 0;
-            int clearHooks = 0;
-            for (Method method : floatingIconLayer.getDeclaredMethods()) {
-                String name = method.getName();
-                if (isSurfaceRefreshMethod(name)) {
-                    HookUtil.hook(method, chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        Object owner = resolveFloatingIconOwner(
-                                floatingIconLayer, method, chain.getThisObject(),
-                                chain.getArgs().toArray(new Object[0]));
-                        refreshSurfaces(owner, method.getName());
-                        return result;
-                    });
-                    refreshHooks++;
-                } else if (isSurfaceClearMethod(name)) {
-                    HookUtil.hook(method, chain -> {
-                        Object owner = resolveFloatingIconOwner(
-                                floatingIconLayer, method, chain.getThisObject(),
-                                chain.getArgs().toArray(new Object[0]));
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        clearOwnedSurfaces(owner, method.getName());
-                        return result;
-                    });
-                    clearHooks++;
-                }
-            }
-            Api101Bridge.log(TAG + " FloatingIconLayer2 hooks refresh=" + refreshHooks
-                    + " clear=" + clearHooks);
+            Class<?> appMode = Class.forName(
+                    "com.miui.home.recents.GestureModeApp", false, classLoader);
+            HookUtil.hookMethod(appMode, "performAppToHome", new Class<?>[0], chain -> {
+                Object owner = chain.getThisObject();
+                DockLiquidGlassView glass = currentGlass();
+                String closingPackage = resolveClosingPackage(owner, glass);
+                CaptureExclusionNames.setTransitionAppLayerPrefix(closingPackage);
+                Api101Bridge.log(TAG + " vendor HOME exclusion armed before performAppToHome pkg="
+                        + closingPackage + " glass=" + objectId(glass));
+                if (glass != null) glass.requestCapture("vendor-home-exclusion-start");
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            });
         } catch (Throwable error) {
-            Api101Bridge.log(TAG + " FloatingIconLayer2 Surface hook unavailable", error);
+            Api101Bridge.log(TAG + " performAppToHome filter unavailable", error);
         }
     }
 
-    private static boolean isSurfaceRefreshMethod(String name) {
-        return "init".equals(name)
-                || "init$lambda$3".equals(name)
-                || "draw".equals(name)
-                || "drawIcon".equals(name)
-                || "showSurfaceControl".equals(name)
-                || "bindHomeLeash".equals(name);
-    }
-
-    private static boolean isSurfaceClearMethod(String name) {
-        return "release".equals(name)
-                || "resetMember".equals(name)
-                || "release$lambda$6".equals(name);
-    }
-
-    private static Object resolveFloatingIconOwner(
-            Class<?> floatingIconLayer, Method method, Object thisObject, Object[] args) {
-        if (!Modifier.isStatic(method.getModifiers())
-                && floatingIconLayer.isInstance(thisObject)) return thisObject;
-        if (args != null) {
-            for (Object arg : args) {
-                if (floatingIconLayer.isInstance(arg)) return arg;
-            }
-        }
-        return null;
-    }
-
-    private static void refreshSurfaces(Object owner, String methodName) {
-        if (owner == null) return;
-        SurfaceControl icon = readRawSurface(owner, "mFloatingIconSurfaceControl");
-        SurfaceControl shader = readRawSurface(owner, "mFloatingIconShaderSurfaceControl");
-
-        boolean changed = false;
-        if (isValid(icon) && icon != floatingIconSurface) {
-            floatingIconSurface = icon;
-            changed = true;
-        }
-        if (isValid(shader) && shader != floatingIconShaderSurface) {
-            floatingIconShaderSurface = shader;
-            changed = true;
-        }
-        if (changed) {
-            lastLoggedExcludedIdentity = 0;
-            Api101Bridge.log(TAG + " FloatingIconLayer2 surfaces captured method=" + methodName
-                    + " icon=" + surfaceId(floatingIconSurface)
-                    + " shader=" + surfaceId(floatingIconShaderSurface)
-                    + " active=" + homeTransitionActive);
-        }
-    }
-
-    private static SurfaceControl readRawSurface(Object owner, String compatFieldName) {
+    private static void installVendorCleanup(ClassLoader classLoader) {
         try {
-            Object compat = HookUtil.getField(owner, compatFieldName);
-            if (compat == null) return null;
-            Object raw = HookUtil.getField(compat, "mSurfaceControl");
-            return raw instanceof SurfaceControl ? (SurfaceControl) raw : null;
+            Class<?> appMode = Class.forName(
+                    "com.miui.home.recents.GestureModeApp", false, classLoader);
+            HookUtil.hookMethod(appMode, "onRecentsAnimationCanceled",
+                    new Class<?>[]{boolean.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        clear("recents-animation-canceled");
+                        return result;
+                    });
+
+            hookAnimationEnd(
+                    Class.forName("com.miui.home.recents.GestureModeApp$6", false, classLoader),
+                    "app-to-app-animation-end");
+            hookAnimationEnd(
+                    Class.forName("com.miui.home.recents.GestureModeApp$8", false, classLoader),
+                    "app-to-home-animation-end");
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " vendor HOME exclusion cleanup unavailable", error);
+        }
+    }
+
+    private static void hookAnimationEnd(Class<?> listenerClass, String reason) {
+        for (Method method : listenerClass.getDeclaredMethods()) {
+            if (!"onAnimationEnd".equals(method.getName())) continue;
+            HookUtil.hook(method, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                clear(reason);
+                return result;
+            });
+        }
+    }
+
+    private static DockLiquidGlassView currentGlass() {
+        try {
+            Object value = HookUtil.invokeStatic(Miuix307RecentsInputHook.class, "boundGlass");
+            if (value instanceof DockLiquidGlassView) return (DockLiquidGlassView) value;
+        } catch (Throwable ignored) {}
+        try {
+            Object value = HookUtil.invokeStatic(Miuix307GestureBackdropHoldHook.class,
+                    "transitionGlass");
+            return value instanceof DockLiquidGlassView ? (DockLiquidGlassView) value : null;
         } catch (Throwable ignored) {
             return null;
         }
     }
 
-    private static void clearOwnedSurfaces(Object owner, String methodName) {
-        if (owner == null) return;
-        SurfaceControl icon = readRawSurface(owner, "mFloatingIconSurfaceControl");
-        SurfaceControl shader = readRawSurface(owner, "mFloatingIconShaderSurfaceControl");
-        boolean cleared = false;
-        if (floatingIconSurface != null && (icon == floatingIconSurface || !isValid(floatingIconSurface))) {
-            floatingIconSurface = null;
-            cleared = true;
+    private static String resolveClosingPackage(Object appMode, DockLiquidGlassView glass) {
+        if (glass != null) {
+            try {
+                glass.refreshForegroundAppLayer();
+                Object value = HookUtil.getField(glass, "appLayerPkg");
+                if (value instanceof String && !((String) value).isEmpty()) {
+                    return (String) value;
+                }
+            } catch (Throwable error) {
+                Api101Bridge.log(TAG + " foreground APP package refresh unavailable", error);
+            }
         }
-        if (floatingIconShaderSurface != null
-                && (shader == floatingIconShaderSurface || !isValid(floatingIconShaderSurface))) {
-            floatingIconShaderSurface = null;
-            cleared = true;
-        }
-        if (cleared) {
-            lastLoggedExcludedIdentity = 0;
-            Api101Bridge.log(TAG + " FloatingIconLayer2 surfaces cleared method=" + methodName);
-        }
-    }
 
-    private static void installCaptureSurfaceExclusion() {
+        // 4.50 DEX exposes mRunningTaskComponentName on GestureModeApp. Use it as a direct
+        // fallback at performAppToHome if the capture-side package cache has not populated yet.
         try {
-            HookUtil.hookMethod(DockLiquidGlassView.class, "buildFullDisplaySurfaceExcludes",
-                    new Class<?>[0], chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        SurfaceControl[] base = result instanceof SurfaceControl[]
-                                ? (SurfaceControl[]) result : null;
-                        if (!homeTransitionActive) return base;
-
-                        SurfaceControl icon = floatingIconSurface;
-                        SurfaceControl shader = floatingIconShaderSurface;
-                        if (!isValid(icon) && !isValid(shader)) return base;
-
-                        ArrayList<SurfaceControl> out = new ArrayList<>(
-                                (base == null ? 0 : base.length) + 2);
-                        if (base != null) {
-                            for (SurfaceControl surface : base) {
-                                if (isValid(surface)) out.add(surface);
-                            }
-                        }
-                        addIfValidUnique(out, icon);
-                        addIfValidUnique(out, shader);
-
-                        int identity = combinedIdentity(icon, shader);
-                        if (identity != lastLoggedExcludedIdentity) {
-                            lastLoggedExcludedIdentity = identity;
-                            Api101Bridge.log(TAG + " exact FloatingIconLayer2 Surfaces excluded icon="
-                                    + surfaceId(icon) + " shader=" + surfaceId(shader)
-                                    + " total=" + out.size());
-                        }
-                        return out.toArray(new SurfaceControl[0]);
-                    });
+            Object component = HookUtil.getField(appMode, "mRunningTaskComponentName");
+            Object value = component == null ? null : HookUtil.invoke(component, "getPackageName");
+            return value instanceof String ? (String) value : null;
         } catch (Throwable error) {
-            Api101Bridge.log(TAG + " capture Surface exclusion hook unavailable", error);
+            Api101Bridge.log(TAG + " running task package fallback unavailable", error);
+            return null;
         }
     }
 
-    private static void addIfValidUnique(ArrayList<SurfaceControl> out, SurfaceControl target) {
-        if (!isValid(target)) return;
-        for (SurfaceControl surface : out) {
-            if (surface == target) return;
-        }
-        out.add(target);
-    }
-
-    private static int combinedIdentity(SurfaceControl first, SurfaceControl second) {
-        int a = isValid(first) ? System.identityHashCode(first) : 0;
-        int b = isValid(second) ? System.identityHashCode(second) : 0;
-        return 31 * a + b;
-    }
-
-    private static void installTransitionLifecycle() {
-        try {
-            HookUtil.hookMethod(Miuix307GestureBackdropHoldHook.class,
-                    "setSystemUiTransitionActive",
-                    new Class<?>[]{DockLiquidGlassView.class, boolean.class, String.class},
-                    chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        boolean active = args.length > 1 && Boolean.TRUE.equals(args[1]);
-                        Object result = chain.proceed(args);
-                        setHomeTransitionActive(active,
-                                String.valueOf(args.length > 2 ? args[2] : ""));
-                        return result;
-                    });
-            HookUtil.hookMethod(Miuix307GestureBackdropHoldHook.class,
-                    "stopAllTransitionCapture", new Class<?>[]{String.class}, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        Object result = chain.proceed(args);
-                        setHomeTransitionActive(false,
-                                String.valueOf(args.length > 0 ? args[0] : "stop-all"));
-                        return result;
-                    });
-        } catch (Throwable error) {
-            Api101Bridge.log(TAG + " transition lifecycle hook unavailable", error);
+    private static void clear(String reason) {
+        String before = CaptureExclusionNames.transitionAppLayerPrefixForTests();
+        CaptureExclusionNames.clearTransitionAppLayerPrefix();
+        if (before != null) {
+            Api101Bridge.log(TAG + " vendor HOME exclusion cleared reason=" + reason
+                    + " pkg=" + before);
         }
     }
 
-    private static void setHomeTransitionActive(boolean active, String reason) {
-        if (homeTransitionActive == active) return;
-        homeTransitionActive = active;
-        if (!active) lastLoggedExcludedIdentity = 0;
-        Api101Bridge.log(TAG + " exact floating icon exclusion active=" + active
-                + " reason=" + reason
-                + " icon=" + surfaceId(floatingIconSurface)
-                + " shader=" + surfaceId(floatingIconShaderSurface));
-    }
-
-    private static boolean isValid(SurfaceControl surface) {
-        if (surface == null) return false;
-        try {
-            return surface.isValid();
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static String surfaceId(SurfaceControl surface) {
-        if (surface == null) return "null";
-        return "SurfaceControl@" + Integer.toHexString(System.identityHashCode(surface))
-                + "/valid=" + isValid(surface);
+    private static String objectId(Object value) {
+        if (value == null) return "null";
+        return value.getClass().getSimpleName() + "@"
+                + Integer.toHexString(System.identityHashCode(value));
     }
 }
