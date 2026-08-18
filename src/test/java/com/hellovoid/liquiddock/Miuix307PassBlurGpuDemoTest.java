@@ -65,8 +65,10 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue("output must be an independent GLSurfaceView",
                 view.contains("extends GLSurfaceView")
                         && view.contains("implements GLSurfaceView.Renderer"));
-        assertTrue("input must be a BufferQueue SurfaceTexture",
-                view.contains("SurfaceTexture") && view.contains("new Surface(surfaceTexture)"));
+        assertTrue("input must be a BufferQueue SurfaceTexture feeding a Surface producer",
+                view.contains("SurfaceTexture")
+                        && view.contains("new Surface(")
+                        && view.contains("producerSurface"));
         assertTrue("input must remain a GPU external texture",
                 view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES")
                         && view.contains("samplerExternalOES"));
@@ -90,8 +92,8 @@ public class Miuix307PassBlurGpuDemoTest {
                         && view.contains("first GLES backdrop draw"));
         assertTrue("clear must detach the SF producer before releasing GPU inputs",
                 view.contains("Miuix307PassBlurBridge.unbind")
-                        && view.contains("surfaceTexture.release()")
-                        && view.contains("producerSurface.release()"));
+                        && view.contains("currentTexture.release()")
+                        && view.contains("currentProducer.release()"));
 
         assertFalse("GPU demo must contain no CPU/capture backdrop path",
                 view.contains("captureScreenAsync")
@@ -116,9 +118,9 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue("90/270 rotations must swap producer buffer dimensions",
                 view.contains("configRotation == 1 || configRotation == 3"));
         assertTrue("SurfaceTexture must be resized from the resolved producer geometry",
-                view.contains("surfaceTexture.setDefaultBufferSize(bufferWidth, bufferHeight)"));
+                view.contains("setDefaultBufferSize(bufferWidth, bufferHeight)"));
         assertFalse("producer sizing must no longer use root View dimensions as the buffer size",
-                view.contains("surfaceTexture.setDefaultBufferSize(rootWidth, rootHeight)"));
+                view.contains("setDefaultBufferSize(rootWidth, rootHeight)"));
     }
 
     @Test
