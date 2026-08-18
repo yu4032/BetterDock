@@ -63,6 +63,10 @@ public final class ModuleMain extends XposedModule {
             // Dock size/blur customization is disabled, without duplicating the normal path.
             DockShadowIndependenceHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
+            // The specialized 307 material path skips MainHook's legacy root touch listeners.
+            // Restore only the native GestureTouchEventTracker boundary so finger motion, not
+            // incidental Dock geometry, owns capture requests during Dock -> Recents gestures.
+            Miuix307GestureCaptureHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
