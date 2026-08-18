@@ -537,10 +537,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             int configRotation = readConfigRotation(materialHost);
             int bufferWidth = surfaceWidth;
             int bufferHeight = surfaceHeight;
-            if (configRotation == 1 || configRotation == 3) {
-                bufferWidth = surfaceHeight;
-                bufferHeight = surfaceWidth;
-            }
 
             Method getSurfaceControl = viewRoot.getClass().getDeclaredMethod("getSurfaceControl");
             getSurfaceControl.setAccessible(true);
