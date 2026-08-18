@@ -9,31 +9,51 @@ final class CaptureExclusionNames {
             "NavigationBar", "StatusBar", "GestureStub", "DockAssistantView"
     };
 
-    private CaptureExclusionNames() {}
+    /** Closing-task auxiliaries that do not carry the application package prefix. */
+    private static final String[] HOME_CLOSE_AUX_LAYERS = {
+            "PreColorStarting", "Splash Screen ", "Miui Caption of Task="
+    };
 
     /**
-     * Retained as a source-compatible no-op while SystemUiTransitionRuntime is cleaned up.
-     * Device evidence proved the HOME icon residual is not the closing APP layer; Launcher 4.50
-     * renders it on WindowElement.mFloatingIconLayerLeash, which is excluded by exact handle.
+     * Package-name prefix of the APP that has committed to Launcher 4.50 performAppToHome().
+     * The pull/drag phase remains fully live. This becomes non-null only at the vendor HOME
+     * commit boundary, before CLOSE_TO_HOME starts drawing, and is cleared on HOME finish,
+     * abort, Overview, generation reset, or a new Launcher-to-APP transition.
      */
-    static void setTransitionAppLayerPrefix(String ignored) {}
+    private static volatile String transitionAppLayerPrefix;
 
-    static void clearTransitionAppLayerPrefix() {}
+    private CaptureExclusionNames() {}
+
+    static void setTransitionAppLayerPrefix(String packagePrefix) {
+        if (packagePrefix == null || packagePrefix.isEmpty()
+                || "com.miui.home".equals(packagePrefix)) {
+            transitionAppLayerPrefix = null;
+        } else {
+            transitionAppLayerPrefix = packagePrefix;
+        }
+    }
+
+    static void clearTransitionAppLayerPrefix() {
+        transitionAppLayerPrefix = null;
+    }
 
     static String transitionAppLayerPrefixForTests() {
-        return null;
+        return transitionAppLayerPrefix;
     }
 
     static String[] merge(String dockLayer, String dragLayer,
                           Collection<String> freeformLayers) {
+        // HOME closing-task exclusion is a transition authority, not a material-pipeline feature.
+        // Force the 307 name-exclusion path while the early vendor HOME filter is armed.
+        boolean homeCloseActive = transitionAppLayerPrefix != null;
         return mergeInternal(dockLayer, dragLayer, freeformLayers,
-                Miuix307MaterialPipeline.isInstalled());
+                Miuix307MaterialPipeline.isInstalled() || homeCloseActive);
     }
 
     /**
      * HyperOS 3.0.307+ pass-window blur samples only the compositor backdrop below the Dock.
      * Our mode-1 screen capture instead sees later SystemUI layers unless they are explicitly
-     * excluded. Generic layer-name prefixes match concrete SF names such as NavigationBar0 and
+     * excluded. Generic prefixes match concrete SF names such as NavigationBar0 and
      * GestureStubLeft/Right, just as "Floating Dock" matches "Floating Dock#...".
      */
     static String[] mergeMiuix307(String dockLayer, String dragLayer,
@@ -49,6 +69,11 @@ final class CaptureExclusionNames {
         add(names, dragLayer);
         if (miuix307) {
             for (String name : MIUIX_307_SYSTEM_UI_LAYERS) add(names, name);
+            String closingPackage = transitionAppLayerPrefix;
+            if (closingPackage != null) {
+                add(names, closingPackage);
+                for (String name : HOME_CLOSE_AUX_LAYERS) add(names, name);
+            }
         }
         if (freeformLayers != null) {
             for (String name : freeformLayers) add(names, name);
