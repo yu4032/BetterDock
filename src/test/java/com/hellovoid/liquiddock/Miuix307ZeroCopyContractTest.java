@@ -17,9 +17,13 @@ public class Miuix307ZeroCopyContractTest {
     @Test
     public void zeroCopyRendererUsesNeutralPassBlurGpuBackdropOnly() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String hook = read("MiuixGlassHook.java");
         assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
         assertTrue(renderer.contains("host.addView(gpuBackdrop"));
-        assertTrue(renderer.contains("materialHost.setForeground(null)"));
+        assertFalse("neutral renderer must not erase the configured replacement stroke",
+                renderer.contains("materialHost.setForeground(null)"));
+        assertTrue("shell owns the safe replacement stroke outside the GPU renderer",
+                hook.contains("DockStrokeRenderer.configureReplacingForeground("));
         assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)"));
         assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertFalse(renderer.contains("host.reloadOpticsPreservingGeometry(glassConfig)"));
@@ -60,8 +64,9 @@ public class Miuix307ZeroCopyContractTest {
         assertFalse(renderer.contains("tone.setTone(glassConfig)"));
         assertTrue("clear must stop the PassBlur producer before dropping refs",
                 renderer.contains("gpuBackdrop.shutdown()"));
-        assertTrue("clear must remove foreground suppression listener",
-                renderer.contains("removeForegroundSuppressor()"));
+        assertFalse("foreground suppressor is retired so the safe replacement stroke can remain",
+                renderer.contains("removeForegroundSuppressor()")
+                        || renderer.contains("installForegroundSuppressor("));
     }
 
     @Test
