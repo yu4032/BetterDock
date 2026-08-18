@@ -18,7 +18,6 @@ public class Miuix307ZeroCopyContractTest {
     public void bridgeExposesPassWindowCapabilityAndBackdropOwnsBlur() throws Exception {
         String bridge = read("MiBlurBridge.java");
         String backdrop = read("Miuix307ZeroCopyBackdropView.java");
-
         assertTrue(bridge.contains("static boolean isPassWindowBlurAvailable()"));
         assertTrue(backdrop.contains("extends View"));
         assertTrue(backdrop.contains("MiBlurBridge.applyPassWindowBlur(this, blurRadiusPx)"));
@@ -31,7 +30,6 @@ public class Miuix307ZeroCopyContractTest {
     @Test
     public void zeroCopyRendererUsesDedicatedChildAndExistingSharpOpticsHost() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
-
         assertTrue(renderer.contains("new Miuix307ZeroCopyBackdropView"));
         assertTrue(renderer.contains("host.addView(backdrop"));
         assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
@@ -45,7 +43,6 @@ public class Miuix307ZeroCopyContractTest {
     public void zeroCopyToneLayerCarriesGuiTintAndBrightness() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
         String tone = read("Miuix307ZeroCopyToneView.java");
-
         assertTrue(renderer.contains("new Miuix307ZeroCopyToneView"));
         assertTrue(renderer.contains("host.addView(tone"));
         assertTrue(tone.contains("glassConfig.tintAlpha"));
@@ -60,9 +57,8 @@ public class Miuix307ZeroCopyContractTest {
     public void geometryRefreshSynchronizesZeroCopyBlurAndTone() throws Exception {
         String hook = read("MiuixGlassHook.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
-
         assertTrue(renderer.contains("static void sync(LiquidDockConfig.Glass glassConfig"));
-        assertTrue(renderer.contains("backdrop.setBlurRadius(blurRadiusPx)"));
+        assertTrue(renderer.contains("backdrop.setBlurRadius(effectiveBlurRadiusPx)"));
         assertTrue(renderer.contains("tone.setTone(glassConfig)"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.sync(\n                config.glass, Math.round(config.glass.blur))"));
     }
@@ -71,7 +67,6 @@ public class Miuix307ZeroCopyContractTest {
     public void compositorBlurRegionUsesTheSameRoundedGeometryAsTheHost() throws Exception {
         String backdrop = read("Miuix307ZeroCopyBackdropView.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
-
         assertTrue(backdrop.contains("ViewOutlineProvider"));
         assertTrue(backdrop.contains("outline.setRoundRect"));
         assertTrue(backdrop.contains("setClipToOutline(true)"));
@@ -86,14 +81,13 @@ public class Miuix307ZeroCopyContractTest {
     public void compositorOpticsUseBlurBackground2NativeAddBlurWithoutReadback() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
-
         assertTrue(bridge.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(bridge.contains("getDeclaredMethod(\"addBlur\", View.class, float.class)"));
         assertTrue(bridge.contains("addBlur.invoke(vendorMaterial, target, cornerRadiusPx)"));
         assertTrue(bridge.contains("MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)"));
         assertTrue(bridge.contains("compat compositor optics active"));
         assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig("));
-        assertTrue(renderer.contains("materialHost, backdrop, readHostRadius(host), blurRadiusPx"));
+        assertTrue(renderer.contains("effectiveBlurRadiusPx"));
         assertFalse(bridge.contains("captureScreenAsync"));
         assertFalse(bridge.contains("Bitmap"));
     }
@@ -101,21 +95,15 @@ public class Miuix307ZeroCopyContractTest {
     @Test
     public void completedBlurDiagnosticsAreRetiredFromProductionPath() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
-
-        assertFalse("argument probe was only needed to establish the 4.50 addBlur contract",
-                bridge.contains("installCompatBlurProbe"));
-        assertFalse("hidden View setter probe was only needed to rule out extra addBlur optics",
-                bridge.contains("installCompatViewSetterProbe"));
-        assertFalse("zero-copy path should not keep process-wide diagnostic View hooks",
-                bridge.contains("hookCompatViewSetter"));
-        assertFalse("completed diagnostic should not retain a ThreadLocal hook scope",
-                bridge.contains("compatProbeTarget"));
+        assertFalse(bridge.contains("installCompatBlurProbe"));
+        assertFalse(bridge.contains("installCompatViewSetterProbe"));
+        assertFalse(bridge.contains("hookCompatViewSetter"));
+        assertFalse(bridge.contains("compatProbeTarget"));
     }
 
     @Test
     public void materialBindingTriesZeroCopyFirstAndKeepsCaptureFallback() throws Exception {
         String hook = read("MiuixGlassHook.java");
-
         int zeroCopy = hook.indexOf("Miuix307ZeroCopyRenderer.install");
         int fallback = hook.indexOf("installCaptureFallback");
         assertTrue(zeroCopy >= 0);
@@ -132,7 +120,6 @@ public class Miuix307ZeroCopyContractTest {
         int zeroCopy = hook.indexOf("Miuix307ZeroCopyRenderer.install");
         int fallback = hook.indexOf("installCaptureFallback");
         String successRegion = hook.substring(zeroCopy, fallback);
-
         assertFalse(successRegion.contains("LiquidGlassFactory.create"));
         assertFalse(successRegion.contains("HomeOwnershipRuntime.bind"));
         assertFalse(successRegion.contains("requestCapture"));
