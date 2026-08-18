@@ -5,6 +5,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /** Builds the experimental MiuiX 307 zero-readback composition. */
@@ -13,6 +14,8 @@ final class Miuix307ZeroCopyRenderer {
     private static WeakReference<Miuix307ZeroCopyBackdropView> backdropRef =
             new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyToneView> toneRef =
+            new WeakReference<>(null);
+    private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
 
     private Miuix307ZeroCopyRenderer() {}
@@ -28,6 +31,7 @@ final class Miuix307ZeroCopyRenderer {
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
                 materialHost.getContext(), blurRadiusPx);
         backdrop.setId(View.generateViewId());
+        backdrop.setGlassRadius(readHostRadius(host));
         Miuix307ZeroCopyToneView tone = new Miuix307ZeroCopyToneView(
                 materialHost.getContext(), glassConfig);
         tone.setId(View.generateViewId());
@@ -48,6 +52,7 @@ final class Miuix307ZeroCopyRenderer {
 
         backdropRef = new WeakReference<>(backdrop);
         toneRef = new WeakReference<>(tone);
+        hostRef = new WeakReference<>(host);
         return true;
     }
 
@@ -57,7 +62,11 @@ final class Miuix307ZeroCopyRenderer {
 
     static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
-        if (backdrop != null) backdrop.setBlurRadius(blurRadiusPx);
+        DockLiquidGlassHostView host = hostRef.get();
+        if (backdrop != null) {
+            if (host != null) backdrop.setGlassRadius(readHostRadius(host));
+            backdrop.setBlurRadius(blurRadiusPx);
+        }
         Miuix307ZeroCopyToneView tone = toneRef.get();
         if (tone != null) tone.setTone(glassConfig);
     }
@@ -66,7 +75,22 @@ final class Miuix307ZeroCopyRenderer {
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
         backdropRef = new WeakReference<>(null);
         toneRef = new WeakReference<>(null);
+        hostRef = new WeakReference<>(null);
         if (backdrop != null) backdrop.clearBlur();
+    }
+
+    private static float readHostRadius(DockLiquidGlassHostView host) {
+        if (host == null) return 0f;
+        try {
+            Field field = DockLiquidGlassHostView.class.getDeclaredField("radius");
+            field.setAccessible(true);
+            Object value = field.get(host);
+            if (value instanceof Number) return Math.max(0f, ((Number) value).floatValue());
+        } catch (Throwable error) {
+            MainHook.log(TAG + " host radius reflection unavailable: " + error);
+        }
+        int min = Math.min(host.getWidth(), host.getHeight());
+        return min > 0 ? min * 0.5f : 0f;
     }
 
     /**
