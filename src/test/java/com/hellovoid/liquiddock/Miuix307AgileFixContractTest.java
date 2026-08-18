@@ -63,6 +63,27 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
+    public void finalHomeIconFlightExcludesOnlyClosingAppLayer() throws Exception {
+        String runtime = read("SystemUiTransitionRuntime.java");
+        String exclusions = read("CaptureExclusionNames.java");
+
+        int begin = runtime.indexOf("beginAppToLauncherVisualHold");
+        int setExclude = runtime.indexOf("setTransitionAppLayerPrefix", begin);
+        int startBurst = runtime.indexOf("setSystemUiTransitionActive", begin);
+        assertTrue("closing APP exclusion must begin only at authoritative APP_TO_LAUNCHER start",
+                begin >= 0 && setExclude > begin && startBurst > setExclude);
+        assertTrue("foreground APP package must be cached while APP becomes top",
+                runtime.contains("refreshForegroundAppPackage(glass)")
+                        && runtime.contains("appLayerPkg"));
+        assertTrue("mode-1 exclusions must include the closing APP package only on 307",
+                exclusions.contains("add(names, transitionAppLayerPrefix)"));
+        assertTrue("HOME/Overview/abort paths must clear the temporary closing APP exclusion",
+                runtime.contains("clearTransitionAppLayerPrefix()"));
+        assertFalse("icon-flight cleanup must not freeze capture or switch to wallpaper",
+                runtime.contains("setTransitionAppLayerPrefix(\"com.miui.home\")"));
+    }
+
+    @Test
     public void vendorSystemUiAndOverviewShareOneCaptureAuthority() throws Exception {
         String hook = read("Miuix307GestureBackdropHoldHook.java");
         String runtime = read("SystemUiTransitionRuntime.java");
