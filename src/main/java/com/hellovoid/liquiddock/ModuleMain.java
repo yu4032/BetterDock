@@ -52,6 +52,9 @@ public final class ModuleMain extends XposedModule {
             // 10x6 intentionally overlays only profile-sized hook points after the stable
             // 8x4 core has installed its generic CellLayout/widget/margin behavior.
             HomeGridProfileOverlayHook.install(classLoader);
+            // Drag/drop conversion must bind after the profile has resolved CellLayout counts;
+            // it reads the live page geometry and never mutates global GridConfig cellSize.
+            HomeGridDragGeometryHook.install(classLoader);
             // Final normal-Workspace geometry runs after profile counts are resolved. It
             // separates X/Y sizing without taking ownership of workstation or Laptop All Apps.
             HomeGridGeometryIndependenceHook.install(classLoader);
@@ -60,6 +63,10 @@ public final class ModuleMain extends XposedModule {
             // Dock size/blur customization is disabled, without duplicating the normal path.
             DockShadowIndependenceHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
+            // The specialized 307 material path skips MainHook's legacy root touch listeners.
+            // Restore only the native GestureTouchEventTracker boundary so finger motion, not
+            // incidental Dock geometry, owns capture requests during Dock -> Recents gestures.
+            Miuix307GestureCaptureHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
