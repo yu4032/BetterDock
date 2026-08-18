@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
@@ -16,6 +17,8 @@ final class Miuix307ZeroCopyRenderer {
     private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
     private static WeakReference<View> materialHostRef = new WeakReference<>(null);
+    private static ViewTreeObserver foregroundObserver;
+    private static ViewTreeObserver.OnPreDrawListener foregroundSuppressor;
 
     private Miuix307ZeroCopyRenderer() {}
 
@@ -44,6 +47,7 @@ final class Miuix307ZeroCopyRenderer {
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
+        installForegroundSuppressor(materialHost);
         MainHook.log(TAG + " PassBlur GLES neutral lens installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx);
         return true;
@@ -83,10 +87,39 @@ final class Miuix307ZeroCopyRenderer {
 
     static void clear() {
         Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        removeForegroundSuppressor();
         gpuBackdropRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
         if (gpuBackdrop != null) gpuBackdrop.shutdown();
+    }
+
+    private static void installForegroundSuppressor(View materialHost) {
+        removeForegroundSuppressor();
+        View root = materialHost != null ? materialHost.getRootView() : null;
+        ViewTreeObserver observer = root != null ? root.getViewTreeObserver() : null;
+        if (observer == null || !observer.isAlive()) return;
+        ViewTreeObserver.OnPreDrawListener listener = () -> {
+            if (materialHostRef.get() == materialHost && isInstalled()
+                    && materialHost.getForeground() != null) {
+                materialHost.setForeground(null);
+            }
+            return true;
+        };
+        observer.addOnPreDrawListener(listener);
+        foregroundObserver = observer;
+        foregroundSuppressor = listener;
+    }
+
+    private static void removeForegroundSuppressor() {
+        ViewTreeObserver observer = foregroundObserver;
+        ViewTreeObserver.OnPreDrawListener listener = foregroundSuppressor;
+        foregroundObserver = null;
+        foregroundSuppressor = null;
+        if (observer == null || listener == null) return;
+        try {
+            if (observer.isAlive()) observer.removeOnPreDrawListener(listener);
+        } catch (Throwable ignored) {}
     }
 
     private static float readHostRadius(DockLiquidGlassHostView host) {
