@@ -103,15 +103,15 @@ public class Miuix307ZeroCopyContractTest {
     @Test
     public void compatBlurProbeObservesVendorArgumentsWithoutMutation() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
-        String hook = read("MiuixGlassHook.java");
 
         assertTrue(bridge.contains("installCompatBlurProbe(ClassLoader classLoader)"));
+        assertTrue(bridge.contains("installCompatBlurProbe(sourceClass.getClassLoader())"));
         assertTrue(bridge.contains("com.miui.home.launcher.common.BlurUtilities"));
         assertTrue(bridge.contains("\"setBackgroundBlur\""));
         assertTrue(bridge.contains("View.class, int.class, float[].class, int[][].class"));
+        assertTrue(bridge.contains("ThreadLocal<View> compatProbeTarget"));
         assertTrue(bridge.contains("compat blur args target="));
         assertTrue(bridge.contains("chain.proceed(chain.getArgs().toArray(new Object[0]))"));
-        assertTrue(hook.contains("Miuix307CompositorOpticsBridge.installCompatBlurProbe(cl)"));
         assertFalse(bridge.contains("chain.getArgs().set("));
     }
 
