@@ -11,6 +11,8 @@ import java.lang.reflect.Method;
 /** Builds the experimental MiuiX 307 zero-readback composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
+    private static final int EXPERIMENT_BLUR_RADIUS_PX = 5;
+
     private static WeakReference<Miuix307RefractionSurfaceProbeView> refractionSurfaceRef =
             new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyBackdropView> backdropRef =
@@ -31,14 +33,13 @@ final class Miuix307ZeroCopyRenderer {
             return false;
         }
 
-        // SurfaceView is deliberately below the existing normal-View blur backdrop. Its only job in
-        // this diagnostic build is to prove an independent compositor child SurfaceControl exists.
+        int effectiveBlurRadiusPx = EXPERIMENT_BLUR_RADIUS_PX;
         Miuix307RefractionSurfaceProbeView refractionSurface =
                 new Miuix307RefractionSurfaceProbeView(materialHost.getContext(), materialHost);
         refractionSurface.setId(View.generateViewId());
 
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
-                materialHost.getContext(), blurRadiusPx);
+                materialHost.getContext(), effectiveBlurRadiusPx);
         backdrop.setId(View.generateViewId());
         backdrop.setGlassRadius(readHostRadius(host));
         Miuix307ZeroCopyToneView tone = new Miuix307ZeroCopyToneView(
@@ -66,17 +67,14 @@ final class Miuix307ZeroCopyRenderer {
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
 
-        // The host is attached by MiuixGlassHook immediately after install(). Apply the vendor
-        // compositor configuration on the next frame so BlurBackground2 has its live parent alpha
-        // and theme resources, while keeping LiquidDock ownership of the configured blur radius.
         backdrop.postOnAnimation(() -> {
             if (backdropRef.get() != backdrop) return;
             if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
-                    materialHost, backdrop, readHostRadius(host), blurRadiusPx)) {
-                backdrop.setBlurRadius(blurRadiusPx);
+                    materialHost, backdrop, readHostRadius(host), effectiveBlurRadiusPx)) {
+                backdrop.setBlurRadius(effectiveBlurRadiusPx);
+                MainHook.log(TAG + " refraction experiment compositor blur forced radius="
+                        + effectiveBlurRadiusPx);
             }
-            // Discovery only: resolve the SystemUI compositor-refraction transaction signatures and
-            // inspect shared ViewRoot ownership. SurfaceView separately reports its child surface.
             Miuix307SurfaceRefractionProbe.probe(backdrop, materialHost);
         });
         return true;
@@ -87,6 +85,7 @@ final class Miuix307ZeroCopyRenderer {
     }
 
     static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
+        int effectiveBlurRadiusPx = EXPERIMENT_BLUR_RADIUS_PX;
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
         DockLiquidGlassHostView host = hostRef.get();
         View materialHost = materialHostRef.get();
@@ -95,15 +94,17 @@ final class Miuix307ZeroCopyRenderer {
             if (host != null) backdrop.setGlassRadius(cornerRadiusPx);
             if (materialHost != null) {
                 Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
-                        materialHost, backdrop, cornerRadiusPx, blurRadiusPx);
+                        materialHost, backdrop, cornerRadiusPx, effectiveBlurRadiusPx);
             }
-            backdrop.setBlurRadius(blurRadiusPx);
+            backdrop.setBlurRadius(effectiveBlurRadiusPx);
         }
         Miuix307ZeroCopyToneView tone = toneRef.get();
         if (tone != null) tone.setTone(glassConfig);
     }
 
     static void clear() {
+        Miuix307RefractionSurfaceProbeView refractionSurface = refractionSurfaceRef.get();
+        if (refractionSurface != null) Miuix307RefractionExperiment.stop(refractionSurface);
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
         refractionSurfaceRef = new WeakReference<>(null);
         backdropRef = new WeakReference<>(null);
@@ -127,11 +128,6 @@ final class Miuix307ZeroCopyRenderer {
         return min > 0 ? min * 0.5f : 0f;
     }
 
-    /**
-     * Reuse the existing host's tested ADVANCED sharp highlight pass without duplicating its
-     * RuntimeShader. This reflection is internal to LiquidDock and can be replaced by a direct
-     * package-private host API after the zero-copy device experiment is validated.
-     */
     private static boolean enableSharpOptics(DockLiquidGlassHostView host) {
         try {
             Method method = DockLiquidGlassHostView.class.getDeclaredMethod(
