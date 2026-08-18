@@ -64,28 +64,33 @@ public class SystemUiTransitionContractTest {
                         && runtime.contains("true, \"app-to-launcher-token-\""));
         assertTrue("transition start must request a normal composed frame",
                 runtime.contains("requestCapture(\"systemui-transition-start\")"));
+        assertFalse("SystemUI must not reintroduce closing-task icon exclusions",
+                runtime.contains("setTransitionAppLayerPrefix")
+                        || runtime.contains("HOME icon-flight exclusion"));
     }
 
-    @Test public void homeFinishCommitsDestinationOnlyAfterStoppingAllTransitionLeases()
-            throws Exception {
+    @Test public void vendorHomeCommitsSourceBeforeShellStableConfirmation() throws Exception {
+        String hook = source("Miuix307GestureBackdropHoldHook.java");
         String runtime = source("SystemUiTransitionRuntime.java");
+
+        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
+        assertTrue(hook.contains("vendorHomeCommitted = true"));
+        assertTrue(hook.contains("vendorHomeCommitted ? \"HOME\" : \"APP\""));
+        assertTrue(hook.contains("requestCapture(\"miuix307-vendor-home-commit\")"));
 
         int finish = runtime.indexOf(
                 "static void finishAppToLauncherVisualHold(long generation, long tokenId, boolean aborted)");
         int next = runtime.indexOf("\n    static void ", finish + 1);
         String body = next > finish ? runtime.substring(finish, next) : runtime.substring(finish);
-
         int stop = body.indexOf("stopAllTransitionCapture(");
         int home = body.indexOf("applyStableScene(glass, true)");
-        assertTrue("Shell finish must stop vendor/SystemUI APP pin before HOME is committed",
+        assertTrue("Shell finish remains final cleanup before stable HOME confirmation",
                 stop >= 0 && home > stop);
-        assertTrue("HOME finish must immediately request a normal final capture",
-                body.contains("requestCapture(\"systemui-transition-home-finished\")"));
-        assertTrue("one additional post-VSYNC sample may settle the final compositor transaction",
-                body.contains("postOnAnimation")
-                        && body.contains("systemui-transition-home-post-vsync"));
-        assertFalse("HOME settling must never use a guessed millisecond delay",
-                body.contains("postDelayed("));
+        assertTrue(body.contains("HOME stable confirmed at Shell finish"));
+        assertTrue(body.contains("requestCapture(\"systemui-transition-home-finished\")"));
+        assertTrue(body.contains("postOnAnimation")
+                && body.contains("systemui-transition-home-post-vsync"));
+        assertFalse(body.contains("postDelayed("));
     }
 
     @Test public void reverseTransitionStopsAllLeasesAndReturnsToAppDirectly() throws Exception {
@@ -101,13 +106,16 @@ public class SystemUiTransitionContractTest {
         assertTrue(body.contains("requestCapture(\"systemui-transition-app\")"));
     }
 
-    @Test public void migrated307HasNoLauncherHomePrearm() throws Exception {
+    @Test public void migrated307OwnsGestureToHomeInDedicatedTransitionHook() throws Exception {
         String pipeline = source("Miuix307MaterialPipeline.java");
         String glassHook = source("MiuixGlassHook.java");
+        String transitionHook = source("Miuix307GestureBackdropHoldHook.java");
         assertFalse(pipeline.contains("installHomeGesturePrearm"));
         assertFalse(pipeline.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
         assertFalse(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
         assertFalse(glassHook.contains("onHomeTransitionStart"));
         assertFalse(glassHook.contains("setGestureCaptureTarget(\"HOME\")"));
+        assertTrue(transitionHook.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
+        assertTrue(transitionHook.contains("commitVendorHome"));
     }
 }
