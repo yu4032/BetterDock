@@ -1,11 +1,15 @@
 package com.hellovoid.liquiddock;
 
+import android.graphics.Bitmap;
+import android.graphics.Point;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.View;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -29,11 +33,24 @@ final class Miuix307RecentsInputHook {
     private static volatile boolean overviewActive;
     private static WeakReference<View> dockRootRef = new WeakReference<>(null);
 
+    // Visual identity of the last HOME frame installed by this exact 307 glass instance. During
+    // APP->Recents the system shrinks the task card upward while the Dock remains near the bottom;
+    // a successful mode-1 capture can therefore contain only exposed wallpaper. Keep this tiny
+    // signature so such a frame cannot replace the last valid APP backdrop during pointer motion.
+    private static WeakReference<DockLiquidGlassView> wallpaperSignatureOwner =
+            new WeakReference<>(null);
+    private static boolean wallpaperSignatureValid;
+    private static long wallpaperSignature;
+    private static int wallpaperSignatureRotation = -1;
+    private static int wallpaperSignatureWidth = -1;
+    private static int wallpaperSignatureHeight = -1;
+
     private Miuix307RecentsInputHook() {}
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         installGlassBindBridge();
+        installCaptureInstallGuard();
         installLauncherInput(classLoader);
         installOverviewBoundary(classLoader, "EnterOverviewStateEvent", true);
         installOverviewBoundary(classLoader, "ExitOverviewStateEvent", false);
@@ -55,6 +72,8 @@ final class Miuix307RecentsInputHook {
                         Object result = chain.proceed(args);
                         if (Boolean.TRUE.equals(result) && args.length > 0 && args[0] instanceof View) {
                             bindDockRoot((View) args[0]);
+                            DockLiquidGlassView glass = boundGlass();
+                            if (glass != wallpaperSignatureOwner.get()) clearWallpaperSignature();
                         }
                         return result;
                     });
@@ -62,6 +81,137 @@ final class Miuix307RecentsInputHook {
         } catch (Throwable error) {
             MainHook.log(TAG + " Floating Dock input rebind hook unavailable: " + error);
         }
+    }
+
+    /**
+     * Guard only the final install boundary. Captures still run at pointer cadence; if HyperOS has
+     * already transformed the foreground task above the Dock crop, a mode-1 result can be a valid
+     * bitmap of the exposed wallpaper. Reject that result and leave the previous APP frame intact.
+     */
+    private static void installCaptureInstallGuard() {
+        try {
+            int hooked = 0;
+            for (Method method : DockLiquidGlassView.class.getDeclaredMethods()) {
+                if (!"installCapture".equals(method.getName()) || method.getParameterCount() != 3) {
+                    continue;
+                }
+                HookUtil.hook(method, chain -> {
+                    Object[] args = chain.getArgs().toArray(new Object[0]);
+                    Object owner = chain.getThisObject();
+                    if (!(owner instanceof DockLiquidGlassView)
+                            || !Miuix307MaterialPipeline.isInstalled()
+                            || args.length < 3 || !(args[2] instanceof CaptureScene)) {
+                        return chain.proceed(args);
+                    }
+
+                    DockLiquidGlassView glass = (DockLiquidGlassView) owner;
+                    CaptureScene scene = (CaptureScene) args[2];
+                    Bitmap bitmap = frameBitmap(args[0]);
+                    if (bitmap == null || bitmap.isRecycled()) return chain.proceed(args);
+
+                    long signature = captureSignature(bitmap);
+                    if (scene == CaptureScene.HOME) {
+                        rememberWallpaperSignature(glass, signature);
+                        return chain.proceed(args);
+                    }
+
+                    boolean pointerActive = isPointerInteractionActive(glass);
+                    boolean wallpaperComparable = isWallpaperSignatureCurrent(glass);
+                    if (BackdropVisualPolicy.shouldRejectWallpaperLikeFrame(
+                            true, scene, pointerActive, wallpaperComparable)
+                            && BackdropVisualPolicy.isWallpaperLikeSignature(
+                                    signature, wallpaperSignature)) {
+                        int difference = BackdropVisualPolicy.signatureDifference(
+                                signature, wallpaperSignature);
+                        recycleFrame(args[0]);
+                        MainHook.log(TAG + " rejected pointer APP frame: exposed wallpaper diff="
+                                + difference + "; keeping previous backdrop");
+                        return null;
+                    }
+                    return chain.proceed(args);
+                });
+                hooked++;
+            }
+            MainHook.log(TAG + " pointer APP wallpaper install guard hooked=" + hooked);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " pointer APP wallpaper install guard unavailable: " + error);
+        }
+    }
+
+    private static Bitmap frameBitmap(Object frame) {
+        if (frame == null) return null;
+        try {
+            Object value = HookUtil.getField(frame, "bitmap");
+            return value instanceof Bitmap ? (Bitmap) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void recycleFrame(Object frame) {
+        if (frame == null) return;
+        try {
+            HookUtil.invoke(frame, "recycle");
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static long captureSignature(Bitmap bitmap) {
+        try {
+            Method probe = HookUtil.findMethodExact(DockLiquidGlassView.class, "probeBitmap",
+                    new Class<?>[]{Bitmap.class, int.class});
+            Object result = probe.invoke(null, bitmap, 0);
+            return result != null ? HookUtil.getLongField(result, "signature") : 0L;
+        } catch (Throwable error) {
+            MainHook.log(TAG + " capture signature unavailable: " + error);
+            return 0L;
+        }
+    }
+
+    private static boolean isPointerInteractionActive(DockLiquidGlassView glass) {
+        try {
+            Object value = HookUtil.getField(glass, "captureCadence");
+            return value instanceof CaptureCadence
+                    && ((CaptureCadence) value).isInteractionActive(System.nanoTime());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void rememberWallpaperSignature(DockLiquidGlassView glass, long signature) {
+        Display display = glass != null ? glass.getDisplay() : null;
+        if (display == null) {
+            clearWallpaperSignature();
+            return;
+        }
+        Point size = new Point();
+        display.getRealSize(size);
+        wallpaperSignatureOwner = new WeakReference<>(glass);
+        wallpaperSignature = signature;
+        wallpaperSignatureRotation = display.getRotation();
+        wallpaperSignatureWidth = size.x;
+        wallpaperSignatureHeight = size.y;
+        wallpaperSignatureValid = true;
+    }
+
+    private static boolean isWallpaperSignatureCurrent(DockLiquidGlassView glass) {
+        if (!wallpaperSignatureValid || glass == null || wallpaperSignatureOwner.get() != glass) {
+            return false;
+        }
+        Display display = glass.getDisplay();
+        if (display == null || display.getRotation() != wallpaperSignatureRotation) return false;
+        Point size = new Point();
+        display.getRealSize(size);
+        return size.x == wallpaperSignatureWidth && size.y == wallpaperSignatureHeight;
+    }
+
+    private static void clearWallpaperSignature() {
+        wallpaperSignatureOwner = new WeakReference<>(null);
+        wallpaperSignatureValid = false;
+        wallpaperSignature = 0L;
+        wallpaperSignatureRotation = -1;
+        wallpaperSignatureWidth = -1;
+        wallpaperSignatureHeight = -1;
     }
 
     private static void bindExistingDockRoot() {
