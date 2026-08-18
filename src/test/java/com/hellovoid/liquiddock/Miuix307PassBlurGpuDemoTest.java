@@ -25,7 +25,7 @@ public class Miuix307PassBlurGpuDemoTest {
                 bridge.contains("\"SetPassBlurSurface\""));
         assertTrue("must enable compositor texture production",
                 bridge.contains("\"setUpdateTextureFlag\""));
-        assertTrue("first demo must request full-resolution sfScale=1.0",
+        assertTrue("first demo must keep validated full-resolution sfScale=1.0",
                 bridge.contains("1.0f"));
         assertTrue("must exclude layers from the captured backdrop",
                 bridge.contains("\"setMiBlurWinExc\""));
@@ -104,25 +104,63 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void diagnosticDemoCreatesMinimalPassBlurDemandWithoutVisibleLegacyGlass() throws Exception {
-        Path path = MAIN.resolve("Miuix307PassBlurDemandView.java");
-        assertTrue("diagnostic demand view must exist", Files.exists(path));
-        String demand = Files.readString(path);
-        String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
+    public void producerGeometryMirrorsViewRootPassBlurRotationContract() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
 
-        assertTrue("demand must be a plain transparent View, not another Surface/capture renderer",
-                demand.contains("extends View") && demand.contains("Color.TRANSPARENT"));
-        assertTrue("demand must explicitly enable pass-window blur",
-                demand.contains("MiBlurBridge.applyPassWindowBlur(this, 1)"));
-        assertTrue("demand must cleanly disable pass-window blur",
-                demand.contains("MiBlurBridge.clearPassWindowBlur(this)"));
-        assertTrue("diagnostic demand must be constrained to exactly one pixel",
-                renderer.contains("host.addView(passBlurDemand, new FrameLayout.LayoutParams(1, 1))"));
-        assertFalse("demand must not contain capture or old optical glass code",
-                demand.contains("captureScreenAsync")
-                        || demand.contains("LiquidGlassFactory")
-                        || demand.contains("DockLiquidGlassView")
-                        || demand.contains("setChargeAnim"));
+        assertTrue("buffer sizing must use ViewRootImpl.mSurfaceSize rather than View width/height",
+                view.contains("\"mSurfaceSize\"")
+                        && view.contains("Point"));
+        assertTrue("rotation must include display install orientation like ViewRootImpl.checkConfigRot",
+                view.contains("getInstallOrientation")
+                        && view.contains("getRotation()"));
+        assertTrue("90/270 rotations must swap producer buffer dimensions",
+                view.contains("configRotation == 1 || configRotation == 3"));
+        assertTrue("SurfaceTexture must be resized from the resolved producer geometry",
+                view.contains("surfaceTexture.setDefaultBufferSize(bufferWidth, bufferHeight)"));
+        assertFalse("producer sizing must no longer use root View dimensions as the buffer size",
+                view.contains("surfaceTexture.setDefaultBufferSize(rootWidth, rootHeight)"));
+    }
+
+    @Test
+    public void rotationAndSurfaceChangesRebindThePassBlurProducer() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+
+        assertTrue("the bound geometry must be remembered",
+                view.contains("boundSurfaceWidth")
+                        && view.contains("boundSurfaceHeight")
+                        && view.contains("boundConfigRotation"));
+        assertTrue("output SurfaceControl identity must be part of the binding contract",
+                view.contains("boundOutputSurface")
+                        && view.contains("isSameSurface"));
+        assertTrue("surface/rotation changes must trigger a producer rebind",
+                view.contains("rebindProducerForGeometryChange")
+                        && view.contains("Miuix307PassBlurBridge.unbind"));
+        assertTrue("onSurfaceChanged must schedule the geometry rebind",
+                view.contains("onSurfaceChanged")
+                        && view.contains("post(this::rebindProducerForGeometryChange)"));
+        assertTrue("pre-draw must also detect root/config changes during rotation",
+                view.contains("geometryChangedSinceBind")
+                        && view.contains("rebindProducerForGeometryChange"));
+        assertTrue("a rebind must clear stale frame state before waiting for the new producer",
+                view.contains("hasConsumedFrame = false")
+                        && view.contains("frameAvailable.set(false)"));
+    }
+
+    @Test
+    public void shaderAppliesExplicitConfigRotationBeforeSurfaceTextureTransform() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+
+        assertTrue("shader must receive the ViewRoot-compatible config rotation",
+                view.contains("uniform int uConfigRot")
+                        && view.contains("glUniform1i(rotation"));
+        assertTrue("rotation 90 must remap coordinates explicitly",
+                view.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
+        assertTrue("rotation 180 must remap coordinates explicitly",
+                view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)"));
+        assertTrue("rotation 270 must remap coordinates explicitly",
+                view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
+        assertTrue("SurfaceTexture matrix must remain the final sampling transform",
+                view.indexOf("uConfigRot") < view.indexOf("uTexMatrix * vec4"));
     }
 
     @Test
