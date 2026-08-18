@@ -13,6 +13,16 @@ public class SystemUiTransitionPolicyTest {
                 true, false, showWallpaper);
     }
 
+    private static SystemUiTransitionPolicy.Change homeBack(boolean showWallpaper) {
+        return new SystemUiTransitionPolicy.Change(0, true, false, false,
+                false, true, showWallpaper);
+    }
+
+    private static SystemUiTransitionPolicy.Change appFront() {
+        return new SystemUiTransitionPolicy.Change(0, false, true, false,
+                true, false, false);
+    }
+
     private static SystemUiTransitionPolicy.Change appBack() {
         return new SystemUiTransitionPolicy.Change(0, false, true, false,
                 false, true, false);
@@ -29,18 +39,20 @@ public class SystemUiTransitionPolicyTest {
                         homeFront(true), appBack(), wallpaperFront())));
     }
 
+    @Test public void launcherToAppRequiresAppFrontAndHomeBack() {
+        assertEquals(SystemUiTransitionPolicy.Kind.LAUNCHER_TO_APP,
+                SystemUiTransitionPolicy.classify(Arrays.asList(
+                        appFront(), homeBack(true))));
+    }
+
     @Test public void homeVisibilityAloneIsNotAppToLauncher() {
         assertEquals(SystemUiTransitionPolicy.Kind.NONE,
                 SystemUiTransitionPolicy.classify(Collections.singletonList(homeFront(true))));
     }
 
-    @Test public void appLaunchIsNotAppToLauncher() {
-        SystemUiTransitionPolicy.Change appFront = new SystemUiTransitionPolicy.Change(
-                0, false, true, false, true, false, false);
-        SystemUiTransitionPolicy.Change homeBack = new SystemUiTransitionPolicy.Change(
-                0, true, false, false, false, true, true);
+    @Test public void appFrontAloneIsNotLauncherToApp() {
         assertEquals(SystemUiTransitionPolicy.Kind.NONE,
-                SystemUiTransitionPolicy.classify(Arrays.asList(appFront, homeBack)));
+                SystemUiTransitionPolicy.classify(Collections.singletonList(appFront())));
     }
 
     @Test public void evidenceMustBelongToSameDisplay() {
