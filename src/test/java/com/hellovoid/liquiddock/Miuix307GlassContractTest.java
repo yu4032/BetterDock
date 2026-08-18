@@ -44,7 +44,10 @@ public class Miuix307GlassContractTest {
         assertTrue(renderer.contains("host.addView(gpuBackdrop"));
         assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
         assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
-        assertTrue(renderer.contains("materialHost.setForeground(null)"));
+        assertFalse("neutral renderer must not erase the safe replacement stroke",
+                renderer.contains("materialHost.setForeground(null)"));
+        assertTrue("shell must configure the replacement foreground stroke separately",
+                hook.contains("DockStrokeRenderer.configureReplacingForeground("));
         assertTrue(hook.contains("suppressVendorGpuBlur"));
         assertTrue(pipeline.contains("setBackgroundWidth"));
         assertTrue(pipeline.contains("setBackgroundHeight"));
