@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -24,15 +25,22 @@ public class Miuix307RecentsInputContractTest {
         assertTrue(hook.contains("isTouchInDockArea"));
         assertTrue(hook.contains("gestureActive"));
         assertTrue(hook.contains("onDockTouchEvent()"));
-        assertTrue(hook.contains("onDockGestureMotion"));
+        assertTrue(hook.contains("armAppBackdropForGestureDown"));
     }
 
-    @Test public void specialized307PipelineRestoresExactOverviewBoundaries() throws Exception {
+    @Test public void specialized307PipelineUsesExactOverviewWithoutLegacyPrearm() throws Exception {
         String hook = read("Miuix307RecentsInputHook.java");
-        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.GestureToRecent"));
+
         assertTrue(hook.contains("com.miui.home.recents.event."));
         assertTrue(hook.contains("\"EnterOverviewStateEvent\""));
         assertTrue(hook.contains("\"ExitOverviewStateEvent\""));
         assertTrue(hook.contains("setOverviewActive"));
+
+        // Regression: 307 pointer tracking must not enter the legacy unconfirmed RECENTS state.
+        // CaptureSourcePolicy intentionally maps that state to WALLPAPER until exact Overview.
+        assertFalse(hook.contains("com.miui.home.launcher.dock.v3.GestureToRecent"));
+        assertFalse(hook.contains("setGestureCaptureTarget(\"RECENTS\")"));
+        assertFalse(hook.contains("onDockGestureMotion"));
+        assertFalse(hook.contains("prearmRecentsCapture"));
     }
 }
