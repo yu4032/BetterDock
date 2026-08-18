@@ -32,9 +32,12 @@ public class Miuix307PassBlurGpuDemoTest {
                 bridge.contains("\"setMiBlurWinExc\""));
         assertTrue("must identify the independent output child SurfaceControl",
                 bridge.contains("outputView.getSurfaceControl()"));
+        assertTrue("SurfaceControl.getName is hidden/package-private on this build, so use a helper",
+                bridge.contains("surfaceName(SurfaceControl surface)")
+                        && bridge.contains("getDeclaredMethod(\"getName\")"));
         assertTrue("must exclude the Floating Dock/root and output child to avoid feedback",
-                bridge.contains("rootSurface.getName()")
-                        && bridge.contains("outputSurface.getName()"));
+                bridge.contains("surfaceName(rootSurface)")
+                        && bridge.contains("surfaceName(outputSurface)"));
         assertTrue("must exclude common system overlays",
                 bridge.contains("NavigationBar")
                         && bridge.contains("StatusBar")
