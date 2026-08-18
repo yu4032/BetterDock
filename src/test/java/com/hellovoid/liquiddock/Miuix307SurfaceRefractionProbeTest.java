@@ -43,6 +43,15 @@ public class Miuix307SurfaceRefractionProbeTest {
     }
 
     @Test
+    public void destructiveDiagnosticCanForceOpaqueMagentaBeforeSamplingBackdrop() throws Exception {
+        String effect = Files.readString(MAIN.resolve("Miuix307BackdropRefractionEffect.java"));
+
+        assertTrue(effect.contains("uniform float diagnosticSolid;"));
+        assertTrue(effect.contains("shader.setFloatUniform(\"diagnosticSolid\", 1.0f)"));
+        assertTrue(effect.contains("half4(1.0,0.0,1.0,1.0)"));
+    }
+
+    @Test
     public void rendererOwnsBackdropEffectLifecycleWithoutReopeningPassWindowBlur() throws Exception {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
 
