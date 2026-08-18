@@ -19,14 +19,18 @@ final class Miuix307ZeroCopyBackdropView extends View {
 
     private int blurRadiusPx;
     private float glassRadiusPx;
+    private final boolean passWindowBlurEnabled;
     private boolean blurActive;
+    private boolean externalCompositorBlurActive;
     private boolean activationExhausted;
     private int retryFrames;
     private long activationGeneration;
 
-    Miuix307ZeroCopyBackdropView(Context context, int blurRadiusPx) {
+    Miuix307ZeroCopyBackdropView(
+            Context context, int blurRadiusPx, boolean passWindowBlurEnabled) {
         super(context);
         this.blurRadiusPx = sanitizeRadius(blurRadiusPx);
+        this.passWindowBlurEnabled = passWindowBlurEnabled;
         setBackgroundColor(Color.TRANSPARENT);
         setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View view, Outline outline) {
@@ -41,8 +45,8 @@ final class Miuix307ZeroCopyBackdropView extends View {
                 outline.setRoundRect(0, 0, width, height, radius);
             }
         });
-        // Pass-window blur lives on this RenderNode. Parent Canvas clipping cannot constrain the
-        // compositor blur region, so the child itself must own the same rounded outline.
+        // Compositor blur lives on this RenderNode. Parent Canvas clipping cannot constrain the
+        // compositor region, so the child itself must own the same rounded outline.
         setClipToOutline(true);
         setClickable(false);
         setFocusable(false);
@@ -51,9 +55,9 @@ final class Miuix307ZeroCopyBackdropView extends View {
 
     void setBlurRadius(int blurRadiusPx) {
         int next = sanitizeRadius(blurRadiusPx);
-        if (this.blurRadiusPx == next && blurActive) return;
+        if (this.blurRadiusPx == next && isBlurActive()) return;
         this.blurRadiusPx = next;
-        if (!isAttachedToWindow()) return;
+        if (!passWindowBlurEnabled || !isAttachedToWindow()) return;
 
         if (blurActive && MiBlurBridge.setPassWindowBlurRadius(this, next)) {
             activationExhausted = false;
@@ -67,6 +71,14 @@ final class Miuix307ZeroCopyBackdropView extends View {
         tryActivate(generation);
     }
 
+    void setExternalCompositorBlurActive(boolean active) {
+        externalCompositorBlurActive = active;
+        if (active) {
+            activationExhausted = false;
+            retryFrames = 0;
+        }
+    }
+
     void setGlassRadius(float radiusPx) {
         float next = Math.max(0f, radiusPx);
         if (Float.compare(glassRadiusPx, next) == 0) return;
@@ -76,7 +88,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
     }
 
     boolean isBlurActive() {
-        return blurActive;
+        return blurActive || externalCompositorBlurActive;
     }
 
     boolean isActivationExhausted() {
@@ -91,8 +103,11 @@ final class Miuix307ZeroCopyBackdropView extends View {
         ++activationGeneration;
         retryFrames = 0;
         blurActive = false;
+        externalCompositorBlurActive = false;
         activationExhausted = false;
-        MiBlurBridge.clearPassWindowBlur(this);
+        if (passWindowBlurEnabled) {
+            MiBlurBridge.clearPassWindowBlur(this);
+        }
     }
 
     @Override protected void onAttachedToWindow() {
@@ -100,6 +115,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
         retryFrames = 0;
         activationExhausted = false;
         invalidateOutline();
+        if (!passWindowBlurEnabled) return;
         long generation = ++activationGeneration;
         tryActivate(generation);
     }
@@ -112,7 +128,9 @@ final class Miuix307ZeroCopyBackdropView extends View {
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         invalidateOutline();
-        if (w <= 0 || h <= 0 || !isAttachedToWindow() || blurActive) return;
+        if (!passWindowBlurEnabled || w <= 0 || h <= 0 || !isAttachedToWindow() || blurActive) {
+            return;
+        }
         retryFrames = 0;
         activationExhausted = false;
         long generation = ++activationGeneration;
@@ -120,7 +138,8 @@ final class Miuix307ZeroCopyBackdropView extends View {
     }
 
     private void tryActivate(long generation) {
-        if (generation != activationGeneration || !isAttachedToWindow()) return;
+        if (!passWindowBlurEnabled
+                || generation != activationGeneration || !isAttachedToWindow()) return;
         if (!MiBlurBridge.isPassWindowBlurAvailable()) {
             activationExhausted = true;
             return;
