@@ -63,25 +63,33 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void finalHomeIconFlightExcludesExact450FloatingIconSurfaceOnly() throws Exception {
+    public void finalHomeIconFlightExcludesRealFloatingIconLayer2ChildSurfaces() throws Exception {
         String iconHook = read("Miuix307IconFlightSurfaceHook.java");
         String exclusions = read("CaptureExclusionNames.java");
         String module = read("ModuleMain.java");
 
-        assertTrue("4.50 DEX-derived WindowElement leash field must be the exclusion source",
-                iconHook.contains("mFloatingIconLayerLeash")
-                        && iconHook.contains("getMFloatingIconLayerLeash"));
-        assertTrue("the vendor bind lifecycle must refresh the exact icon SurfaceControl",
-                iconHook.contains("bindIconLayerLeashIfNeeded")
-                        && iconHook.contains("earlyInitFloatingIconLayer"));
+        assertTrue("4.50 FloatingIconLayer2 must be the actual exclusion owner",
+                iconHook.contains("com.miui.home.recents.views.FloatingIconLayer2"));
+        assertTrue("icon and shader SurfaceControlCompat children must both be resolved",
+                iconHook.contains("mFloatingIconSurfaceControl")
+                        && iconHook.contains("mFloatingIconShaderSurfaceControl")
+                        && iconHook.contains("mSurfaceControl"));
+        assertTrue("async surface creation must be covered instead of assuming init has completed",
+                iconHook.contains("init$lambda$3")
+                        && iconHook.contains("drawIcon")
+                        && iconHook.contains("showSurfaceControl"));
         assertTrue("mode-1 SurfaceControl[] excludes must be augmented, not capture-frozen",
                 iconHook.contains("buildFullDisplaySurfaceExcludes")
-                        && iconHook.contains("out.add(icon)"));
+                        && iconHook.contains("addIfValidUnique(out, icon)")
+                        && iconHook.contains("addIfValidUnique(out, shader)"));
         assertTrue("exact exclusion must be active only under accepted SystemUI transition authority",
                 iconHook.contains("setSystemUiTransitionActive")
                         && iconHook.contains("homeTransitionActive"));
         assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
-        assertFalse("closing APP package names are the wrong residual layer and must no longer be emitted",
+        assertFalse("WindowElement home/root leash is not the icon child surface",
+                iconHook.contains("mFloatingIconLayerLeash")
+                        || iconHook.contains("getMFloatingIconLayerLeash"));
+        assertFalse("closing APP package names are the wrong residual layer and must remain retired",
                 exclusions.contains("add(names, transitionAppLayerPrefix)"));
         assertFalse("exact icon cleanup must never switch to wallpaper or block capture",
                 iconHook.contains("WALLPAPER") || iconHook.contains("cancelPendingCaptureWork"));
