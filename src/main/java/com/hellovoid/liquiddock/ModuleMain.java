@@ -44,8 +44,12 @@ public final class ModuleMain extends XposedModule {
         try {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
+            LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
             FreeformCaptureLeashHook.install();
             new MainHook().install(classLoader);
+            WorkspaceDropRuleHook.install(classLoader,
+                    runtimeConfig.enabled && runtimeConfig.grid.enabled);
+            Miuix307RecentsInputHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
         } catch (Throwable error) {

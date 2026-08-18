@@ -4,6 +4,10 @@ import android.view.View;
 
 /** Sole assembly point for a liquid-glass view. Keeps JSON/default knowledge out of hooks. */
 final class LiquidGlassFactory {
+    // HOME/ALL_APPS are event-driven; this value only coalesces bursts. APP adaptive capture uses
+    // the user-configured captureFps separately, while RECENTS has its own interaction cadence.
+    private static final int EVENT_DRIVEN_BASE_FPS = 60;
+
     private LiquidGlassFactory() {}
 
     static DockLiquidGlassView create(View background, View workspace,
@@ -14,7 +18,7 @@ final class LiquidGlassFactory {
                 ? background.getResources().getDisplayMetrics().density : 1f;
         DockLiquidGlassView view = new DockLiquidGlassView(background, workspace,
                 Math.round(config.blur * scale), config.chromatic, config.tintAlpha,
-                squircle, squircleCp, config.captureFps);
+                squircle, squircleCp, EVENT_DRIVEN_BASE_FPS);
         view.setStopGraceMillis(config.stopDelayMs);
         view.setBleedVerticalPx(config.bleedTop < 0 ? -1 : Math.round(config.bleedTop * scale),
                 config.bleedBottom < 0 ? -1 : Math.round(config.bleedBottom * scale));
