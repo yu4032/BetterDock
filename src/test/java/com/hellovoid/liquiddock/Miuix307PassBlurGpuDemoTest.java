@@ -105,13 +105,27 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void producerGeometryMirrorsViewRootPassBlurRotationContract() throws Exception {
+    public void producerBufferAlwaysMatchesViewRootSurfaceOrientation() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
         assertTrue(view.contains("\"mSurfaceSize\"") && view.contains("Point"));
         assertTrue(view.contains("getInstallOrientation") && view.contains("getRotation()"));
-        assertTrue(view.contains("configRotation == 1 || configRotation == 3"));
+
+        int start = view.indexOf("private ProducerGeometry readSurfaceGeometry");
+        int end = view.indexOf("private static int readConfigRotation", start);
+        assertTrue(start >= 0 && end > start);
+        String region = view.substring(start, end);
+
+        assertTrue("PassBlur producer width must stay in mSurfaceSize orientation",
+                region.contains("int bufferWidth = surfaceWidth;"));
+        assertTrue("PassBlur producer height must stay in mSurfaceSize orientation",
+                region.contains("int bufferHeight = surfaceHeight;"));
+        assertFalse("configRot must not physically swap the BufferQueue dimensions",
+                region.contains("bufferWidth = surfaceHeight")
+                        || region.contains("bufferHeight = surfaceWidth"));
+        assertTrue("configRot remains a separate shader sampling contract",
+                view.contains("uniform int uConfigRot")
+                        && view.contains("glUniform1i(rotation, configRotation)"));
         assertTrue(view.contains("setDefaultBufferSize(bufferWidth, bufferHeight)"));
-        assertFalse(view.contains("setDefaultBufferSize(rootWidth, rootHeight)"));
     }
 
     @Test
