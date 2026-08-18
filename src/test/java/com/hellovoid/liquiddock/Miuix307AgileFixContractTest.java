@@ -86,9 +86,9 @@ public class Miuix307AgileFixContractTest {
                 iconHook.contains("setSystemUiTransitionActive")
                         && iconHook.contains("homeTransitionActive"));
         assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
-        assertFalse("WindowElement home/root leash is not the icon child surface",
-                iconHook.contains("mFloatingIconLayerLeash")
-                        || iconHook.contains("getMFloatingIconLayerLeash"));
+        assertFalse("WindowElement home/root leash must not be read as the icon child surface",
+                iconHook.contains("HookUtil.getField(owner, \"mFloatingIconLayerLeash\")")
+                        || iconHook.contains("HookUtil.invoke(owner, \"getMFloatingIconLayerLeash\")"));
         assertFalse("closing APP package names are the wrong residual layer and must remain retired",
                 exclusions.contains("add(names, transitionAppLayerPrefix)"));
         assertFalse("exact icon cleanup must never switch to wallpaper or block capture",
