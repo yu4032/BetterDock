@@ -116,6 +116,27 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
+    public void compatBlurProbeAlsoObservesHiddenViewOpticsWithoutMutation() throws Exception {
+        String bridge = read("Miuix307CompositorOpticsBridge.java");
+
+        assertTrue(bridge.contains("installCompatViewSetterProbe(ClassLoader classLoader)"));
+        assertTrue(bridge.contains("hookCompatViewSetter"));
+        assertTrue(bridge.contains("setMiBackgroundBlurType"));
+        assertTrue(bridge.contains("setMiBackgroundBlurScaleRatio"));
+        assertTrue(bridge.contains("setMiBackgroundBlurEnhanceFlag"));
+        assertTrue(bridge.contains("setBackgroundBlurAlpha"));
+        assertTrue(bridge.contains("setBackgroundBlurCrop"));
+        assertTrue(bridge.contains("setBackgroundGradientBlurParams"));
+        assertTrue(bridge.contains("setMiColorAdjust"));
+        assertTrue(bridge.contains("setMiBackgroundBlendColors"));
+        assertTrue(bridge.contains("setMixEffectEnabled"));
+        assertTrue(bridge.contains("setPassTextureScale"));
+        assertTrue(bridge.contains("setMiBloomStroke"));
+        assertTrue(bridge.contains("compat view setter target="));
+        assertFalse(bridge.contains("chain.getArgs().set("));
+    }
+
+    @Test
     public void materialBindingTriesZeroCopyFirstAndKeepsCaptureFallback() throws Exception {
         String hook = read("MiuixGlassHook.java");
 
