@@ -17,6 +17,7 @@ final class Miuix307ZeroCopyRenderer {
             new WeakReference<>(null);
     private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
+    private static WeakReference<View> materialHostRef = new WeakReference<>(null);
 
     private Miuix307ZeroCopyRenderer() {}
 
@@ -53,6 +54,17 @@ final class Miuix307ZeroCopyRenderer {
         backdropRef = new WeakReference<>(backdrop);
         toneRef = new WeakReference<>(tone);
         hostRef = new WeakReference<>(host);
+        materialHostRef = new WeakReference<>(materialHost);
+
+        // The host is attached by MiuixGlassHook immediately after install(). Apply the vendor
+        // compositor material on the next frame, then restore the user-selected blur radius so
+        // material type/gradient parameters are inherited without stealing GUI radius ownership.
+        backdrop.postOnAnimation(() -> {
+            if (backdropRef.get() != backdrop) return;
+            if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(materialHost, backdrop)) {
+                backdrop.setBlurRadius(blurRadiusPx);
+            }
+        });
         return true;
     }
 
@@ -63,8 +75,12 @@ final class Miuix307ZeroCopyRenderer {
     static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
         DockLiquidGlassHostView host = hostRef.get();
+        View materialHost = materialHostRef.get();
         if (backdrop != null) {
             if (host != null) backdrop.setGlassRadius(readHostRadius(host));
+            if (materialHost != null) {
+                Miuix307CompositorOpticsBridge.applyVendorBlurConfig(materialHost, backdrop);
+            }
             backdrop.setBlurRadius(blurRadiusPx);
         }
         Miuix307ZeroCopyToneView tone = toneRef.get();
@@ -76,6 +92,7 @@ final class Miuix307ZeroCopyRenderer {
         backdropRef = new WeakReference<>(null);
         toneRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
+        materialHostRef = new WeakReference<>(null);
         if (backdrop != null) backdrop.clearBlur();
     }
 
