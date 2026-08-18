@@ -39,6 +39,20 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
+    @Test public void specialized307RestoresLauncherFocusOnlyAsSystemUiRefreshBoundary()
+            throws Exception {
+        String ownership = source("Miuix307CaptureOwnershipHook.java");
+
+        assertTrue("307 early return must restore the legacy ownership refresh trigger",
+                ownership.contains("\"onWindowFocusChanged\""));
+        assertTrue("Launcher focus must only trigger a SystemUI ownership query",
+                ownership.contains("HomeOwnershipRuntime.request(\"miuix307-focus\")"));
+        assertTrue("Floating Dock focus must never become a capture/ownership gate again",
+                ownership.contains("Miuix307MaterialPipeline.isInstalled()"));
+        assertFalse("307 bridge must not classify HOME/APP from hasWindowFocus",
+                ownership.contains("hasWindowFocus()"));
+    }
+
     @Test public void confirmedHomeHas307SettleFallbackWhenFocusHomeCaptureIsTemporarilyBlocked()
             throws Exception {
         String runtime = source("HomeOwnershipRuntime.java");
