@@ -1,28 +1,22 @@
 package com.hellovoid.liquiddock;
 
-import android.view.MotionEvent;
-
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Protects the last clean APP backdrop during the small gap between Launcher gesture motion and
- * the later WMShell APP_TO_LAUNCHER transition notification.
+ * Protects the last clean APP backdrop while HyperOS 4.50 transforms the foreground task.
  *
- * Device traces on HyperOS 307 show mode-1 capture still running after the foreground task has
- * already begun shrinking, while APP_TO_LAUNCHER is not pushed until ACTION_UP. Freezing at the
- * real vendor GestureInputHelper ACTION_DOWN keeps those transformed task frames from replacing
- * the clean APP image. The older LiquidDock input observer remains only as a compatibility fallback.
- * This hold does not predict HOME versus RECENTS: exact Overview or the existing SystemUI visual
- * hold remains the destination authority.
+ * Reverse engineering of the target 4.50 launcher shows that raw GestureInputHelper UP/CANCEL is
+ * not a visual completion boundary: the vendor stream can emit CANCEL before the final UP and
+ * before WMShell APP_TO_LAUNCHER.  The authoritative pre-transform boundary is
+ * GestureModeApp.onStartGesture(), before startGestureAppMode()/actionMoveAppDrag().  Destination
+ * completion is owned by the vendor animation listeners, exact Overview, or WMShell.
  */
 final class Miuix307GestureBackdropHoldHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
 
     private static volatile boolean appGestureHold;
-    private static volatile boolean releaseScheduled;
     private static volatile long gestureSession;
     private static WeakReference<DockLiquidGlassView> heldGlass = new WeakReference<>(null);
 
@@ -30,156 +24,137 @@ final class Miuix307GestureBackdropHoldHook {
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
-        installVendorGestureInput(classLoader);
-        installCompatInputBoundary();
+        installVendorAppLifecycle(classLoader);
         installCaptureRequestGate();
         installCaptureInstallGate();
         installOverviewHandoff();
         installSystemUiHandoff();
-        Api101Bridge.log("[DC][GH] APP gesture backdrop hold installed");
+        Api101Bridge.log("[DC][GH] 4.50 vendor gesture lifecycle hold installed");
     }
 
     /**
-     * Authoritative pre-WMShell boundary on the tested HyperOS 307 launcher. The device trace
-     * identifies com.miui.home.recents.GestureInputHelper.onInputEvent(InputEvent) as the source
-     * receiving ACTION_DOWN before the first transformed APP capture. Scan overloads instead of
-     * pinning a hidden signature so minor vendor changes do not silently disable the protection.
+     * 4.50 decompilation anchors:
+     *   GestureModeApp.onStartGesture() -> startGestureAppMode() -> later actionMoveAppDrag()
+     *   GestureModeApp$8.onAnimationEnd() -> finishAppToHomeNew() -> onEnterHomeAnimFinish()
+     *   GestureModeApp$6.onAnimationEnd() -> performAppToAppAnimationEnd()
+     * Recents remains owned by exact EnterOverviewStateEvent.
      */
-    private static void installVendorGestureInput(ClassLoader classLoader) {
+    private static void installVendorAppLifecycle(ClassLoader classLoader) {
         try {
-            Class<?> gestureInputClass = Class.forName(
-                    "com.miui.home.recents.GestureInputHelper", false, classLoader);
-            int hooked = 0;
-            Class<?> cursor = gestureInputClass;
-            while (cursor != null && cursor != Object.class) {
-                for (Method method : cursor.getDeclaredMethods()) {
-                    if (!"onInputEvent".equals(method.getName())
-                            || Modifier.isStatic(method.getModifiers())) {
-                        continue;
-                    }
-                    HookUtil.hook(method, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        MotionEvent event = findMotionEvent(args);
-                        int action = event != null
-                                ? event.getActionMasked() : MotionEvent.ACTION_CANCEL;
-                        float rawX = event != null ? event.getRawX() : Float.NaN;
-                        float rawY = event != null ? event.getRawY() : Float.NaN;
+            Class<?> appMode = Class.forName(
+                    "com.miui.home.recents.GestureModeApp", false, classLoader);
 
-                        if (event != null && action == MotionEvent.ACTION_DOWN) {
-                            // GestureInputHelper is the dedicated bottom-gesture input consumer;
-                            // treat this stream as authoritative instead of re-testing Dock bounds.
-                            maybeArm(rawX, rawY, true);
-                            Api101Bridge.log("[DC][GH] vendor input DOWN hold=" + appGestureHold);
-                        }
+            HookUtil.hookMethod(appMode, "onStartGesture", new Class<?>[0], chain -> {
+                // BEFORE vendor startGestureAppMode(): task geometry is still the clean APP frame.
+                armFromVendorAppGesture();
+                return chain.proceed(chain.getArgs().toArray(new Object[0]));
+            });
 
-                        Object result = chain.proceed(args);
-
-                        if (event != null && (action == MotionEvent.ACTION_UP
-                                || action == MotionEvent.ACTION_CANCEL)) {
-                            DockLiquidGlassView glass = heldGlass.get();
-                            if (glass != null && appGestureHold) scheduleRelease(glass, action);
-                            Api101Bridge.log("[DC][GH] vendor input end action=" + action
-                                    + " hold=" + appGestureHold);
-                        }
+            HookUtil.hookMethod(appMode, "onRecentsAnimationCanceled",
+                    new Class<?>[]{boolean.class}, chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        releaseToApp("recents-animation-canceled");
                         return result;
                     });
-                    hooked++;
-                }
-                cursor = cursor.getSuperclass();
-            }
-            Api101Bridge.log("[DC][GH] vendor GestureInputHelper hooks=" + hooked);
+
+            int appEndHooks = hookAnimationEnd(
+                    Class.forName("com.miui.home.recents.GestureModeApp$6", false, classLoader),
+                    () -> releaseToApp("app-to-app-animation-end"));
+            int homeEndHooks = hookAnimationEnd(
+                    Class.forName("com.miui.home.recents.GestureModeApp$8", false, classLoader),
+                    Miuix307GestureBackdropHoldHook::releaseAfterVendorHomeAnimation);
+
+            Api101Bridge.log("[DC][GH] 4.50 lifecycle hooks appStart=1 appEnd="
+                    + appEndHooks + " homeEnd=" + homeEndHooks);
         } catch (Throwable error) {
-            Api101Bridge.log("[DC][GH] vendor GestureInputHelper unavailable", error);
+            Api101Bridge.log("[DC][GH] 4.50 vendor gesture lifecycle unavailable", error);
         }
     }
 
-    /** Compatibility fallback for launcher builds that still route through our 307 observer. */
-    private static void installCompatInputBoundary() {
-        HookUtil.hookMethod(Miuix307RecentsInputHook.class, "onInputMotion",
-                new Class<?>[]{int.class, float.class, float.class, boolean.class}, chain -> {
-                    Object[] args = chain.getArgs().toArray(new Object[0]);
-                    int action = args.length > 0 && args[0] instanceof Integer
-                            ? (Integer) args[0] : MotionEvent.ACTION_CANCEL;
-                    float rawX = args.length > 1 && args[1] instanceof Float
-                            ? (Float) args[1] : Float.NaN;
-                    float rawY = args.length > 2 && args[2] instanceof Float
-                            ? (Float) args[2] : Float.NaN;
-                    boolean dockWindow = args.length > 3 && Boolean.TRUE.equals(args[3]);
-
-                    if (action == MotionEvent.ACTION_DOWN) {
-                        maybeArm(rawX, rawY, dockWindow);
-                    }
-
-                    Object result = chain.proceed(args);
-
-                    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                        DockLiquidGlassView glass = heldGlass.get();
-                        if (glass != null && appGestureHold) scheduleRelease(glass, action);
-                    }
-                    return result;
-                });
-    }
-
-    private static MotionEvent findMotionEvent(Object[] args) {
-        if (args == null) return null;
-        for (Object arg : args) {
-            if (arg instanceof MotionEvent) return (MotionEvent) arg;
+    private static int hookAnimationEnd(Class<?> listenerClass, Runnable afterEnd) {
+        int hooked = 0;
+        for (Method method : listenerClass.getDeclaredMethods()) {
+            if (!"onAnimationEnd".equals(method.getName())) continue;
+            HookUtil.hook(method, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                afterEnd.run();
+                return result;
+            });
+            hooked++;
         }
-        return null;
+        return hooked;
     }
 
-    private static void maybeArm(float rawX, float rawY, boolean authoritativeGestureInput) {
+    private static void armFromVendorAppGesture() {
         if (!Miuix307MaterialPipeline.isInstalled()) return;
         DockLiquidGlassView glass = boundGlass();
-        if (glass == null || desiredScene(glass) != CaptureScene.APP) return;
+        if (glass == null) return;
         if (appGestureHold && heldGlass.get() == glass) return;
-        if (!authoritativeGestureInput && !glass.isTouchInDockArea(rawX, rawY)) return;
+
+        CaptureScene installedBefore = installedScene(glass);
+        CaptureScene desiredBefore = desiredScene(glass);
+
+        // A very fast gesture can begin before the first mode-1 APP frame replaces the previous
+        // HOME wallpaper. Never freeze that wallpaper as if it were a valid APP backdrop. The
+        // renderer's existing invalidation path drops the stale scene and exposes MIUI's native
+        // Dock background until a stable destination capture is allowed again.
+        if (installedBefore != CaptureScene.APP) {
+            HookUtil.invoke(glass, "invalidateInstalledBackdropForApp",
+                    "miuix307-vendor-app-gesture-start");
+        }
 
         gestureSession++;
         appGestureHold = true;
-        releaseScheduled = false;
         heldGlass = new WeakReference<>(glass);
 
-        // Invalidate any readback started just before ACTION_DOWN, but preserve the installed APP
-        // bitmap. The request/install gates below then keep it stable through the gesture motion.
+        // Invalidate queued/in-flight readbacks but keep a valid installed APP bitmap untouched.
+        // Request and install gates below stay closed until a real visual authority resolves it.
         HookUtil.invoke(glass, "cancelPendingCaptureWork");
-        Api101Bridge.log("[DC][GH] hold armed session=" + gestureSession
-                + " scene=APP authoritative=" + authoritativeGestureInput);
+        Api101Bridge.log("[DC][GH] hold armed from GestureModeApp.onStartGesture session="
+                + gestureSession + " desired=" + desiredBefore + " installed=" + installedBefore);
     }
 
-    private static void scheduleRelease(DockLiquidGlassView glass, int action) {
-        if (releaseScheduled || glass == null || heldGlass.get() != glass) return;
-        releaseScheduled = true;
-        final long session = gestureSession;
-        glass.postOnAnimation(() -> {
-            if (!appGestureHold || session != gestureSession || heldGlass.get() != glass) return;
+    private static void releaseToApp(String reason) {
+        DockLiquidGlassView glass = heldGlass.get();
+        if (!appGestureHold || glass == null) return;
+        clearHold();
+        HookUtil.invoke(glass, "cancelPendingCaptureWork");
+        glass.prearmAppBackdrop("miuix307-" + reason);
+        Api101Bridge.log("[DC][GH] hold resolved to APP reason=" + reason);
+    }
 
-            appGestureHold = false;
-            releaseScheduled = false;
-            heldGlass = new WeakReference<>(null);
+    private static void releaseAfterVendorHomeAnimation() {
+        DockLiquidGlassView glass = heldGlass.get();
+        if (!appGestureHold || glass == null) return;
 
-            if (SystemUiTransitionRuntime.isVisualHoldActive(glass)) {
-                Api101Bridge.log("[DC][GH] hold handed to SystemUI session=" + session);
-                return;
-            }
+        // Normally WMShell APP_TO_LAUNCHER has already taken authority. If so, simply remove the
+        // gesture gate; SystemUiTransitionRuntime remains closed until its own compositor barrier.
+        if (SystemUiTransitionRuntime.isVisualHoldActive(glass)) {
+            clearHold();
+            Api101Bridge.log("[DC][GH] vendor HOME end handed to active SystemUI hold");
+            return;
+        }
 
-            CaptureScene scene = desiredScene(glass);
-            Api101Bridge.log("[DC][GH] hold released after VSYNC session=" + session
-                    + " action=" + action + " scene=" + scene);
-            // No transition authority appeared: this was a cancelled/returned APP gesture. Refresh
-            // only APP. Never guess HOME here; HOME remains WMShell-owned.
-            if (scene == CaptureScene.APP) {
-                glass.requestCapture("miuix307-app-gesture-release");
-            }
-        });
+        // Fallback for a missed/late WMShell callback. The vendor listener is authoritative here:
+        // GestureModeApp$8.onAnimationEnd() has already called finishAppToHomeNew() and the target
+        // receives onEnterHomeAnimFinish(). Mark HOME stable, cross one compositor frame, then
+        // reopen capture. No guessed millisecond delay is used.
+        clearHold();
+        HookUtil.setField(glass, "launcherLifecycleKnown", true);
+        HookUtil.setField(glass, "launcherResumed", true);
+        try {
+            Object sceneState = HookUtil.getField(glass, "sceneState");
+            if (sceneState != null) HookUtil.invoke(sceneState, "clearGestureTarget");
+        } catch (Throwable ignored) {}
+        HookUtil.invoke(glass, "updateDesiredScene");
+        HookUtil.invoke(glass, "cancelPendingCaptureWork");
+        glass.postOnAnimation(() -> glass.requestCapture("miuix307-vendor-home-animation-end"));
+        Api101Bridge.log("[DC][GH] hold resolved by vendor HOME animation end");
     }
 
     private static void clearForOverview(DockLiquidGlassView glass) {
         if (!appGestureHold || glass == null || heldGlass.get() != glass) return;
-        gestureSession++;
-        appGestureHold = false;
-        releaseScheduled = false;
-        heldGlass = new WeakReference<>(null);
+        clearHold();
         Api101Bridge.log("[DC][GH] hold handed to exact Overview");
     }
 
@@ -187,19 +162,20 @@ final class Miuix307GestureBackdropHoldHook {
         if (!appGestureHold || glass == null || heldGlass.get() != glass
                 || gestureSession != expectedSession) return;
         if (!SystemUiTransitionRuntime.isVisualHoldActive(glass)) return;
+        clearHold();
+        Api101Bridge.log("[DC][GH] hold handed to SystemUI authority session=" + expectedSession);
+    }
+
+    private static void clearHold() {
         gestureSession++;
         appGestureHold = false;
-        releaseScheduled = false;
         heldGlass = new WeakReference<>(null);
-        Api101Bridge.log("[DC][GH] hold handed to SystemUI authority session=" + expectedSession);
     }
 
     private static void installCaptureRequestGate() {
         HookUtil.hookMethod(DockLiquidGlassView.class, "requestStateCapture",
                 new Class<?>[]{String.class}, chain -> {
-                    if (appGestureHold && chain.getThisObject() == heldGlass.get()) {
-                        return null;
-                    }
+                    if (appGestureHold && chain.getThisObject() == heldGlass.get()) return null;
                     return chain.proceed(chain.getArgs().toArray(new Object[0]));
                 });
     }
@@ -247,13 +223,22 @@ final class Miuix307GestureBackdropHoldHook {
                     DockLiquidGlassView glass = heldGlass.get();
                     if (glass != null && appGestureHold) {
                         final long session = gestureSession;
-                        // beginAppToLauncherVisualHold() posts to the main thread when Binder calls
-                        // it off-main. Queue behind that post, then hand authority over only after
-                        // the real SystemUI visual hold is observable.
+                        // Binder dispatch posts the real visualHold mutation to Launcher main.
+                        // Queue behind it so there is never an open install/request frame.
                         glass.post(() -> clearForSystemUi(glass, session));
                     }
                     return result;
                 });
+    }
+
+    private static CaptureScene installedScene(DockLiquidGlassView glass) {
+        if (glass == null) return CaptureScene.UNKNOWN;
+        try {
+            Object value = HookUtil.getField(glass, "installedCaptureScene");
+            return value instanceof CaptureScene ? (CaptureScene) value : CaptureScene.UNKNOWN;
+        } catch (Throwable ignored) {
+            return CaptureScene.UNKNOWN;
+        }
     }
 
     private static CaptureScene desiredScene(DockLiquidGlassView glass) {
