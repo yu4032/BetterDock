@@ -90,10 +90,10 @@ public class Miuix307AgileFixContractTest {
                         && iconHook.contains("GestureModeApp$8")
                         && iconHook.contains("GestureModeApp$6"));
         assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
-        assertFalse("target 4.50 path uses FloatingIconView2 in Launcher root, not guessed child surfaces",
-                iconHook.contains("FloatingIconLayer2")
-                        || iconHook.contains("mFloatingIconSurfaceControl")
-                        || iconHook.contains("mFloatingIconShaderSurfaceControl"));
+        assertFalse("obsolete FloatingIconLayer2 implementation must not be hooked",
+                iconHook.contains("Class.forName(\n                    \"com.miui.home.recents.views.FloatingIconLayer2\"")
+                        || iconHook.contains("HookUtil.getField(owner, \"mFloatingIconSurfaceControl\")")
+                        || iconHook.contains("HookUtil.getField(owner, \"mFloatingIconShaderSurfaceControl\")"));
         assertFalse("HOME close filtering must not freeze capture or force wallpaper",
                 iconHook.contains("cancelPendingCaptureWork") || iconHook.contains("WALLPAPER"));
     }
