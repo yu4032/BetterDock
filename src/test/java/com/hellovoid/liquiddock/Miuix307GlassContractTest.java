@@ -11,7 +11,7 @@ import java.nio.file.Paths;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** Source contract for the device-validated MiuiX 307 glass architecture. */
+/** Source contract for the device-validated MiuiX 307 shell and current GPU demo backend. */
 public class Miuix307GlassContractTest {
     private static final Path MAIN = Paths.get("src/main/java/com/hellovoid/liquiddock");
 
@@ -30,7 +30,7 @@ public class Miuix307GlassContractTest {
     }
 
     @Test
-    public void materialPipelineUsesZeroCopyPrimaryWithPrismalHostAndCaptureFallback()
+    public void materialPipelineUsesPassBlurGpuPrimaryWithPrismalHostAndCaptureFallback()
             throws IOException {
         Path hookPath = MAIN.resolve("MiuixGlassHook.java");
         assertTrue("MiuiX glass hook must exist", Files.exists(hookPath));
@@ -40,7 +40,7 @@ public class Miuix307GlassContractTest {
 
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.install"));
         assertTrue(hook.contains("DockLiquidGlassHostView"));
-        assertTrue(renderer.contains("new Miuix307ZeroCopyBackdropView"));
+        assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
         assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertTrue(hook.contains("suppressVendorGpuBlur"));
         assertTrue(pipeline.contains("setBackgroundWidth"));
@@ -175,6 +175,8 @@ public class Miuix307GlassContractTest {
     public void vendorGpuBlurIsReassertivelyDisabledAfterStateTransitions() throws IOException {
         String bridge = read("MiBlurBridge.java");
         String hook = read("MiuixGlassHook.java");
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String passBlur = read("Miuix307PassBlurBridge.java");
 
         assertTrue(bridge.contains("setPassWindowBlurRadius"));
         assertTrue(bridge.contains("clearPassWindowBlur"));
@@ -183,7 +185,10 @@ public class Miuix307GlassContractTest {
         assertTrue(hook.contains("MiBlurBridge.clearPassWindowBlur(dockBg)"));
         assertTrue(hook.contains("ViewTreeObserver.OnPreDrawListener"));
         assertTrue(hook.contains("vendor parent GPU blur disabled"));
-        assertTrue(hook.contains("dedicated bottom child"));
+        assertTrue("the current primary backdrop must be an independent GPU child",
+                renderer.contains("new Miuix307PassBlurGpuView"));
+        assertTrue("SurfaceFlinger producer must remain full-resolution in the first demo",
+                passBlur.contains("DEMO_SCALE = 1.0f"));
 
         int helper = bridge.indexOf("setPassWindowBlurRadius");
         int apply = bridge.indexOf("applyPassWindowBlur");
