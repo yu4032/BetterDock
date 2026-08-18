@@ -145,7 +145,9 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
     private int boundSurfaceHeight;
     private int boundConfigRotation = -1;
     private SurfaceControl boundOutputSurface;
-    private boolean rebindPosted;
+    private int lastShapeWidth;
+    private int lastShapeHeight;
+    private float lastShapeRadius = Float.NaN;
     private boolean firstFrameLogged;
     private boolean firstDrawLogged;
     private ViewTreeObserver preDrawObserver;
@@ -281,7 +283,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         GLES20.glViewport(0, 0, Math.max(1, width), Math.max(1, height));
         post(this::updateCrop);
         post(this::applyOutputCornerRadius);
-        post(this::rebindProducerForGeometryChange);
+        post(this::refreshProducerGeometryInPlace);
     }
 
     @Override
@@ -427,7 +429,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         if (observer == null || !observer.isAlive()) return;
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             updateCrop();
-            if (geometryChangedSinceBind()) postGeometryRebind();
+            refreshProducerGeometryInPlace();
             return true;
         };
         observer.addOnPreDrawListener(listener);
@@ -469,55 +471,53 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         cropH = Math.max(0.0001f, Math.min(1f - cropY, height));
     }
 
-    private boolean geometryChangedSinceBind() {
-        Miuix307PassBlurBridge.Binding currentBinding = binding;
-        if (shuttingDown || currentBinding == null) return false;
+    /**
+     * HyperOS ViewRootImpl.checkSurTexSize() keeps its PassBlur SurfaceTexture bound while display
+     * rotation changes the producer geometry. Mirror that contract: resize the existing BufferQueue
+     * and update configRot in place instead of issuing SetPassBlurSurface(null) during rotation.
+     */
+    private void refreshProducerGeometryInPlace() {
+        if (shuttingDown || binding == null) return;
         View materialHost = materialHostRef.get();
-        if (materialHost == null) return false;
+        SurfaceTexture textureSource = surfaceTexture;
+        if (materialHost == null || textureSource == null) return;
+
         ProducerGeometry geometry = readSurfaceGeometry(materialHost);
         SurfaceControl outputSurface = getSurfaceControl();
-        if (geometry == null || outputSurface == null || !outputSurface.isValid()) return false;
-        if (geometry.surfaceWidth != boundSurfaceWidth
-                || geometry.surfaceHeight != boundSurfaceHeight
-                || geometry.configRotation != boundConfigRotation) {
-            return true;
-        }
-        if (!isSameSurface(currentBinding.rootSurface, geometry.rootSurface)) return true;
-        return boundOutputSurface == null || !isSameSurface(boundOutputSurface, outputSurface);
-    }
-
-    private void postGeometryRebind() {
-        if (rebindPosted || shuttingDown) return;
-        rebindPosted = true;
-        post(() -> {
-            rebindPosted = false;
-            rebindProducerForGeometryChange();
-        });
-    }
-
-    private void rebindProducerForGeometryChange() {
-        if (shuttingDown) return;
-        if (binding == null) {
-            bindProducerWhenReady(0);
-            return;
-        }
-        if (!geometryChangedSinceBind()) {
-            updateCrop();
+        if (geometry == null || geometry.rootSurface == null || !geometry.rootSurface.isValid()
+                || outputSurface == null || !outputSurface.isValid()) {
             return;
         }
 
-        Miuix307PassBlurBridge.Binding stale = binding;
-        binding = null;
-        gpuBackdropActive = false;
-        activationExhausted = false;
+        // A root/output identity replacement belongs to the Surface lifecycle, not a pre-draw
+        // geometry refresh. Avoid touching the old native PassBlur binding while rotation is
+        // tearing surfaces down; onSurfaceCreated/bindProducerWhenReady owns the next binding.
+        if (!isSameSurface(binding.rootSurface, geometry.rootSurface)
+                || boundOutputSurface == null || !isSameSurface(boundOutputSurface, outputSurface)) {
+            return;
+        }
+
+        if (geometry.surfaceWidth == boundSurfaceWidth
+                && geometry.surfaceHeight == boundSurfaceHeight
+                && geometry.configRotation == boundConfigRotation) {
+            return;
+        }
+
+        textureSource.setDefaultBufferSize(geometry.bufferWidth, geometry.bufferHeight);
+        configRotation = geometry.configRotation;
+        boundSurfaceWidth = geometry.surfaceWidth;
+        boundSurfaceHeight = geometry.surfaceHeight;
+        boundConfigRotation = geometry.configRotation;
         hasConsumedFrame = false;
         frameAvailable.set(false);
-        resetBoundGeometry();
-        Miuix307PassBlurBridge.unbind(stale);
         firstFrameLogged = false;
         firstDrawLogged = false;
-        MainHook.log(TAG + " producer geometry changed; rebinding PassBlur");
-        bindProducerWhenReady(0);
+        updateCrop();
+        applyOutputCornerRadius();
+        MainHook.log(TAG + " producer geometry updated in place surface="
+                + geometry.surfaceWidth + "x" + geometry.surfaceHeight
+                + " buffer=" + geometry.bufferWidth + "x" + geometry.bufferHeight
+                + " configRot=" + geometry.configRotation);
     }
 
     private ProducerGeometry readSurfaceGeometry(View materialHost) {
@@ -628,18 +628,35 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         boundSurfaceHeight = 0;
         boundConfigRotation = -1;
         boundOutputSurface = null;
+        lastShapeWidth = 0;
+        lastShapeHeight = 0;
+        lastShapeRadius = Float.NaN;
     }
 
     private void applyOutputCornerRadius() {
         if (shuttingDown || glassRadiusPx <= 0f) return;
+        int width = getWidth();
+        int height = getHeight();
+        if (width <= 0 || height <= 0) return;
         try {
             SurfaceControl output = getSurfaceControl();
             if (output == null || !output.isValid()) return;
             SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
+            Method setWindowCrop = SurfaceControl.Transaction.class.getMethod(
+                    "setWindowCrop", SurfaceControl.class, Integer.TYPE, Integer.TYPE);
             Method setCornerRadius = SurfaceControl.Transaction.class.getMethod(
                     "setCornerRadius", SurfaceControl.class, Float.TYPE);
+            setWindowCrop.invoke(transaction, output, Integer.valueOf(width), Integer.valueOf(height));
             setCornerRadius.invoke(transaction, output, Float.valueOf(glassRadiusPx));
             transaction.apply();
+            if (width != lastShapeWidth || height != lastShapeHeight
+                    || Float.compare(glassRadiusPx, lastShapeRadius) != 0) {
+                lastShapeWidth = width;
+                lastShapeHeight = height;
+                lastShapeRadius = glassRadiusPx;
+                MainHook.log(TAG + " output shape crop=" + width + "x" + height
+                        + " cornerRadius=" + glassRadiusPx);
+            }
         } catch (Throwable error) {
             MainHook.log(TAG + " output corner radius unavailable: " + error);
         }
