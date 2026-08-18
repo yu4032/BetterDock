@@ -15,39 +15,38 @@ public class DiagnosticTraceContractTest {
                 "src/main/java/com/hellovoid/liquiddock/" + name), StandardCharsets.UTF_8);
     }
 
-    @Test public void systemUiTransitionSourceLogsEveryBoundaryNeededToLocalizeFlyFailure()
-            throws Exception {
-        String source = source("SystemUiTransitionSource.java");
-        assertTrue(source.contains("[DC][TR-SRC] observer registered"));
-        assertTrue(source.contains("[DC][TR-SRC] callback registered"));
-        assertTrue(source.contains("[DC][TR-SRC] ready token="));
-        assertTrue(source.contains("normalized="));
-        assertTrue(source.contains("kind="));
-        assertTrue(source.contains("callback="));
-        assertTrue(source.contains("[DC][TR-SRC] push type="));
+    @Test public void entryInstallsDiagnosticProbeInSystemUiAndLauncher() throws Exception {
+        String entry = source("ModuleMain.java");
+        assertTrue(entry.contains("DiagnosticTraceHook.installSystemUi(classLoader)"));
+        assertTrue(entry.contains("DiagnosticTraceHook.installLauncher(classLoader)"));
     }
 
-    @Test public void launcherTransitionRuntimeLogsProviderRegistrationReceiveAndHoldDecision()
+    @Test public void transitionProbeCoversObserverClassifierPushRegistrationReceiveAndHold()
             throws Exception {
-        String runtime = source("SystemUiTransitionRuntime.java");
-        assertTrue(runtime.contains("[DC][TR] provider changed connected="));
-        assertTrue(runtime.contains("[DC][TR] callback registration accepted="));
-        assertTrue(runtime.contains("[DC][TR] callback received type="));
-        assertTrue(runtime.contains("[DC][TR] hold start skipped reason="));
-        assertTrue(runtime.contains("[DC][TR] APP_TO_LAUNCHER hold start"));
+        String probe = source("DiagnosticTraceHook.java");
+        assertTrue(probe.contains("[DC][TR-SRC] observer registered"));
+        assertTrue(probe.contains("[DC][TR-SRC] ready token="));
+        assertTrue(probe.contains("[DC][TR-SRC] classify normalized="));
+        assertTrue(probe.contains("[DC][TR-SRC] callback registered"));
+        assertTrue(probe.contains("[DC][TR-SRC] push type="));
+        assertTrue(probe.contains("[DC][TR] provider changed connected="));
+        assertTrue(probe.contains("[DC][TR] callback registration accepted="));
+        assertTrue(probe.contains("[DC][TR] callback received type="));
+        assertTrue(probe.contains("[DC][TR] hold request"));
+        assertTrue(probe.contains("[DC][TR] hold resolved active="));
     }
 
-    @Test public void dragReleaseTraceCoversVendorCallbackBarrierGlassAndCaptureResume()
-            throws Exception {
-        String drag = source("Miuix307DragCaptureHook.java");
-        assertTrue(drag.contains("[DC][DRAG] vendor drop-finish callback"));
-        assertTrue(drag.contains("[DC][DRAG] release barrier armed"));
-        assertTrue(drag.contains("[DC][DRAG] release barrier passed"));
-        assertTrue(drag.contains("[DC][DRAG] finish capture glass="));
-        assertTrue(drag.contains("[DC][DRAG] state before="));
-        assertTrue(drag.contains("[DC][DRAG] state after="));
-        assertTrue(drag.contains("dragFrozen="));
-        assertTrue(drag.contains("systemDrag="));
-        assertTrue(drag.contains("allowed="));
+    @Test public void dragProbeCoversVendorFinishBarrierAndGlassResumeState() throws Exception {
+        String probe = source("DiagnosticTraceHook.java");
+        assertTrue(probe.contains("[DC][DRAG] vendor drop-finish callback"));
+        assertTrue(probe.contains("[DC][DRAG] finishDropSettling enter"));
+        assertTrue(probe.contains("[DC][DRAG] finish capture glass="));
+        assertTrue(probe.contains("[DC][DRAG] setDockDragging before"));
+        assertTrue(probe.contains("[DC][DRAG] setDockDragging after"));
+        assertTrue(probe.contains("dragFrozen="));
+        assertTrue(probe.contains("systemDrag="));
+        assertTrue(probe.contains("allowed="));
+        assertTrue(probe.contains("kick="));
+        assertTrue(probe.contains("dirty="));
     }
 }
