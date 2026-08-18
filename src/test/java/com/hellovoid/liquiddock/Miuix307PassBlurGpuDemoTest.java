@@ -87,7 +87,7 @@ public class Miuix307PassBlurGpuDemoTest {
     @Test
     public void transparentDemoCompositionContainsNoToneHighlightOrStroke() throws Exception {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
-        String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
+        String stroke = Files.readString(MAIN.resolve("DockStrokeRenderer.java"));
 
         assertTrue("GPU view must be the only visual child installed by the demo renderer",
                 renderer.contains("host.addView(gpuBackdrop"));
@@ -98,9 +98,11 @@ public class Miuix307PassBlurGpuDemoTest {
                         || renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertTrue("renderer must expose whether the GPU diagnostic is installed",
                 renderer.contains("static boolean isInstalled()"));
-        assertTrue("active GPU diagnostic must clear the Dock foreground/stroke",
-                hook.contains("Miuix307ZeroCopyRenderer.isInstalled()")
-                        && hook.contains("dockBg.setForeground(null)"));
+        assertTrue("install must clear any pre-existing foreground/stroke immediately",
+                renderer.contains("materialHost.setForeground(null)"));
+        assertTrue("native stroke hook must refuse to re-add a stroke while the demo owns visuals",
+                stroke.contains("Miuix307ZeroCopyRenderer.isInstalled()")
+                        && stroke.contains("host.setForeground(null)"));
     }
 
     @Test
