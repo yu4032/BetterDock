@@ -8,18 +8,21 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Excludes Launcher 4.50's dedicated floating-icon Surface from APP->HOME mode-1 captures.
+ * Excludes Launcher 4.50's dedicated FloatingIconLayer2 surfaces from APP->HOME mode-1 captures.
  *
- * Direct 4.50 DEX inspection shows WindowElement owns mFloatingIconLayerLeash as a real
- * SurfaceControl.  The CLOSE_TO_HOME FloatingIconView2 is attached to that layer, so excluding
- * the exact handle removes only the icon-flight overlay while the closing APP, Launcher and
- * wallpaper remain live in the compositor capture.
+ * 4.50 DEX inspection shows WindowElement.mFloatingIconLayerLeash is only the HOME/root leash used
+ * as a parent. The actual icon pixels are produced by FloatingIconLayer2's
+ * mFloatingIconSurfaceControl and mFloatingIconShaderSurfaceControl, both SurfaceControlCompat
+ * wrappers around raw android.view.SurfaceControl handles. Capture those exact child surfaces and
+ * append them to DockLiquidGlassView's normal SurfaceControl[] exclusion list while the accepted
+ * APP->HOME transition is active. Closing APP, Launcher and wallpaper remain continuously visible.
  */
 final class Miuix307IconFlightSurfaceHook {
     private static final String TAG = "[DC][IX]";
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
 
-    private static volatile SurfaceControl floatingIconLeash;
+    private static volatile SurfaceControl floatingIconSurface;
+    private static volatile SurfaceControl floatingIconShaderSurface;
     private static volatile boolean homeTransitionActive;
     private static volatile int lastLoggedExcludedIdentity;
 
@@ -27,49 +30,127 @@ final class Miuix307IconFlightSurfaceHook {
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
-        installWindowElementLeashCapture(classLoader);
+        installFloatingIconLayerCapture(classLoader);
         installCaptureSurfaceExclusion();
         installTransitionLifecycle();
-        Api101Bridge.log(TAG + " 4.50 exact floating-icon Surface exclusion installed");
+        Api101Bridge.log(TAG + " 4.50 exact FloatingIconLayer2 Surface exclusion installed");
     }
 
-    private static void installWindowElementLeashCapture(ClassLoader classLoader) {
+    private static void installFloatingIconLayerCapture(ClassLoader classLoader) {
         try {
-            Class<?> windowElement = Class.forName(
-                    "com.miui.home.recents.anim.WindowElement", false, classLoader);
-            int captureHooks = 0;
-            int resetHooks = 0;
-            for (Method method : windowElement.getDeclaredMethods()) {
-                if (Modifier.isStatic(method.getModifiers())) continue;
+            Class<?> floatingIconLayer = Class.forName(
+                    "com.miui.home.recents.views.FloatingIconLayer2", false, classLoader);
+            int refreshHooks = 0;
+            int clearHooks = 0;
+            for (Method method : floatingIconLayer.getDeclaredMethods()) {
                 String name = method.getName();
-                if ("bindIconLayerLeashIfNeeded".equals(name)
-                        || "earlyInitFloatingIconLayer".equals(name)) {
+                if (isSurfaceRefreshMethod(name)) {
                     HookUtil.hook(method, chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        captureLeash(chain.getThisObject(), method.getName());
+                        Object owner = resolveFloatingIconOwner(
+                                floatingIconLayer, method, chain.getThisObject(),
+                                chain.getArgs().toArray(new Object[0]));
+                        refreshSurfaces(owner, method.getName());
                         return result;
                     });
-                    captureHooks++;
-                } else if ("resetFloatingIcon".equals(name)) {
+                    refreshHooks++;
+                } else if (isSurfaceClearMethod(name)) {
                     HookUtil.hook(method, chain -> {
-                        Object owner = chain.getThisObject();
-                        SurfaceControl before = readLeash(owner);
+                        Object owner = resolveFloatingIconOwner(
+                                floatingIconLayer, method, chain.getThisObject(),
+                                chain.getArgs().toArray(new Object[0]));
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        SurfaceControl current = floatingIconLeash;
-                        if (before != null && current == before) {
-                            floatingIconLeash = null;
-                            lastLoggedExcludedIdentity = 0;
-                            Api101Bridge.log(TAG + " floating icon leash cleared by reset");
-                        }
+                        clearOwnedSurfaces(owner, method.getName());
                         return result;
                     });
-                    resetHooks++;
+                    clearHooks++;
                 }
             }
-            Api101Bridge.log(TAG + " WindowElement leash hooks capture=" + captureHooks
-                    + " reset=" + resetHooks);
+            Api101Bridge.log(TAG + " FloatingIconLayer2 hooks refresh=" + refreshHooks
+                    + " clear=" + clearHooks);
         } catch (Throwable error) {
-            Api101Bridge.log(TAG + " WindowElement floating-icon leash hook unavailable", error);
+            Api101Bridge.log(TAG + " FloatingIconLayer2 Surface hook unavailable", error);
+        }
+    }
+
+    private static boolean isSurfaceRefreshMethod(String name) {
+        return "init".equals(name)
+                || "init$lambda$3".equals(name)
+                || "draw".equals(name)
+                || "drawIcon".equals(name)
+                || "showSurfaceControl".equals(name)
+                || "bindHomeLeash".equals(name);
+    }
+
+    private static boolean isSurfaceClearMethod(String name) {
+        return "release".equals(name)
+                || "resetMember".equals(name)
+                || "release$lambda$6".equals(name);
+    }
+
+    private static Object resolveFloatingIconOwner(
+            Class<?> floatingIconLayer, Method method, Object thisObject, Object[] args) {
+        if (!Modifier.isStatic(method.getModifiers())
+                && floatingIconLayer.isInstance(thisObject)) return thisObject;
+        if (args != null) {
+            for (Object arg : args) {
+                if (floatingIconLayer.isInstance(arg)) return arg;
+            }
+        }
+        return null;
+    }
+
+    private static void refreshSurfaces(Object owner, String methodName) {
+        if (owner == null) return;
+        SurfaceControl icon = readRawSurface(owner, "mFloatingIconSurfaceControl");
+        SurfaceControl shader = readRawSurface(owner, "mFloatingIconShaderSurfaceControl");
+
+        boolean changed = false;
+        if (isValid(icon) && icon != floatingIconSurface) {
+            floatingIconSurface = icon;
+            changed = true;
+        }
+        if (isValid(shader) && shader != floatingIconShaderSurface) {
+            floatingIconShaderSurface = shader;
+            changed = true;
+        }
+        if (changed) {
+            lastLoggedExcludedIdentity = 0;
+            Api101Bridge.log(TAG + " FloatingIconLayer2 surfaces captured method=" + methodName
+                    + " icon=" + surfaceId(floatingIconSurface)
+                    + " shader=" + surfaceId(floatingIconShaderSurface)
+                    + " active=" + homeTransitionActive);
+        }
+    }
+
+    private static SurfaceControl readRawSurface(Object owner, String compatFieldName) {
+        try {
+            Object compat = HookUtil.getField(owner, compatFieldName);
+            if (compat == null) return null;
+            Object raw = HookUtil.getField(compat, "mSurfaceControl");
+            return raw instanceof SurfaceControl ? (SurfaceControl) raw : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void clearOwnedSurfaces(Object owner, String methodName) {
+        if (owner == null) return;
+        SurfaceControl icon = readRawSurface(owner, "mFloatingIconSurfaceControl");
+        SurfaceControl shader = readRawSurface(owner, "mFloatingIconShaderSurfaceControl");
+        boolean cleared = false;
+        if (floatingIconSurface != null && (icon == floatingIconSurface || !isValid(floatingIconSurface))) {
+            floatingIconSurface = null;
+            cleared = true;
+        }
+        if (floatingIconShaderSurface != null
+                && (shader == floatingIconShaderSurface || !isValid(floatingIconShaderSurface))) {
+            floatingIconShaderSurface = null;
+            cleared = true;
+        }
+        if (cleared) {
+            lastLoggedExcludedIdentity = 0;
+            Api101Bridge.log(TAG + " FloatingIconLayer2 surfaces cleared method=" + methodName);
         }
     }
 
@@ -82,30 +163,46 @@ final class Miuix307IconFlightSurfaceHook {
                                 ? (SurfaceControl[]) result : null;
                         if (!homeTransitionActive) return base;
 
-                        SurfaceControl icon = floatingIconLeash;
-                        if (!isValid(icon)) return base;
-                        if (containsIdentity(base, icon)) return base;
+                        SurfaceControl icon = floatingIconSurface;
+                        SurfaceControl shader = floatingIconShaderSurface;
+                        if (!isValid(icon) && !isValid(shader)) return base;
 
                         ArrayList<SurfaceControl> out = new ArrayList<>(
-                                base == null ? 1 : base.length + 1);
+                                (base == null ? 0 : base.length) + 2);
                         if (base != null) {
                             for (SurfaceControl surface : base) {
                                 if (isValid(surface)) out.add(surface);
                             }
                         }
-                        out.add(icon);
+                        addIfValidUnique(out, icon);
+                        addIfValidUnique(out, shader);
 
-                        int identity = System.identityHashCode(icon);
+                        int identity = combinedIdentity(icon, shader);
                         if (identity != lastLoggedExcludedIdentity) {
                             lastLoggedExcludedIdentity = identity;
-                            Api101Bridge.log(TAG + " exact floating icon Surface excluded surface="
-                                    + surfaceId(icon) + " total=" + out.size());
+                            Api101Bridge.log(TAG + " exact FloatingIconLayer2 Surfaces excluded icon="
+                                    + surfaceId(icon) + " shader=" + surfaceId(shader)
+                                    + " total=" + out.size());
                         }
                         return out.toArray(new SurfaceControl[0]);
                     });
         } catch (Throwable error) {
             Api101Bridge.log(TAG + " capture Surface exclusion hook unavailable", error);
         }
+    }
+
+    private static void addIfValidUnique(ArrayList<SurfaceControl> out, SurfaceControl target) {
+        if (!isValid(target)) return;
+        for (SurfaceControl surface : out) {
+            if (surface == target) return;
+        }
+        out.add(target);
+    }
+
+    private static int combinedIdentity(SurfaceControl first, SurfaceControl second) {
+        int a = isValid(first) ? System.identityHashCode(first) : 0;
+        int b = isValid(second) ? System.identityHashCode(second) : 0;
+        return 31 * a + b;
     }
 
     private static void installTransitionLifecycle() {
@@ -117,7 +214,8 @@ final class Miuix307IconFlightSurfaceHook {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         boolean active = args.length > 1 && Boolean.TRUE.equals(args[1]);
                         Object result = chain.proceed(args);
-                        setHomeTransitionActive(active, String.valueOf(args.length > 2 ? args[2] : ""));
+                        setHomeTransitionActive(active,
+                                String.valueOf(args.length > 2 ? args[2] : ""));
                         return result;
                     });
             HookUtil.hookMethod(Miuix307GestureBackdropHoldHook.class,
@@ -138,42 +236,9 @@ final class Miuix307IconFlightSurfaceHook {
         homeTransitionActive = active;
         if (!active) lastLoggedExcludedIdentity = 0;
         Api101Bridge.log(TAG + " exact floating icon exclusion active=" + active
-                + " reason=" + reason + " leash=" + surfaceId(floatingIconLeash));
-    }
-
-    private static void captureLeash(Object owner, String methodName) {
-        SurfaceControl leash = readLeash(owner);
-        if (!isValid(leash)) return;
-        SurfaceControl previous = floatingIconLeash;
-        floatingIconLeash = leash;
-        if (previous != leash) {
-            lastLoggedExcludedIdentity = 0;
-            Api101Bridge.log(TAG + " floating icon leash captured method=" + methodName
-                    + " surface=" + surfaceId(leash)
-                    + " active=" + homeTransitionActive);
-        }
-    }
-
-    private static SurfaceControl readLeash(Object owner) {
-        if (owner == null) return null;
-        try {
-            Object value = HookUtil.getField(owner, "mFloatingIconLayerLeash");
-            if (value instanceof SurfaceControl) return (SurfaceControl) value;
-        } catch (Throwable ignored) {}
-        try {
-            Object value = HookUtil.invoke(owner, "getMFloatingIconLayerLeash");
-            return value instanceof SurfaceControl ? (SurfaceControl) value : null;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static boolean containsIdentity(SurfaceControl[] surfaces, SurfaceControl target) {
-        if (surfaces == null || target == null) return false;
-        for (SurfaceControl surface : surfaces) {
-            if (surface == target) return true;
-        }
-        return false;
+                + " reason=" + reason
+                + " icon=" + surfaceId(floatingIconSurface)
+                + " shader=" + surfaceId(floatingIconShaderSurface));
     }
 
     private static boolean isValid(SurfaceControl surface) {
