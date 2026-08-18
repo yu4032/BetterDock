@@ -1,16 +1,21 @@
 package com.hellovoid.liquiddock;
 
 /**
- * Central capture-rate policy. The persisted power limit belongs to APP backdrop capture only;
- * HOME/ALL_APPS are event-driven and RECENTS is paced by direct user interaction.
+ * Central capture-rate policy. The persisted power limit belongs to idle APP backdrop capture;
+ * direct pointer interaction and RECENTS are paced independently so a slow gesture cannot fall
+ * back to the static-scene probe rate.
  */
 final class CaptureCadence {
-    private static final long RECENTS_INTERACTION_INTERVAL_NANOS = intervalForFps(60, 5, 165);
+    private static final long INTERACTION_INTERVAL_NANOS = intervalForFps(60, 5, 165);
+    // MOVE events normally arrive much faster than this. The short grace bridges scheduler/input
+    // jitter without turning a completed gesture into continuous high-frequency capture.
+    private static final long INTERACTION_GRACE_NANOS = 120_000_000L;
 
     private final long baseIntervalNanos;
     private long dynamicIntervalNanos = intervalForFps(30, 5, 120);
     private long probeIntervalNanos = intervalForFps(3, 1, 10);
     private long powerLimitIntervalNanos = intervalForFps(20, 5, 60);
+    private long interactionActiveUntilNanos;
 
     CaptureCadence(int baseFps) { baseIntervalNanos = intervalForFps(baseFps, 5, 165); }
 
@@ -23,11 +28,24 @@ final class CaptureCadence {
         powerLimitIntervalNanos = intervalForFps(fps, 5, 60);
     }
 
+    void noteInteraction(long nowNanos) {
+        interactionActiveUntilNanos = Math.max(
+                interactionActiveUntilNanos, nowNanos + INTERACTION_GRACE_NANOS);
+    }
+
+    void clearInteraction() {
+        interactionActiveUntilNanos = 0L;
+    }
+
     long intervalNanos(CaptureScene scene, boolean dynamicEnabled,
                        long dynamicActiveUntilNanos, long nowNanos) {
-        // Recents pixels are driven by finger/overview input. Never let the APP adaptive capture
-        // setting turn a slow swipe into a low-FPS or stalled backdrop.
-        if (scene == CaptureScene.RECENTS) return RECENTS_INTERACTION_INTERVAL_NANOS;
+        // Pointer activity wins before scene-specific adaptive policy. In particular, the first
+        // part of a Dock-to-Recents swipe is still APP, but must not run at APP probe/power FPS.
+        if (nowNanos < interactionActiveUntilNanos) return INTERACTION_INTERVAL_NANOS;
+
+        // Exact/target Recents remains responsive between pointer events while launcher animation
+        // state continues to dirty the source.
+        if (scene == CaptureScene.RECENTS) return INTERACTION_INTERVAL_NANOS;
 
         long requested = baseIntervalNanos;
         if (scene == CaptureScene.APP) {
@@ -35,8 +53,8 @@ final class CaptureCadence {
                 requested = nowNanos < dynamicActiveUntilNanos
                         ? dynamicIntervalNanos : probeIntervalNanos;
             }
-            // The persisted capture power limit is an APP-only budget. HOME and ALL_APPS capture
-            // only on explicit state/geometry events and must not inherit a stale APP cap.
+            // The persisted capture power limit is an idle APP budget. HOME and ALL_APPS capture
+            // only on explicit state/geometry events and do not inherit this APP cap.
             return Math.max(requested, powerLimitIntervalNanos);
         }
         return requested;
