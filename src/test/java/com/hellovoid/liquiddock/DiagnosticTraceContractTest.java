@@ -40,15 +40,14 @@ public class DiagnosticTraceContractTest {
     @Test public void dragReleaseTraceCoversVendorCallbackBarrierGlassAndCaptureResume()
             throws Exception {
         String drag = source("Miuix307DragCaptureHook.java");
-        String glass = source("DockLiquidGlassView.java");
         assertTrue(drag.contains("[DC][DRAG] vendor drop-finish callback"));
         assertTrue(drag.contains("[DC][DRAG] release barrier armed"));
         assertTrue(drag.contains("[DC][DRAG] release barrier passed"));
         assertTrue(drag.contains("[DC][DRAG] finish capture glass="));
-        assertTrue(glass.contains("[DC][DRAG] setDockDragging dragging="));
-        assertTrue(glass.contains("[DC][DRAG] dock-drag-end capture requested"));
-        assertTrue(glass.contains("gate runtime="));
-        assertTrue(glass.contains("dragFrozen="));
-        assertTrue(glass.contains("systemDrag="));
+        assertTrue(drag.contains("[DC][DRAG] state before="));
+        assertTrue(drag.contains("[DC][DRAG] state after="));
+        assertTrue(drag.contains("dragFrozen="));
+        assertTrue(drag.contains("systemDrag="));
+        assertTrue(drag.contains("allowed="));
     }
 }
