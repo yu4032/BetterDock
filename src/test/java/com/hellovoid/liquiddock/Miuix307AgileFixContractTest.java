@@ -59,7 +59,7 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void transitionBurstRenewsSixtyFpsCadenceAndVisibilityPrearm() throws Exception {
+    public void transitionBurstRenewsSixtyFpsCadenceAndPinsAppSource() throws Exception {
         String hook = read("Miuix307GestureBackdropHoldHook.java");
 
         assertTrue("transition capture must be driven every display frame",
@@ -74,6 +74,10 @@ public class Miuix307AgileFixContractTest {
         assertTrue("collapsed Floating Dock visibility must reuse the existing safe APP prearm gate",
                 hook.contains("appBackdropPrearmActive")
                         && hook.contains("appBackdropPrearmToken"));
+        assertTrue("early HOME ownership after ACTION_UP must not switch transition source to wallpaper",
+                hook.contains("pinTransitionSceneToApp")
+                        && hook.contains("setGestureTarget\", \"APP\"")
+                        && hook.contains("updateDesiredScene"));
     }
 
     @Test
@@ -90,6 +94,9 @@ public class Miuix307AgileFixContractTest {
         assertTrue("SystemUI APP_TO_LAUNCHER must keep the shared transition burst alive",
                 runtime.contains("setSystemUiTransitionActive(")
                         && runtime.contains("true, \"app-to-launcher-token-\""));
+        assertTrue("authoritative Shell finish must stop all leases before committing HOME",
+                runtime.contains("stopAllTransitionCapture(")
+                        && runtime.contains("systemui-home-finish-token-"));
         assertTrue("exact Overview must transfer to the existing RECENTS continuation loop",
                 hook.contains("stopAllTransitionCapture(\"exact-overview\")"));
     }
