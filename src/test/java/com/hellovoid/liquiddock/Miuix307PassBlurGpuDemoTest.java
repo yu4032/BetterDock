@@ -85,26 +85,23 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void transparentDemoCompositionContainsNoToneHighlightOrStroke() throws Exception {
+    public void neutralCompositionKeepsNoToneOrHighlightButRestoresSafeDockStroke() throws Exception {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
+        String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
 
-        assertTrue("GPU view must be the only visual child installed by the demo renderer",
+        assertTrue("GPU backdrop remains the only injected visual child",
                 renderer.contains("host.addView(gpuBackdrop"));
-        assertFalse("diagnostic tone/tint layer must be removed",
+        assertFalse("tone/tint must stay out of the neutral GPU path",
                 renderer.contains("Miuix307ZeroCopyToneView"));
-        assertFalse("diagnostic must not enable the old sharp optical overlay",
+        assertFalse("old advanced optical highlight must stay disabled",
                 renderer.contains("enableSharpOptics")
                         || renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
-        assertTrue("renderer must expose whether the GPU diagnostic is installed",
-                renderer.contains("static boolean isInstalled()"));
-        assertTrue("install must clear any pre-existing foreground/stroke immediately",
-                renderer.contains("materialHost.setForeground(null)"));
-        assertTrue("renderer must keep Launcher/native stroke from reappearing while active",
-                renderer.contains("ViewTreeObserver.OnPreDrawListener")
-                        && renderer.contains("installForegroundSuppressor")
-                        && renderer.contains("removeForegroundSuppressor")
-                        && renderer.contains("getForeground() != null")
-                        && renderer.contains("setForeground(null)"));
+        assertFalse("GPU renderer must no longer erase the safe configured foreground stroke",
+                renderer.contains("materialHost.setForeground(null)")
+                        || renderer.contains("installForegroundSuppressor")
+                        || renderer.contains("removeForegroundSuppressor"));
+        assertTrue("the 307 shell must restore the safe replacement stroke after GPU install",
+                hook.contains("DockStrokeRenderer.configureReplacingForeground("));
     }
 
     @Test
@@ -118,20 +115,48 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void rotationAndSurfaceChangesRebindThePassBlurProducer() throws Exception {
+    public void rotationResizesExistingProducerInPlaceWithoutNativeHotRebind() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
-        assertTrue(view.contains("boundSurfaceWidth")
-                && view.contains("boundSurfaceHeight")
-                && view.contains("boundConfigRotation"));
-        assertTrue(view.contains("boundOutputSurface") && view.contains("isSameSurface"));
-        assertTrue(view.contains("rebindProducerForGeometryChange")
-                && view.contains("Miuix307PassBlurBridge.unbind"));
-        assertTrue(view.contains("onSurfaceChanged")
-                && view.contains("post(this::rebindProducerForGeometryChange)"));
-        assertTrue(view.contains("geometryChangedSinceBind")
-                && view.contains("rebindProducerForGeometryChange"));
-        assertTrue(view.contains("hasConsumedFrame = false")
-                && view.contains("frameAvailable.set(false)"));
+
+        assertTrue("rotation path must have an in-place geometry refresh",
+                view.contains("refreshProducerGeometryInPlace"));
+        int start = view.indexOf("private void refreshProducerGeometryInPlace");
+        int end = view.indexOf("private ProducerGeometry readSurfaceGeometry", start);
+        assertTrue(start >= 0 && end > start);
+        String region = view.substring(start, end);
+
+        assertTrue("same producer SurfaceTexture must be resized like ViewRootImpl.checkSurTexSize",
+                region.contains("setDefaultBufferSize(geometry.bufferWidth, geometry.bufferHeight)"));
+        assertTrue("config rotation must update without tearing down the producer",
+                region.contains("configRotation = geometry.configRotation"));
+        assertTrue("bound dimensions must advance to the new geometry",
+                region.contains("boundSurfaceWidth = geometry.surfaceWidth")
+                        && region.contains("boundSurfaceHeight = geometry.surfaceHeight")
+                        && region.contains("boundConfigRotation = geometry.configRotation"));
+        assertFalse("geometry-only rotation must not null/unbind PassBlur",
+                region.contains("Miuix307PassBlurBridge.unbind")
+                        || region.contains("binding = null")
+                        || region.contains("bindProducerWhenReady"));
+
+        assertTrue("pre-draw and SurfaceChanged must use the in-place refresh",
+                view.contains("post(this::refreshProducerGeometryInPlace)")
+                        && view.contains("refreshProducerGeometryInPlace();"));
+        assertFalse("old hot rebind helper must be retired",
+                view.contains("producer geometry changed; rebinding PassBlur"));
+    }
+
+    @Test
+    public void independentSurfaceGetsExplicitWindowCropAndCornerRadius() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+        assertTrue("SurfaceView output must establish a crop before applying rounded corners",
+                view.contains("setWindowCrop")
+                        && view.contains("getWidth()")
+                        && view.contains("getHeight()"));
+        assertTrue("rounded SurfaceControl corner radius must remain enabled",
+                view.contains("setCornerRadius"));
+        assertTrue("shape update must log the actual output geometry for device validation",
+                view.contains("output shape crop=")
+                        && view.contains("cornerRadius="));
     }
 
     @Test
