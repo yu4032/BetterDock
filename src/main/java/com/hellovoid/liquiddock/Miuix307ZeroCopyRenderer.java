@@ -12,6 +12,8 @@ final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
     private static WeakReference<Miuix307ZeroCopyBackdropView> backdropRef =
             new WeakReference<>(null);
+    private static WeakReference<Miuix307ZeroCopyToneView> toneRef =
+            new WeakReference<>(null);
 
     private Miuix307ZeroCopyRenderer() {}
 
@@ -26,19 +28,26 @@ final class Miuix307ZeroCopyRenderer {
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
                 materialHost.getContext(), blurRadiusPx);
         backdrop.setId(View.generateViewId());
+        Miuix307ZeroCopyToneView tone = new Miuix307ZeroCopyToneView(
+                materialHost.getContext(), glassConfig);
+        tone.setId(View.generateViewId());
 
+        FrameLayout.LayoutParams match = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         host.removeAllViews();
-        host.addView(backdrop, new FrameLayout.LayoutParams(
+        host.addView(backdrop, match);
+        host.addView(tone, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         host.reloadOpticsPreservingGeometry(glassConfig);
         if (!enableSharpOptics(host)) {
-            host.removeView(backdrop);
+            host.removeAllViews();
             backdrop.clearBlur();
             MainHook.log(TAG + " sharp optical overlay activation unavailable");
             return false;
         }
 
         backdropRef = new WeakReference<>(backdrop);
+        toneRef = new WeakReference<>(tone);
         return true;
     }
 
@@ -46,9 +55,17 @@ final class Miuix307ZeroCopyRenderer {
         return backdropRef.get();
     }
 
+    static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
+        Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
+        if (backdrop != null) backdrop.setBlurRadius(blurRadiusPx);
+        Miuix307ZeroCopyToneView tone = toneRef.get();
+        if (tone != null) tone.setTone(glassConfig);
+    }
+
     static void clear() {
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
         backdropRef = new WeakReference<>(null);
+        toneRef = new WeakReference<>(null);
         if (backdrop != null) backdrop.clearBlur();
     }
 
