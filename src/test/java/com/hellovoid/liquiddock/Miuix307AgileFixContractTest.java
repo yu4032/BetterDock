@@ -20,11 +20,12 @@ public class Miuix307AgileFixContractTest {
         String module = read("ModuleMain.java");
         int vendorClass = hook.indexOf("com.miui.home.recents.GestureModeApp");
         int startHook = hook.indexOf("\"onStartGesture\"", vendorClass);
+        int resetHome = hook.indexOf("vendorHomeCommitted = false", startHook);
         int activate = hook.indexOf("setVendorTransitionActive(true", startHook);
         int proceed = hook.indexOf("chain.proceed", activate);
         assertTrue(module.contains("Miuix307GestureBackdropHoldHook.install(classLoader)"));
         assertTrue(vendorClass >= 0 && startHook > vendorClass);
-        assertTrue(startHook >= 0 && activate > startHook && proceed > activate);
+        assertTrue(startHook >= 0 && resetHome > startHook && activate > resetHome && proceed > activate);
         assertFalse(hook.contains("MotionEvent.ACTION_UP") || hook.contains("MotionEvent.ACTION_CANCEL"));
         assertFalse(hook.contains("setGestureCaptureTarget(\"HOME\")"));
         assertFalse(hook.contains("setGestureCaptureTarget(\"RECENTS\")"));
@@ -43,7 +44,7 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void transitionBurstRenewsSixtyFpsCadencePinsAppSourceAndUsesRuntimeGlass() throws Exception {
+    public void transitionBurstRenewsCadenceAndSwitchesSourceAtVendorHomeCommit() throws Exception {
         String hook = read("Miuix307GestureBackdropHoldHook.java");
         String runtime = read("SystemUiTransitionRuntime.java");
         assertTrue(hook.contains("postOnAnimation") && hook.contains("scheduleCaptureFrame"));
@@ -51,8 +52,9 @@ public class Miuix307AgileFixContractTest {
                 && hook.contains("System.nanoTime()"));
         assertTrue(hook.contains("glass.requestCapture(reason)"));
         assertTrue(hook.contains("appBackdropPrearmActive") && hook.contains("appBackdropPrearmToken"));
-        assertTrue(hook.contains("pinTransitionSceneToApp")
-                && hook.contains("setGestureTarget\", \"APP\"")
+        assertTrue(hook.contains("vendorHomeCommitted ? \"HOME\" : \"APP\"")
+                && hook.contains("pinTransitionScene")
+                && hook.contains("setGestureTarget\", target")
                 && hook.contains("updateDesiredScene"));
         assertTrue("SystemUI must pass its exact bound glass into transition authority",
                 runtime.contains("setSystemUiTransitionActive(\n                    glass, true"));
@@ -63,39 +65,28 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void finalHomeIconFlightFiltersClosingTaskAtVendorCommitBeforeCloseToHome() throws Exception {
-        String iconHook = read("Miuix307IconFlightSurfaceHook.java");
+    public void gestureToHomeIsThe307SourceAuthorityAndRetiresIconFlightExclusions() throws Exception {
+        String hook = read("Miuix307GestureBackdropHoldHook.java");
         String exclusions = read("CaptureExclusionNames.java");
         String module = read("ModuleMain.java");
+        String runtime = read("SystemUiTransitionRuntime.java");
 
-        int homeHook = iconHook.indexOf("\"performAppToHome\"");
-        int setExclude = iconHook.indexOf("setTransitionAppLayerPrefix", homeHook);
-        int proceed = iconHook.indexOf("chain.proceed", setExclude);
-        assertTrue("4.50 vendor HOME commit must arm exclusion before CLOSE_TO_HOME proceeds",
-                homeHook >= 0 && setExclude > homeHook && proceed > setExclude);
-        assertTrue("closing package must be resolved from live capture state with 4.50 task fallback",
-                iconHook.contains("refreshForegroundAppLayer")
-                        && iconHook.contains("mRunningTaskComponentName")
-                        && iconHook.contains("getPackageName"));
-        assertTrue("mode-1 exclusion must cover the APP task and its package-less HOME-close auxiliaries",
-                exclusions.contains("add(names, closingPackage)")
-                        && exclusions.contains("PreColorStarting")
-                        && exclusions.contains("Splash Screen ")
-                        && exclusions.contains("Miui Caption of Task="));
-        assertTrue("vendor HOME exclusion must force the 307 merge path even if material install flag is false",
-                exclusions.contains("boolean homeCloseActive = transitionAppLayerPrefix != null")
-                        && exclusions.contains("Miuix307MaterialPipeline.isInstalled() || homeCloseActive"));
-        assertTrue("HOME/abort/Overview cleanup remains available through shared prefix authority",
-                iconHook.contains("clearTransitionAppLayerPrefix")
-                        && iconHook.contains("GestureModeApp$8")
-                        && iconHook.contains("GestureModeApp$6"));
-        assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
-        assertFalse("obsolete FloatingIconLayer2 implementation must not be hooked",
-                iconHook.contains("Class.forName(\n                    \"com.miui.home.recents.views.FloatingIconLayer2\"")
-                        || iconHook.contains("HookUtil.getField(owner, \"mFloatingIconSurfaceControl\")")
-                        || iconHook.contains("HookUtil.getField(owner, \"mFloatingIconShaderSurfaceControl\")"));
-        assertFalse("HOME close filtering must not freeze capture or force wallpaper",
-                iconHook.contains("cancelPendingCaptureWork") || iconHook.contains("WALLPAPER"));
+        assertTrue(hook.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
+        assertTrue(hook.contains("getDeclaredConstructors()"));
+        assertTrue(hook.contains("commitVendorHome(glass, \"GestureToHome\")"));
+        assertTrue(hook.contains("vendorHomeCommitted = true"));
+        assertTrue(hook.contains("requestCapture(\"miuix307-vendor-home-commit\")"));
+        assertTrue(hook.contains("vendor GestureToHome committed HOME source"));
+        assertFalse("HOME source handoff must not stop the capture burst",
+                hook.contains("commitVendorHome(glass, \"GestureToHome\");\n                        stopAllTransitionCapture"));
+
+        assertFalse(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
+        assertFalse(exclusions.contains("transitionAppLayerPrefix"));
+        assertFalse(exclusions.contains("PreColorStarting"));
+        assertFalse(exclusions.contains("Splash Screen "));
+        assertFalse(exclusions.contains("Miui Caption of Task="));
+        assertFalse(runtime.contains("HOME icon-flight exclusion"));
+        assertFalse(runtime.contains("setTransitionAppLayerPrefix"));
     }
 
     @Test
