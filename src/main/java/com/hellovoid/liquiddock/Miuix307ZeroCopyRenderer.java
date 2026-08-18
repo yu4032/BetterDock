@@ -13,8 +13,6 @@ final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
     private static final int EXPERIMENT_BLUR_RADIUS_PX = 5;
 
-    private static WeakReference<Miuix307RefractionSurfaceProbeView> refractionSurfaceRef =
-            new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyBackdropView> backdropRef =
             new WeakReference<>(null);
     private static WeakReference<Miuix307ZeroCopyToneView> toneRef =
@@ -36,11 +34,6 @@ final class Miuix307ZeroCopyRenderer {
         }
 
         int effectiveBlurRadiusPx = EXPERIMENT_BLUR_RADIUS_PX;
-        Miuix307RefractionSurfaceProbeView refractionSurface = exactBackgroundBlur
-                ? new Miuix307RefractionSurfaceProbeView(materialHost.getContext(), materialHost)
-                : null;
-        if (refractionSurface != null) refractionSurface.setId(View.generateViewId());
-
         Miuix307ZeroCopyBackdropView backdrop = new Miuix307ZeroCopyBackdropView(
                 materialHost.getContext(), effectiveBlurRadiusPx, !exactBackgroundBlur);
         backdrop.setId(View.generateViewId());
@@ -50,10 +43,6 @@ final class Miuix307ZeroCopyRenderer {
         tone.setId(View.generateViewId());
 
         host.removeAllViews();
-        if (refractionSurface != null) {
-            host.addView(refractionSurface, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
         host.addView(backdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         host.addView(tone, new FrameLayout.LayoutParams(
@@ -66,7 +55,6 @@ final class Miuix307ZeroCopyRenderer {
             return false;
         }
 
-        refractionSurfaceRef = new WeakReference<>(refractionSurface);
         backdropRef = new WeakReference<>(backdrop);
         toneRef = new WeakReference<>(tone);
         hostRef = new WeakReference<>(host);
@@ -78,12 +66,12 @@ final class Miuix307ZeroCopyRenderer {
                     materialHost, backdrop, readHostRadius(host), effectiveBlurRadiusPx)) {
                 if (exactBackgroundBlur) {
                     backdrop.setExternalCompositorBlurActive(true);
+                    Miuix307BackdropRefractionEffect.apply(backdrop);
                 }
                 backdrop.setBlurRadius(effectiveBlurRadiusPx);
                 MainHook.log(TAG + " exact background blur calibration radius="
                         + effectiveBlurRadiusPx + " passWindow=" + !exactBackgroundBlur);
             }
-            Miuix307SurfaceRefractionProbe.probe(backdrop, materialHost);
         });
         return true;
     }
@@ -107,6 +95,7 @@ final class Miuix307ZeroCopyRenderer {
                         materialHost, backdrop, cornerRadiusPx, effectiveBlurRadiusPx)
                         && exactBackgroundBlur) {
                     backdrop.setExternalCompositorBlurActive(true);
+                    Miuix307BackdropRefractionEffect.sync(backdrop);
                 }
             }
             backdrop.setBlurRadius(effectiveBlurRadiusPx);
@@ -116,15 +105,15 @@ final class Miuix307ZeroCopyRenderer {
     }
 
     static void clear() {
-        Miuix307RefractionSurfaceProbeView refractionSurface = refractionSurfaceRef.get();
-        if (refractionSurface != null) Miuix307RefractionExperiment.stop(refractionSurface);
         Miuix307ZeroCopyBackdropView backdrop = backdropRef.get();
-        refractionSurfaceRef = new WeakReference<>(null);
         backdropRef = new WeakReference<>(null);
         toneRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
-        if (backdrop != null) backdrop.clearBlur();
+        if (backdrop != null) {
+            Miuix307BackdropRefractionEffect.clear(backdrop);
+            backdrop.clearBlur();
+        }
     }
 
     private static float readHostRadius(DockLiquidGlassHostView host) {
