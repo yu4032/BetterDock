@@ -11,14 +11,7 @@ import android.view.View;
 
 import java.lang.ref.WeakReference;
 
-/**
- * Transparent SurfaceView used only to prove that the Dock can own a compositor child layer
- * independent from its shared ViewRoot SurfaceControl.
- *
- * This diagnostic view never applies the HyperOS charge/refraction shader. It creates one
- * transparent buffer so the SurfaceView has a real compositor surface, then hands only the child
- * SurfaceControl identity to Miuix307SurfaceRefractionProbe.
- */
+/** Independent compositor child used by the HyperOS refraction feasibility experiment. */
 final class Miuix307RefractionSurfaceProbeView extends SurfaceView
         implements SurfaceHolder.Callback {
     private final WeakReference<View> materialHostRef;
@@ -26,7 +19,6 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
     Miuix307RefractionSurfaceProbeView(Context context, View materialHost) {
         super(context);
         materialHostRef = new WeakReference<>(materialHost);
-
         getHolder().setFormat(PixelFormat.TRANSLUCENT);
         getHolder().addCallback(this);
         setZOrderOnTop(false);
@@ -38,9 +30,9 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         clearTransparent(holder);
-        // getSurfaceControl() is the independent child candidate; never target the shared root.
         getSurfaceControl();
         Miuix307SurfaceRefractionProbe.probeChildSurface(this, materialHostRef.get());
+        Miuix307RefractionExperiment.apply(this);
     }
 
     @Override
@@ -50,6 +42,7 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        Miuix307RefractionExperiment.stop(this);
         Miuix307SurfaceRefractionProbe.noteChildSurfaceDestroyed(this);
     }
 
@@ -57,9 +50,7 @@ final class Miuix307RefractionSurfaceProbeView extends SurfaceView
         Canvas canvas = null;
         try {
             canvas = holder.lockCanvas();
-            if (canvas != null) {
-                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
-            }
+            if (canvas != null) canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
         } catch (Throwable error) {
             MainHook.log("[DC][ZC][REFR] child transparent clear unavailable: " + error);
         } finally {
