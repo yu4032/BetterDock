@@ -78,6 +78,22 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
+    public void compatBackgroundBlurDoesNotStackPassWindowBlurOnSameBackdrop() throws Exception {
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String backdrop = read("Miuix307ZeroCopyBackdropView.java");
+        String bridge = read("Miuix307CompositorOpticsBridge.java");
+
+        assertTrue("renderer must identify the exact Launcher Background2 path before attaching",
+                renderer.contains("Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)"));
+        assertTrue("backdrop needs an explicit pass-window enable/disable contract",
+                backdrop.contains("passWindowBlurEnabled"));
+        assertTrue("exact Launcher backgroundBlur must disable the independent pass-window path",
+                renderer.contains("!exactBackgroundBlur"));
+        assertTrue("compat detection belongs in the vendor bridge, not duplicated class-name logic",
+                bridge.contains("static boolean usesExactBackgroundBlur(View vendorMaterial)"));
+    }
+
+    @Test
     public void compatPathUsesExactDecompiledBackgroundBlurPrimitive() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
