@@ -39,45 +39,30 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
-    @Test public void specialized307RestoresLauncherFocusOnlyAsSystemUiRefreshBoundary()
+    @Test public void specialized307DoesNotDriveOwnershipFromLauncherFocusDuringGestureTransitions()
             throws Exception {
         String ownership = source("Miuix307CaptureOwnershipHook.java");
 
-        assertTrue("307 early return must restore the legacy ownership refresh trigger",
-                ownership.contains("\"onWindowFocusChanged\""));
-        assertTrue("Launcher focus must only trigger a SystemUI ownership query",
+        // Device regression: onWindowFocusChanged can fire repeatedly while HyperOS is merging
+        // APP<->HOME/Recents transitions. Each HomeOwnershipRuntime.request() immediately emits an
+        // UNKNOWN baseline, which resets DockLiquidGlassView scene/capture state. The specialized
+        // 307 pipeline must not restore this legacy lifecycle hook as an ownership driver.
+        assertFalse("307 must not install a Launcher focus ownership bridge",
+                ownership.contains("installHomeOwnershipRefreshBridge"));
+        assertFalse("307 must not query ownership from Launcher focus churn",
                 ownership.contains("HomeOwnershipRuntime.request(\"miuix307-focus\")"));
-        assertTrue("Floating Dock focus must never become a capture/ownership gate again",
-                ownership.contains("Miuix307MaterialPipeline.isInstalled()"));
-        assertFalse("307 bridge must not classify HOME/APP from hasWindowFocus",
-                ownership.contains("hasWindowFocus()"));
     }
 
-    @Test public void confirmedHomeHas307SettleFallbackWhenFocusHomeCaptureIsTemporarilyBlocked()
+    @Test public void specialized307DoesNotInstallExperimentalHomeTransitionFreeze()
             throws Exception {
-        String runtime = source("HomeOwnershipRuntime.java");
-        String glass = source("DockLiquidGlassView.java");
-        String freeze = source("Miuix307HomeTransitionFreezeHook.java");
+        String entry = source("ModuleMain.java");
 
-        int homeState = runtime.indexOf("glass.setLauncherState(true, true)");
-        int focus = runtime.indexOf("glass.onLauncherFocused()", homeState);
-        assertTrue("SystemUI HOME state must still arm the existing focus-settle path",
-                homeState >= 0 && focus > homeState);
-        assertTrue("existing focus-home capture remains the preferred HOME refresh",
-                glass.contains("requestStateCapture(\"focus-home\")"));
-        assertTrue("the existing focus-home path can legitimately be skipped by capture gating",
-                glass.contains("if (!isCaptureAllowed()) return;"));
-
-        assertTrue("307 freeze hook must observe confirmed HOME focus settle",
-                freeze.contains("\"onLauncherFocused\""));
-        assertTrue("fallback must preserve the same configured APP->HOME settle delay",
-                freeze.contains("homeSettleDelayMs"));
-        assertTrue("fallback expiry must release the preserved APP frame even when focus-home"
-                        + " capture was skipped",
-                freeze.contains("releaseFrozenBackdrop(glass, \"home-settle-fallback\")"));
-        assertTrue("fallback release needs a generation token so an old HOME timer cannot"
-                        + " thaw a newer transition",
-                freeze.contains("freezeGeneration"));
+        // The freeze experiment suppresses the native HOME hand-off and then depends on async
+        // ownership/lifecycle convergence to thaw the last APP bitmap. Device logs show that this
+        // produces repeated UNKNOWN/APP transitions during the same system gesture. Keep the
+        // experimental hook out of the production 307 path.
+        assertFalse("307 must not install the experimental HOME freeze hook",
+                entry.contains("Miuix307HomeTransitionFreezeHook.install()"));
     }
 
     @Test public void brokerExposesProviderLifecycleWithoutPolling() throws Exception {
