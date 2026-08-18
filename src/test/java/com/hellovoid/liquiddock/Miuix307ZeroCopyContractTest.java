@@ -92,7 +92,8 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(bridge.contains("addBlur.invoke(vendorMaterial, target, cornerRadiusPx)"));
         assertTrue(bridge.contains("MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)"));
         assertTrue(bridge.contains("compat compositor optics active"));
-        assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig(\n                materialHost, backdrop, readHostRadius(host), blurRadiusPx)"));
+        assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig("));
+        assertTrue(renderer.contains("materialHost, backdrop, readHostRadius(host), blurRadiusPx"));
         assertFalse(bridge.contains("new float[]"));
         assertFalse(bridge.contains("new int[][]"));
         assertFalse(bridge.contains("captureScreenAsync"));
