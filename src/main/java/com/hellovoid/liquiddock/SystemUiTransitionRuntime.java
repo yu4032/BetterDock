@@ -71,7 +71,7 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             DockLiquidGlassView glass = currentView.get();
             if (glass == null || !matchesDisplay(glass, displayId)) return;
-            acceptGeneration(generation);
+            if (!acceptGeneration(generation)) return;
             visualHold = true;
             activeTokenId = tokenId;
             activeDisplayId = displayId;
@@ -134,7 +134,7 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             DockLiquidGlassView glass = currentView.get();
             if (glass == null || !matchesDisplay(glass, displayId)) return;
-            acceptGeneration(generation);
+            if (!acceptGeneration(generation)) return;
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
@@ -157,12 +157,14 @@ final class SystemUiTransitionRuntime {
         HookUtil.invoke(glass, "updateDesiredScene");
     }
 
-    private static void acceptGeneration(long generation) {
-        if (sourceGeneration == generation) return;
+    private static boolean acceptGeneration(long generation) {
+        if (sourceGeneration != Long.MIN_VALUE && generation < sourceGeneration) return false;
+        if (sourceGeneration == generation) return true;
         sourceGeneration = generation;
         visualHold = false;
         activeTokenId = 0L;
         activeDisplayId = -1;
+        return true;
     }
 
     private static boolean matchesDisplay(DockLiquidGlassView glass, int displayId) {
