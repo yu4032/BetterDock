@@ -84,33 +84,45 @@ public class Miuix307DropAnimationLifecycleContractTest {
     }
 
     @Test
-    public void releaseWaitsForActualDragViewsToBecomeVisuallyAbsent() throws Exception {
+    public void authoritativeVendorFinishCannotBeBlockedForeverByRetainedShownView() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
 
-        int end = drag.indexOf("private static void onEndDrag(Object dragObject)");
-        int nextEnd = drag.indexOf("\n    private static void ", end + 1);
-        String endBody = nextEnd > end ? drag.substring(end, nextEnd) : drag.substring(end);
-        assertTrue("endDrag must retain the actual DragViews, not only a numeric counter",
-                drag.contains("settlingDragViews") && endBody.contains("snapshotDragViews(dragObject)"));
+        int callback = drag.indexOf("private static void onDropAnimationFinished(Object dragObject)");
+        int nextCallback = drag.indexOf("\n    private static void ", callback + 1);
+        String callbackBody = nextCallback > callback
+                ? drag.substring(callback, nextCallback) : drag.substring(callback);
+        assertTrue("vendor DragObject completion must enter an authoritative release path",
+                callbackBody.contains("finishDropSettling(\"drag release anim end\", true)"));
 
-        int finish = drag.indexOf("private static void finishDropSettling(String reason)");
+        int finish = drag.indexOf("private static void finishDropSettling(String reason, boolean vendorFinished)");
         int nextFinish = drag.indexOf("\n    private static void ", finish + 1);
         String finishBody = nextFinish > finish
                 ? drag.substring(finish, nextFinish) : drag.substring(finish);
-        int visibleGate = finishBody.indexOf("hasVisibleSettlingDragView()");
-        int releaseArmed = finishBody.indexOf("dropReleaseScheduled = true;");
-        assertTrue("a visible DragView must block the compositor release barrier",
-                visibleGate >= 0 && releaseArmed > visibleGate);
-        assertTrue("visible DragViews must be rechecked on later display frames",
-                finishBody.contains("scheduleSettlingDragViewCheck(reason);")
-                        && finishBody.indexOf("scheduleSettlingDragViewCheck(reason);") < releaseArmed);
+        assertTrue("only fallback cleanup may keep waiting on a retained DragView",
+                finishBody.contains("!vendorFinished && hasVisibleSettlingDragView()"));
+        assertTrue("authoritative vendor finish still crosses the compositor frame barrier",
+                finishBody.contains("postOnAnimation"));
+        assertFalse("release must remain event/VSYNC driven, never timer driven",
+                finishBody.contains("postDelayed("));
+    }
+
+    @Test
+    public void fallbackWithoutVendorFinishStillWaitsForActualDragViews() throws Exception {
+        String drag = read("Miuix307DragCaptureHook.java");
+
+        int cleanup = drag.indexOf("private static void onHotseatDragCleanup()");
+        int nextCleanup = drag.indexOf("\n    private static void ", cleanup + 1);
+        String cleanupBody = nextCleanup > cleanup
+                ? drag.substring(cleanup, nextCleanup) : drag.substring(cleanup);
+        assertTrue("fallback cleanup must explicitly use the non-authoritative release path",
+                cleanupBody.contains("finishDropSettling(\"hotseat drag cleanup fallback\", false)"));
 
         int check = drag.indexOf("private static void scheduleSettlingDragViewCheck(String reason)");
         int nextCheck = drag.indexOf("\n    private static void ", check + 1);
         String checkBody = nextCheck > check ? drag.substring(check, nextCheck) : drag.substring(check);
-        assertTrue("DragView visibility gate must be VSYNC-driven, not timer-driven",
+        assertTrue("fallback DragView visibility gate stays VSYNC-driven",
                 checkBody.contains("postOnAnimation") && !checkBody.contains("postDelayed("));
-        assertTrue("visual presence must be tested from the real View state",
+        assertTrue("visual presence is still read from the actual View state for fallback",
                 drag.contains("isAttachedToWindow()")
                         && drag.contains("getVisibility() == View.VISIBLE")
                         && drag.contains("isShown()")
@@ -121,7 +133,7 @@ public class Miuix307DropAnimationLifecycleContractTest {
     public void compositorBarrierKeepsFreezeUntilNextAnimationFrame() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
 
-        int finish = drag.indexOf("private static void finishDropSettling(String reason)");
+        int finish = drag.indexOf("private static void finishDropSettling(String reason, boolean vendorFinished)");
         int next = drag.indexOf("\n    private static void ", finish + 1);
         String body = next > finish ? drag.substring(finish, next) : drag.substring(finish);
 
