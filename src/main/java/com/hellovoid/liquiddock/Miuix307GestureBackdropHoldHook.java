@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * the later WMShell APP_TO_LAUNCHER transition notification.
  *
  * Device traces on HyperOS 307 show mode-1 capture still running after the foreground task has
- * already begun shrinking, while APP_TO_LAUNCHER is not pushed until ACTION_UP.  Freezing at the
+ * already begun shrinking, while APP_TO_LAUNCHER is not pushed until ACTION_UP. Freezing at the
  * valid Dock gesture DOWN keeps those transformed task frames from replacing the clean APP image.
  * This hold does not predict HOME versus RECENTS: exact Overview or the existing SystemUI visual
  * hold remains the destination authority.
@@ -32,6 +32,7 @@ final class Miuix307GestureBackdropHoldHook {
         installCaptureRequestGate();
         installCaptureInstallGate();
         installOverviewHandoff();
+        installSystemUiHandoff();
         Api101Bridge.log("[DC][GH] APP gesture backdrop hold installed");
     }
 
@@ -115,6 +116,17 @@ final class Miuix307GestureBackdropHoldHook {
         Api101Bridge.log("[DC][GH] hold handed to exact Overview");
     }
 
+    private static void clearForSystemUi(DockLiquidGlassView glass, long expectedSession) {
+        if (!appGestureHold || glass == null || heldGlass.get() != glass
+                || gestureSession != expectedSession) return;
+        if (!SystemUiTransitionRuntime.isVisualHoldActive(glass)) return;
+        gestureSession++;
+        appGestureHold = false;
+        releaseScheduled = false;
+        heldGlass = new WeakReference<>(null);
+        Api101Bridge.log("[DC][GH] hold handed to SystemUI authority session=" + expectedSession);
+    }
+
     private static void installCaptureRequestGate() {
         HookUtil.hookMethod(DockLiquidGlassView.class, "requestStateCapture",
                 new Class<?>[]{String.class}, chain -> {
@@ -156,6 +168,22 @@ final class Miuix307GestureBackdropHoldHook {
                     if (args.length > 0 && Boolean.TRUE.equals(args[0])
                             && chain.getThisObject() instanceof DockLiquidGlassView) {
                         clearForOverview((DockLiquidGlassView) chain.getThisObject());
+                    }
+                    return result;
+                });
+    }
+
+    private static void installSystemUiHandoff() {
+        HookUtil.hookMethod(SystemUiTransitionRuntime.class, "beginAppToLauncherVisualHold",
+                new Class<?>[]{long.class, long.class, int.class}, chain -> {
+                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                    DockLiquidGlassView glass = heldGlass.get();
+                    if (glass != null && appGestureHold) {
+                        final long session = gestureSession;
+                        // beginAppToLauncherVisualHold() posts to the main thread when Binder calls
+                        // it off-main. Queue behind that post, then hand authority over only after
+                        // the real SystemUI visual hold is observable.
+                        glass.post(() -> clearForSystemUi(glass, session));
                     }
                     return result;
                 });
