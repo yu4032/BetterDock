@@ -44,6 +44,12 @@ public class SystemUiTransitionContractTest {
         assertFalse(runtime.contains("glass.onLauncherFocusLost("));
     }
 
+    @Test public void staleSystemUiGenerationCannotReplaceNewerTransitionState() throws Exception {
+        String runtime = source("SystemUiTransitionRuntime.java");
+        assertTrue(runtime.contains("generation < sourceGeneration"));
+        assertTrue(runtime.contains("generation != sourceGeneration"));
+    }
+
     @Test public void migrated307HasNoLauncherHomePrearm() throws Exception {
         String pipeline = source("Miuix307MaterialPipeline.java");
         String glassHook = source("MiuixGlassHook.java");
