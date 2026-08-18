@@ -27,12 +27,17 @@ final class Miuix307CompositorOpticsBridge {
 
     private Miuix307CompositorOpticsBridge() {}
 
+    static boolean usesExactBackgroundBlur(View vendorMaterial) {
+        return vendorMaterial != null
+                && COMPAT_BLUR_BACKGROUND2.equals(vendorMaterial.getClass().getName());
+    }
+
     static boolean applyVendorBlurConfig(
             View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
         if (vendorMaterial == null || target == null) return false;
         Class<?> sourceClass = vendorMaterial.getClass();
 
-        if (COMPAT_BLUR_BACKGROUND2.equals(sourceClass.getName())) {
+        if (usesExactBackgroundBlur(vendorMaterial)) {
             return applyCompatBlurBackground2(
                     vendorMaterial, target, Math.max(0f, cornerRadiusPx), blurRadiusPx);
         }
