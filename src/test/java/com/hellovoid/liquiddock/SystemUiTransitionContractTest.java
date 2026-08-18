@@ -39,9 +39,9 @@ public class SystemUiTransitionContractTest {
         assertTrue(runtime.contains("finishAppToLauncherVisualHold"));
         assertTrue(runtime.contains("resolveVisualHoldToOverview"));
         assertFalse(runtime.contains("HomeOwnershipRuntime.request"));
-        assertFalse(runtime.contains("setLauncherState("));
-        assertFalse(runtime.contains("onLauncherFocused("));
-        assertFalse(runtime.contains("onLauncherFocusLost("));
+        assertFalse(runtime.contains("glass.setLauncherState("));
+        assertFalse(runtime.contains("glass.onLauncherFocused("));
+        assertFalse(runtime.contains("glass.onLauncherFocusLost("));
     }
 
     @Test public void migrated307HasNoLauncherHomePrearm() throws Exception {
