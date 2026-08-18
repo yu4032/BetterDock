@@ -61,7 +61,6 @@ public class Miuix307DropAnimationLifecycleContractTest {
         assertTrue("HotSeats resetDraggingView is an observed cleanup boundary",
                 resetHook >= 0 && resetProceed > resetHook && cleanup > resetProceed);
 
-        // Completion is lifecycle-driven, never guessed from a fixed animation duration.
         assertFalse(drag.contains("postDelayed("));
     }
 
@@ -95,6 +94,8 @@ public class Miuix307DropAnimationLifecycleContractTest {
                 callbackBody.contains("finishDropSettling(\"drag release anim end\", true)"));
 
         int finish = drag.indexOf("private static void finishDropSettling(String reason, boolean vendorFinished)");
+        assertTrue("drop settling must distinguish authoritative vendor finish from fallback",
+                finish >= 0);
         int nextFinish = drag.indexOf("\n    private static void ", finish + 1);
         String finishBody = nextFinish > finish
                 ? drag.substring(finish, nextFinish) : drag.substring(finish);
@@ -134,6 +135,7 @@ public class Miuix307DropAnimationLifecycleContractTest {
         String drag = read("Miuix307DragCaptureHook.java");
 
         int finish = drag.indexOf("private static void finishDropSettling(String reason, boolean vendorFinished)");
+        assertTrue("drop completion must expose the authoritative/fallback release API", finish >= 0);
         int next = drag.indexOf("\n    private static void ", finish + 1);
         String body = next > finish ? drag.substring(finish, next) : drag.substring(finish);
 
