@@ -8,62 +8,84 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Source contracts for the device-confirmed HyperOS 307 capture regressions. */
+/** Source contracts for the device-confirmed HyperOS 307/4.50 capture regressions. */
 public class Miuix307AgileFixContractTest {
     private static String read(String file) throws Exception {
         return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + file));
     }
 
     @Test
-    public void appGestureHoldStartsAtVendorInputBeforeTransformedCaptureAndNeverGuessesDestination()
+    public void appGestureHoldUsesDecompiled450GestureModeBoundaryInsteadOfRawInputEnd()
             throws Exception {
         String hold = read("Miuix307GestureBackdropHoldHook.java");
         String module = read("ModuleMain.java");
 
-        int vendorClass = hold.indexOf("com.miui.home.recents.GestureInputHelper");
-        int inputHook = hold.indexOf("\"onInputEvent\".equals(method.getName())", vendorClass);
-        int arm = hold.indexOf("maybeArm(rawX, rawY, true)", inputHook);
-        int proceed = hold.indexOf("chain.proceed(args)", arm);
-        assertTrue("gesture hold must receive the Launcher class loader",
+        int vendorClass = hold.indexOf("com.miui.home.recents.GestureModeApp");
+        int startHook = hold.indexOf("\"onStartGesture\"", vendorClass);
+        int arm = hold.indexOf("armFromVendorAppGesture()", startHook);
+        int proceed = hold.indexOf("chain.proceed", arm);
+
+        assertTrue("gesture lifecycle hook must receive the Launcher class loader",
                 module.contains("Miuix307GestureBackdropHoldHook.install(classLoader)"));
-        assertTrue("the device-confirmed vendor GestureInputHelper must be the primary boundary",
-                vendorClass >= 0 && inputHook > vendorClass);
-        assertTrue("APP hold must arm before vendor input processing can start transformed capture",
-                inputHook >= 0 && arm > inputHook && proceed > arm);
-        assertTrue("vendor hidden signatures must be discovered by overload/class-hierarchy scan",
-                hold.contains("cursor.getDeclaredMethods()")
-                        && hold.contains("cursor = cursor.getSuperclass()"));
-        assertTrue("arming must cancel a readback already in flight at ACTION_DOWN",
-                hold.contains("cancelPendingCaptureWork"));
-        assertTrue("hold must apply only to the current APP scene",
-                hold.contains("desiredScene(glass) != CaptureScene.APP"));
-        assertTrue("the previous LiquidDock input observer remains only a fallback",
-                hold.contains("installCompatInputBoundary") && hold.contains("\"onInputMotion\""));
-        assertFalse("gesture hold must not predict HOME",
+        assertTrue("4.50 GestureModeApp must be the primary pre-transform authority",
+                vendorClass >= 0 && startHook > vendorClass);
+        assertTrue("hold must arm before GestureModeApp starts its vendor transform pipeline",
+                startHook >= 0 && arm > startHook && proceed > arm);
+        assertFalse("raw GestureInputHelper onInputEvent must no longer own visual hold lifetime",
+                hold.contains("\"onInputEvent\".equals(method.getName())"));
+        assertFalse("raw ACTION_UP/CANCEL must not reopen the capture gate",
+                hold.contains("ACTION_UP") || hold.contains("ACTION_CANCEL"));
+        assertFalse("gesture hold must never predict HOME through the legacy target API",
                 hold.contains("setGestureCaptureTarget(\"HOME\")"));
-        assertFalse("gesture hold must not predict RECENTS",
+        assertFalse("gesture hold must never predict RECENTS through the legacy target API",
                 hold.contains("setGestureCaptureTarget(\"RECENTS\")"));
     }
 
     @Test
-    public void appGestureHoldBlocksRequestsAndInstallsUntilAuthorityOrVsyncRelease()
-            throws Exception {
+    public void appGestureHoldNeverFreezesAStaleHomeWallpaperAsApp() throws Exception {
+        String hold = read("Miuix307GestureBackdropHoldHook.java");
+
+        assertTrue("arming must inspect the actually installed capture scene",
+                hold.contains("installedCaptureScene") && hold.contains("installedBefore"));
+        assertTrue("a non-APP installed scene must be invalidated before the hold closes",
+                hold.contains("installedBefore != CaptureScene.APP")
+                        && hold.contains("invalidateInstalledBackdropForApp"));
+        assertTrue("arming must cancel readbacks already in flight before movement transforms",
+                hold.contains("cancelPendingCaptureWork"));
+    }
+
+    @Test
+    public void appGestureHoldBlocksRequestsAndInstallsUntilRealVisualAuthority() throws Exception {
         String hold = read("Miuix307GestureBackdropHoldHook.java");
 
         assertTrue("queued capture requests must be blocked while the clean APP frame is held",
                 hold.contains("\"requestStateCapture\"")
                         && hold.contains("appGestureHold && chain.getThisObject() == heldGlass.get()"));
-        assertTrue("in-flight capture results must also be rejected/recycled",
-                hold.contains("\"installCapture\"") && hold.contains("HookUtil.invoke(args[0], \"recycle\")"));
-        assertTrue("release must cross a compositor frame rather than use a guessed delay",
-                hold.contains("postOnAnimation") && !hold.contains("postDelayed("));
-        assertTrue("existing SystemUI visual hold must take ownership without opening a gap",
-                hold.contains("SystemUiTransitionRuntime.isVisualHoldActive(glass)"));
-        assertTrue("exact Overview remains an immediate destination authority",
+        assertTrue("in-flight capture results must also be rejected and recycled",
+                hold.contains("\"installCapture\"")
+                        && hold.contains("HookUtil.invoke(args[0], \"recycle\")"));
+        assertTrue("exact Overview remains a destination authority",
                 hold.contains("clearForOverview") && hold.contains("setOverviewActive"));
-        assertTrue("a gesture with no transition authority refreshes only APP",
-                hold.contains("if (scene == CaptureScene.APP)")
-                        && hold.contains("miuix307-app-gesture-release"));
+        assertTrue("SystemUI remains a no-gap handoff authority",
+                hold.contains("clearForSystemUi")
+                        && hold.contains("SystemUiTransitionRuntime.isVisualHoldActive(glass)"));
+        assertFalse("no millisecond settle timer may reopen the gesture hold",
+                hold.contains("postDelayed("));
+    }
+
+    @Test
+    public void decompiled450AnimationEndsOwnAppAndHomeRelease() throws Exception {
+        String hold = read("Miuix307GestureBackdropHoldHook.java");
+
+        assertTrue("4.50 AppToApp listener $6 must release back to APP only after animation end",
+                hold.contains("GestureModeApp$6")
+                        && hold.contains("app-to-app-animation-end"));
+        assertTrue("4.50 AppToHome listener $8 must own the HOME animation-end fallback",
+                hold.contains("GestureModeApp$8")
+                        && hold.contains("releaseAfterVendorHomeAnimation"));
+        assertTrue("HOME fallback must cross a real compositor frame before fresh capture",
+                hold.contains("postOnAnimation")
+                        && hold.contains("miuix307-vendor-home-animation-end"));
     }
 
     @Test
