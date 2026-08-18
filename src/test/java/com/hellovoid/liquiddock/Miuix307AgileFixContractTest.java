@@ -63,28 +63,28 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void finalHomeIconFlightExcludesOnlyClosingAppLayer() throws Exception {
-        String runtime = read("SystemUiTransitionRuntime.java");
+    public void finalHomeIconFlightExcludesExact450FloatingIconSurfaceOnly() throws Exception {
+        String iconHook = read("Miuix307IconFlightSurfaceHook.java");
         String exclusions = read("CaptureExclusionNames.java");
+        String module = read("ModuleMain.java");
 
-        int begin = runtime.indexOf("beginAppToLauncherVisualHold");
-        int setExclude = runtime.indexOf("setTransitionAppLayerPrefix", begin);
-        int startBurst = runtime.indexOf("setSystemUiTransitionActive", begin);
-        assertTrue("closing APP exclusion must begin only at authoritative APP_TO_LAUNCHER start",
-                begin >= 0 && setExclude > begin && startBurst > setExclude);
-        assertTrue("foreground APP package must be cached while APP becomes top",
-                runtime.contains("refreshForegroundAppPackage(glass)")
-                        && runtime.contains("appLayerPkg"));
-        assertTrue("transition APP prefix must be emitted into the mode-1 exclusion names",
+        assertTrue("4.50 DEX-derived WindowElement leash field must be the exclusion source",
+                iconHook.contains("mFloatingIconLayerLeash")
+                        && iconHook.contains("getMFloatingIconLayerLeash"));
+        assertTrue("the vendor bind lifecycle must refresh the exact icon SurfaceControl",
+                iconHook.contains("bindIconLayerLeashIfNeeded")
+                        && iconHook.contains("earlyInitFloatingIconLayer"));
+        assertTrue("mode-1 SurfaceControl[] excludes must be augmented, not capture-frozen",
+                iconHook.contains("buildFullDisplaySurfaceExcludes")
+                        && iconHook.contains("out.add(icon)"));
+        assertTrue("exact exclusion must be active only under accepted SystemUI transition authority",
+                iconHook.contains("setSystemUiTransitionActive")
+                        && iconHook.contains("homeTransitionActive"));
+        assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
+        assertFalse("closing APP package names are the wrong residual layer and must no longer be emitted",
                 exclusions.contains("add(names, transitionAppLayerPrefix)"));
-        assertTrue("active transition exclusion must force the 307 merge path even if the material"
-                        + " pipeline runtime flag is false on the target device",
-                exclusions.contains("boolean transitionExclusionActive = transitionAppLayerPrefix != null")
-                        && exclusions.contains("Miuix307MaterialPipeline.isInstalled() || transitionExclusionActive"));
-        assertTrue("HOME/Overview/abort paths must clear the temporary closing APP exclusion",
-                runtime.contains("clearTransitionAppLayerPrefix()"));
-        assertFalse("icon-flight cleanup must not freeze capture or switch to wallpaper",
-                runtime.contains("setTransitionAppLayerPrefix(\"com.miui.home\")"));
+        assertFalse("exact icon cleanup must never switch to wallpaper or block capture",
+                iconHook.contains("WALLPAPER") || iconHook.contains("cancelPendingCaptureWork"));
     }
 
     @Test
