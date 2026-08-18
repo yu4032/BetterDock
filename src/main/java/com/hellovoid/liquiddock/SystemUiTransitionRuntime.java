@@ -31,6 +31,8 @@ final class SystemUiTransitionRuntime {
     private static long activeTokenId;
     private static int activeDisplayId = -1;
     private static boolean visualHold;
+    /** Invalidates frame-barrier callbacks when Overview/APP/newer transitions supersede HOME. */
+    private static long homeReleaseSequence;
 
     private SystemUiTransitionRuntime() {}
 
@@ -47,6 +49,7 @@ final class SystemUiTransitionRuntime {
         if (glass == null || context == null) return;
         runOnMain(() -> {
             currentView = new WeakReference<>(glass);
+            homeReleaseSequence++;
             if (visualHold) {
                 visualHold = false;
                 activeTokenId = 0L;
@@ -72,6 +75,7 @@ final class SystemUiTransitionRuntime {
             DockLiquidGlassView glass = currentView.get();
             if (glass == null || !matchesDisplay(glass, displayId)) return;
             if (!acceptGeneration(generation)) return;
+            homeReleaseSequence++;
             visualHold = true;
             activeTokenId = tokenId;
             activeDisplayId = displayId;
@@ -86,6 +90,7 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             if (!visualHold) return;
             DockLiquidGlassView glass = currentView.get();
+            homeReleaseSequence++;
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
@@ -100,23 +105,33 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             if (!visualHold || generation != sourceGeneration || tokenId != activeTokenId) return;
             DockLiquidGlassView glass = currentView.get();
-            visualHold = false;
-            activeTokenId = 0L;
-            activeDisplayId = -1;
-            if (glass == null) return;
+            if (glass == null) {
+                homeReleaseSequence++;
+                visualHold = false;
+                activeTokenId = 0L;
+                activeDisplayId = -1;
+                return;
+            }
 
             if (aborted) {
+                homeReleaseSequence++;
+                visualHold = false;
+                activeTokenId = 0L;
+                activeDisplayId = -1;
+                HookUtil.invoke(glass, "cancelPendingCaptureWork");
                 applyStableScene(glass, false);
                 glass.prearmAppBackdrop("systemui-transition-abort");
                 MainHook.log(TAG + " visual hold aborted -> APP token=" + tokenId);
                 return;
             }
 
-            // No ownership query and no settle timer. WMShell finish is the boundary; capture on
-            // the next Launcher main-loop turn after the finish callback transaction has landed.
+            // WMShell finish and Launcher AppToHome animation-end land in the same display frame
+            // on the observed 307 build. Keep the APP backdrop protected for one real VSYNC so an
+            // already-running FULL_DISPLAY capture cannot install the icon-flight tail frame.
             applyStableScene(glass, true);
-            glass.post(() -> glass.requestCapture("systemui-transition-home-finished"));
-            MainHook.log(TAG + " visual hold finished -> HOME token=" + tokenId);
+            scheduleHomeVisualRelease(glass, generation, tokenId);
+            MainHook.log(TAG + " visual hold HOME finish observed; compositor barrier armed token="
+                    + tokenId);
         });
     }
 
@@ -125,6 +140,7 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             if (!visualHold || generation != sourceGeneration
                     || mergedTokenId != activeTokenId || activeDisplayId != displayId) return;
+            homeReleaseSequence++;
             activeTokenId = playingTokenId;
             MainHook.log(TAG + " visual hold merged " + mergedTokenId + " -> " + playingTokenId);
         });
@@ -135,6 +151,7 @@ final class SystemUiTransitionRuntime {
             DockLiquidGlassView glass = currentView.get();
             if (glass == null || !matchesDisplay(glass, displayId)) return;
             if (!acceptGeneration(generation)) return;
+            homeReleaseSequence++;
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
@@ -142,6 +159,30 @@ final class SystemUiTransitionRuntime {
             applyStableScene(glass, false);
             glass.prearmAppBackdrop("systemui-transition-app");
             MainHook.log(TAG + " LAUNCHER_TO_APP token=" + tokenId + " display=" + displayId);
+        });
+    }
+
+    /**
+     * Shell finish is an animation lifecycle boundary, not proof that its final Surface transaction
+     * has already been presented. Keep both request/install gates active until the next VSYNC.
+     */
+    private static void scheduleHomeVisualRelease(DockLiquidGlassView glass,
+                                                  long generation, long tokenId) {
+        final long releaseSequence = ++homeReleaseSequence;
+        glass.postOnAnimation(() -> {
+            if (!visualHold || releaseSequence != homeReleaseSequence
+                    || generation != sourceGeneration || tokenId != activeTokenId
+                    || currentView.get() != glass) {
+                return;
+            }
+
+            // Reject/cancel every stale APP/FULL_DISPLAY readback before opening the install gate.
+            HookUtil.invoke(glass, "cancelPendingCaptureWork");
+            visualHold = false;
+            activeTokenId = 0L;
+            activeDisplayId = -1;
+            glass.requestCapture("systemui-transition-home-finished");
+            MainHook.log(TAG + " HOME compositor barrier passed token=" + tokenId);
         });
     }
 
@@ -161,6 +202,7 @@ final class SystemUiTransitionRuntime {
         if (sourceGeneration != Long.MIN_VALUE && generation < sourceGeneration) return false;
         if (sourceGeneration == generation) return true;
         sourceGeneration = generation;
+        homeReleaseSequence++;
         visualHold = false;
         activeTokenId = 0L;
         activeDisplayId = -1;
