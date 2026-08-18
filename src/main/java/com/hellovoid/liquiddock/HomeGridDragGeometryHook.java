@@ -9,10 +9,10 @@ import io.github.libxposed.api.XposedInterface;
 /**
  * Keeps MIUI's drag/drop rules on the same geometry as the visible 10x6 CellLayout.
  *
- * The stock drop rules convert points using DeviceConfig/GridConfig cellSize, while the
+ * The stock drop rules convert points using DeviceConfig/GridConfig geometry, while the
  * extended grid deliberately recomputes CellLayout.mCellWidth/mCellHeight and gaps without
- * mutating the global GridConfig cellSize. A thread-local context is used because the drop
- * rule objects themselves do not retain their owning CellLayout.
+ * mutating global GridConfig state. Thread-local contexts scope every override to the exact
+ * native drag calculation that owns the current CellLayout.
  */
 final class HomeGridDragGeometryHook {
     private static final String CELL_LAYOUT = "com.miui.home.launcher.CellLayout";
@@ -25,7 +25,7 @@ final class HomeGridDragGeometryHook {
             "com.miui.home.launcher.compat.LayoutDropRuleSqueezePlaces";
 
     private static final ThreadLocal<Geometry> ACTIVE_GEOMETRY = new ThreadLocal<>();
-    private static final ThreadLocal<Integer> TOUCH_CELL_HEIGHT = new ThreadLocal<>();
+    private static final ThreadLocal<Geometry> TOUCH_GEOMETRY = new ThreadLocal<>();
 
     private HomeGridDragGeometryHook() {}
 
@@ -42,7 +42,7 @@ final class HomeGridDragGeometryHook {
             Class<?> cellLayout = Class.forName(CELL_LAYOUT, false, classLoader);
             Class<?> dragObject = Class.forName(DRAG_OBJECT, false, classLoader);
             installDropTargetContext(cellLayout, dragObject);
-            installScaledTouchHeight(classLoader, dragObject);
+            installScaledTouchGeometry(classLoader, dragObject);
             installSwapRule(classLoader);
             installSqueezeRule(classLoader);
             MainHook.log("[DC] 10x6 live drag geometry hooks installed");
@@ -72,11 +72,13 @@ final class HomeGridDragGeometryHook {
     }
 
     /**
-     * CellScreen.translateTouchY() uses DeviceConfig.getCellHeight() only for the final-row
-     * boundary while all row origins come from CellLayout.setupLayoutParam(). Supply the live
-     * CellLayout height for that one native call without changing DeviceConfig globally.
+     * DEX contract: CellScreen.translateTouchY() obtains the last row by calling
+     * DeviceConfig.getCellCountY() - 1, asks CellLayout.setupLayoutParam() for that row origin,
+     * then adds DeviceConfig.getCellHeight() before scaling the drag coordinate. Overriding only
+     * cell height leaves the old stock row count as an invisible boundary. Supply both values from
+     * the live 10x6 CellLayout for the duration of this one native call; never mutate DeviceConfig.
      */
-    private static void installScaledTouchHeight(ClassLoader classLoader, Class<?> dragObject)
+    private static void installScaledTouchGeometry(ClassLoader classLoader, Class<?> dragObject)
             throws Exception {
         Class<?> cellScreen = Class.forName(CELL_SCREEN, false, classLoader);
         Method translateY = HookUtil.findMethodExact(cellScreen, "translateTouchY",
@@ -92,23 +94,32 @@ final class HomeGridDragGeometryHook {
                     }
                     Geometry geometry = readGeometry(cellLayout);
                     if (geometry == null) return chain.proceed();
-                    Integer previous = TOUCH_CELL_HEIGHT.get();
-                    TOUCH_CELL_HEIGHT.set(geometry.cellHeight);
+                    Geometry previous = TOUCH_GEOMETRY.get();
+                    TOUCH_GEOMETRY.set(geometry);
                     try {
                         return chain.proceed(chain.getArgs().toArray(new Object[0]));
                     } finally {
-                        restore(TOUCH_CELL_HEIGHT, previous);
+                        restore(TOUCH_GEOMETRY, previous);
                     }
                 });
 
         Class<?> deviceConfig = Class.forName(DEVICE_CONFIG, false, classLoader);
+        Method getCellCountY = HookUtil.findMethodExact(
+                deviceConfig, "getCellCountY", new Class<?>[0]);
+        Api101Bridge.module().hook(getCellCountY)
+                .setPriority(XposedInterface.PRIORITY_HIGHEST)
+                .intercept(chain -> {
+                    Geometry geometry = TOUCH_GEOMETRY.get();
+                    return geometry != null ? geometry.countY : chain.proceed();
+                });
+
         Method getCellHeight = HookUtil.findMethodExact(
                 deviceConfig, "getCellHeight", new Class<?>[0]);
         Api101Bridge.module().hook(getCellHeight)
                 .setPriority(XposedInterface.PRIORITY_HIGHEST)
                 .intercept(chain -> {
-                    Integer override = TOUCH_CELL_HEIGHT.get();
-                    return override != null ? override : chain.proceed();
+                    Geometry geometry = TOUCH_GEOMETRY.get();
+                    return geometry != null ? geometry.cellHeight : chain.proceed();
                 });
     }
 
