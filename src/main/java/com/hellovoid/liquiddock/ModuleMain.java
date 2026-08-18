@@ -32,6 +32,11 @@ public final class ModuleMain extends XposedModule {
                 Api101Bridge.log("[DC] SystemUI transition source unavailable", error);
             }
             try {
+                DiagnosticTraceHook.installSystemUi(classLoader);
+            } catch (Throwable error) {
+                Api101Bridge.log("[DC] SystemUI diagnostic probes unavailable", error);
+            }
+            try {
                 SystemUiHomeOwnershipSource.install(classLoader);
             } catch (Throwable error) {
                 // HOME ownership fails closed independently from freeform exclusion.
@@ -59,6 +64,7 @@ public final class ModuleMain extends XposedModule {
             Miuix307RecentsInputHook.install(classLoader);
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
+            DiagnosticTraceHook.installLauncher(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
