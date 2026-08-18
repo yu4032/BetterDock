@@ -57,6 +57,17 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
+    public void geometryRefreshSynchronizesZeroCopyBlurAndTone() throws Exception {
+        String hook = read("MiuixGlassHook.java");
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
+
+        assertTrue(renderer.contains("static void sync(LiquidDockConfig.Glass glassConfig"));
+        assertTrue(renderer.contains("backdrop.setBlurRadius(blurRadiusPx)"));
+        assertTrue(renderer.contains("tone.setTone(glassConfig)"));
+        assertTrue(hook.contains("Miuix307ZeroCopyRenderer.sync(\n                config.glass, Math.round(config.glass.blur))"));
+    }
+
+    @Test
     public void materialBindingTriesZeroCopyFirstAndKeepsCaptureFallback() throws Exception {
         String hook = read("MiuixGlassHook.java");
 
