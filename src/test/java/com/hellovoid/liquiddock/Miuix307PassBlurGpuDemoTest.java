@@ -102,4 +102,40 @@ public class Miuix307PassBlurGpuDemoTest {
                 view.contains("setChargeAnim")
                         || view.contains("WaterWave"));
     }
+
+    @Test
+    public void diagnosticDemoCreatesMinimalPassBlurDemandWithoutVisibleLegacyGlass() throws Exception {
+        Path path = MAIN.resolve("Miuix307PassBlurDemandView.java");
+        assertTrue("diagnostic demand view must exist", Files.exists(path));
+        String demand = Files.readString(path);
+        String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
+
+        assertTrue("demand must be a plain transparent View, not another Surface/capture renderer",
+                demand.contains("extends View") && demand.contains("Color.TRANSPARENT"));
+        assertTrue("demand must explicitly enable pass-window blur",
+                demand.contains("MiBlurBridge.applyPassWindowBlur(this, 1)"));
+        assertTrue("demand must cleanly disable pass-window blur",
+                demand.contains("MiBlurBridge.clearPassWindowBlur(this)"));
+        assertTrue("diagnostic demand must be constrained to exactly one pixel",
+                renderer.contains("host.addView(passBlurDemand, new FrameLayout.LayoutParams(1, 1))"));
+        assertFalse("demand must not contain capture or old optical glass code",
+                demand.contains("captureScreenAsync")
+                        || demand.contains("LiquidGlassFactory")
+                        || demand.contains("DockLiquidGlassView")
+                        || demand.contains("setChargeAnim"));
+    }
+
+    @Test
+    public void validationTimeoutLeavesDiagnosticTransparentInsteadOfFallingBackToCapture() throws Exception {
+        String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
+        int validation = hook.indexOf("private static void scheduleZeroCopyValidation");
+        int fallbackDefinition = hook.indexOf("private static void installCaptureFallback");
+        assertTrue(validation >= 0 && fallbackDefinition > validation);
+        String validationRegion = hook.substring(validation, fallbackDefinition);
+
+        assertFalse("timeout must not install the old capture glass during GPU diagnosis",
+                validationRegion.contains("installCaptureFallback("));
+        assertTrue("timeout must make the diagnostic state explicit in logs",
+                validationRegion.contains("legacy capture disabled"));
+    }
 }
