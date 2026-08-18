@@ -4,19 +4,18 @@ import android.view.MotionEvent;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * APP gesture backdrop protection for HyperOS 3.0.7 / Launcher 4.50.
+ * Continuous APP-transition capture for HyperOS 3.0.7 / Launcher 4.50.
  *
- * The raw GestureInputHelper stream is useful only as an early pre-capture hint. Vendor gesture
- * lifecycle methods own the hold because 4.50 may emit internal ACTION_CANCEL before the gesture
- * finally resolves to HOME. GestureModeApp.onStartGesture() runs before actionMoveAppDrag(), so it
- * is the last stable boundary before the app surface starts transforming.
+ * Historical note: this class used to freeze the last APP bitmap. Device testing showed that was
+ * the wrong model: whichever frame happened to land immediately before the freeze (wallpaper,
+ * half-transformed app, icon-flight frame) became permanently visible. The original LiquidDock
+ * behavior was continuous capture. The 4.50 vendor lifecycle is now used only to start/stop a
+ * bounded 60 FPS capture burst; it never blocks capture requests or frame installation.
  */
 final class AppGestureBackdropHoldHook {
     private static final String TAG = "[DC][GH]";
@@ -26,8 +25,10 @@ final class AppGestureBackdropHoldHook {
     private static final String GESTURE_MODE_APP_CANCEL_LISTENER = "com.miui.home.recents.GestureModeApp$6";
     private static final String GESTURE_MODE_APP_HOME_LISTENER = "com.miui.home.recents.GestureModeApp$8";
 
-    private static boolean gestureHold;
-    private static long gestureSession;
+    private static boolean vendorTransitionActive;
+    private static boolean systemUiTransitionActive;
+    private static boolean captureBurstRunning;
+    private static long captureBurstSession;
 
     private AppGestureBackdropHoldHook() {}
 
@@ -35,11 +36,8 @@ final class AppGestureBackdropHoldHook {
         if (!INSTALLED.compareAndSet(false, true)) return;
         int rawHooks = installVendorInputObservation(classLoader);
         int lifecycleHooks = installVendorGestureLifecycle(classLoader);
-        installCaptureRequestGate();
-        installCaptureInstallGate();
         installExactOverviewBridge();
-        installSystemUiTakeoverBridge();
-        Api101Bridge.log(TAG + " APP gesture install raw=" + rawHooks
+        Api101Bridge.log(TAG + " continuous transition capture installed raw=" + rawHooks
                 + " lifecycle=" + lifecycleHooks);
     }
 
@@ -51,7 +49,8 @@ final class AppGestureBackdropHoldHook {
             for (Class<?> cursor = helper; cursor != null && cursor != Object.class;
                  cursor = cursor.getSuperclass()) {
                 for (Method method : cursor.getDeclaredMethods()) {
-                    if (!"onInputEvent".equals(method.getName()) || Modifier.isStatic(method.getModifiers())) {
+                    if (!"onInputEvent".equals(method.getName())
+                            || Modifier.isStatic(method.getModifiers())) {
                         continue;
                     }
                     String signature = method.toGenericString();
@@ -62,9 +61,11 @@ final class AppGestureBackdropHoldHook {
                         if (event != null && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                             DockLiquidGlassView glass = boundGlass();
                             if (glass != null) {
-                                // Raw DOWN happens before GestureModeApp commits to an APP gesture.
-                                // Use it only to refresh one clean APP candidate; never hold here.
+                                // Preserve the old useful behavior: obtain one clean APP candidate
+                                // before 4.50 starts transforming the task. This is a pre-capture,
+                                // never a freeze/hold boundary.
                                 HookUtil.invoke(glass, "armAppBackdropForGestureDown");
+                                noteInteraction(glass);
                                 glass.requestCapture("miuix307-app-gesture-raw-down");
                             }
                         }
@@ -80,13 +81,13 @@ final class AppGestureBackdropHoldHook {
         }
     }
 
-    /** 4.50 vendor lifecycle: onStartGesture -> MOVE transforms; $6/$8 end callbacks settle. */
+    /** 4.50 vendor lifecycle: onStartGesture precedes task transforms; $6/$8 settle them. */
     private static int installVendorGestureLifecycle(ClassLoader classLoader) {
         int hooked = 0;
         try {
             Class<?> mode = Class.forName(GESTURE_MODE_APP, false, classLoader);
             HookUtil.hookMethod(mode, "onStartGesture", new Class<?>[0], chain -> {
-                armGestureHoldFromVendorLifecycle("GestureModeApp.onStartGesture");
+                setVendorTransitionActive(true, "GestureModeApp.onStartGesture");
                 return chain.proceed(chain.getArgs().toArray(new Object[0]));
             });
             hooked++;
@@ -105,12 +106,13 @@ final class AppGestureBackdropHoldHook {
             Class<?> listener = Class.forName(className, false, classLoader);
             int hooked = 0;
             for (Method method : listener.getDeclaredMethods()) {
-                if (!"onAnimationEnd".equals(method.getName()) || Modifier.isStatic(method.getModifiers())) {
+                if (!"onAnimationEnd".equals(method.getName())
+                        || Modifier.isStatic(method.getModifiers())) {
                     continue;
                 }
                 HookUtil.hook(method, chain -> {
                     Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    releaseGestureHold(label + ".onAnimationEnd");
+                    setVendorTransitionActive(false, label + ".onAnimationEnd");
                     return result;
                 });
                 hooked++;
@@ -130,63 +132,113 @@ final class AppGestureBackdropHoldHook {
         return null;
     }
 
-    private static void armGestureHoldFromVendorLifecycle(String reason) {
-        DockLiquidGlassView glass = boundGlass();
-        if (glass == null || !isAppScene(glass)) return;
-        // If the currently installed bitmap is stale HOME/UNKNOWN, do not freeze wallpaper.
-        // Drop it to the native Dock background, then block transformed replacement frames.
-        Object installed = HookUtil.getField(glass, "installedCaptureScene");
-        if (installed != null && !"APP".equals(String.valueOf(installed))) {
-            HookUtil.invoke(glass, "invalidateInstalledBackdropForApp", "gesture-lifecycle-start");
+    static void setSystemUiTransitionActive(boolean active, String reason) {
+        if (systemUiTransitionActive == active) {
+            if (active) ensureCaptureBurst(reason);
+            return;
         }
-        gestureSession++;
-        gestureHold = true;
-        HookUtil.invoke(glass, "cancelPendingCaptureWork");
-        Api101Bridge.log(TAG + " hold armed from " + reason + " session=" + gestureSession
-                + " installed=" + installed);
+        systemUiTransitionActive = active;
+        updateCaptureBurst("systemui-" + reason);
     }
 
-    private static void releaseGestureHold(String reason) {
-        if (!gestureHold) return;
+    private static void setVendorTransitionActive(boolean active, String reason) {
+        if (vendorTransitionActive == active) {
+            if (active) ensureCaptureBurst(reason);
+            return;
+        }
+        vendorTransitionActive = active;
+        updateCaptureBurst("vendor-" + reason);
+    }
+
+    static void stopAllTransitionCapture(String reason) {
+        vendorTransitionActive = false;
+        systemUiTransitionActive = false;
+        updateCaptureBurst(reason);
+    }
+
+    static boolean isTransitionCaptureActive() {
+        return vendorTransitionActive || systemUiTransitionActive;
+    }
+
+    private static void updateCaptureBurst(String reason) {
+        if (isTransitionCaptureActive()) {
+            ensureCaptureBurst(reason);
+        } else {
+            stopCaptureBurst(reason);
+        }
+    }
+
+    private static void ensureCaptureBurst(String reason) {
         DockLiquidGlassView glass = boundGlass();
-        long session = gestureSession;
-        gestureHold = false;
+        if (glass == null || !isAppOrRecentsScene(glass)) return;
+        if (captureBurstRunning) {
+            noteInteraction(glass);
+            glass.requestCapture("miuix307-transition-refresh-" + reason);
+            return;
+        }
+
+        captureBurstRunning = true;
+        final long session = ++captureBurstSession;
+        // Reuse the existing APP prearm visibility exception rather than bypassing hard gates.
+        // isCaptureAllowed() checks SystemUI panel, screen power, workstation and drag gates first.
+        keepAppVisibilityPrearm(glass, true);
+        Api101Bridge.log(TAG + " transition capture burst start session=" + session
+                + " reason=" + reason);
+        scheduleCaptureFrame(glass, session);
+    }
+
+    private static void scheduleCaptureFrame(DockLiquidGlassView glass, long session) {
+        if (glass == null) return;
+        glass.postOnAnimation(() -> {
+            if (!captureBurstRunning || session != captureBurstSession
+                    || !isTransitionCaptureActive() || boundGlass() != glass) {
+                return;
+            }
+            keepAppVisibilityPrearm(glass, true);
+            noteInteraction(glass);
+            glass.requestCapture("miuix307-transition-continuous");
+            scheduleCaptureFrame(glass, session);
+        });
+    }
+
+    private static void stopCaptureBurst(String reason) {
+        if (!captureBurstRunning) return;
+        DockLiquidGlassView glass = boundGlass();
+        captureBurstRunning = false;
+        captureBurstSession++;
         if (glass != null) {
-            HookUtil.invoke(glass, "cancelPendingCaptureWork");
-            glass.requestCapture("miuix307-app-gesture-release-" + reason);
+            keepAppVisibilityPrearm(glass, false);
+            glass.requestCapture("miuix307-transition-settle-" + reason);
         }
-        Api101Bridge.log(TAG + " hold released session=" + session + " reason=" + reason);
+        Api101Bridge.log(TAG + " transition capture burst stop reason=" + reason);
     }
 
-    private static void installCaptureRequestGate() {
+    private static void keepAppVisibilityPrearm(DockLiquidGlassView glass, boolean active) {
+        if (glass == null) return;
         try {
-            HookUtil.hookMethod(DockLiquidGlassView.class, "requestStateCapture",
-                    new Class<?>[]{String.class}, chain -> {
-                        if (gestureHold && chain.getThisObject() == boundGlass()) return null;
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-        } catch (Throwable error) {
-            Api101Bridge.log(TAG + " request gate unavailable: " + error);
-        }
-    }
-
-    private static void installCaptureInstallGate() {
-        try {
-            for (Method method : DockLiquidGlassView.class.getDeclaredMethods()) {
-                if (!"installCapture".equals(method.getName()) || method.getParameterCount() != 3) continue;
-                HookUtil.hook(method, chain -> {
-                    if (gestureHold && chain.getThisObject() == boundGlass()) {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        if (args.length > 0 && args[0] != null) {
-                            try { HookUtil.invoke(args[0], "recycle"); } catch (Throwable ignored) {}
-                        }
-                        return null;
-                    }
-                    return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                });
+            if (active) {
+                // Invalidate the short raw-DOWN timeout token and keep the same bounded visibility
+                // bypass alive for the duration of the real vendor/SystemUI transition.
+                int token = HookUtil.getIntField(glass, "appBackdropPrearmToken");
+                HookUtil.setIntField(glass, "appBackdropPrearmToken", token + 1);
+                HookUtil.setField(glass, "appBackdropPrearmActive", true);
+            } else {
+                int token = HookUtil.getIntField(glass, "appBackdropPrearmToken");
+                HookUtil.setIntField(glass, "appBackdropPrearmToken", token + 1);
+                HookUtil.setField(glass, "appBackdropPrearmActive", false);
             }
         } catch (Throwable error) {
-            Api101Bridge.log(TAG + " install gate unavailable: " + error);
+            Api101Bridge.log(TAG + " APP visibility prearm update unavailable: " + error);
+        }
+    }
+
+    private static void noteInteraction(DockLiquidGlassView glass) {
+        if (glass == null) return;
+        try {
+            Object cadence = HookUtil.getField(glass, "captureCadence");
+            if (cadence != null) HookUtil.invoke(cadence, "noteInteraction", System.nanoTime());
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " transition cadence renewal unavailable: " + error);
         }
     }
 
@@ -196,7 +248,9 @@ final class AppGestureBackdropHoldHook {
                     new Class<?>[]{boolean.class, String.class}, chain -> {
                         Object[] args = chain.getArgs().toArray(new Object[0]);
                         if (args.length > 0 && Boolean.TRUE.equals(args[0])) {
-                            releaseGestureHold("exact-overview");
+                            // Exact Overview has its own continuous RECENTS loop. Transfer authority
+                            // instead of running two independent request loops.
+                            stopAllTransitionCapture("exact-overview");
                         }
                         return chain.proceed(args);
                     });
@@ -205,23 +259,12 @@ final class AppGestureBackdropHoldHook {
         }
     }
 
-    private static void installSystemUiTakeoverBridge() {
-        try {
-            HookUtil.hookMethod(SystemUiTransitionRuntime.class, "beginAppToLauncherVisualHold",
-                    new Class<?>[]{long.class, long.class, int.class}, chain -> {
-                        releaseGestureHold("systemui-app-to-launcher");
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-        } catch (Throwable error) {
-            Api101Bridge.log(TAG + " SystemUI takeover bridge unavailable: " + error);
-        }
-    }
-
-    private static boolean isAppScene(DockLiquidGlassView glass) {
+    private static boolean isAppOrRecentsScene(DockLiquidGlassView glass) {
         try {
             Object sceneState = HookUtil.getField(glass, "sceneState");
             Object desired = sceneState == null ? null : HookUtil.invoke(sceneState, "desired");
-            return "APP".equals(String.valueOf(desired));
+            String scene = String.valueOf(desired);
+            return "APP".equals(scene) || "RECENTS".equals(scene);
         } catch (Throwable ignored) {
             return false;
         }
