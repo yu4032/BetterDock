@@ -55,6 +55,10 @@ final class SystemUiTransitionRuntime {
         });
     }
 
+    static boolean isVisualHoldActive(DockLiquidGlassView glass) {
+        return visualHold && glass != null && currentView.get() == glass;
+    }
+
     /** Called by HomeOwnershipResolver's existing event-driven provider listener. */
     static void onProviderChanged(IBinder next) {
         runOnMain(() -> {
