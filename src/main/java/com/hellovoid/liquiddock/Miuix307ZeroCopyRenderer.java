@@ -36,6 +36,7 @@ final class Miuix307ZeroCopyRenderer {
 
         // Diagnostic rule: the live GPU backdrop is the only visual child. Tone/tint, legacy
         // highlight and stroke stay out of this path so center passthrough can be judged directly.
+        materialHost.setForeground(null);
         host.removeAllViews();
         host.addView(gpuBackdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
