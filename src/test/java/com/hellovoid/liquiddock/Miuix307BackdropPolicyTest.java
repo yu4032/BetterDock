@@ -2,7 +2,6 @@ package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -47,38 +46,37 @@ public class Miuix307BackdropPolicyTest {
 
         String exclusions = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/CaptureExclusionNames.java"));
-        String dock = Files.readString(Path.of(
-                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
-        String glassHook = Files.readString(Path.of(
-                "src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java"));
         String pipeline = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java"));
+        String entry = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/ModuleMain.java"));
+        String freeze = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307HomeTransitionFreezeHook.java"));
 
-        assertTrue(dock.contains("void setGestureCaptureTarget(String target)"));
         assertTrue(exclusions.contains("Miuix307MaterialPipeline.isInstalled()"));
 
-        // Device regression: GestureToHome is emitted while APP->HOME still contains the
-        // SHOW_WALLPAPER/IS_WALLPAPER transition layers. It must therefore freeze the last valid
-        // APP bitmap, not immediately switch Prismal to the HOME wallpaper source.
+        // Device regression: GestureToHome is emitted while APP->HOME still contains
+        // SHOW_WALLPAPER/IS_WALLPAPER transition layers. Both native 307 HOME hints keep calling
+        // onHomeTransitionStart(), but a specialized hook must replace that legacy immediate-HOME
+        // body before it can switch Prismal to wallpaper.
         assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
         assertTrue(pipeline.contains("sendStateBroadcast"));
         assertTrue(pipeline.contains("\"toHome\""));
         assertTrue(pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
-        assertTrue(glassHook.contains("static void onHomeTransitionStart()"));
-        assertTrue(glassHook.contains("glass.freezeBackdropForHomeTransition("));
-        assertFalse(glassHook.contains("glass.setGestureCaptureTarget(\"HOME\")"));
+        assertTrue(entry.contains("Miuix307HomeTransitionFreezeHook.install()"));
+        assertTrue(freeze.contains("MiuixGlassHook.class, \"onHomeTransitionStart\""));
+        assertTrue(freeze.contains("freezeLastAppBackdrop"));
+        assertTrue(freeze.contains("cancelPendingCaptureWork"));
+        assertTrue(freeze.contains("return null"));
 
-        // Freeze is a capture-scheduling barrier only: invalidate in-flight work but never clear
-        // capture/captureShader/installedCaptureScene. That keeps the last APP pixels visible
-        // until authoritative HOME ownership takes over.
-        int freezeStart = dock.indexOf("void freezeBackdropForHomeTransition(String reason)");
-        int freezeEnd = dock.indexOf("void releaseBackdropFromHomeTransition", freezeStart);
-        assertTrue(freezeStart >= 0 && freezeEnd > freezeStart);
-        String freeze = dock.substring(freezeStart, freezeEnd);
-        assertTrue(freeze.contains("cancelPendingCaptureWork()"));
-        assertFalse(freeze.contains("capture = null"));
-        assertFalse(freeze.contains("captureShader = null"));
-        assertFalse(freeze.contains("installedCaptureScene = null"));
-        assertTrue(dock.contains("if (homeTransitionBackdropFrozen)"));
+        // While frozen, no observation/pointer/lifecycle request may replace the installed APP
+        // bitmap. Existing onLauncherFocused() owns the configured settle timing; its focus-home
+        // request is the normal release point. Exact Overview or a fresh APP prearm are safe
+        // cancellation paths for an interrupted/redirected HOME transition.
+        assertTrue(freeze.contains("DockLiquidGlassView.class, \"requestStateCapture\""));
+        assertTrue(freeze.contains("\"focus-home\""));
+        assertTrue(freeze.contains("\"overview-enter-\""));
+        assertTrue(freeze.contains("\"app-prearm-\""));
+        assertTrue(freeze.contains("releaseFrozenBackdrop"));
     }
 }
