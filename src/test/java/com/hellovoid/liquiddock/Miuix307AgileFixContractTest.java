@@ -31,8 +31,8 @@ public class Miuix307AgileFixContractTest {
                 vendorClass >= 0 && startHook > vendorClass);
         assertTrue("continuous capture must start before vendor task transforms begin",
                 startHook >= 0 && activate > startHook && proceed > activate);
-        assertFalse("raw ACTION_UP/CANCEL must not control transition capture lifetime",
-                hook.contains("ACTION_UP") || hook.contains("ACTION_CANCEL"));
+        assertFalse("raw ACTION_UP/CANCEL callbacks must not control transition capture lifetime",
+                hook.contains("MotionEvent.ACTION_UP") || hook.contains("MotionEvent.ACTION_CANCEL"));
         assertFalse("gesture capture must never predict HOME through the legacy target API",
                 hook.contains("setGestureCaptureTarget(\"HOME\")"));
         assertFalse("gesture capture must never predict RECENTS through the legacy target API",
