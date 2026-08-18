@@ -15,10 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Launcher-side consumer of SystemUI transition events.
  *
- * SystemUI owns transition classification/token safety, but it no longer freezes the installed
- * backdrop. APP↔Launcher is a live composed animation and LiquidDock must continue sampling it.
- * The legacy visualHold field/method names are retained for protocol/diagnostic compatibility;
- * they now mean "tracked transition capture is active", never "block request/install".
+ * SystemUI owns transition classification/token safety, but it never freezes the installed
+ * backdrop. APP↔Launcher is a live composed animation and LiquidDock keeps sampling it. During
+ * APP_TO_LAUNCHER the capture scene remains APP/FULL_DISPLAY even if Launcher ownership flips to
+ * HOME early; only exact Overview or authoritative Shell finish/abort may commit a destination.
+ * Legacy visualHold names remain for protocol/diagnostic compatibility and mean "tracked
+ * transition capture active", never "block request/install".
  */
 final class SystemUiTransitionRuntime {
     private static final String TAG = "[DC][TR]";
@@ -54,7 +56,7 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "rebind");
+            Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("rebind");
         });
     }
 
@@ -81,8 +83,8 @@ final class SystemUiTransitionRuntime {
             activeDisplayId = displayId;
             Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     true, "app-to-launcher-token-" + tokenId);
-            // Do not cancel the frame already in flight: it is part of the animation and should
-            // install normally. This request merely makes the transition boundary immediately dirty.
+            // Do not cancel the frame already in flight: it belongs to the animation. The 4.50
+            // transition burst pins scene=APP and this request makes the boundary immediately dirty.
             glass.requestCapture("systemui-transition-start");
             MainHook.log(TAG + " APP_TO_LAUNCHER continuous capture start token=" + tokenId
                     + " generation=" + generation + " display=" + displayId);
@@ -96,7 +98,7 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
             transitionSequence++;
-            // Exact Overview owns its own 60 FPS RECENTS continuation loop.
+            // Exact Overview owns its own RECENTS capture loop and destination source.
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("exact-overview");
             MainHook.log(TAG + " transition capture transferred to exact Overview");
         });
@@ -111,30 +113,29 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
 
-            if (glass == null) {
-                Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "finish-no-view");
-                return;
-            }
+            // Shell finish/abort is now the destination authority. Stop BOTH vendor and SystemUI
+            // capture leases before changing launcher ownership so no later vendor callback can
+            // re-pin APP after HOME has been committed.
+            Miuix307GestureBackdropHoldHook.stopAllTransitionCapture(
+                    aborted ? "systemui-abort-token-" + tokenId : "systemui-home-finish-token-" + tokenId);
+
+            if (glass == null) return;
 
             if (aborted) {
                 applyStableScene(glass, false);
-                Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
-                        false, "abort-token-" + tokenId);
                 glass.prearmAppBackdrop("systemui-transition-abort");
                 glass.requestCapture("systemui-transition-abort");
                 MainHook.log(TAG + " transition aborted -> APP token=" + tokenId);
                 return;
             }
 
-            // HOME becomes authoritative only at the real Shell finish. Up to this point the scene
-            // remains APP and mode-1 continuously samples the transformed app/Launcher composition.
+            // HOME becomes authoritative only here. Up to this point the scene was pinned APP and
+            // mode-1 continuously sampled the transformed app/Launcher composition.
             applyStableScene(glass, true);
-            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
-                    false, "home-finish-token-" + tokenId);
             glass.requestCapture("systemui-transition-home-finished");
             // Shell finish can precede presentation of its final Surface transaction by one VSYNC.
-            // Unlike the old design, this is NOT a hold: captures/installations remain enabled;
-            // this simply asks for one additional stable HOME sample on the following frame.
+            // This is not a hold; request/install remain enabled and we simply take another stable
+            // HOME sample on the next presented frame.
             final long sequence = transitionSequence;
             glass.postOnAnimation(() -> {
                 if (sequence != transitionSequence || currentView.get() != glass) return;
@@ -168,8 +169,8 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
-                    false, "launcher-to-app-token-" + tokenId);
+            Miuix307GestureBackdropHoldHook.stopAllTransitionCapture(
+                    "launcher-to-app-token-" + tokenId);
             applyStableScene(glass, false);
             glass.prearmAppBackdrop("systemui-transition-app");
             glass.requestCapture("systemui-transition-app");
