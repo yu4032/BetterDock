@@ -9,7 +9,34 @@ final class CaptureExclusionNames {
             "NavigationBar", "StatusBar", "GestureStub", "DockAssistantView"
     };
 
+    /**
+     * Package-name prefix of the APP layer currently closing into HOME.
+     *
+     * The 4.50 gesture pull itself remains live and fully captured. WMShell APP_TO_LAUNCHER starts
+     * only after release, when MIUI reparents the closing task into the icon-flight transition.
+     * During that final phase mode-1 should keep sampling Launcher/wallpaper below the Dock but
+     * omit the shrinking APP surface so its icon-flight image cannot refract into the Dock glass.
+     */
+    private static volatile String transitionAppLayerPrefix;
+
     private CaptureExclusionNames() {}
+
+    static void setTransitionAppLayerPrefix(String packagePrefix) {
+        if (packagePrefix == null || packagePrefix.isEmpty()
+                || "com.miui.home".equals(packagePrefix)) {
+            transitionAppLayerPrefix = null;
+        } else {
+            transitionAppLayerPrefix = packagePrefix;
+        }
+    }
+
+    static void clearTransitionAppLayerPrefix() {
+        transitionAppLayerPrefix = null;
+    }
+
+    static String transitionAppLayerPrefixForTests() {
+        return transitionAppLayerPrefix;
+    }
 
     static String[] merge(String dockLayer, String dragLayer,
                           Collection<String> freeformLayers) {
@@ -36,6 +63,7 @@ final class CaptureExclusionNames {
         add(names, dragLayer);
         if (miuix307) {
             for (String name : MIUIX_307_SYSTEM_UI_LAYERS) add(names, name);
+            add(names, transitionAppLayerPrefix);
         }
         if (freeformLayers != null) {
             for (String name : freeformLayers) add(names, name);
