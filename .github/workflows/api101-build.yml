@@ -2,7 +2,13 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence, demo/miuix307-material-pipeline, feat/miuix307-refraction-highlight, fix/miuix307-real-glass-overlay, fix/portrait-drop-recents-input ]
+    branches:
+      - main
+      - api101-migration
+      - refactor/modular-architecture
+      - 'fix/**'
+      - 'feat/**'
+      - 'demo/**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
