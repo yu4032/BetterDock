@@ -44,7 +44,6 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            CaptureExclusionNames.clearTransitionAppLayerPrefix();
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("rebind");
         });
     }
@@ -70,18 +69,8 @@ final class SystemUiTransitionRuntime {
             activeTokenId = tokenId;
             activeDisplayId = displayId;
 
-            // APP drag/pull frames before WMShell start remain fully live. Once Shell declares the
-            // APP_TO_LAUNCHER transition, MIUI begins the final close-to-icon flight. Exclude only
-            // that closing APP package from mode-1 so Launcher/wallpaper below it keep streaming
-            // without the animated icon being refracted into the Dock glass.
-            refreshForegroundAppPackage(glass);
-            String closingPackage = cachedForegroundAppPackage(glass);
-            CaptureExclusionNames.setTransitionAppLayerPrefix(closingPackage);
-            Api101Bridge.log("[DC][IX] HOME icon-flight exclusion pkg=" + closingPackage
-                    + " token=" + tokenId);
-
-            // Runtime already owns the exact current glass. Pass it directly so the transition
-            // source authority never depends on another hook's weak reference or bind timing.
+            // Shell supplies cross-process transition lifetime only. Source ownership remains APP
+            // until Launcher 4.50 emits GestureToHome, then the shared burst continues on HOME.
             Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     glass, true, "app-to-launcher-token-" + tokenId);
             glass.requestCapture("systemui-transition-start");
@@ -98,8 +87,6 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
             transitionSequence++;
-            // RECENTS must show its task cards; closing-app exclusion is HOME-only.
-            CaptureExclusionNames.clearTransitionAppLayerPrefix();
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("exact-overview");
             MainHook.log(TAG + " transition capture transferred to exact Overview");
         });
@@ -114,9 +101,6 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
 
-            // The closing app is gone (or transition aborted). Clear the temporary layer exclusion
-            // before stopAllTransitionCapture() requests its settle frame.
-            CaptureExclusionNames.clearTransitionAppLayerPrefix();
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture(
                     aborted ? "systemui-abort-token-" + tokenId
                             : "systemui-home-finish-token-" + tokenId);
@@ -126,11 +110,12 @@ final class SystemUiTransitionRuntime {
                 applyStableScene(glass, false);
                 glass.prearmAppBackdrop("systemui-transition-abort");
                 glass.requestCapture("systemui-transition-abort");
-                refreshForegroundAppPackage(glass);
                 MainHook.log(TAG + " transition aborted -> APP token=" + tokenId);
                 return;
             }
 
+            // GestureToHome normally committed HOME earlier. Shell finish is the final fallback and
+            // stable-state confirmation if the vendor event was missed for any reason.
             applyStableScene(glass, true);
             glass.requestCapture("systemui-transition-home-finished");
             final long sequence = transitionSequence;
@@ -138,7 +123,7 @@ final class SystemUiTransitionRuntime {
                 if (sequence != transitionSequence || currentView.get() != glass) return;
                 glass.requestCapture("systemui-transition-home-post-vsync");
             });
-            Api101Bridge.log(TAG + " HOME source committed at Shell finish token=" + tokenId);
+            Api101Bridge.log(TAG + " HOME stable confirmed at Shell finish token=" + tokenId);
         });
     }
 
@@ -167,43 +152,13 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            CaptureExclusionNames.clearTransitionAppLayerPrefix();
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture(
                     "launcher-to-app-token-" + tokenId);
             applyStableScene(glass, false);
             glass.prearmAppBackdrop("systemui-transition-app");
             glass.requestCapture("systemui-transition-app");
-
-            // Cache the foreground package while the APP is actually becoming top. The legacy SF
-            // name resolver is retired, but refreshForegroundAppLayer() still records appLayerPkg.
-            refreshForegroundAppPackage(glass);
-            final long sequence = transitionSequence;
-            glass.postOnAnimation(() -> {
-                if (sequence != transitionSequence || currentView.get() != glass || visualHold) return;
-                refreshForegroundAppPackage(glass);
-            });
             MainHook.log(TAG + " LAUNCHER_TO_APP token=" + tokenId + " display=" + displayId);
         });
-    }
-
-    private static void refreshForegroundAppPackage(DockLiquidGlassView glass) {
-        if (glass == null) return;
-        try {
-            glass.refreshForegroundAppLayer();
-        } catch (Throwable error) {
-            Api101Bridge.log("[DC][IX] foreground APP package refresh unavailable", error);
-        }
-    }
-
-    private static String cachedForegroundAppPackage(DockLiquidGlassView glass) {
-        if (glass == null) return null;
-        try {
-            Object value = HookUtil.getField(glass, "appLayerPkg");
-            return value instanceof String ? (String) value : null;
-        } catch (Throwable error) {
-            Api101Bridge.log("[DC][IX] foreground APP package cache unavailable", error);
-            return null;
-        }
     }
 
     private static void applyStableScene(DockLiquidGlassView glass, boolean home) {
@@ -224,7 +179,6 @@ final class SystemUiTransitionRuntime {
         visualHold = false;
         activeTokenId = 0L;
         activeDisplayId = -1;
-        CaptureExclusionNames.clearTransitionAppLayerPrefix();
         Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("generation-reset");
         return true;
     }
