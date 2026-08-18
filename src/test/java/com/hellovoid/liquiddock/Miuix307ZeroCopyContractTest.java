@@ -71,16 +71,16 @@ public class Miuix307ZeroCopyContractTest {
     public void compositorBlurRegionUsesTheSameRoundedGeometryAsTheHost() throws Exception {
         String backdrop = read("Miuix307ZeroCopyBackdropView.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
-        String hook = read("MiuixGlassHook.java");
 
         assertTrue(backdrop.contains("ViewOutlineProvider"));
         assertTrue(backdrop.contains("outline.setRoundRect"));
         assertTrue(backdrop.contains("setClipToOutline(true)"));
         assertTrue(backdrop.contains("setGlassRadius"));
         assertTrue(backdrop.contains("invalidateOutline()"));
-        assertTrue(renderer.contains("backdrop.setGlassRadius(cornerRadiusPx)"));
-        assertTrue(hook.contains("Math.round(config.glass.blur), nativeRadius"));
-        assertTrue(hook.contains("Math.round(config.glass.blur), nativeRadius"));
+        assertTrue(renderer.contains("WeakReference<DockLiquidGlassHostView> hostRef"));
+        assertTrue(renderer.contains("backdrop.setGlassRadius(readHostRadius(host))"));
+        assertTrue(renderer.contains("backdrop.setGlassRadius(readHostRadius(host))"));
+        assertTrue(renderer.contains("getDeclaredField(\"radius\")"));
     }
 
     @Test
