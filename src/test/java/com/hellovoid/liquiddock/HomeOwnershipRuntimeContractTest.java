@@ -39,16 +39,21 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
-    @Test public void confirmedHomeReleases307TransitionFreezeAfterHomeStateIsApplied()
+    @Test public void confirmedHomeStillUsesExistingFocusSettleAs307FreezeReleaseBoundary()
             throws Exception {
         String runtime = source("HomeOwnershipRuntime.java");
+        String glass = source("DockLiquidGlassView.java");
+        String freeze = source("Miuix307HomeTransitionFreezeHook.java");
+
         int homeState = runtime.indexOf("glass.setLauncherState(true, true)");
         int focus = runtime.indexOf("glass.onLauncherFocused()", homeState);
-        int release = runtime.indexOf("glass.releaseBackdropFromHomeTransition(", homeState);
-        assertTrue("HOME ownership must be applied before releasing the frozen APP frame",
-                homeState >= 0 && release > homeState);
-        assertTrue("APP->HOME settle scheduling must be armed before the freeze is released",
-                focus > homeState && release > focus);
+        assertTrue("SystemUI HOME state must arm the existing focus-settle path",
+                homeState >= 0 && focus > homeState);
+        assertTrue("onLauncherFocused must retain the delayed focus-home request",
+                glass.contains("requestStateCapture(\"focus-home\")"));
+        assertTrue("307 transition freeze must release only when focus-home is actually due",
+                freeze.contains("\"focus-home\""));
+        assertTrue(freeze.contains("releaseFrozenBackdrop"));
     }
 
     @Test public void brokerExposesProviderLifecycleWithoutPolling() throws Exception {
