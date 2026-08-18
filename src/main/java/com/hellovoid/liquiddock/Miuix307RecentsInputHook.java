@@ -16,6 +16,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * backdrop captures moving with the user's finger. Restore only observation: the Floating Dock
  * root gets the same non-consuming touch observer used by the legacy pipeline, while Launcher
  * dispatch remains a fallback and keeps later Overview-card gestures live.
+ *
+ * Do not feed pointer motion into DockLiquidGlassView's legacy Recents prearm state machine.
+ * Unconfirmed RECENTS is intentionally wallpaper-backed by CaptureSourcePolicy; a 307 Dock swipe
+ * must therefore remain APP-backed until the exact EnterOverviewStateEvent confirms Recents.
  */
 final class Miuix307RecentsInputHook {
     private static final String TAG = "[DC][MG]";
@@ -31,7 +35,6 @@ final class Miuix307RecentsInputHook {
         if (!INSTALLED.compareAndSet(false, true)) return;
         installGlassBindBridge();
         installLauncherInput(classLoader);
-        installGestureToRecent(classLoader);
         installOverviewBoundary(classLoader, "EnterOverviewStateEvent", true);
         installOverviewBoundary(classLoader, "ExitOverviewStateEvent", false);
         bindExistingDockRoot();
@@ -74,7 +77,7 @@ final class Miuix307RecentsInputHook {
         root.setOnTouchListener((view, event) -> {
             if (event == null || !Miuix307MaterialPipeline.isInstalled()) return false;
             onInputMotion(event.getActionMasked(), event.getRawX(), event.getRawY(), true);
-            // Observation only. Never consume MIUI's gesture handling.
+            // Observation only. Never consume or replace MIUI's gesture handling.
             return false;
         });
         dockRootRef = new WeakReference<>(root);
@@ -124,8 +127,11 @@ final class Miuix307RecentsInputHook {
             gestureActive = dockWindow || glass.isTouchInDockArea(rawX, rawY);
             if (gestureActive) {
                 notePointerInteraction(glass);
+                // Keep the first hidden/collapsed-Dock frame live without invoking the legacy
+                // Recents distance prearm. This private helper only grants a short APP visibility
+                // bypass and leaves CaptureScene unchanged.
+                HookUtil.invoke(glass, "armAppBackdropForGestureDown");
                 glass.onDockTouchEvent();
-                glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
                 notePointerInteraction(glass);
                 glass.requestCapture("miuix307-overview-touch-down");
@@ -136,10 +142,11 @@ final class Miuix307RecentsInputHook {
         if (action == MotionEvent.ACTION_MOVE) {
             if (gestureActive) {
                 // Do not re-check Dock bounds here. After a valid DOWN, the finger itself owns
-                // capture cadence for the entire swipe, including slow motion above the Dock.
+                // capture cadence for the entire swipe. Crucially, do not call onDockGestureMotion:
+                // that legacy method prearms RECENTS by distance and would switch source to
+                // wallpaper before exact Overview exists.
                 notePointerInteraction(glass);
                 glass.onDockTouchEvent();
-                glass.onDockGestureMotion(action, rawY);
             } else if (overviewActive) {
                 notePointerInteraction(glass);
                 glass.requestCapture("miuix307-overview-touch-move");
@@ -148,7 +155,6 @@ final class Miuix307RecentsInputHook {
         }
 
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            if (gestureActive) glass.onDockGestureMotion(action, rawY);
             clearPointerInteraction(glass);
             gestureActive = false;
         }
@@ -173,28 +179,6 @@ final class Miuix307RecentsInputHook {
             }
         } catch (Throwable error) {
             MainHook.log(TAG + " pointer cadence clear unavailable: " + error);
-        }
-    }
-
-    private static void installGestureToRecent(ClassLoader classLoader) {
-        try {
-            Class<?> eventClass = Class.forName(
-                    "com.miui.home.launcher.dock.v3.GestureToRecent", false, classLoader);
-            int hooked = 0;
-            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    if (Miuix307MaterialPipeline.isInstalled()) {
-                        DockLiquidGlassView glass = boundGlass();
-                        if (glass != null) glass.setGestureCaptureTarget("RECENTS");
-                    }
-                    return result;
-                });
-                hooked++;
-            }
-            MainHook.log(TAG + " GestureToRecent target hook installed constructors=" + hooked);
-        } catch (Throwable error) {
-            MainHook.log(TAG + " GestureToRecent target hook unavailable: " + error);
         }
     }
 
