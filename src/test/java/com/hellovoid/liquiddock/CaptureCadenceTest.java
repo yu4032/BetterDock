@@ -53,6 +53,8 @@ public class CaptureCadenceTest {
         assertTrue(source.contains("MotionEvent.ACTION_MOVE"));
         assertTrue(source.contains("onDockGestureMotion"));
         assertTrue(source.contains("requestCapture(\"miuix307-gesture-move\")"));
+        assertTrue("MOVE forwarding must use the same native active-state gate as the DEX",
+                source.contains("mTriggeringGesture") && source.contains("mStartGesture"));
         assertTrue("one gesture may recover an opened capture breaker once",
                 source.contains("circuitRecoveryUsed"));
 
