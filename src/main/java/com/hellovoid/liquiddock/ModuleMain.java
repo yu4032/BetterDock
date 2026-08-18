@@ -65,6 +65,7 @@ public final class ModuleMain extends XposedModule {
             Miuix307CaptureOwnershipHook.install(classLoader);
             WorkstationWallpaperOnlyHook.install(classLoader);
             DiagnosticTraceHook.installLauncher(classLoader);
+            AlwaysOnDiagnosticTrace.installLauncher(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
