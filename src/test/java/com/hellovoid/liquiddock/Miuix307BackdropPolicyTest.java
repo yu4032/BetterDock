@@ -55,16 +55,13 @@ public class Miuix307BackdropPolicyTest {
                 "src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java"));
 
         assertTrue(exclusions.contains("Miuix307MaterialPipeline.isInstalled()"));
-
-        // The specialized 307 pipeline already exposes native toHome/GestureToHome boundaries.
-        // Keep that route simple: it may select HOME through the established scene target, but it
-        // must not install a second freeze/ownership state machine on top of the system gesture.
-        assertTrue(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
-        assertTrue(pipeline.contains("sendStateBroadcast"));
-        assertTrue(pipeline.contains("\"toHome\""));
-        assertTrue(pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
-        assertTrue(glassHook.contains("static void onHomeTransitionStart()"));
-        assertTrue(glassHook.contains("glass.setGestureCaptureTarget(\"HOME\")"));
+        assertTrue(entry.contains("SystemUiTransitionSource.install"));
+        assertFalse(pipeline.contains("com.miui.home.recents.util.StateNotifyUtils"));
+        assertFalse(pipeline.contains("installHomeGesturePrearm"));
+        assertFalse(pipeline.contains("com.miui.home.launcher.dock.v3.GestureToHome"));
+        assertFalse(pipeline.contains("MiuixGlassHook.onHomeTransitionStart()"));
+        assertFalse(glassHook.contains("static void onHomeTransitionStart()"));
+        assertFalse(glassHook.contains("glass.setGestureCaptureTarget(\"HOME\")"));
         assertFalse(entry.contains("Miuix307HomeTransitionFreezeHook.install()"));
     }
 }
