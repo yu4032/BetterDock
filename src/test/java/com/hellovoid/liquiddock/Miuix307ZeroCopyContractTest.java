@@ -94,48 +94,22 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(bridge.contains("compat compositor optics active"));
         assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig("));
         assertTrue(renderer.contains("materialHost, backdrop, readHostRadius(host), blurRadiusPx"));
-        assertFalse(bridge.contains("new float[]"));
-        assertFalse(bridge.contains("new int[][]"));
         assertFalse(bridge.contains("captureScreenAsync"));
         assertFalse(bridge.contains("Bitmap"));
     }
 
     @Test
-    public void compatBlurProbeObservesVendorArgumentsWithoutMutation() throws Exception {
+    public void completedBlurDiagnosticsAreRetiredFromProductionPath() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
 
-        assertTrue(bridge.contains("installCompatBlurProbe(ClassLoader classLoader)"));
-        assertTrue(bridge.contains("installCompatBlurProbe(sourceClass.getClassLoader())"));
-        assertTrue(bridge.contains("com.miui.home.launcher.common.BlurUtilities"));
-        assertTrue(bridge.contains("\"setBackgroundBlur\""));
-        assertTrue(bridge.contains("View.class, int.class, float[].class, int[][].class"));
-        assertTrue(bridge.contains("ThreadLocal<View> compatProbeTarget"));
-        assertTrue(bridge.contains("compat blur args target="));
-        assertTrue(bridge.contains("chain.proceed(chain.getArgs().toArray(new Object[0]))"));
-        assertFalse(bridge.contains("chain.getArgs().set("));
-    }
-
-    @Test
-    public void compatBlurProbeAlsoObservesHiddenViewOpticsWithoutMutation() throws Exception {
-        String bridge = read("Miuix307CompositorOpticsBridge.java");
-
-        assertTrue(bridge.contains("installCompatViewSetterProbe(ClassLoader classLoader)"));
-        assertTrue(bridge.contains("installCompatViewSetterProbe(sourceClass.getClassLoader())"));
-        assertTrue(bridge.contains("hookCompatViewSetter"));
-        assertTrue(bridge.contains("chain.getThisObject()"));
-        assertTrue(bridge.contains("setMiBackgroundBlurType"));
-        assertTrue(bridge.contains("setMiBackgroundBlurScaleRatio"));
-        assertTrue(bridge.contains("setMiBackgroundBlurEnhanceFlag"));
-        assertTrue(bridge.contains("setBackgroundBlurAlpha"));
-        assertTrue(bridge.contains("setBackgroundBlurCrop"));
-        assertTrue(bridge.contains("setBackgroundGradientBlurParams"));
-        assertTrue(bridge.contains("setMiColorAdjust"));
-        assertTrue(bridge.contains("setMiBackgroundBlendColors"));
-        assertTrue(bridge.contains("setMixEffectEnabled"));
-        assertTrue(bridge.contains("setPassTextureScale"));
-        assertTrue(bridge.contains("setMiBloomStroke"));
-        assertTrue(bridge.contains("compat view setter target="));
-        assertFalse(bridge.contains("chain.getArgs().set("));
+        assertFalse("argument probe was only needed to establish the 4.50 addBlur contract",
+                bridge.contains("installCompatBlurProbe"));
+        assertFalse("hidden View setter probe was only needed to rule out extra addBlur optics",
+                bridge.contains("installCompatViewSetterProbe"));
+        assertFalse("zero-copy path should not keep process-wide diagnostic View hooks",
+                bridge.contains("hookCompatViewSetter"));
+        assertFalse("completed diagnostic should not retain a ThreadLocal hook scope",
+                bridge.contains("compatProbeTarget"));
     }
 
     @Test
