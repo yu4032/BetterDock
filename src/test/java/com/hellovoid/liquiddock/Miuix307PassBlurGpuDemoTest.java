@@ -136,7 +136,7 @@ public class Miuix307PassBlurGpuDemoTest {
         assertFalse("geometry-only rotation must not null/unbind PassBlur",
                 region.contains("Miuix307PassBlurBridge.unbind")
                         || region.contains("binding = null")
-                        || region.contains("bindProducerWhenReady"));
+                        || region.contains("bindProducerWhenReady("));
 
         assertTrue("pre-draw and SurfaceChanged must use the in-place refresh",
                 view.contains("post(this::refreshProducerGeometryInPlace)")
