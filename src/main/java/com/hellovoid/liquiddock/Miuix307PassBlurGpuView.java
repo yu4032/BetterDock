@@ -25,11 +25,11 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 /**
- * Diagnostic GPU-only consumer for HyperOS PassBlur output.
+ * GPU-only consumer for the HyperOS PassBlur output.
  *
- * The left half samples the live compositor texture without displacement. The right half adds a
- * deliberately obvious sinusoidal horizontal offset so device testing can prove that LiquidDock's
- * own shader is spatially transforming a live SurfaceFlinger backdrop.
+ * The center of the Dock is an exact passthrough of the live compositor texture. A smooth rounded
+ * edge lens displaces only the inner edge band so spatial refraction can be judged without the
+ * artificial horizontal grating used by the first proof-of-path demo.
  */
 final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static final String TAG = "[DC][PBGL]";
@@ -57,14 +57,36 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "uniform samplerExternalOES uTexture;\n"
             + "uniform mat4 uTexMatrix;\n"
             + "uniform vec4 uCrop;\n"
+            + "uniform vec2 uViewSize;\n"
+            + "uniform float uGlassRadius;\n"
             + "uniform int uConfigRot;\n"
             + "varying vec2 vUv;\n"
+            + "float sdRoundRect(vec2 p, vec2 h, float r) {\n"
+            + "  vec2 q = abs(p) - (h - vec2(r));\n"
+            + "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
+            + "}\n"
             + "void main() {\n"
-            + "  vec2 rootUv = vec2(uCrop.x + vUv.x * uCrop.z,\n"
-            + "                     uCrop.y + vUv.y * uCrop.w);\n"
-            + "  if (vUv.x > 0.5) {\n"
-            + "    rootUv.x += sin(vUv.y * 42.0) * 0.028;\n"
-            + "  }\n"
+            + "  vec2 halfSize = max(uViewSize * 0.5 - vec2(0.5), vec2(1.0));\n"
+            + "  float radius = clamp(uGlassRadius, 1.0, min(halfSize.x, halfSize.y));\n"
+            + "  vec2 p = vUv * uViewSize - uViewSize * 0.5;\n"
+            + "  float sd = sdRoundRect(p, halfSize, radius);\n"
+            + "  float insidePx = max(-sd, 0.0);\n"
+            + "  float bandPx = clamp(uViewSize.y * 0.30, 18.0, 58.0);\n"
+            + "  float edgeWeight = (1.0 - smoothstep(0.0, bandPx, insidePx))\n"
+            + "                   * smoothstep(0.0, 2.0, insidePx);\n"
+            + "  edgeWeight *= edgeWeight;\n"
+            + "  float stepPx = 1.0;\n"
+            + "  vec2 grad = vec2(\n"
+            + "      sdRoundRect(p + vec2(stepPx, 0.0), halfSize, radius)\n"
+            + "        - sdRoundRect(p - vec2(stepPx, 0.0), halfSize, radius),\n"
+            + "      sdRoundRect(p + vec2(0.0, stepPx), halfSize, radius)\n"
+            + "        - sdRoundRect(p - vec2(0.0, stepPx), halfSize, radius));\n"
+            + "  vec2 normal = length(grad) > 0.001 ? normalize(grad) : vec2(0.0);\n"
+            + "  float displacementPx = clamp(uViewSize.y * 0.055, 4.0, 12.0);\n"
+            + "  vec2 refractedUv = clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0);\n"
+            + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
+            + "  vec2 rootUv = vec2(uCrop.x + lensUv.x * uCrop.z,\n"
+            + "                     uCrop.y + lensUv.y * uCrop.w);\n"
             + "  vec2 sampleUv = rootUv;\n"
             + "  if (uConfigRot == 1) {\n"
             + "    sampleUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
@@ -287,8 +309,11 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             int texture = GLES20.glGetUniformLocation(program, "uTexture");
             int matrix = GLES20.glGetUniformLocation(program, "uTexMatrix");
             int crop = GLES20.glGetUniformLocation(program, "uCrop");
+            int viewSize = GLES20.glGetUniformLocation(program, "uViewSize");
+            int glassRadius = GLES20.glGetUniformLocation(program, "uGlassRadius");
             int rotation = GLES20.glGetUniformLocation(program, "uConfigRot");
-            if (position < 0 || uv < 0 || texture < 0 || matrix < 0 || crop < 0 || rotation < 0) {
+            if (position < 0 || uv < 0 || texture < 0 || matrix < 0 || crop < 0
+                    || viewSize < 0 || glassRadius < 0 || rotation < 0) {
                 throw new IllegalStateException("shader location unavailable");
             }
 
@@ -306,6 +331,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             GLES20.glUniform1i(texture, 0);
             GLES20.glUniformMatrix4fv(matrix, 1, false, textureMatrix, 0);
             GLES20.glUniform4f(crop, cropX, cropY, cropW, cropH);
+            GLES20.glUniform2f(viewSize, Math.max(1f, getWidth()), Math.max(1f, getHeight()));
+            GLES20.glUniform1f(glassRadius, Math.max(1f, glassRadiusPx));
             GLES20.glUniform1i(rotation, configRotation);
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
             GLES20.glDisableVertexAttribArray(position);
@@ -321,7 +348,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
                 MainHook.log(TAG + " first GLES backdrop draw crop=["
                         + cropX + "," + cropY + "," + cropW + "," + cropH + "]"
                         + " configRot=" + configRotation
-                        + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight);
+                        + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
+                        + " lens=edge-only passthrough-center");
             }
         } catch (Throwable error) {
             fail("draw", error);
@@ -437,7 +465,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
 
         cropX = clamp01(left);
         cropW = Math.max(0.0001f, Math.min(1f - cropX, width));
-        // Local shader UV uses a bottom-left origin; configRotation is applied after this crop.
         cropY = clamp01(1f - (top + height));
         cropH = Math.max(0.0001f, Math.min(1f - cropY, height));
     }
@@ -566,8 +593,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         if (first == second) return true;
         if (first == null || second == null) return false;
         try {
-            Method method = SurfaceControl.class.getMethod(
-                    "isSameSurface", SurfaceControl.class);
+            Method method = SurfaceControl.class.getMethod("isSameSurface", SurfaceControl.class);
             Object value = method.invoke(first, second);
             return value instanceof Boolean && (Boolean) value;
         } catch (Throwable ignored) {
