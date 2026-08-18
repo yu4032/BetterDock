@@ -24,7 +24,7 @@ public class Miuix307RecentsInputContractTest {
         assertTrue(hook.contains("\"dispatchTouchEvent\""));
         assertTrue(hook.contains("isTouchInDockArea"));
         assertTrue(hook.contains("gestureActive"));
-        assertTrue(hook.contains("onDockTouchEvent()"));
+        assertTrue(hook.contains("glass.onDockTouchEvent()"));
         assertTrue(hook.contains("armAppBackdropForGestureDown"));
     }
 
@@ -34,13 +34,13 @@ public class Miuix307RecentsInputContractTest {
         assertTrue(hook.contains("com.miui.home.recents.event."));
         assertTrue(hook.contains("\"EnterOverviewStateEvent\""));
         assertTrue(hook.contains("\"ExitOverviewStateEvent\""));
-        assertTrue(hook.contains("setOverviewActive"));
+        assertTrue(hook.contains("glass.setOverviewActive"));
 
         // Regression: 307 pointer tracking must not enter the legacy unconfirmed RECENTS state.
         // CaptureSourcePolicy intentionally maps that state to WALLPAPER until exact Overview.
         assertFalse(hook.contains("com.miui.home.launcher.dock.v3.GestureToRecent"));
-        assertFalse(hook.contains("setGestureCaptureTarget(\"RECENTS\")"));
-        assertFalse(hook.contains("onDockGestureMotion"));
-        assertFalse(hook.contains("prearmRecentsCapture"));
+        assertFalse(hook.contains("glass.setGestureCaptureTarget(\"RECENTS\")"));
+        assertFalse(hook.contains("glass.onDockGestureMotion("));
+        assertFalse(hook.contains("glass.prearmRecentsCapture("));
     }
 }
