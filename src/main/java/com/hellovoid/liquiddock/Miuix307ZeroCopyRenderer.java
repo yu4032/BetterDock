@@ -57,11 +57,12 @@ final class Miuix307ZeroCopyRenderer {
         materialHostRef = new WeakReference<>(materialHost);
 
         // The host is attached by MiuixGlassHook immediately after install(). Apply the vendor
-        // compositor material on the next frame, then restore the user-selected blur radius so
-        // material type/gradient parameters are inherited without stealing GUI radius ownership.
+        // compositor configuration on the next frame so BlurBackground2 has its live parent alpha
+        // and theme resources, while keeping LiquidDock ownership of the configured blur radius.
         backdrop.postOnAnimation(() -> {
             if (backdropRef.get() != backdrop) return;
-            if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(materialHost, backdrop)) {
+            if (Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
+                    materialHost, backdrop, readHostRadius(host), blurRadiusPx)) {
                 backdrop.setBlurRadius(blurRadiusPx);
             }
         });
@@ -77,9 +78,11 @@ final class Miuix307ZeroCopyRenderer {
         DockLiquidGlassHostView host = hostRef.get();
         View materialHost = materialHostRef.get();
         if (backdrop != null) {
-            if (host != null) backdrop.setGlassRadius(readHostRadius(host));
+            float cornerRadiusPx = host != null ? readHostRadius(host) : 0f;
+            if (host != null) backdrop.setGlassRadius(cornerRadiusPx);
             if (materialHost != null) {
-                Miuix307CompositorOpticsBridge.applyVendorBlurConfig(materialHost, backdrop);
+                Miuix307CompositorOpticsBridge.applyVendorBlurConfig(
+                        materialHost, backdrop, cornerRadiusPx, blurRadiusPx);
             }
             backdrop.setBlurRadius(blurRadiusPx);
         }
