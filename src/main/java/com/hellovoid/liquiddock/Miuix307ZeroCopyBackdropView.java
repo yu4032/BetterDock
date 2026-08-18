@@ -2,7 +2,9 @@ package com.hellovoid.liquiddock;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 
 /**
  * Dedicated MiuiX 307 backdrop RenderNode.
@@ -16,6 +18,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
     private static final int MAX_ATTACH_RETRY_FRAMES = 8;
 
     private int blurRadiusPx;
+    private float glassRadiusPx;
     private boolean blurActive;
     private boolean activationExhausted;
     private int retryFrames;
@@ -25,6 +28,22 @@ final class Miuix307ZeroCopyBackdropView extends View {
         super(context);
         this.blurRadiusPx = sanitizeRadius(blurRadiusPx);
         setBackgroundColor(Color.TRANSPARENT);
+        setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View view, Outline outline) {
+                int width = view.getWidth();
+                int height = view.getHeight();
+                if (width <= 0 || height <= 0) {
+                    outline.setEmpty();
+                    return;
+                }
+                float maxRadius = Math.min(width, height) * 0.5f;
+                float radius = Math.max(0f, Math.min(glassRadiusPx, maxRadius));
+                outline.setRoundRect(0, 0, width, height, radius);
+            }
+        });
+        // Pass-window blur lives on this RenderNode. Parent Canvas clipping cannot constrain the
+        // compositor blur region, so the child itself must own the same rounded outline.
+        setClipToOutline(true);
         setClickable(false);
         setFocusable(false);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -46,6 +65,14 @@ final class Miuix307ZeroCopyBackdropView extends View {
         retryFrames = 0;
         long generation = ++activationGeneration;
         tryActivate(generation);
+    }
+
+    void setGlassRadius(float radiusPx) {
+        float next = Math.max(0f, radiusPx);
+        if (Float.compare(glassRadiusPx, next) == 0) return;
+        glassRadiusPx = next;
+        invalidateOutline();
+        invalidate();
     }
 
     boolean isBlurActive() {
@@ -72,6 +99,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
         super.onAttachedToWindow();
         retryFrames = 0;
         activationExhausted = false;
+        invalidateOutline();
         long generation = ++activationGeneration;
         tryActivate(generation);
     }
@@ -83,6 +111,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        invalidateOutline();
         if (w <= 0 || h <= 0 || !isAttachedToWindow() || blurActive) return;
         retryFrames = 0;
         activationExhausted = false;
@@ -101,6 +130,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
                 && MiBlurBridge.applyPassWindowBlur(this, blurRadiusPx)) {
             if (!blurActive) {
                 MainHook.log(TAG + " backdrop pass-window blur active radius=" + blurRadiusPx
+                        + " glassRadius=" + glassRadiusPx
                         + " size=" + getWidth() + "x" + getHeight());
             }
             blurActive = true;
