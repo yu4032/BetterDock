@@ -49,6 +49,21 @@ public class HomeGridRotationDirectionTest {
         assertFalse(source.contains("HomeGridTransformEngine.transform"));
     }
 
+    @Test
+    public void tenBySixWorkspaceUsesGenericDropAndSqueezeRules() throws Exception {
+        String source = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/HomeGridProfileOverlayHook.java"),
+                StandardCharsets.UTF_8);
+        assertTrue("10x6 overlay must own GridOccupancy drag rules after counts are loaded",
+                source.contains("installDragRuleOwnership"));
+        assertTrue(source.contains("GridOccupancyController"));
+        assertTrue(source.contains("mLayoutDropRule"));
+        assertTrue(source.contains("mLayoutSqueezeDataTransform"));
+        assertTrue(source.contains("setLayoutSqueezeRule"));
+        assertTrue("10x6 must switch away from Pad's fixed SwapPlaces rules",
+                source.contains("createLayoutSqueezeRule(false)"));
+    }
+
     private static void assertBlocksFit(int[][] blocks, int sourceColumns, int sourceRows) {
         for (int[] origin : blocks) {
             assertTrue(origin[0] >= 0 && origin[0] + 1 < sourceColumns);
