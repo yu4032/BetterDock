@@ -69,6 +69,12 @@ public class Miuix307BackdropPolicyTest {
         assertTrue(freeze.contains("cancelPendingCaptureWork"));
         assertTrue(freeze.contains("return null"));
 
+        // Once the legacy immediate HOME target is suppressed, the request/response ownership
+        // resolver must be explicitly refreshed at this same native transition boundary. Otherwise
+        // launcherResumed can remain APP indefinitely and the preserved APP bitmap never hands off.
+        assertTrue("307 HOME freeze must trigger a fresh SystemUI ownership query",
+                freeze.contains("HomeOwnershipRuntime.request(\"miuix307-toHome\")"));
+
         // While frozen, no observation/pointer/lifecycle request may replace the installed APP
         // bitmap. Existing onLauncherFocused() owns the configured settle timing; its focus-home
         // request is the normal release point. Exact Overview or a new Dock touch while APP is
