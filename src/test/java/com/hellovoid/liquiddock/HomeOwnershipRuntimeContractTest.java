@@ -39,7 +39,7 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
-    @Test public void confirmedHomeReleases307FreezeAfterSettleEvenWhenCaptureIsTemporarilyBlocked()
+    @Test public void confirmedHomeHas307SettleFallbackWhenFocusHomeCaptureIsTemporarilyBlocked()
             throws Exception {
         String runtime = source("HomeOwnershipRuntime.java");
         String glass = source("DockLiquidGlassView.java");
@@ -49,20 +49,19 @@ public class HomeOwnershipRuntimeContractTest {
         int focus = runtime.indexOf("glass.onLauncherFocused()", homeState);
         assertTrue("SystemUI HOME state must still arm the existing focus-settle path",
                 homeState >= 0 && focus > homeState);
-
-        int scheduleRelease = glass.indexOf(
-                "Miuix307HomeTransitionFreezeHook.onHomeOwnershipConfirmed(this, delay)");
-        int captureGate = glass.indexOf("if (!isCaptureAllowed()) return;", scheduleRelease);
-        assertTrue("HOME freeze release must be scheduled before the capture-allowed gate",
-                scheduleRelease >= 0 && captureGate > scheduleRelease);
         assertTrue("existing focus-home capture remains the preferred HOME refresh",
                 glass.contains("requestStateCapture(\"focus-home\")"));
+        assertTrue("the existing focus-home path can legitimately be skipped by capture gating",
+                glass.contains("if (!isCaptureAllowed()) return;"));
 
-        assertTrue(freeze.contains(
-                "static void onHomeOwnershipConfirmed(DockLiquidGlassView glass, long settleDelayMillis)"));
-        assertTrue("settle expiry must release the preserved APP frame even if capture is blocked",
-                freeze.contains("releaseFrozenBackdrop(glass, \"home-settle\")"));
-        assertTrue("release scheduling needs a generation token so an old HOME timer cannot"
+        assertTrue("307 freeze hook must observe confirmed HOME focus settle",
+                freeze.contains("\"onLauncherFocused\""));
+        assertTrue("fallback must preserve the same configured APP->HOME settle delay",
+                freeze.contains("homeSettleDelayMs"));
+        assertTrue("fallback expiry must release the preserved APP frame even when focus-home"
+                        + " capture was skipped",
+                freeze.contains("releaseFrozenBackdrop(glass, \"home-settle-fallback\")"));
+        assertTrue("fallback release needs a generation token so an old HOME timer cannot"
                         + " thaw a newer transition",
                 freeze.contains("freezeGeneration"));
     }
