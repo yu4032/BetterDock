@@ -63,36 +63,39 @@ public class Miuix307AgileFixContractTest {
     }
 
     @Test
-    public void finalHomeIconFlightExcludesRealFloatingIconLayer2ChildSurfaces() throws Exception {
+    public void finalHomeIconFlightFiltersClosingTaskAtVendorCommitBeforeCloseToHome() throws Exception {
         String iconHook = read("Miuix307IconFlightSurfaceHook.java");
         String exclusions = read("CaptureExclusionNames.java");
         String module = read("ModuleMain.java");
 
-        assertTrue("4.50 FloatingIconLayer2 must be the actual exclusion owner",
-                iconHook.contains("com.miui.home.recents.views.FloatingIconLayer2"));
-        assertTrue("icon and shader SurfaceControlCompat children must both be resolved",
-                iconHook.contains("mFloatingIconSurfaceControl")
-                        && iconHook.contains("mFloatingIconShaderSurfaceControl")
-                        && iconHook.contains("mSurfaceControl"));
-        assertTrue("async surface creation must be covered instead of assuming init has completed",
-                iconHook.contains("init$lambda$3")
-                        && iconHook.contains("drawIcon")
-                        && iconHook.contains("showSurfaceControl"));
-        assertTrue("mode-1 SurfaceControl[] excludes must be augmented, not capture-frozen",
-                iconHook.contains("buildFullDisplaySurfaceExcludes")
-                        && iconHook.contains("addIfValidUnique(out, icon)")
-                        && iconHook.contains("addIfValidUnique(out, shader)"));
-        assertTrue("exact exclusion must be active only under accepted SystemUI transition authority",
-                iconHook.contains("setSystemUiTransitionActive")
-                        && iconHook.contains("homeTransitionActive"));
+        int homeHook = iconHook.indexOf("\"performAppToHome\"");
+        int setExclude = iconHook.indexOf("setTransitionAppLayerPrefix", homeHook);
+        int proceed = iconHook.indexOf("chain.proceed", setExclude);
+        assertTrue("4.50 vendor HOME commit must arm exclusion before CLOSE_TO_HOME proceeds",
+                homeHook >= 0 && setExclude > homeHook && proceed > setExclude);
+        assertTrue("closing package must be resolved from live capture state with 4.50 task fallback",
+                iconHook.contains("refreshForegroundAppLayer")
+                        && iconHook.contains("mRunningTaskComponentName")
+                        && iconHook.contains("getPackageName"));
+        assertTrue("mode-1 exclusion must cover the APP task and its package-less HOME-close auxiliaries",
+                exclusions.contains("add(names, closingPackage)")
+                        && exclusions.contains("PreColorStarting")
+                        && exclusions.contains("Splash Screen ")
+                        && exclusions.contains("Miui Caption of Task="));
+        assertTrue("vendor HOME exclusion must force the 307 merge path even if material install flag is false",
+                exclusions.contains("boolean homeCloseActive = transitionAppLayerPrefix != null")
+                        && exclusions.contains("Miuix307MaterialPipeline.isInstalled() || homeCloseActive"));
+        assertTrue("HOME/abort/Overview cleanup remains available through shared prefix authority",
+                iconHook.contains("clearTransitionAppLayerPrefix")
+                        && iconHook.contains("GestureModeApp$8")
+                        && iconHook.contains("GestureModeApp$6"));
         assertTrue(module.contains("Miuix307IconFlightSurfaceHook.install(classLoader)"));
-        assertFalse("WindowElement home/root leash must not be read as the icon child surface",
-                iconHook.contains("HookUtil.getField(owner, \"mFloatingIconLayerLeash\")")
-                        || iconHook.contains("HookUtil.invoke(owner, \"getMFloatingIconLayerLeash\")"));
-        assertFalse("closing APP package names are the wrong residual layer and must remain retired",
-                exclusions.contains("add(names, transitionAppLayerPrefix)"));
-        assertFalse("exact icon cleanup must never switch to wallpaper or block capture",
-                iconHook.contains("WALLPAPER") || iconHook.contains("cancelPendingCaptureWork"));
+        assertFalse("target 4.50 path uses FloatingIconView2 in Launcher root, not guessed child surfaces",
+                iconHook.contains("FloatingIconLayer2")
+                        || iconHook.contains("mFloatingIconSurfaceControl")
+                        || iconHook.contains("mFloatingIconShaderSurfaceControl"));
+        assertFalse("HOME close filtering must not freeze capture or force wallpaper",
+                iconHook.contains("cancelPendingCaptureWork") || iconHook.contains("WALLPAPER"));
     }
 
     @Test
