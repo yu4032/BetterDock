@@ -40,10 +40,15 @@ public class HomeOwnershipRuntimeContractTest {
                 runtime.contains("onLauncherFocused"));
     }
 
-    @Test public void genericCapturePathDoesNotRefreshOwnershipFromLauncherFocus() throws Exception {
-        String main = source("MainHook.java");
-        assertFalse(main.contains("HomeOwnershipRuntime.request(\"focus\")"));
-        assertFalse(main.contains("liquid focus boundary="));
+    @Test public void legacyFocusRefreshCannotDriveOwnershipAnymore() throws Exception {
+        String runtime = source("HomeOwnershipRuntime.java");
+        String transition = source("SystemUiTransitionRuntime.java");
+        // Old generic compatibility hooks may still observe Launcher focus on pre-307 builds,
+        // but the ownership runtime must make that request inert. The live handoff is WMShell.
+        assertTrue(runtime.contains("\"focus\".equals(reason)"));
+        assertTrue(runtime.contains("\"miuix307-focus\".equals(reason)"));
+        assertTrue(transition.contains("installLegacyGestureAuthorityGate"));
+        assertTrue(transition.contains("setGestureCaptureTarget"));
     }
 
     @Test public void specialized307DoesNotDriveOwnershipFromLauncherFocusDuringGestureTransitions()
