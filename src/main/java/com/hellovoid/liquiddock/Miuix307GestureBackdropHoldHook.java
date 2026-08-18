@@ -6,10 +6,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Continuous APP-transition capture for HyperOS 3.0.7 / Launcher 4.50.
  *
- * 4.50 decompilation gives us reliable lifecycle boundaries, but those boundaries must control
- * capture cadence, not freeze the last bitmap. During APP→HOME/RECENTS the foreground task is a
- * live SurfaceFlinger composition; LiquidDock should sample every animation frame until a stable
- * destination authority takes over.
+ * 4.50 decompilation gives us reliable lifecycle boundaries, but those boundaries control
+ * capture cadence/source authority rather than freezing the last bitmap. During APP→HOME/RECENTS
+ * the foreground task remains a live SurfaceFlinger composition, so LiquidDock samples every
+ * animation frame and keeps the capture scene pinned to APP/FULL_DISPLAY until an exact
+ * destination authority (Overview or WMShell finish/abort) takes over.
  */
 final class Miuix307GestureBackdropHoldHook {
     private static final String TAG = "[DC][GH]";
@@ -120,7 +121,12 @@ final class Miuix307GestureBackdropHoldHook {
     private static void ensureCaptureBurst(String reason) {
         if (!Miuix307MaterialPipeline.isInstalled()) return;
         DockLiquidGlassView glass = boundGlass();
-        if (glass == null || !isAppOrRecentsScene(glass)) return;
+        if (glass == null) return;
+
+        // Ownership/focus can report HOME as soon as the finger is released, while the APP→HOME
+        // animation is still running. Transition capture must stay FULL_DISPLAY until WMShell
+        // finish (or exact Overview) commits the destination, so pin the scene back to APP here.
+        pinTransitionSceneToApp(glass);
 
         if (captureBurstRunning) {
             renewTransitionCapture(glass, "miuix307-transition-refresh-" + reason);
@@ -160,6 +166,9 @@ final class Miuix307GestureBackdropHoldHook {
 
     private static void renewTransitionCapture(DockLiquidGlassView glass, String reason) {
         if (glass == null) return;
+        // Reassert APP on every animation frame. HomeOwnership/Launcher lifecycle may already say
+        // HOME after ACTION_UP; that is ownership information, not a visual completion boundary.
+        pinTransitionSceneToApp(glass);
         try {
             Object cadence = HookUtil.getField(glass, "captureCadence");
             if (cadence != null) HookUtil.invoke(cadence, "noteInteraction", System.nanoTime());
@@ -167,6 +176,19 @@ final class Miuix307GestureBackdropHoldHook {
             Api101Bridge.log(TAG + " transition cadence renewal unavailable", error);
         }
         glass.requestCapture(reason);
+    }
+
+    private static void pinTransitionSceneToApp(DockLiquidGlassView glass) {
+        if (glass == null || !isTransitionCaptureActive()) return;
+        try {
+            Object state = HookUtil.getField(glass, "sceneState");
+            if (state != null) {
+                HookUtil.invoke(state, "setGestureTarget", "APP", System.nanoTime());
+            }
+            HookUtil.invoke(glass, "updateDesiredScene");
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " transition APP scene pin unavailable", error);
+        }
     }
 
     /**
@@ -195,18 +217,6 @@ final class Miuix307GestureBackdropHoldHook {
                     }
                     return chain.proceed(args);
                 });
-    }
-
-    private static boolean isAppOrRecentsScene(DockLiquidGlassView glass) {
-        if (glass == null) return false;
-        try {
-            Object state = HookUtil.getField(glass, "sceneState");
-            Object desired = state == null ? null : HookUtil.invoke(state, "desired");
-            String scene = String.valueOf(desired);
-            return "APP".equals(scene) || "RECENTS".equals(scene);
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     private static DockLiquidGlassView boundGlass() {
