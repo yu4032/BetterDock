@@ -13,6 +13,7 @@ public class Miuix307PassBlurGpuDemoTest {
     private static final Path MAIN =
             Path.of("src/main/java/com/hellovoid/liquiddock");
 
+    // First RED proves only the SF producer bridge is missing; GPU rendering is added afterward.
     @Test
     public void passBlurBridgeBindsRootProducerAndCanUnbindCleanly() throws Exception {
         Path path = MAIN.resolve("Miuix307PassBlurBridge.java");
