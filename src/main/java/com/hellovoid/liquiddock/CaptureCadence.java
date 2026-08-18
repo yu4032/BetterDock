@@ -2,8 +2,8 @@ package com.hellovoid.liquiddock;
 
 /**
  * Central capture-rate policy. The persisted power limit belongs to idle APP backdrop capture;
- * direct pointer interaction, active APP↔Launcher transitions and RECENTS are paced independently
- * so animation capture never falls back to the static-scene probe rate.
+ * direct pointer interaction and RECENTS are paced independently so a slow gesture cannot fall
+ * back to the static-scene probe rate.
  */
 final class CaptureCadence {
     private static final long INTERACTION_INTERVAL_NANOS = intervalForFps(60, 5, 165);
@@ -43,16 +43,6 @@ final class CaptureCadence {
 
     long intervalNanos(CaptureScene scene, boolean dynamicEnabled,
                        long dynamicActiveUntilNanos, long nowNanos) {
-        return intervalNanos(scene, dynamicEnabled, dynamicActiveUntilNanos, nowNanos, false);
-    }
-
-    long intervalNanos(CaptureScene scene, boolean dynamicEnabled,
-                       long dynamicActiveUntilNanos, long nowNanos,
-                       boolean transitionCaptureActive) {
-        // APP↔Launcher animation capture is deliberately independent of the idle APP power budget.
-        // It is a short-lived visual transition and must remain as responsive as direct input.
-        if (transitionCaptureActive) return INTERACTION_INTERVAL_NANOS;
-
         // Pointer activity wins before scene-specific adaptive policy. In particular, the first
         // part of a Dock-to-Recents swipe is still APP, but must not run at APP probe/power FPS.
         if (isInteractionActive(nowNanos)) return INTERACTION_INTERVAL_NANOS;
