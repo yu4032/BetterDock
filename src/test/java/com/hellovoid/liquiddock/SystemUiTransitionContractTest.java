@@ -50,7 +50,23 @@ public class SystemUiTransitionContractTest {
         assertTrue(runtime.contains("generation != sourceGeneration"));
     }
 
-    @Test public void homeFinishKeepsHoldAcrossARealDisplayFrameBeforeCapture() throws Exception {
+    @Test public void appToLauncherNeverFreezesRequestOrInstallPath() throws Exception {
+        String runtime = source("SystemUiTransitionRuntime.java");
+
+        assertFalse("SystemUI migration must not install requestStateCapture freeze gates",
+                runtime.contains("installCaptureRequestGate"));
+        assertFalse("SystemUI migration must not install installCapture/recycle freeze gates",
+                runtime.contains("installCaptureInstallGate"));
+        assertFalse("live transition start/finish must not invalidate animation readbacks",
+                runtime.contains("cancelPendingCaptureWork"));
+        assertTrue("APP_TO_LAUNCHER must activate the shared continuous capture burst",
+                runtime.contains("setSystemUiTransitionActive(")
+                        && runtime.contains("true, \"app-to-launcher-token-\""));
+        assertTrue("transition start must request a normal composed frame",
+                runtime.contains("requestCapture(\"systemui-transition-start\")"));
+    }
+
+    @Test public void homeFinishSwitchesSceneWithoutClosingCapturePath() throws Exception {
         String runtime = source("SystemUiTransitionRuntime.java");
 
         int finish = runtime.indexOf(
@@ -58,39 +74,31 @@ public class SystemUiTransitionContractTest {
         int next = runtime.indexOf("\n    static void ", finish + 1);
         String body = next > finish ? runtime.substring(finish, next) : runtime.substring(finish);
 
-        assertTrue("non-aborted Shell finish must arm a dedicated HOME compositor release",
-                body.contains("scheduleHomeVisualRelease"));
-        assertFalse("Shell finish must not immediately request HOME capture",
+        assertTrue("HOME must become authoritative only at real Shell finish",
+                body.contains("applyStableScene(glass, true)"));
+        assertTrue("HOME finish must stop only the SystemUI burst lease",
+                body.contains("setSystemUiTransitionActive(")
+                        && body.contains("false, \"home-finish-token-\""));
+        assertTrue("HOME finish must immediately request a normal final capture",
                 body.contains("requestCapture(\"systemui-transition-home-finished\")"));
-
-        int helper = runtime.indexOf("private static void scheduleHomeVisualRelease(");
-        int nextHelper = runtime.indexOf("\n    private static void ", helper + 1);
-        String helperBody = nextHelper > helper
-                ? runtime.substring(helper, nextHelper) : runtime.substring(helper);
-        assertTrue("HOME release must cross VSYNC rather than a same-loop post",
-                helperBody.contains("postOnAnimation"));
-        assertTrue("the hold must remain active until the frame barrier callback",
-                helperBody.indexOf("postOnAnimation") < helperBody.indexOf("visualHold = false;"));
-        assertTrue("stale in-flight full-display candidates must be invalidated before release",
-                helperBody.contains("cancelPendingCaptureWork"));
-        assertTrue("HOME capture belongs after the compositor barrier releases the hold",
-                helperBody.indexOf("visualHold = false;")
-                        < helperBody.indexOf("requestCapture(\"systemui-transition-home-finished\")"));
-        assertFalse("HOME settling must never use a guessed millisecond delay",
-                helperBody.contains("postDelayed("));
+        assertTrue("one additional post-VSYNC sample may settle the final compositor transaction",
+                body.contains("postOnAnimation")
+                        && body.contains("systemui-transition-home-post-vsync"));
+        assertFalse("the post-VSYNC sample must not be a gate or delayed unlock",
+                body.contains("postDelayed(") || body.contains("visualHold = false;\n                glass.requestCapture"));
     }
 
-    @Test public void appSupersedeInvalidatesPendingHomeFrameRelease() throws Exception {
+    @Test public void reverseTransitionStopsBurstAndReturnsToAppDirectly() throws Exception {
         String runtime = source("SystemUiTransitionRuntime.java");
-        assertTrue(runtime.contains("homeReleaseSequence"));
-
         int app = runtime.indexOf(
                 "static void resolveLauncherToApp(long generation, long tokenId, int displayId)");
         int next = runtime.indexOf("\n    private static void ", app + 1);
         if (next < 0) next = runtime.indexOf("\n    static void ", app + 1);
         String body = next > app ? runtime.substring(app, next) : runtime.substring(app);
-        assertTrue("reverse transition must invalidate any pending HOME frame release",
-                body.contains("homeReleaseSequence++"));
+        assertTrue(body.contains("setSystemUiTransitionActive(")
+                && body.contains("false, \"launcher-to-app-token-\""));
+        assertTrue(body.contains("applyStableScene(glass, false)"));
+        assertTrue(body.contains("requestCapture(\"systemui-transition-app\")"));
     }
 
     @Test public void migrated307HasNoLauncherHomePrearm() throws Exception {
