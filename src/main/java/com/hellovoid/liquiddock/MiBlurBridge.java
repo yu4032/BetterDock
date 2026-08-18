@@ -66,6 +66,10 @@ final class MiBlurBridge {
         return LEGACY_AVAILABLE;
     }
 
+    static boolean isPassWindowBlurAvailable() {
+        return PASS_BLUR_AVAILABLE;
+    }
+
     static boolean applyContentBlur(View view, int radiusPx, float textureScale) {
         if (!LEGACY_AVAILABLE || view == null) return false;
         int safeRadius = Math.max(0, Math.min(400, radiusPx));
