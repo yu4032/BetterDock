@@ -23,6 +23,7 @@ final class Miuix307GestureCaptureHook {
     // A real user gesture may recover an already-open capture breaker once. Do not reset the
     // breaker on every MOVE: repeated resets could create a new worker for every timed-out frame.
     private static boolean circuitRecoveryUsed;
+    private static boolean gestureCaptureActive;
 
     private Miuix307GestureCaptureHook() {}
 
@@ -33,12 +34,23 @@ final class Miuix307GestureCaptureHook {
             HookUtil.hookMethod(tracker, "onTouchEvent",
                     new Class<?>[]{MotionEvent.class, boolean.class}, chain -> {
                         Object eventValue = chain.getArgs().get(0);
-                        if (eventValue instanceof MotionEvent
-                                && Miuix307MaterialPipeline.isInstalled()
-                                && !MainHook.isWorkstationMode()) {
-                            dispatchGesture((MotionEvent) eventValue);
+                        if (!(eventValue instanceof MotionEvent)
+                                || !Miuix307MaterialPipeline.isInstalled()
+                                || MainHook.isWorkstationMode()) {
+                            return chain.proceed(chain.getArgs().toArray(new Object[0]));
                         }
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
+
+                        MotionEvent event = (MotionEvent) eventValue;
+                        int action = event.getActionMasked();
+                        boolean activeBefore = nativeGestureActive(chain.getThisObject());
+
+                        // Let the launcher update mTriggeringGesture/mStartGesture first. The first
+                        // meaningful MOVE can become active inside triggerGesture() itself, so a
+                        // pre-only check would miss exactly the frame where interaction starts.
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        boolean activeAfter = nativeGestureActive(chain.getThisObject());
+                        dispatchGesture(event, action, activeBefore, activeAfter);
+                        return result;
                     });
             MainHook.log(TAG + " native GestureTouchEventTracker capture bridge installed");
         } catch (Throwable error) {
@@ -46,21 +58,26 @@ final class Miuix307GestureCaptureHook {
         }
     }
 
-    private static void dispatchGesture(MotionEvent event) {
+    private static void dispatchGesture(MotionEvent event, int action,
+                                        boolean activeBefore, boolean activeAfter) {
         DockLiquidGlassView glass = boundGlass();
         if (glass == null || event == null) return;
 
-        int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             circuitRecoveryUsed = false;
-            // Existing API owns APP prearm, scene transition and one initial capture request.
+            gestureCaptureActive = false;
+            // The native tracker accepts DOWN as its own initialization boundary. Existing glass
+            // logic pre-arms an APP backdrop here so the first visible Dock pixels are fresh.
             glass.onDockGestureMotion(action, event.getRawY());
             return;
         }
 
         if (action == MotionEvent.ACTION_MOVE) {
-            // This forwards every real finger sample. The first sufficiently large upward move
-            // also prearms RECENTS through the existing scene-state API.
+            // DEX contract: non-DOWN events are ignored unless mTriggeringGesture or
+            // mStartGesture is true. Mirror that same gate after the native triggerGesture()
+            // update instead of treating every bottom-screen MOVE as a Recents gesture.
+            if (!activeAfter) return;
+            gestureCaptureActive = true;
             glass.onDockGestureMotion(action, event.getRawY());
 
             if (!circuitRecoveryUsed && isCaptureCircuitOpen(glass)) {
@@ -77,9 +94,25 @@ final class Miuix307GestureCaptureHook {
         }
 
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            glass.onDockGestureMotion(action, event.getRawY());
-            glass.requestCapture("miuix307-gesture-end");
+            // ACTION_UP clears native flags inside onTouchEvent(), therefore use the state seen
+            // before the original method as well as our own previous-MOVE latch.
+            if (gestureCaptureActive || activeBefore) {
+                glass.onDockGestureMotion(action, event.getRawY());
+                glass.requestCapture("miuix307-gesture-end");
+            }
             circuitRecoveryUsed = false;
+            gestureCaptureActive = false;
+        }
+    }
+
+    private static boolean nativeGestureActive(Object tracker) {
+        if (tracker == null) return false;
+        try {
+            return HookUtil.getBooleanField(tracker, "mTriggeringGesture")
+                    || HookUtil.getBooleanField(tracker, "mStartGesture");
+        } catch (Throwable ignored) {
+            // A vendor field rename must fail closed: no speculative gesture capture.
+            return false;
         }
     }
 
