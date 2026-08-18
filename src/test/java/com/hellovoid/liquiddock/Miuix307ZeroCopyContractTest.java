@@ -79,8 +79,22 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(backdrop.contains("invalidateOutline()"));
         assertTrue(renderer.contains("WeakReference<DockLiquidGlassHostView> hostRef"));
         assertTrue(renderer.contains("backdrop.setGlassRadius(readHostRadius(host))"));
-        assertTrue(renderer.contains("backdrop.setGlassRadius(readHostRadius(host))"));
         assertTrue(renderer.contains("getDeclaredField(\"radius\")"));
+    }
+
+    @Test
+    public void compositorOpticsReuseVendorMaterialBlurConfigWithoutReadback() throws Exception {
+        String bridge = read("Miuix307CompositorOpticsBridge.java");
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
+
+        assertTrue(bridge.contains("miuix.core.util.MiuiBlurUtils"));
+        assertTrue(bridge.contains("setBlurConfig"));
+        assertTrue(bridge.contains("getCurrentMaterial"));
+        assertTrue(bridge.contains("getBlurConfig"));
+        assertTrue(bridge.contains("getDisplayMetrics().density"));
+        assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig"));
+        assertFalse(bridge.contains("captureScreenAsync"));
+        assertFalse(bridge.contains("Bitmap"));
     }
 
     @Test
