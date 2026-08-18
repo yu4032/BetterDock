@@ -65,6 +65,9 @@ final class Miuix307ZeroCopyRenderer {
                     materialHost, backdrop, readHostRadius(host), blurRadiusPx)) {
                 backdrop.setBlurRadius(blurRadiusPx);
             }
+            // Discovery only: resolve the SystemUI compositor-refraction transaction signatures and
+            // inspect SurfaceControl ownership. The probe never invokes setChargeAnim*.
+            Miuix307SurfaceRefractionProbe.probe(backdrop, materialHost);
         });
         return true;
     }
