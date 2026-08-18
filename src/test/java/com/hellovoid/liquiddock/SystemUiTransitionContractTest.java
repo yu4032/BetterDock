@@ -66,7 +66,8 @@ public class SystemUiTransitionContractTest {
                 runtime.contains("requestCapture(\"systemui-transition-start\")"));
     }
 
-    @Test public void homeFinishSwitchesSceneWithoutClosingCapturePath() throws Exception {
+    @Test public void homeFinishCommitsDestinationOnlyAfterStoppingAllTransitionLeases()
+            throws Exception {
         String runtime = source("SystemUiTransitionRuntime.java");
 
         int finish = runtime.indexOf(
@@ -74,29 +75,28 @@ public class SystemUiTransitionContractTest {
         int next = runtime.indexOf("\n    static void ", finish + 1);
         String body = next > finish ? runtime.substring(finish, next) : runtime.substring(finish);
 
-        assertTrue("HOME must become authoritative only at real Shell finish",
-                body.contains("applyStableScene(glass, true)"));
-        assertTrue("HOME finish must stop only the SystemUI burst lease",
-                body.contains("setSystemUiTransitionActive(")
-                        && body.contains("false, \"home-finish-token-\""));
+        int stop = body.indexOf("stopAllTransitionCapture(");
+        int home = body.indexOf("applyStableScene(glass, true)");
+        assertTrue("Shell finish must stop vendor/SystemUI APP pin before HOME is committed",
+                stop >= 0 && home > stop);
         assertTrue("HOME finish must immediately request a normal final capture",
                 body.contains("requestCapture(\"systemui-transition-home-finished\")"));
         assertTrue("one additional post-VSYNC sample may settle the final compositor transaction",
                 body.contains("postOnAnimation")
                         && body.contains("systemui-transition-home-post-vsync"));
-        assertFalse("the post-VSYNC sample must not be a gate or delayed unlock",
-                body.contains("postDelayed(") || body.contains("visualHold = false;\n                glass.requestCapture"));
+        assertFalse("HOME settling must never use a guessed millisecond delay",
+                body.contains("postDelayed("));
     }
 
-    @Test public void reverseTransitionStopsBurstAndReturnsToAppDirectly() throws Exception {
+    @Test public void reverseTransitionStopsAllLeasesAndReturnsToAppDirectly() throws Exception {
         String runtime = source("SystemUiTransitionRuntime.java");
         int app = runtime.indexOf(
                 "static void resolveLauncherToApp(long generation, long tokenId, int displayId)");
         int next = runtime.indexOf("\n    private static void ", app + 1);
         if (next < 0) next = runtime.indexOf("\n    static void ", app + 1);
         String body = next > app ? runtime.substring(app, next) : runtime.substring(app);
-        assertTrue(body.contains("setSystemUiTransitionActive(")
-                && body.contains("false, \"launcher-to-app-token-\""));
+        assertTrue(body.contains("stopAllTransitionCapture(")
+                && body.contains("launcher-to-app-token-"));
         assertTrue(body.contains("applyStableScene(glass, false)"));
         assertTrue(body.contains("requestCapture(\"systemui-transition-app\")"));
     }
