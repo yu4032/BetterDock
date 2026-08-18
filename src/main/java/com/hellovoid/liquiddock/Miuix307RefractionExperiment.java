@@ -11,18 +11,19 @@ import java.lang.reflect.Method;
  *
  * The shared Floating Dock root SurfaceControl is never accepted here. The only target is the
  * independent SurfaceView child that was already device-validated. Parameters are taken from the
- * decompiled SystemUI MiuiShaderChargeView, but lighting intensity and particles are held at the
- * native inactive values so the visible variable is spatial refraction.
+ * decompiled SystemUI MiuiShaderChargeView. Particles and lighting intensity stay inactive so the
+ * visible variable remains spatial refraction.
  */
 final class Miuix307RefractionExperiment {
     private static final String TAG = "[DC][ZC][REFR]";
     private static final int SHADER_TYPE_ACTIVE = 1000;
+    private static final float ACTIVE_ALPHA = 1.0f;
+    private static final float NORMAL_DIM_RATIO = 0.6f;
 
     private static WeakReference<SurfaceView> activeViewRef = new WeakReference<>(null);
     private static long startTimeMs;
     private static SurfaceControl.Transaction transaction;
     private static Method setChargeAnim;
-    private static Method setChargeAnimProp;
     private static boolean appliedLogged;
 
     private Miuix307RefractionExperiment() {}
@@ -65,7 +66,6 @@ final class Miuix307RefractionExperiment {
             activeViewRef = new WeakReference<>(childView);
             transaction = localTransaction;
             setChargeAnim = localSetChargeAnim;
-            setChargeAnimProp = localSetChargeAnimProp;
             startTimeMs = System.currentTimeMillis();
             appliedLogged = false;
             postNextFrame(childView);
@@ -81,7 +81,6 @@ final class Miuix307RefractionExperiment {
         activeViewRef = new WeakReference<>(null);
         transaction = null;
         setChargeAnim = null;
-        setChargeAnimProp = null;
         startTimeMs = 0L;
         appliedLogged = false;
     }
@@ -106,8 +105,8 @@ final class Miuix307RefractionExperiment {
                     childSurface,
                     Integer.valueOf(SHADER_TYPE_ACTIVE),
                     Float.valueOf(phase),
-                    Float.valueOf(0.0f),
-                    Float.valueOf(0.0f),
+                    Float.valueOf(1.0f),
+                    Float.valueOf(0.6f),
                     Boolean.FALSE);
             transaction.apply();
 
@@ -115,6 +114,8 @@ final class Miuix307RefractionExperiment {
                 appliedLogged = true;
                 MainHook.log(TAG + " child compositor refraction active"
                         + " refraction=[0.5,0.2,0.7,8.0]"
+                        + " alpha=" + ACTIVE_ALPHA
+                        + " dimRatio=" + NORMAL_DIM_RATIO
                         + " particles=[0,0] lightingIntensity=[0,0]"
                         + " useBlackBackground=false"
                         + " childSurface=" + Integer.toHexString(System.identityHashCode(childSurface)));
