@@ -120,7 +120,9 @@ public class Miuix307ZeroCopyContractTest {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
 
         assertTrue(bridge.contains("installCompatViewSetterProbe(ClassLoader classLoader)"));
+        assertTrue(bridge.contains("installCompatViewSetterProbe(sourceClass.getClassLoader())"));
         assertTrue(bridge.contains("hookCompatViewSetter"));
+        assertTrue(bridge.contains("chain.getThisObject()"));
         assertTrue(bridge.contains("setMiBackgroundBlurType"));
         assertTrue(bridge.contains("setMiBackgroundBlurScaleRatio"));
         assertTrue(bridge.contains("setMiBackgroundBlurEnhanceFlag"));
