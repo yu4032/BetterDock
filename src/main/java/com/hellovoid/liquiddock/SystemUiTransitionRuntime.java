@@ -54,7 +54,7 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            AppGestureBackdropHoldHook.setSystemUiTransitionActive(false, "rebind");
+            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "rebind");
         });
     }
 
@@ -79,7 +79,7 @@ final class SystemUiTransitionRuntime {
             visualHold = true;
             activeTokenId = tokenId;
             activeDisplayId = displayId;
-            AppGestureBackdropHoldHook.setSystemUiTransitionActive(
+            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     true, "app-to-launcher-token-" + tokenId);
             // Do not cancel the frame already in flight: it is part of the animation and should
             // install normally. This request merely makes the transition boundary immediately dirty.
@@ -97,7 +97,7 @@ final class SystemUiTransitionRuntime {
             activeDisplayId = -1;
             transitionSequence++;
             // Exact Overview owns its own 60 FPS RECENTS continuation loop.
-            AppGestureBackdropHoldHook.stopAllTransitionCapture("exact-overview");
+            Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("exact-overview");
             MainHook.log(TAG + " transition capture transferred to exact Overview");
         });
     }
@@ -112,13 +112,13 @@ final class SystemUiTransitionRuntime {
             activeDisplayId = -1;
 
             if (glass == null) {
-                AppGestureBackdropHoldHook.setSystemUiTransitionActive(false, "finish-no-view");
+                Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "finish-no-view");
                 return;
             }
 
             if (aborted) {
                 applyStableScene(glass, false);
-                AppGestureBackdropHoldHook.setSystemUiTransitionActive(
+                Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                         false, "abort-token-" + tokenId);
                 glass.prearmAppBackdrop("systemui-transition-abort");
                 glass.requestCapture("systemui-transition-abort");
@@ -129,7 +129,7 @@ final class SystemUiTransitionRuntime {
             // HOME becomes authoritative only at the real Shell finish. Up to this point the scene
             // remains APP and mode-1 continuously samples the transformed app/Launcher composition.
             applyStableScene(glass, true);
-            AppGestureBackdropHoldHook.setSystemUiTransitionActive(
+            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     false, "home-finish-token-" + tokenId);
             glass.requestCapture("systemui-transition-home-finished");
             // Shell finish can precede presentation of its final Surface transaction by one VSYNC.
@@ -152,7 +152,7 @@ final class SystemUiTransitionRuntime {
                     || mergedTokenId != activeTokenId || activeDisplayId != displayId) return;
             transitionSequence++;
             activeTokenId = playingTokenId;
-            AppGestureBackdropHoldHook.setSystemUiTransitionActive(
+            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     true, "merged-token-" + playingTokenId);
             MainHook.log(TAG + " transition capture merged " + mergedTokenId
                     + " -> " + playingTokenId);
@@ -168,7 +168,7 @@ final class SystemUiTransitionRuntime {
             visualHold = false;
             activeTokenId = 0L;
             activeDisplayId = -1;
-            AppGestureBackdropHoldHook.setSystemUiTransitionActive(
+            Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
                     false, "launcher-to-app-token-" + tokenId);
             applyStableScene(glass, false);
             glass.prearmAppBackdrop("systemui-transition-app");
@@ -197,7 +197,7 @@ final class SystemUiTransitionRuntime {
         visualHold = false;
         activeTokenId = 0L;
         activeDisplayId = -1;
-        AppGestureBackdropHoldHook.setSystemUiTransitionActive(false, "generation-reset");
+        Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "generation-reset");
         return true;
     }
 
