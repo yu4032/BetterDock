@@ -4,6 +4,7 @@ import android.view.MotionEvent;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -12,7 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Device traces on HyperOS 307 show mode-1 capture still running after the foreground task has
  * already begun shrinking, while APP_TO_LAUNCHER is not pushed until ACTION_UP. Freezing at the
- * valid Dock gesture DOWN keeps those transformed task frames from replacing the clean APP image.
+ * real vendor GestureInputHelper ACTION_DOWN keeps those transformed task frames from replacing
+ * the clean APP image. The older LiquidDock input observer remains only as a compatibility fallback.
  * This hold does not predict HOME versus RECENTS: exact Overview or the existing SystemUI visual
  * hold remains the destination authority.
  */
@@ -26,9 +28,10 @@ final class Miuix307GestureBackdropHoldHook {
 
     private Miuix307GestureBackdropHoldHook() {}
 
-    static void install() {
+    static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
-        installInputBoundary();
+        installVendorGestureInput(classLoader);
+        installCompatInputBoundary();
         installCaptureRequestGate();
         installCaptureInstallGate();
         installOverviewHandoff();
@@ -36,7 +39,62 @@ final class Miuix307GestureBackdropHoldHook {
         Api101Bridge.log("[DC][GH] APP gesture backdrop hold installed");
     }
 
-    private static void installInputBoundary() {
+    /**
+     * Authoritative pre-WMShell boundary on the tested HyperOS 307 launcher. The device trace
+     * identifies com.miui.home.recents.GestureInputHelper.onInputEvent(InputEvent) as the source
+     * receiving ACTION_DOWN before the first transformed APP capture. Scan overloads instead of
+     * pinning a hidden signature so minor vendor changes do not silently disable the protection.
+     */
+    private static void installVendorGestureInput(ClassLoader classLoader) {
+        try {
+            Class<?> gestureInputClass = Class.forName(
+                    "com.miui.home.recents.GestureInputHelper", false, classLoader);
+            int hooked = 0;
+            Class<?> cursor = gestureInputClass;
+            while (cursor != null && cursor != Object.class) {
+                for (Method method : cursor.getDeclaredMethods()) {
+                    if (!"onInputEvent".equals(method.getName())
+                            || Modifier.isStatic(method.getModifiers())) {
+                        continue;
+                    }
+                    HookUtil.hook(method, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        MotionEvent event = findMotionEvent(args);
+                        int action = event != null
+                                ? event.getActionMasked() : MotionEvent.ACTION_CANCEL;
+                        float rawX = event != null ? event.getRawX() : Float.NaN;
+                        float rawY = event != null ? event.getRawY() : Float.NaN;
+
+                        if (event != null && action == MotionEvent.ACTION_DOWN) {
+                            // GestureInputHelper is the dedicated bottom-gesture input consumer;
+                            // treat this stream as authoritative instead of re-testing Dock bounds.
+                            maybeArm(rawX, rawY, true);
+                            Api101Bridge.log("[DC][GH] vendor input DOWN hold=" + appGestureHold);
+                        }
+
+                        Object result = chain.proceed(args);
+
+                        if (event != null && (action == MotionEvent.ACTION_UP
+                                || action == MotionEvent.ACTION_CANCEL)) {
+                            DockLiquidGlassView glass = heldGlass.get();
+                            if (glass != null && appGestureHold) scheduleRelease(glass, action);
+                            Api101Bridge.log("[DC][GH] vendor input end action=" + action
+                                    + " hold=" + appGestureHold);
+                        }
+                        return result;
+                    });
+                    hooked++;
+                }
+                cursor = cursor.getSuperclass();
+            }
+            Api101Bridge.log("[DC][GH] vendor GestureInputHelper hooks=" + hooked);
+        } catch (Throwable error) {
+            Api101Bridge.log("[DC][GH] vendor GestureInputHelper unavailable", error);
+        }
+    }
+
+    /** Compatibility fallback for launcher builds that still route through our 307 observer. */
+    private static void installCompatInputBoundary() {
         HookUtil.hookMethod(Miuix307RecentsInputHook.class, "onInputMotion",
                 new Class<?>[]{int.class, float.class, float.class, boolean.class}, chain -> {
                     Object[] args = chain.getArgs().toArray(new Object[0]);
@@ -62,11 +120,20 @@ final class Miuix307GestureBackdropHoldHook {
                 });
     }
 
-    private static void maybeArm(float rawX, float rawY, boolean dockWindow) {
+    private static MotionEvent findMotionEvent(Object[] args) {
+        if (args == null) return null;
+        for (Object arg : args) {
+            if (arg instanceof MotionEvent) return (MotionEvent) arg;
+        }
+        return null;
+    }
+
+    private static void maybeArm(float rawX, float rawY, boolean authoritativeGestureInput) {
         if (!Miuix307MaterialPipeline.isInstalled()) return;
         DockLiquidGlassView glass = boundGlass();
         if (glass == null || desiredScene(glass) != CaptureScene.APP) return;
-        if (!dockWindow && !glass.isTouchInDockArea(rawX, rawY)) return;
+        if (appGestureHold && heldGlass.get() == glass) return;
+        if (!authoritativeGestureInput && !glass.isTouchInDockArea(rawX, rawY)) return;
 
         gestureSession++;
         appGestureHold = true;
@@ -77,7 +144,7 @@ final class Miuix307GestureBackdropHoldHook {
         // bitmap. The request/install gates below then keep it stable through the gesture motion.
         HookUtil.invoke(glass, "cancelPendingCaptureWork");
         Api101Bridge.log("[DC][GH] hold armed session=" + gestureSession
-                + " scene=APP dockWindow=" + dockWindow);
+                + " scene=APP authoritative=" + authoritativeGestureInput);
     }
 
     private static void scheduleRelease(DockLiquidGlassView glass, int action) {
