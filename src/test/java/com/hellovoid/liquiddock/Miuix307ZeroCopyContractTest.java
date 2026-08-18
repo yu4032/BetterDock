@@ -86,7 +86,9 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue("Launcher 4.50 uses BlurUtilities.setBackgroundBlur directly",
                 bridge.contains("getDeclaredMethod(\"setBackgroundBlur\""));
         assertTrue(bridge.contains("Integer.TYPE, float[].class, int[][].class"));
-        assertTrue(bridge.contains("new float[]{cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx}"));
+        assertTrue("all four corners must be sourced from the host radius",
+                bridge.contains("float[] cornerRadii = new float[]")
+                        && bridge.contains("cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx"));
         assertTrue("preserve the exact two vendor blend modes from addBlur()",
                 bridge.contains("new int[]{106, darkColor}")
                         && bridge.contains("new int[]{100, lightColor}"));
