@@ -88,4 +88,37 @@ public class Miuix307MaterialPipelineContractTest {
         assertTrue("GestureToHome compatibility hook must fail open on vendor changes",
                 pipeline.contains("GestureToHome prearm unavailable"));
     }
+
+    @Test
+    public void dockFollowMotionEventsDriveGestureCapture() throws IOException {
+        String pipeline = read(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java");
+        String glassHook = read(
+                "src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java");
+        String glass = read(
+                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
+
+        assertTrue("307 must observe MIUI's real Dock-follow gesture tracker",
+                pipeline.contains("com.miui.home.recents.GestureTouchEventTracker"));
+        assertTrue(pipeline.contains("isUseDockFollowGesture"));
+        assertTrue(pipeline.contains("\"onTouchEvent\""));
+        assertTrue(pipeline.contains("MiuixGlassHook.onDockGestureMotion"));
+        assertTrue(glassHook.contains("onDockGestureMotion"));
+        assertTrue("every physical MOVE must dirty the backdrop without waiting for Dock geometry",
+                glass.contains("requestStateCapture(\"dock-gesture-move\")"));
+    }
+
+    @Test
+    public void dynamicAppCaptureRemainsAvailableIn307ButOnlyAppSceneOwnsItsCadence()
+            throws IOException {
+        String compose = read(
+                "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
+        String glass = read(
+                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java");
+
+        assertFalse("307 must not gray a feature that still has valid APP-only semantics",
+                compose.contains("masterEnabled && liquidGlass && !miuix307Pipeline) { dynamicAppCapture"));
+        assertTrue("Dock geometry may only arm adaptive capture while the scene is APP",
+                glass.contains("sceneState.desired() == CaptureScene.APP"));
+    }
 }
