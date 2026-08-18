@@ -9,45 +9,25 @@ final class CaptureExclusionNames {
             "NavigationBar", "StatusBar", "GestureStub", "DockAssistantView"
     };
 
-    /**
-     * Package-name prefix of the APP layer currently closing into HOME.
-     *
-     * The 4.50 gesture pull itself remains live and fully captured. WMShell APP_TO_LAUNCHER starts
-     * only after release, when MIUI reparents the closing task into the icon-flight transition.
-     * During that final phase mode-1 should keep sampling Launcher/wallpaper below the Dock but
-     * omit the shrinking APP surface so its icon-flight image cannot refract into the Dock glass.
-     */
-    private static volatile String transitionAppLayerPrefix;
-
     private CaptureExclusionNames() {}
 
-    static void setTransitionAppLayerPrefix(String packagePrefix) {
-        if (packagePrefix == null || packagePrefix.isEmpty()
-                || "com.miui.home".equals(packagePrefix)) {
-            transitionAppLayerPrefix = null;
-        } else {
-            transitionAppLayerPrefix = packagePrefix;
-        }
-    }
+    /**
+     * Retained as a source-compatible no-op while SystemUiTransitionRuntime is cleaned up.
+     * Device evidence proved the HOME icon residual is not the closing APP layer; Launcher 4.50
+     * renders it on WindowElement.mFloatingIconLayerLeash, which is excluded by exact handle.
+     */
+    static void setTransitionAppLayerPrefix(String ignored) {}
 
-    static void clearTransitionAppLayerPrefix() {
-        transitionAppLayerPrefix = null;
-    }
+    static void clearTransitionAppLayerPrefix() {}
 
     static String transitionAppLayerPrefixForTests() {
-        return transitionAppLayerPrefix;
+        return null;
     }
 
     static String[] merge(String dockLayer, String dragLayer,
                           Collection<String> freeformLayers) {
-        // The transition exclusion is a runtime capture authority, not a material-pipeline
-        // capability. On the target Launcher 4.50 device the 307 glass is live while the
-        // material-pipeline installation flag can be false at capture time. If APP_TO_LAUNCHER
-        // supplied a closing-app prefix, force the 307 exclusion path so that prefix reaches
-        // captureScreenAsync() instead of being silently dropped.
-        boolean transitionExclusionActive = transitionAppLayerPrefix != null;
         return mergeInternal(dockLayer, dragLayer, freeformLayers,
-                Miuix307MaterialPipeline.isInstalled() || transitionExclusionActive);
+                Miuix307MaterialPipeline.isInstalled());
     }
 
     /**
@@ -69,7 +49,6 @@ final class CaptureExclusionNames {
         add(names, dragLayer);
         if (miuix307) {
             for (String name : MIUIX_307_SYSTEM_UI_LAYERS) add(names, name);
-            add(names, transitionAppLayerPrefix);
         }
         if (freeformLayers != null) {
             for (String name : freeformLayers) add(names, name);
