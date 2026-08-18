@@ -176,11 +176,9 @@ final class MiuixGlassHook {
 
         if (Miuix307ZeroCopyRenderer.isActivationExhausted()
                 || frame >= ZERO_COPY_VALIDATION_FRAMES) {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; capture fallback reason="
+            MainHook.log(ZERO_COPY_TAG + " zero-copy still pending; legacy capture disabled reason="
                     + (Miuix307ZeroCopyRenderer.isActivationExhausted()
                     ? "activation-exhausted" : "validation-timeout"));
-            Miuix307ZeroCopyRenderer.clear();
-            installCaptureFallback(dockBg, workspace, config, host);
             return;
         }
 
