@@ -71,12 +71,13 @@ public class Miuix307BackdropPolicyTest {
 
         // While frozen, no observation/pointer/lifecycle request may replace the installed APP
         // bitmap. Existing onLauncherFocused() owns the configured settle timing; its focus-home
-        // request is the normal release point. Exact Overview or a fresh APP prearm are safe
-        // cancellation paths for an interrupted/redirected HOME transition.
+        // request is the normal release point. Exact Overview or a new Dock touch while APP is
+        // still authoritative are safe cancellation paths for an interrupted HOME transition.
         assertTrue(freeze.contains("DockLiquidGlassView.class, \"requestStateCapture\""));
         assertTrue(freeze.contains("\"focus-home\""));
         assertTrue(freeze.contains("\"overview-enter-\""));
-        assertTrue(freeze.contains("\"app-prearm-\""));
+        assertTrue(freeze.contains("\"dock-touch\""));
+        assertTrue(freeze.contains("launcherResumed"));
         assertTrue(freeze.contains("releaseFrozenBackdrop"));
     }
 }
