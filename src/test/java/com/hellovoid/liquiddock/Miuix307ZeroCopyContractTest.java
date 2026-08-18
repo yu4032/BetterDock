@@ -42,6 +42,21 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
+    public void zeroCopyToneLayerCarriesGuiTintAndBrightness() throws Exception {
+        String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String tone = read("Miuix307ZeroCopyToneView.java");
+
+        assertTrue(renderer.contains("new Miuix307ZeroCopyToneView"));
+        assertTrue(renderer.contains("host.addView(tone"));
+        assertTrue(tone.contains("glassConfig.tintAlpha"));
+        assertTrue(tone.contains("glassConfig.tintR"));
+        assertTrue(tone.contains("glassConfig.tintG"));
+        assertTrue(tone.contains("glassConfig.tintB"));
+        assertTrue(tone.contains("glassConfig.brightness"));
+        assertTrue(tone.contains("BlendMode.SCREEN"));
+    }
+
+    @Test
     public void materialBindingTriesZeroCopyFirstAndKeepsCaptureFallback() throws Exception {
         String hook = read("MiuixGlassHook.java");
 
