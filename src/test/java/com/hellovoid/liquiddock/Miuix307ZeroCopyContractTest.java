@@ -91,6 +91,9 @@ public class Miuix307ZeroCopyContractTest {
                 renderer.contains("!exactBackgroundBlur"));
         assertTrue("compat detection belongs in the vendor bridge, not duplicated class-name logic",
                 bridge.contains("static boolean usesExactBackgroundBlur(View vendorMaterial)"));
+        assertTrue("successful exact backgroundBlur must still satisfy zero-copy validation",
+                backdrop.contains("setExternalCompositorBlurActive")
+                        && renderer.contains("backdrop.setExternalCompositorBlurActive(true)"));
     }
 
     @Test
