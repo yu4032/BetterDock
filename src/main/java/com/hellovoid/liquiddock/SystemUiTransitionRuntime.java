@@ -12,16 +12,7 @@ import android.view.Display;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Launcher-side consumer of SystemUI transition events.
- *
- * SystemUI owns transition classification/token safety, but it never freezes the installed
- * backdrop. APP↔Launcher is a live composed animation and LiquidDock keeps sampling it. During
- * APP_TO_LAUNCHER the capture scene remains APP/FULL_DISPLAY even if Launcher ownership flips to
- * HOME early; only exact Overview or authoritative Shell finish/abort may commit a destination.
- * Legacy visualHold names remain for protocol/diagnostic compatibility and mean "tracked
- * transition capture active", never "block request/install".
- */
+/** Launcher-side consumer of SystemUI transition events. */
 final class SystemUiTransitionRuntime {
     private static final String TAG = "[DC][TR]";
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
@@ -29,7 +20,6 @@ final class SystemUiTransitionRuntime {
     private static WeakReference<DockLiquidGlassView> currentView = new WeakReference<>(null);
     private static Handler mainHandler;
     private static IBinder provider;
-
     private static long sourceGeneration = Long.MIN_VALUE;
     private static long activeTokenId;
     private static int activeDisplayId = -1;
@@ -41,8 +31,6 @@ final class SystemUiTransitionRuntime {
 
     static void install() {
         if (!INSTALLED.compareAndSet(false, true)) return;
-        // Deliberately no capture request/install gates. Transition events control scene authority
-        // and continuous cadence only; every animation frame remains eligible for installation.
         installLegacyGestureAuthorityGate();
         installExactOverviewBridge();
         MainHook.log(TAG + " continuous transition capture runtime installed");
@@ -64,7 +52,6 @@ final class SystemUiTransitionRuntime {
         return visualHold && glass != null && currentView.get() == glass;
     }
 
-    /** Called by HomeOwnershipResolver's existing event-driven provider listener. */
     static void onProviderChanged(IBinder next) {
         runOnMain(() -> {
             provider = next;
@@ -81,13 +68,14 @@ final class SystemUiTransitionRuntime {
             visualHold = true;
             activeTokenId = tokenId;
             activeDisplayId = displayId;
+            // Runtime already owns the exact current glass. Pass it directly so the transition
+            // source authority never depends on another hook's weak reference or bind timing.
             Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
-                    true, "app-to-launcher-token-" + tokenId);
-            // Do not cancel the frame already in flight: it belongs to the animation. The 4.50
-            // transition burst pins scene=APP and this request makes the boundary immediately dirty.
+                    glass, true, "app-to-launcher-token-" + tokenId);
             glass.requestCapture("systemui-transition-start");
-            MainHook.log(TAG + " APP_TO_LAUNCHER continuous capture start token=" + tokenId
-                    + " generation=" + generation + " display=" + displayId);
+            Api101Bridge.log(TAG + " APP_TO_LAUNCHER continuous source authority token=" + tokenId
+                    + " glass=" + glass.getClass().getSimpleName() + "@"
+                    + Integer.toHexString(System.identityHashCode(glass)));
         });
     }
 
@@ -98,7 +86,6 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
             transitionSequence++;
-            // Exact Overview owns its own RECENTS capture loop and destination source.
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("exact-overview");
             MainHook.log(TAG + " transition capture transferred to exact Overview");
         });
@@ -113,14 +100,13 @@ final class SystemUiTransitionRuntime {
             activeTokenId = 0L;
             activeDisplayId = -1;
 
-            // Shell finish/abort is now the destination authority. Stop BOTH vendor and SystemUI
-            // capture leases before changing launcher ownership so no later vendor callback can
-            // re-pin APP after HOME has been committed.
+            // Stop all transition leases before committing the destination. This clears the APP
+            // source pin first, so HOME/APP becomes authoritative only at this real Shell boundary.
             Miuix307GestureBackdropHoldHook.stopAllTransitionCapture(
-                    aborted ? "systemui-abort-token-" + tokenId : "systemui-home-finish-token-" + tokenId);
+                    aborted ? "systemui-abort-token-" + tokenId
+                            : "systemui-home-finish-token-" + tokenId);
 
             if (glass == null) return;
-
             if (aborted) {
                 applyStableScene(glass, false);
                 glass.prearmAppBackdrop("systemui-transition-abort");
@@ -129,20 +115,14 @@ final class SystemUiTransitionRuntime {
                 return;
             }
 
-            // HOME becomes authoritative only here. Up to this point the scene was pinned APP and
-            // mode-1 continuously sampled the transformed app/Launcher composition.
             applyStableScene(glass, true);
             glass.requestCapture("systemui-transition-home-finished");
-            // Shell finish can precede presentation of its final Surface transaction by one VSYNC.
-            // This is not a hold; request/install remain enabled and we simply take another stable
-            // HOME sample on the next presented frame.
             final long sequence = transitionSequence;
             glass.postOnAnimation(() -> {
                 if (sequence != transitionSequence || currentView.get() != glass) return;
                 glass.requestCapture("systemui-transition-home-post-vsync");
             });
-            MainHook.log(TAG + " transition HOME finish; continuous capture settled token="
-                    + tokenId);
+            Api101Bridge.log(TAG + " HOME source committed at Shell finish token=" + tokenId);
         });
     }
 
@@ -151,10 +131,12 @@ final class SystemUiTransitionRuntime {
         runOnMain(() -> {
             if (!visualHold || generation != sourceGeneration
                     || mergedTokenId != activeTokenId || activeDisplayId != displayId) return;
+            DockLiquidGlassView glass = currentView.get();
+            if (glass == null) return;
             transitionSequence++;
             activeTokenId = playingTokenId;
             Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(
-                    true, "merged-token-" + playingTokenId);
+                    glass, true, "merged-token-" + playingTokenId);
             MainHook.log(TAG + " transition capture merged " + mergedTokenId
                     + " -> " + playingTokenId);
         });
@@ -179,8 +161,6 @@ final class SystemUiTransitionRuntime {
     }
 
     private static void applyStableScene(DockLiquidGlassView glass, boolean home) {
-        // This is intentionally an atomic field update, not setLauncherState(): the latter also
-        // invalidates lifecycle/capture state and was the source of UNKNOWN/APP/HOME churn.
         HookUtil.setField(glass, "launcherLifecycleKnown", true);
         HookUtil.setField(glass, "launcherResumed", home);
         try {
@@ -198,7 +178,7 @@ final class SystemUiTransitionRuntime {
         visualHold = false;
         activeTokenId = 0L;
         activeDisplayId = -1;
-        Miuix307GestureBackdropHoldHook.setSystemUiTransitionActive(false, "generation-reset");
+        Miuix307GestureBackdropHoldHook.stopAllTransitionCapture("generation-reset");
         return true;
     }
 
@@ -211,14 +191,9 @@ final class SystemUiTransitionRuntime {
         try {
             HookUtil.hookMethod(DockLiquidGlassView.class, "setGestureCaptureTarget",
                     new Class<?>[]{String.class}, chain -> {
-                        if (chain.getThisObject() == currentView.get()) {
-                            // HOME/APP/RECENTS destination constructors are no longer scene
-                            // authorities. Exact Overview and WMShell transition events own them.
-                            return null;
-                        }
+                        if (chain.getThisObject() == currentView.get()) return null;
                         return chain.proceed(chain.getArgs().toArray(new Object[0]));
                     });
-            MainHook.log(TAG + " legacy gesture capture authority disabled");
         } catch (Throwable error) {
             MainHook.log(TAG + " legacy gesture gate unavailable: " + error);
         }
@@ -235,7 +210,6 @@ final class SystemUiTransitionRuntime {
                         }
                         return chain.proceed(args);
                     });
-            MainHook.log(TAG + " exact Overview transition bridge installed");
         } catch (Throwable error) {
             MainHook.log(TAG + " exact Overview bridge unavailable: " + error);
         }
@@ -251,9 +225,7 @@ final class SystemUiTransitionRuntime {
             boolean accepted = targetProvider.transact(
                     SystemUiTransitionProtocol.TRANSACTION_REGISTER_CALLBACK,
                     data, null, IBinder.FLAG_ONEWAY);
-            if (!accepted) {
-                MainHook.log(TAG + " provider rejected transition callback registration");
-            }
+            if (!accepted) MainHook.log(TAG + " provider rejected transition callback registration");
         } catch (RemoteException providerGone) {
             if (provider == targetProvider) provider = null;
         } catch (Throwable error) {
