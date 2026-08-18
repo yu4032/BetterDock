@@ -80,6 +80,8 @@ public class HomeGridDragRangeTest {
         assertTrue(source.contains("ThreadLocal"));
         assertTrue(source.contains("findDropTargetPosition"));
         assertTrue(source.contains("translateTouchY"));
+        assertTrue("translateTouchY also reads DeviceConfig.getCellCountY; the live profile must own it",
+                source.contains("\"getCellCountY\""));
         assertTrue(source.contains("LayoutDropRuleForSwapPlaces"));
         assertTrue(source.contains("cellToPoint"));
         assertTrue(source.contains("LayoutDropRuleSqueezePlaces"));
