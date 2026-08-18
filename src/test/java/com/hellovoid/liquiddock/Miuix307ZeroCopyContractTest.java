@@ -97,14 +97,20 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
-    public void compatPathUsesExactDecompiledBackgroundBlurPrimitive() throws Exception {
+    public void compatPathUsesFrameworkBackgroundBlurWithoutLauncherClassLoading() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
 
         assertTrue(bridge.contains("HotSeatsListContentBlurBackground2"));
-        assertTrue("Launcher 4.50 uses BlurUtilities.setBackgroundBlur directly",
-                bridge.contains("\"setBackgroundBlur\""));
+        assertTrue("framework View owns the exact public hidden API on HyperOS 307",
+                bridge.contains("View.class.getMethod(\"setBackgroundBlur\""));
         assertTrue(bridge.contains("Integer.TYPE, float[].class, int[][].class"));
+        assertTrue("alpha must use the same framework primitive",
+                bridge.contains("View.class.getMethod(\"setBackgroundBlurAlpha\", Float.TYPE)"));
+        assertFalse("do not cross the Launcher classloader just to reach a wrapper",
+                bridge.contains("Class.forName(BLUR_UTILITIES"));
+        assertFalse("the Launcher wrapper constant is no longer needed",
+                bridge.contains("BLUR_UTILITIES"));
         assertTrue("all four corners must be sourced from the host radius",
                 bridge.contains("float[] cornerRadii = new float[]")
                         && bridge.contains("cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx"));
@@ -113,9 +119,8 @@ public class Miuix307ZeroCopyContractTest {
                         && bridge.contains("new int[]{100, lightColor}"));
         assertTrue(bridge.contains("hotseats_list_content_background_blur_color_dark"));
         assertTrue(bridge.contains("hotseats_list_content_background_blur_color_light"));
-        assertTrue("the experiment radius must be passed into setBackgroundBlur itself",
+        assertTrue("the experiment radius must be passed into View.setBackgroundBlur itself",
                 bridge.contains("Integer.valueOf(blurRadiusPx), cornerRadii, blendConfig"));
-        assertTrue(bridge.contains("\"setBackgroundBlurAlpha\""));
         assertTrue(bridge.contains("\"getParentAlpha\""));
         assertFalse("do not write vendor radius=100 then attempt to repair a different API",
                 bridge.contains("addBlur.invoke"));
