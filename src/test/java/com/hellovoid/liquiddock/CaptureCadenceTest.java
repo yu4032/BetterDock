@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public class CaptureCadenceTest {
-    @Test public void powerLimitAlwaysWins() {
+    @Test public void appPowerLimitWins() {
         CaptureCadence cadence = new CaptureCadence(60);
         cadence.setDynamicFps(120, 10);
         cadence.setPowerLimitFps(20);
@@ -25,5 +25,20 @@ public class CaptureCadenceTest {
         cadence.setPowerLimitFps(60);
         assertEquals(33_333_333L,
                 cadence.intervalNanos(CaptureScene.HOME, true, Long.MAX_VALUE, 1L));
+    }
+
+    @Test public void homeIgnoresAppPowerLimit() {
+        CaptureCadence cadence = new CaptureCadence(60);
+        cadence.setPowerLimitFps(5);
+        assertEquals(16_666_666L,
+                cadence.intervalNanos(CaptureScene.HOME, true, Long.MAX_VALUE, 1L));
+    }
+
+    @Test public void recentsIgnoresAppPowerLimit() {
+        CaptureCadence cadence = new CaptureCadence(60);
+        cadence.setDynamicFps(5, 1);
+        cadence.setPowerLimitFps(5);
+        assertEquals(16_666_666L,
+                cadence.intervalNanos(CaptureScene.RECENTS, true, Long.MAX_VALUE, 1L));
     }
 }
