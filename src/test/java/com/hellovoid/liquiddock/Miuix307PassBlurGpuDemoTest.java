@@ -13,7 +13,6 @@ public class Miuix307PassBlurGpuDemoTest {
     private static final Path MAIN =
             Path.of("src/main/java/com/hellovoid/liquiddock");
 
-    // First RED proves only the SF producer bridge is missing; GPU rendering is added afterward.
     @Test
     public void passBlurBridgeBindsRootProducerAndCanUnbindCleanly() throws Exception {
         Path path = MAIN.resolve("Miuix307PassBlurBridge.java");
@@ -55,5 +54,52 @@ public class Miuix307PassBlurGpuDemoTest {
         assertFalse("bridge must not reuse fixed charging/water-wave effects",
                 bridge.contains("setChargeAnim")
                         || bridge.contains("WaterWave"));
+    }
+
+    @Test
+    public void gpuViewConsumesPassBlurAsExternalTextureAndShowsSplitDistortion() throws Exception {
+        Path path = MAIN.resolve("Miuix307PassBlurGpuView.java");
+        assertTrue("GPU demo view must exist", Files.exists(path));
+        String view = Files.readString(path);
+
+        assertTrue("output must be an independent GLSurfaceView",
+                view.contains("extends GLSurfaceView")
+                        && view.contains("implements GLSurfaceView.Renderer"));
+        assertTrue("input must be a BufferQueue SurfaceTexture",
+                view.contains("SurfaceTexture") && view.contains("new Surface(surfaceTexture)"));
+        assertTrue("input must remain a GPU external texture",
+                view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES")
+                        && view.contains("samplerExternalOES"));
+        assertTrue("rendering must be frame driven, not a polling capture loop",
+                view.contains("RENDERMODE_WHEN_DIRTY")
+                        && view.contains("setOnFrameAvailableListener")
+                        && view.contains("requestRender()"));
+        assertTrue("consumer must acquire the newest queued GPU buffer",
+                view.contains("updateTexImage()")
+                        && view.contains("getTransformMatrix"));
+        assertTrue("demo must map the Dock crop inside the root producer texture",
+                view.contains("getLocationInWindow")
+                        && view.contains("uCrop"));
+        assertTrue("right side must apply an unmistakable spatial UV displacement",
+                view.contains("sin(")
+                        && view.contains("vUv.x > 0.5"));
+        assertTrue("successful first draw must expose a renderer activation contract",
+                view.contains("isGpuBackdropActive()")
+                        && view.contains("isActivationExhausted()")
+                        && view.contains("first OES frame")
+                        && view.contains("first GLES backdrop draw"));
+        assertTrue("clear must detach the SF producer before releasing GPU inputs",
+                view.contains("Miuix307PassBlurBridge.unbind")
+                        && view.contains("surfaceTexture.release()")
+                        && view.contains("producerSurface.release()"));
+
+        assertFalse("GPU demo must contain no CPU/capture backdrop path",
+                view.contains("captureScreenAsync")
+                        || view.contains("ScreenshotHardwareBuffer")
+                        || view.contains("Bitmap")
+                        || view.contains("BitmapShader"));
+        assertFalse("GPU demo must not use fixed vendor animation effects",
+                view.contains("setChargeAnim")
+                        || view.contains("WaterWave"));
     }
 }
