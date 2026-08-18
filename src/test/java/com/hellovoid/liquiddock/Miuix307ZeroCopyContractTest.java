@@ -83,16 +83,18 @@ public class Miuix307ZeroCopyContractTest {
     }
 
     @Test
-    public void compositorOpticsReuseVendorMaterialBlurConfigWithoutReadback() throws Exception {
+    public void compositorOpticsUseBlurBackground2NativeAddBlurWithoutReadback() throws Exception {
         String bridge = read("Miuix307CompositorOpticsBridge.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
 
-        assertTrue(bridge.contains("miuix.core.util.MiuiBlurUtils"));
-        assertTrue(bridge.contains("setBlurConfig"));
-        assertTrue(bridge.contains("getCurrentMaterial"));
-        assertTrue(bridge.contains("getBlurConfig"));
-        assertTrue(bridge.contains("getDisplayMetrics().density"));
-        assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig"));
+        assertTrue(bridge.contains("HotSeatsListContentBlurBackground2"));
+        assertTrue(bridge.contains("getDeclaredMethod(\"addBlur\", View.class, float.class)"));
+        assertTrue(bridge.contains("addBlur.invoke(vendorMaterial, target, cornerRadiusPx)"));
+        assertTrue(bridge.contains("MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)"));
+        assertTrue(bridge.contains("compat compositor optics active"));
+        assertTrue(renderer.contains("Miuix307CompositorOpticsBridge.applyVendorBlurConfig(\n                materialHost, backdrop, readHostRadius(host), blurRadiusPx)"));
+        assertFalse(bridge.contains("new float[]"));
+        assertFalse(bridge.contains("new int[][]"));
         assertFalse(bridge.contains("captureScreenAsync"));
         assertFalse(bridge.contains("Bitmap"));
     }
