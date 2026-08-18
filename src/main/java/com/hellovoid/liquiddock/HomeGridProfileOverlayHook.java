@@ -23,6 +23,8 @@ final class HomeGridProfileOverlayHook {
             "com.miui.home.launcher.compat.LauncherCellCountCompatPadDevice";
     private static final String GRID_CONFIG =
             "com.miui.home.launcher.grid.GridConfig";
+    private static final String GRID_OCCUPANCY_CONTROLLER =
+            "com.miui.home.GridOccupancyController";
     private static final String ROTATION_RULE =
             "com.miui.home.launcher.compat.LayoutTransformRuleGridChanged";
 
@@ -52,6 +54,7 @@ final class HomeGridProfileOverlayHook {
             hookGridCountGetter(gridConfig, "getCountX", true);
             hookGridCountGetter(gridConfig, "getCountY", false);
 
+            installDragRuleOwnership(classLoader);
             installRotationTransform(classLoader);
             MainHook.log("[DC] extended home grid overlay active profile="
                     + profile.persistedValue());
@@ -105,6 +108,64 @@ final class HomeGridProfileOverlayHook {
                             || isExcludedGridConfigCall()) return result;
                     return HomeGridCountPolicy.profileRewriteForGridName(
                             profile, gridName(chain.getThisObject()), xAxis, (Integer) result);
+                });
+    }
+
+    /**
+     * MIUI Pad initializes GridOccupancyController with SwapPlaces rules. Those rules are tied to
+     * the stock 4x6/6x4 topology: 4x2 widgets are legal only at y=0/2 and the swap engine carries
+     * a four-cell bound plus six hard-coded 2x2 blocks. The occupancy matrix itself already loads
+     * as 6x10/10x6; only the drag rules are stale.
+     *
+     * Reuse MIUI's own private rule factory instead of patching individual legality methods. On a
+     * Pad initSqueezeAndDropRule() intentionally inverts its boolean; true therefore selects the
+     * generic LayoutSqueezePlaces + LayoutDropRuleSqueezePlaces pair without changing
+     * mIsNoVacantMode. The newly-created transform is then initialized with the counts that
+     * loadGridConfig() just committed.
+     */
+    private static void installDragRuleOwnership(ClassLoader classLoader) throws Exception {
+        Class<?> controller = Class.forName(GRID_OCCUPANCY_CONTROLLER, false, classLoader);
+        Method loadGridConfig = null;
+        for (Method candidate : controller.getDeclaredMethods()) {
+            if ("loadGridConfig".equals(candidate.getName())
+                    && candidate.getParameterCount() == 4) {
+                loadGridConfig = candidate;
+                break;
+            }
+        }
+        if (loadGridConfig == null) {
+            throw new NoSuchMethodException(controller.getName() + "#loadGridConfig");
+        }
+        Method initRules = HookUtil.findMethodExact(
+                controller, "initSqueezeAndDropRule", new Class<?>[]{boolean.class});
+        Method initTransform = HookUtil.findMethodExact(
+                controller, "initLayoutSqueezeDataTransform", new Class<?>[0]);
+
+        loadGridConfig.setAccessible(true);
+        Api101Bridge.module().hook(loadGridConfig)
+                .setPriority(XposedInterface.PRIORITY_LOWEST)
+                .intercept(chain -> {
+                    Object result = chain.proceed();
+                    if (MainHook.isWorkstationMode()) return result;
+                    Object target = chain.getThisObject();
+                    int h;
+                    int v;
+                    try {
+                        h = HookUtil.getIntField(target, "mHCells");
+                        v = HookUtil.getIntField(target, "mVCells");
+                    } catch (Throwable error) {
+                        return result;
+                    }
+                    if (!profile.matchesCounts(h, v)) return result;
+                    try {
+                        // Pad boolean inversion: true -> generic SqueezePlaces rules.
+                        initRules.invoke(target, true);
+                        initTransform.invoke(target);
+                        MainHook.log("[DC] 10x6 drag rules=generic grid=" + h + "x" + v);
+                    } catch (Throwable error) {
+                        MainHook.log("[DC] 10x6 generic drag-rule init failed: " + error);
+                    }
+                    return result;
                 });
     }
 
