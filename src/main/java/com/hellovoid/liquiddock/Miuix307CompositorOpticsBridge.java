@@ -2,25 +2,25 @@ package com.hellovoid.liquiddock;
 
 import android.view.View;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
  * Reuses the vendor Dock compositor configuration on LiquidDock's dedicated zero-copy backdrop.
  *
- * JADX of Launcher 4.50 confirms HotSeatsListContentBlurBackground2.addBlur() calls
- * BlurUtilities.setBackgroundBlur(view, 100, cornerRadii, blendConfig) and then
- * setBackgroundBlurAlpha(view, getParentAlpha()). The previous experiment incorrectly tried to
- * replace that 100 through setMiBackgroundBlurRadius(), which is a different API channel.
+ * JADX of Launcher 4.50 confirms HotSeatsListContentBlurBackground2.addBlur() ultimately calls the
+ * public HyperOS framework methods View.setBackgroundBlur(100, cornerRadii, blendConfig) and
+ * View.setBackgroundBlurAlpha(getParentAlpha()). The compat path invokes those framework methods
+ * directly so LSPosed does not have to cross the Launcher classloader just to reach BlurUtilities.
  */
 final class Miuix307CompositorOpticsBridge {
     private static final String TAG = "[DC][ZC]";
     private static final String COMPAT_BLUR_BACKGROUND2 =
             "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
-    private static final String BLUR_UTILITIES =
-            "com.miui.home.launcher.common.BlurUtilities";
-    private static final String COLOR_RESOURCES = "com.miui.home.R$color";
+    private static final String DARK_COLOR_NAME =
+            "hotseats_list_content_background_blur_color_dark";
+    private static final String LIGHT_COLOR_NAME =
+            "hotseats_list_content_background_blur_color_light";
 
     private static Class<?> loggedAppliedClass;
     private static Class<?> loggedUnavailableClass;
@@ -49,20 +49,20 @@ final class Miuix307CompositorOpticsBridge {
             View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
         Class<?> sourceClass = vendorMaterial.getClass();
         try {
-            ClassLoader loader = sourceClass.getClassLoader();
-            Class<?> blurUtilities = Class.forName(BLUR_UTILITIES, false, loader);
-            Method setBackgroundBlur = blurUtilities.getDeclaredMethod("setBackgroundBlur",
-                    View.class, Integer.TYPE, float[].class, int[][].class);
-            setBackgroundBlur.setAccessible(true);
-            Method setBackgroundBlurAlpha = blurUtilities.getDeclaredMethod(
-                    "setBackgroundBlurAlpha", View.class, Float.TYPE);
-            setBackgroundBlurAlpha.setAccessible(true);
+            Method setBackgroundBlur = View.class.getMethod("setBackgroundBlur",
+                    Integer.TYPE, float[].class, int[][].class);
+            Method setBackgroundBlurAlpha =
+                    View.class.getMethod("setBackgroundBlurAlpha", Float.TYPE);
 
-            Class<?> colors = Class.forName(COLOR_RESOURCES, false, loader);
-            int darkResId = readStaticInt(colors,
-                    "hotseats_list_content_background_blur_color_dark");
-            int lightResId = readStaticInt(colors,
-                    "hotseats_list_content_background_blur_color_light");
+            String packageName = vendorMaterial.getContext().getPackageName();
+            int darkResId = vendorMaterial.getResources().getIdentifier(
+                    DARK_COLOR_NAME, "color", packageName);
+            int lightResId = vendorMaterial.getResources().getIdentifier(
+                    LIGHT_COLOR_NAME, "color", packageName);
+            if (darkResId == 0 || lightResId == 0) {
+                logUnavailableOnce(sourceClass, "exact-background-blur-color-resource");
+                return false;
+            }
             int darkColor = vendorMaterial.getContext().getColor(darkResId);
             int lightColor = vendorMaterial.getContext().getColor(lightResId);
 
@@ -73,19 +73,27 @@ final class Miuix307CompositorOpticsBridge {
                     new int[]{100, lightColor}
             };
 
-            setBackgroundBlur.invoke(null, target,
+            Object blurResult = setBackgroundBlur.invoke(target,
                     Integer.valueOf(blurRadiusPx), cornerRadii, blendConfig);
+            if (blurResult instanceof Boolean && !((Boolean) blurResult)) {
+                logUnavailableOnce(sourceClass, "exact-background-blur-rejected");
+                return false;
+            }
 
             Method getParentAlpha = sourceClass.getDeclaredMethod("getParentAlpha");
             getParentAlpha.setAccessible(true);
             Object alphaValue = getParentAlpha.invoke(vendorMaterial);
             float parentAlpha = alphaValue instanceof Number
                     ? ((Number) alphaValue).floatValue() : 1.0f;
-            setBackgroundBlurAlpha.invoke(null, target, Float.valueOf(parentAlpha));
+            Object alphaResult = setBackgroundBlurAlpha.invoke(target, Float.valueOf(parentAlpha));
+            if (alphaResult instanceof Boolean && !((Boolean) alphaResult)) {
+                logUnavailableOnce(sourceClass, "exact-background-blur-alpha-rejected");
+                return false;
+            }
 
             if (loggedAppliedClass != sourceClass) {
                 loggedAppliedClass = sourceClass;
-                MainHook.log(TAG + " exact Launcher background blur active source="
+                MainHook.log(TAG + " exact framework background blur active source="
                         + sourceClass.getSimpleName()
                         + " radius=" + blurRadiusPx
                         + " cornerRadius=" + cornerRadiusPx);
@@ -146,12 +154,6 @@ final class Miuix307CompositorOpticsBridge {
             logUnavailableOnce(sourceClass, error.getClass().getSimpleName());
             return false;
         }
-    }
-
-    private static int readStaticInt(Class<?> cls, String name) throws Exception {
-        Field field = cls.getDeclaredField(name);
-        field.setAccessible(true);
-        return field.getInt(null);
     }
 
     private static Method findNoArg(Class<?> start, String name) {
