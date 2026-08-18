@@ -75,8 +75,12 @@ public class Miuix307AgileFixContractTest {
         assertTrue("foreground APP package must be cached while APP becomes top",
                 runtime.contains("refreshForegroundAppPackage(glass)")
                         && runtime.contains("appLayerPkg"));
-        assertTrue("mode-1 exclusions must include the closing APP package only on 307",
+        assertTrue("transition APP prefix must be emitted into the mode-1 exclusion names",
                 exclusions.contains("add(names, transitionAppLayerPrefix)"));
+        assertTrue("active transition exclusion must force the 307 merge path even if the material"
+                        + " pipeline runtime flag is false on the target device",
+                exclusions.contains("boolean transitionExclusionActive = transitionAppLayerPrefix != null")
+                        && exclusions.contains("Miuix307MaterialPipeline.isInstalled() || transitionExclusionActive"));
         assertTrue("HOME/Overview/abort paths must clear the temporary closing APP exclusion",
                 runtime.contains("clearTransitionAppLayerPrefix()"));
         assertFalse("icon-flight cleanup must not freeze capture or switch to wallpaper",
