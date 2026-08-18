@@ -39,7 +39,7 @@ public class HomeOwnershipRuntimeContractTest {
         assertFalse(runtime.contains("getRunningTasks"));
     }
 
-    @Test public void confirmedHomeStillUsesExistingFocusSettleAs307FreezeReleaseBoundary()
+    @Test public void confirmedHomeReleases307FreezeAfterSettleEvenWhenCaptureIsTemporarilyBlocked()
             throws Exception {
         String runtime = source("HomeOwnershipRuntime.java");
         String glass = source("DockLiquidGlassView.java");
@@ -47,13 +47,24 @@ public class HomeOwnershipRuntimeContractTest {
 
         int homeState = runtime.indexOf("glass.setLauncherState(true, true)");
         int focus = runtime.indexOf("glass.onLauncherFocused()", homeState);
-        assertTrue("SystemUI HOME state must arm the existing focus-settle path",
+        assertTrue("SystemUI HOME state must still arm the existing focus-settle path",
                 homeState >= 0 && focus > homeState);
-        assertTrue("onLauncherFocused must retain the delayed focus-home request",
+
+        int scheduleRelease = glass.indexOf(
+                "Miuix307HomeTransitionFreezeHook.onHomeOwnershipConfirmed(this, delay)");
+        int captureGate = glass.indexOf("if (!isCaptureAllowed()) return;", scheduleRelease);
+        assertTrue("HOME freeze release must be scheduled before the capture-allowed gate",
+                scheduleRelease >= 0 && captureGate > scheduleRelease);
+        assertTrue("existing focus-home capture remains the preferred HOME refresh",
                 glass.contains("requestStateCapture(\"focus-home\")"));
-        assertTrue("307 transition freeze must release only when focus-home is actually due",
-                freeze.contains("\"focus-home\""));
-        assertTrue(freeze.contains("releaseFrozenBackdrop"));
+
+        assertTrue(freeze.contains(
+                "static void onHomeOwnershipConfirmed(DockLiquidGlassView glass, long settleDelayMillis)"));
+        assertTrue("settle expiry must release the preserved APP frame even if capture is blocked",
+                freeze.contains("releaseFrozenBackdrop(glass, \"home-settle\")"));
+        assertTrue("release scheduling needs a generation token so an old HOME timer cannot"
+                        + " thaw a newer transition",
+                freeze.contains("freezeGeneration"));
     }
 
     @Test public void brokerExposesProviderLifecycleWithoutPolling() throws Exception {
