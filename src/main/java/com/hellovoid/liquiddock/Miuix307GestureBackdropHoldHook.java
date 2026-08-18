@@ -1,12 +1,13 @@
 package com.hellovoid.liquiddock;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Continuous APP-transition capture for HyperOS 3.0.7 / Launcher 4.50.
  *
- * 4.50 decompilation gives us reliable lifecycle boundaries, but those boundaries control
+ * 4.50 decompilation gives reliable lifecycle boundaries, but those boundaries control
  * capture cadence/source authority rather than freezing the last bitmap. During APP→HOME/RECENTS
  * the foreground task remains a live SurfaceFlinger composition, so LiquidDock samples every
  * animation frame and keeps the capture scene pinned to APP/FULL_DISPLAY until an exact
@@ -20,29 +21,30 @@ final class Miuix307GestureBackdropHoldHook {
     private static volatile boolean systemUiTransitionActive;
     private static volatile boolean captureBurstRunning;
     private static volatile long captureBurstSession;
+    private static WeakReference<DockLiquidGlassView> transitionGlassRef =
+            new WeakReference<>(null);
 
     private Miuix307GestureBackdropHoldHook() {}
 
     static void install(ClassLoader classLoader) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         installVendorAppLifecycle(classLoader);
-        installOverviewHandoff();
+        try {
+            installOverviewHandoff();
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " Overview handoff hook unavailable", error);
+        }
         Api101Bridge.log(TAG + " 4.50 continuous gesture capture installed");
     }
 
-    /**
-     * 4.50 decompilation anchors:
-     *   GestureModeApp.onStartGesture() -> startGestureAppMode() -> actionMoveAppDrag()
-     *   GestureModeApp$8.onAnimationEnd() -> finishAppToHomeNew() -> onEnterHomeAnimFinish()
-     *   GestureModeApp$6.onAnimationEnd() -> performAppToAppAnimationEnd()
-     * Recents remains owned by exact EnterOverviewStateEvent.
-     */
     private static void installVendorAppLifecycle(ClassLoader classLoader) {
         try {
             Class<?> appMode = Class.forName(
                     "com.miui.home.recents.GestureModeApp", false, classLoader);
 
             HookUtil.hookMethod(appMode, "onStartGesture", new Class<?>[0], chain -> {
+                DockLiquidGlassView glass = boundGlass();
+                if (glass != null) transitionGlassRef = new WeakReference<>(glass);
                 setVendorTransitionActive(true, "GestureModeApp.onStartGesture");
                 return chain.proceed(chain.getArgs().toArray(new Object[0]));
             });
@@ -82,7 +84,16 @@ final class Miuix307GestureBackdropHoldHook {
         return hooked;
     }
 
-    static void setSystemUiTransitionActive(boolean active, String reason) {
+    /** SystemUI already owns the exact current glass; never rediscover it through another hook. */
+    static void setSystemUiTransitionActive(
+            DockLiquidGlassView glass, boolean active, String reason) {
+        if (active && glass != null) {
+            transitionGlassRef = new WeakReference<>(glass);
+            Api101Bridge.log(TAG + " SystemUI transition authority glass="
+                    + glass.getClass().getSimpleName() + "@"
+                    + Integer.toHexString(System.identityHashCode(glass))
+                    + " reason=" + reason);
+        }
         if (systemUiTransitionActive == active) {
             if (active) ensureCaptureBurst("systemui-refresh-" + reason);
             return;
@@ -91,7 +102,16 @@ final class Miuix307GestureBackdropHoldHook {
         updateCaptureBurst("systemui-" + reason);
     }
 
+    /** Compatibility entry for non-runtime callers; prefer the explicit-view overload above. */
+    static void setSystemUiTransitionActive(boolean active, String reason) {
+        setSystemUiTransitionActive(active ? transitionGlass() : null, active, reason);
+    }
+
     private static void setVendorTransitionActive(boolean active, String reason) {
+        if (active) {
+            DockLiquidGlassView glass = boundGlass();
+            if (glass != null) transitionGlassRef = new WeakReference<>(glass);
+        }
         if (vendorTransitionActive == active) {
             if (active) ensureCaptureBurst("vendor-refresh-" + reason);
             return;
@@ -111,21 +131,19 @@ final class Miuix307GestureBackdropHoldHook {
     }
 
     private static void updateCaptureBurst(String reason) {
-        if (isTransitionCaptureActive()) {
-            ensureCaptureBurst(reason);
-        } else {
-            stopCaptureBurst(reason);
-        }
+        if (isTransitionCaptureActive()) ensureCaptureBurst(reason);
+        else stopCaptureBurst(reason);
     }
 
     private static void ensureCaptureBurst(String reason) {
-        if (!Miuix307MaterialPipeline.isInstalled()) return;
-        DockLiquidGlassView glass = boundGlass();
-        if (glass == null) return;
+        DockLiquidGlassView glass = transitionGlass();
+        if (glass == null) {
+            Api101Bridge.log(TAG + " transition capture skipped: no bound glass reason=" + reason);
+            return;
+        }
 
-        // Ownership/focus can report HOME as soon as the finger is released, while the APP→HOME
-        // animation is still running. Transition capture must stay FULL_DISPLAY until WMShell
-        // finish (or exact Overview) commits the destination, so pin the scene back to APP here.
+        // Destination ownership may flip HOME immediately after ACTION_UP. The transition itself is
+        // still APP/FULL_DISPLAY until exact Overview or Shell finish commits the destination.
         pinTransitionSceneToApp(glass);
 
         if (captureBurstRunning) {
@@ -145,7 +163,7 @@ final class Miuix307GestureBackdropHoldHook {
     private static void scheduleCaptureFrame(DockLiquidGlassView glass, long session) {
         glass.postOnAnimation(() -> {
             if (!captureBurstRunning || session != captureBurstSession
-                    || !isTransitionCaptureActive() || boundGlass() != glass) return;
+                    || !isTransitionCaptureActive() || transitionGlass() != glass) return;
             keepAppVisibilityPrearm(glass, true);
             renewTransitionCapture(glass, "miuix307-transition-continuous");
             scheduleCaptureFrame(glass, session);
@@ -153,8 +171,11 @@ final class Miuix307GestureBackdropHoldHook {
     }
 
     private static void stopCaptureBurst(String reason) {
-        if (!captureBurstRunning) return;
-        DockLiquidGlassView glass = boundGlass();
+        if (!captureBurstRunning) {
+            if (!isTransitionCaptureActive()) transitionGlassRef = new WeakReference<>(null);
+            return;
+        }
+        DockLiquidGlassView glass = transitionGlass();
         captureBurstRunning = false;
         captureBurstSession++;
         if (glass != null) {
@@ -162,12 +183,11 @@ final class Miuix307GestureBackdropHoldHook {
             glass.requestCapture("miuix307-transition-settle-" + reason);
         }
         Api101Bridge.log(TAG + " transition capture burst stop reason=" + reason);
+        if (!isTransitionCaptureActive()) transitionGlassRef = new WeakReference<>(null);
     }
 
     private static void renewTransitionCapture(DockLiquidGlassView glass, String reason) {
         if (glass == null) return;
-        // Reassert APP on every animation frame. HomeOwnership/Launcher lifecycle may already say
-        // HOME after ACTION_UP; that is ownership information, not a visual completion boundary.
         pinTransitionSceneToApp(glass);
         try {
             Object cadence = HookUtil.getField(glass, "captureCadence");
@@ -182,20 +202,13 @@ final class Miuix307GestureBackdropHoldHook {
         if (glass == null || !isTransitionCaptureActive()) return;
         try {
             Object state = HookUtil.getField(glass, "sceneState");
-            if (state != null) {
-                HookUtil.invoke(state, "setGestureTarget", "APP", System.nanoTime());
-            }
+            if (state != null) HookUtil.invoke(state, "setGestureTarget", "APP", System.nanoTime());
             HookUtil.invoke(glass, "updateDesiredScene");
         } catch (Throwable error) {
             Api101Bridge.log(TAG + " transition APP scene pin unavailable", error);
         }
     }
 
-    /**
-     * Reuse the existing safe APP visibility bypass while the Floating Dock is collapsed. Hard
-     * gates are evaluated before this flag in DockLiquidGlassView.isCaptureAllowed(), so screen
-     * power, SystemUI panel, workstation and drag exclusions remain authoritative.
-     */
     private static void keepAppVisibilityPrearm(DockLiquidGlassView glass, boolean active) {
         if (glass == null) return;
         try {
@@ -212,15 +225,27 @@ final class Miuix307GestureBackdropHoldHook {
                 new Class<?>[]{boolean.class, String.class}, chain -> {
                     Object[] args = chain.getArgs().toArray(new Object[0]);
                     if (args.length > 0 && Boolean.TRUE.equals(args[0])) {
-                        // Exact Overview has a self-sustained RECENTS capture loop already.
                         stopAllTransitionCapture("exact-overview");
                     }
                     return chain.proceed(args);
                 });
     }
 
+    private static DockLiquidGlassView transitionGlass() {
+        DockLiquidGlassView glass = transitionGlassRef.get();
+        if (glass != null) return glass;
+        glass = boundGlass();
+        if (glass != null) transitionGlassRef = new WeakReference<>(glass);
+        return glass;
+    }
+
     private static DockLiquidGlassView boundGlass() {
-        Object value = HookUtil.invokeStatic(Miuix307RecentsInputHook.class, "boundGlass");
-        return value instanceof DockLiquidGlassView ? (DockLiquidGlassView) value : null;
+        try {
+            Object value = HookUtil.invokeStatic(Miuix307RecentsInputHook.class, "boundGlass");
+            return value instanceof DockLiquidGlassView ? (DockLiquidGlassView) value : null;
+        } catch (Throwable error) {
+            Api101Bridge.log(TAG + " transition glass lookup unavailable", error);
+            return null;
+        }
     }
 }
