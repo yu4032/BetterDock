@@ -17,6 +17,7 @@ final class Miuix307ZeroCopyBackdropView extends View {
 
     private int blurRadiusPx;
     private boolean blurActive;
+    private boolean activationExhausted;
     private int retryFrames;
     private long activationGeneration;
 
@@ -36,10 +37,12 @@ final class Miuix307ZeroCopyBackdropView extends View {
         if (!isAttachedToWindow()) return;
 
         if (blurActive && MiBlurBridge.setPassWindowBlurRadius(this, next)) {
+            activationExhausted = false;
             invalidate();
             return;
         }
         blurActive = false;
+        activationExhausted = false;
         retryFrames = 0;
         long generation = ++activationGeneration;
         tryActivate(generation);
@@ -47,6 +50,10 @@ final class Miuix307ZeroCopyBackdropView extends View {
 
     boolean isBlurActive() {
         return blurActive;
+    }
+
+    boolean isActivationExhausted() {
+        return activationExhausted;
     }
 
     int blurRadiusPx() {
@@ -57,12 +64,14 @@ final class Miuix307ZeroCopyBackdropView extends View {
         ++activationGeneration;
         retryFrames = 0;
         blurActive = false;
+        activationExhausted = false;
         MiBlurBridge.clearPassWindowBlur(this);
     }
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         retryFrames = 0;
+        activationExhausted = false;
         long generation = ++activationGeneration;
         tryActivate(generation);
     }
@@ -76,13 +85,17 @@ final class Miuix307ZeroCopyBackdropView extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         if (w <= 0 || h <= 0 || !isAttachedToWindow() || blurActive) return;
         retryFrames = 0;
+        activationExhausted = false;
         long generation = ++activationGeneration;
         tryActivate(generation);
     }
 
     private void tryActivate(long generation) {
         if (generation != activationGeneration || !isAttachedToWindow()) return;
-        if (!MiBlurBridge.isPassWindowBlurAvailable()) return;
+        if (!MiBlurBridge.isPassWindowBlurAvailable()) {
+            activationExhausted = true;
+            return;
+        }
 
         if (getWidth() > 0 && getHeight() > 0
                 && MiBlurBridge.applyPassWindowBlur(this, blurRadiusPx)) {
@@ -91,12 +104,14 @@ final class Miuix307ZeroCopyBackdropView extends View {
                         + " size=" + getWidth() + "x" + getHeight());
             }
             blurActive = true;
+            activationExhausted = false;
             retryFrames = 0;
             return;
         }
 
         blurActive = false;
         if (retryFrames >= MAX_ATTACH_RETRY_FRAMES) {
+            activationExhausted = true;
             MainHook.log(TAG + " backdrop activation exhausted frames=" + retryFrames
                     + " size=" + getWidth() + "x" + getHeight());
             return;
