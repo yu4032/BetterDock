@@ -60,21 +60,24 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     }
 
     @Test
-    public void native307BackgroundKeepsParentBlurOffWhileZeroCopyChildOwnsBackdrop() throws Exception {
+    public void native307BackgroundKeepsParentBlurOffWhilePassBlurGpuChildOwnsBackdrop() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String passBlur = read("Miuix307PassBlurBridge.java");
 
         // Device traces proved parent/vendor region blur post-processes the entire Floating Dock.
-        // Zero-copy therefore keeps that parent stage at zero and moves pass-window blur to a
-        // dedicated bottom child, leaving the host's sharp optical overlay above it.
+        // The new demo keeps that parent stage at zero and uses an independent GPU child whose
+        // live backdrop is produced by SurfaceFlinger PassBlur into a caller-owned BufferQueue.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(glassHook.contains("suppressVendorGpuBlur"));
         assertTrue(glassHook.contains("setPassWindowBlurRadius(dockBg, 0)"));
         assertTrue(glassHook.contains("Miuix307ZeroCopyRenderer.install"));
-        assertTrue(renderer.contains("new Miuix307ZeroCopyBackdropView"));
+        assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
         assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertTrue(passBlur.contains("\"SetPassBlurSurface\""));
+        assertTrue(passBlur.contains("DEMO_SCALE = 1.0f"));
         assertFalse(glassHook.contains("enforcePrismalOpticalOnly"));
         assertFalse(glassHook.contains("installNativeBackgroundPreserver"));
         assertFalse(glassHook.contains("nativeBackgroundHiddenByGlass"));
@@ -96,9 +99,8 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
 
-        // The themed parent may request its own region blur. Keep it suppressed so only the
-        // dedicated zero-copy child owns pass-window blur and the capture fallback is not
-        // post-processed when it is selected.
+        // The themed parent may request its own region blur. Keep it suppressed so the PassBlur
+        // GPU child/capture fallback is not post-processed by the Floating Dock root material.
         assertTrue(pipeline.contains("installCompatBackgroundBlurSuppression(classLoader)"));
         assertTrue(pipeline.contains("com.miui.home.launcher.common.BlurUtilities"));
         assertTrue(pipeline.contains("\"setBackgroundBlur\""));
