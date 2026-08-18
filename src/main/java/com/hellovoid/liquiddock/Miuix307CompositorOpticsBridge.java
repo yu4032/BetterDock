@@ -6,19 +6,70 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
- * Reuses the active MiuiX material's compositor blur configuration on the dedicated zero-copy
- * backdrop child. This keeps all sampling inside SurfaceFlinger while inheriting vendor blur type,
- * subtype, gradient parameters and material blend configuration when Launcher exposes them.
+ * Reuses the vendor Dock compositor configuration on LiquidDock's dedicated zero-copy backdrop.
+ *
+ * Launcher 4.50 has two material implementations. The compatibility
+ * HotSeatsListContentBlurBackground2 path does not expose MaterialConfig; instead its private
+ * addBlur(View,float) method builds the exact four-corner geometry and blend colors, then calls
+ * View.setBackgroundBlur(...) through Launcher BlurUtilities. Reusing that method keeps the
+ * vendor's native compositor setup without reconstructing hidden parameters or reading pixels
+ * back. Newer MiuiX material implementations can still use the MaterialConfig fallback below.
  */
 final class Miuix307CompositorOpticsBridge {
     private static final String TAG = "[DC][ZC]";
+    private static final String COMPAT_BLUR_BACKGROUND2 =
+            "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
+
     private static Class<?> loggedAppliedClass;
     private static Class<?> loggedUnavailableClass;
 
     private Miuix307CompositorOpticsBridge() {}
 
-    static boolean applyVendorBlurConfig(View vendorMaterial, View target) {
+    static boolean applyVendorBlurConfig(
+            View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
         if (vendorMaterial == null || target == null) return false;
+        Class<?> sourceClass = vendorMaterial.getClass();
+
+        if (COMPAT_BLUR_BACKGROUND2.equals(sourceClass.getName())) {
+            return applyCompatBlurBackground2(
+                    vendorMaterial, target, Math.max(0f, cornerRadiusPx), blurRadiusPx);
+        }
+        return applyMaterialConfig(vendorMaterial, target);
+    }
+
+    /**
+     * Exact Launcher 4.50 compatibility path. addBlur() internally creates the vendor corner
+     * array and theme blend-color table and applies them through View.setBackgroundBlur(). The
+     * vendor method uses its own blur radius, so restore LiquidDock's GUI-selected radius
+     * immediately afterwards through the same setMiBackgroundBlurRadius API family.
+     */
+    private static boolean applyCompatBlurBackground2(
+            View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
+        Class<?> sourceClass = vendorMaterial.getClass();
+        try {
+            Method addBlur = sourceClass.getDeclaredMethod("addBlur", View.class, float.class);
+            addBlur.setAccessible(true);
+            addBlur.invoke(vendorMaterial, target, cornerRadiusPx);
+            if (!MiBlurBridge.setPassWindowBlurRadius(target, blurRadiusPx)) {
+                logUnavailableOnce(sourceClass, "restore-radius");
+                return false;
+            }
+            if (loggedAppliedClass != sourceClass) {
+                loggedAppliedClass = sourceClass;
+                MainHook.log(TAG + " compat compositor optics active source="
+                        + sourceClass.getSimpleName()
+                        + " cornerRadius=" + cornerRadiusPx
+                        + " blurRadius=" + blurRadiusPx);
+            }
+            return true;
+        } catch (Throwable error) {
+            logUnavailableOnce(sourceClass, "addBlur-" + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /** MaterialConfig path retained for native MiuiX material implementations. */
+    private static boolean applyMaterialConfig(View vendorMaterial, View target) {
         Class<?> sourceClass = vendorMaterial.getClass();
         try {
             Method getCurrentMaterial = findNoArg(sourceClass, "getCurrentMaterial");
