@@ -69,7 +69,10 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
         assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
-        assertTrue(renderer.contains("materialHost.setForeground(null)"));
+        assertFalse("neutral renderer must not erase the safe replacement stroke",
+                renderer.contains("materialHost.setForeground(null)"));
+        assertTrue("the shell must still configure a replacement stroke with no vendor body",
+                glassHook.contains("DockStrokeRenderer.configureReplacingForeground("));
         assertTrue(passBlur.contains("\"SetPassBlurSurface\""));
         assertTrue(passBlur.contains("DEMO_SCALE = 1.0f"));
         assertFalse(glassHook.contains("enforcePrismalOpticalOnly"));
