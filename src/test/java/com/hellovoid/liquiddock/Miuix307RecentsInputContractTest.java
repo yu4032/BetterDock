@@ -11,11 +11,15 @@ public class Miuix307RecentsInputContractTest {
         return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + name));
     }
 
-    @Test public void specialized307PipelineTracksOneDockGestureAcrossAllMoves() throws Exception {
+    @Test public void specialized307PipelineTracksFloatingDockGestureAcrossAllMoves() throws Exception {
         String entry = read("ModuleMain.java");
         String hook = read("Miuix307RecentsInputHook.java");
 
         assertTrue(entry.contains("Miuix307RecentsInputHook.install(classLoader)"));
+        assertTrue(hook.contains("MiuixGlassHook.class, \"install\""));
+        assertTrue(hook.contains("getRootView()"));
+        assertTrue(hook.contains("setOnTouchListener"));
+        assertTrue(hook.contains("return false"));
         assertTrue(hook.contains("\"dispatchTouchEvent\""));
         assertTrue(hook.contains("isTouchInDockArea"));
         assertTrue(hook.contains("gestureActive"));
