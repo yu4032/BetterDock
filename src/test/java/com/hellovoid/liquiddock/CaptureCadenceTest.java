@@ -1,11 +1,11 @@
 package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.junit.Test;
@@ -42,18 +42,23 @@ public class CaptureCadenceTest {
                 cadence.intervalNanos(CaptureScene.RECENTS, true, Long.MAX_VALUE, 1L));
     }
 
-    @Test public void gestureMoveDrivesCaptureAndRecentsDoesNotFreeRun() throws Exception {
-        String source = Files.readString(Paths.get(
-                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"),
-                StandardCharsets.UTF_8);
+    @Test public void miuix307UsesNativeGestureTrackerAsPerMoveCaptureOwner() throws Exception {
+        Path hookPath = Paths.get(
+                "src/main/java/com/hellovoid/liquiddock/Miuix307GestureCaptureHook.java");
+        assertTrue("307 needs a gesture-specific capture bridge", Files.exists(hookPath));
+        String source = Files.readString(hookPath, StandardCharsets.UTF_8);
 
-        assertTrue("finger contact must have an explicit capture-active latch",
-                source.contains("gestureCaptureActive"));
-        assertTrue("every gesture MOVE must dirty/schedule a capture",
-                source.contains("requestStateCapture(\"dock-gesture-move\")"));
-        assertTrue("gesture cadence must bypass the dynamic APP power/probe policy",
-                source.contains("interactionIntervalNanos"));
-        assertFalse("ordinary Recents must not run an unconditional capture loop when static",
-                source.contains("requestStateCapture(\"recents-continue\")"));
+        assertTrue(source.contains("com.miui.home.recents.GestureTouchEventTracker"));
+        assertTrue(source.contains("onTouchEvent"));
+        assertTrue(source.contains("MotionEvent.ACTION_MOVE"));
+        assertTrue(source.contains("onDockGestureMotion"));
+        assertTrue(source.contains("requestCapture(\"miuix307-gesture-move\")"));
+        assertTrue("one gesture may recover an opened capture breaker once",
+                source.contains("circuitRecoveryUsed"));
+
+        String module = Files.readString(Paths.get(
+                "src/main/java/com/hellovoid/liquiddock/ModuleMain.java"),
+                StandardCharsets.UTF_8);
+        assertTrue(module.contains("Miuix307GestureCaptureHook.install(classLoader);"));
     }
 }
