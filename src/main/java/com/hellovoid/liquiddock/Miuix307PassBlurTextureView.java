@@ -41,6 +41,9 @@ final class Miuix307PassBlurTextureView extends TextureView
     private static final String TAG = "[DC][PBTX]";
     private static final int MAX_BIND_RETRY_FRAMES = 24;
     private static final float BLUR_FBO_SCALE = 0.5f;
+    // Keep real scene pixels around the visible Dock so refraction can see approaching content
+    // before it crosses the material edge. Output remains clipped to the Dock itself.
+    private static final float EDGE_OVERSCAN_DP = 32f;
 
     private static final float[] QUAD = new float[]{
             -1f, -1f, 0f, 0f,
@@ -91,15 +94,26 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile int outputWidth;
     private volatile int outputHeight;
 
-    // Unclamped host-to-producer mapping plus the valid Dock-local sub-rectangle.
+    // Stage A samples a real overscan ring around the visible Dock. The sample-valid
+    // rectangle is used only by the normalization mirror guard; Dock validity remains separate
+    // so half-pulled animations are still clipped to pixels that are actually on-screen.
     private volatile float backdropX;
     private volatile float backdropY;
     private volatile float backdropW = 1f;
     private volatile float backdropH = 1f;
+    private volatile float validSampleLeft;
+    private volatile float validSampleBottom;
+    private volatile float validSampleRight = 1f;
+    private volatile float validSampleTop = 1f;
     private volatile float validDockLeft;
     private volatile float validDockBottom;
     private volatile float validDockRight = 1f;
     private volatile float validDockTop = 1f;
+    // Visible Dock coordinates inside the larger overscan texture: x, y, width, height.
+    private volatile float dockUvLeft;
+    private volatile float dockUvBottom;
+    private volatile float dockUvWidth = 1f;
+    private volatile float dockUvHeight = 1f;
     private volatile Miuix307BackdropMapping.Coverage producerCoverage =
             Miuix307BackdropMapping.Coverage.FULL;
 
@@ -373,8 +387,9 @@ final class Miuix307PassBlurTextureView extends TextureView
     }
 
     private void ensureFboSize(int width, int height) {
-        int nextWidth = Math.max(1, width);
-        int nextHeight = Math.max(1, height);
+        int overscanPx = edgeOverscanPx();
+        int nextWidth = Math.max(1, width + overscanPx * 2);
+        int nextHeight = Math.max(1, height + overscanPx * 2);
         int nextBlurWidth = Math.max(1, Math.round(nextWidth * BLUR_FBO_SCALE));
         int nextBlurHeight = Math.max(1, Math.round(nextHeight * BLUR_FBO_SCALE));
         if (rawFramebuffer != 0 && blurFramebufferH != 0 && blurFramebufferV != 0
@@ -487,7 +502,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         GLES20.glUniform1i(requireUniform(normalizeProgram, "uConfigRot"), configRotation);
         GLES20.glUniform4f(
                 requireUniform(normalizeProgram, "uValidDockRect"),
-                validDockLeft, validDockBottom, validDockRight, validDockTop);
+                validSampleLeft, validSampleBottom, validSampleRight, validSampleTop);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         unbindQuad(normalizeProgram);
     }
@@ -573,6 +588,9 @@ final class Miuix307PassBlurTextureView extends TextureView
         }
         Miuix307PrismalMaterial.applyUniforms(
                 materialProgram, opticalParams, cornerRadiusPx, outputWidth, outputHeight);
+        int uDockUvRect = requireUniform(materialProgram, "u_dockUvRect");
+        GLES20.glUniform4f(
+                uDockUvRect, dockUvLeft, dockUvBottom, dockUvWidth, dockUvHeight);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         unbindQuad(materialProgram);
         GLES20.glDisable(GLES20.GL_BLEND);
@@ -744,6 +762,11 @@ final class Miuix307PassBlurTextureView extends TextureView
                 + " configRot=" + geometry.configRotation);
     }
 
+    private int edgeOverscanPx() {
+        float density = getResources().getDisplayMetrics().density;
+        return Math.max(1, Math.round(EDGE_OVERSCAN_DP * Math.max(0.1f, density)));
+    }
+
     private void updateBackdropMapping() {
         if (shuttingDown) return;
         View materialHost = materialHostRef.get();
@@ -757,29 +780,58 @@ final class Miuix307PassBlurTextureView extends TextureView
         int[] hostScreen = new int[2];
         materialHost.getLocationOnScreen(hostScreen);
 
-        Miuix307BackdropMapping.Result next = Miuix307BackdropMapping.compute(
+        int overscanPx = edgeOverscanPx();
+        int sampleWidth = hostWidth + overscanPx * 2;
+        int sampleHeight = hostHeight + overscanPx * 2;
+        Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(
+                hostScreen[0] - overscanPx, hostScreen[1] - overscanPx,
+                sampleWidth, sampleHeight,
+                winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
+        Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(
                 hostScreen[0], hostScreen[1], hostWidth, hostHeight,
                 winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
-        boolean unchanged = Float.compare(backdropX, next.backdropX) == 0
-                && Float.compare(backdropY, next.backdropY) == 0
-                && Float.compare(backdropW, next.backdropW) == 0
-                && Float.compare(backdropH, next.backdropH) == 0
-                && Float.compare(validDockLeft, next.validLeft) == 0
-                && Float.compare(validDockBottom, next.validBottom) == 0
-                && Float.compare(validDockRight, next.validRight) == 0
-                && Float.compare(validDockTop, next.validTop) == 0
-                && producerCoverage == next.coverage;
+
+        float nextDockUvLeft = overscanPx / (float) sampleWidth;
+        float nextDockUvBottom = overscanPx / (float) sampleHeight;
+        float nextDockUvWidth = hostWidth / (float) sampleWidth;
+        float nextDockUvHeight = hostHeight / (float) sampleHeight;
+
+        boolean unchanged = Float.compare(backdropX, sample.backdropX) == 0
+                && Float.compare(backdropY, sample.backdropY) == 0
+                && Float.compare(backdropW, sample.backdropW) == 0
+                && Float.compare(backdropH, sample.backdropH) == 0
+                && Float.compare(validSampleLeft, sample.validLeft) == 0
+                && Float.compare(validSampleBottom, sample.validBottom) == 0
+                && Float.compare(validSampleRight, sample.validRight) == 0
+                && Float.compare(validSampleTop, sample.validTop) == 0
+                && Float.compare(validDockLeft, dock.validLeft) == 0
+                && Float.compare(validDockBottom, dock.validBottom) == 0
+                && Float.compare(validDockRight, dock.validRight) == 0
+                && Float.compare(validDockTop, dock.validTop) == 0
+                && Float.compare(dockUvLeft, nextDockUvLeft) == 0
+                && Float.compare(dockUvBottom, nextDockUvBottom) == 0
+                && Float.compare(dockUvWidth, nextDockUvWidth) == 0
+                && Float.compare(dockUvHeight, nextDockUvHeight) == 0
+                && producerCoverage == dock.coverage;
         if (unchanged) return;
 
-        backdropX = next.backdropX;
-        backdropY = next.backdropY;
-        backdropW = next.backdropW;
-        backdropH = next.backdropH;
-        validDockLeft = next.validLeft;
-        validDockBottom = next.validBottom;
-        validDockRight = next.validRight;
-        validDockTop = next.validTop;
-        producerCoverage = next.coverage;
+        backdropX = sample.backdropX;
+        backdropY = sample.backdropY;
+        backdropW = sample.backdropW;
+        backdropH = sample.backdropH;
+        validSampleLeft = sample.validLeft;
+        validSampleBottom = sample.validBottom;
+        validSampleRight = sample.validRight;
+        validSampleTop = sample.validTop;
+        validDockLeft = dock.validLeft;
+        validDockBottom = dock.validBottom;
+        validDockRight = dock.validRight;
+        validDockTop = dock.validTop;
+        dockUvLeft = nextDockUvLeft;
+        dockUvBottom = nextDockUvBottom;
+        dockUvWidth = nextDockUvWidth;
+        dockUvHeight = nextDockUvHeight;
+        producerCoverage = dock.coverage;
         stageBDiagnosticsLogged = false;
         if (hasConsumedFrame) renderHandler.post(() -> drawLatestFrame(false));
     }
@@ -1041,10 +1093,18 @@ final class Miuix307PassBlurTextureView extends TextureView
         backdropY = 0f;
         backdropW = 1f;
         backdropH = 1f;
+        validSampleLeft = 0f;
+        validSampleBottom = 0f;
+        validSampleRight = 1f;
+        validSampleTop = 1f;
         validDockLeft = 0f;
         validDockBottom = 0f;
         validDockRight = 1f;
         validDockTop = 1f;
+        dockUvLeft = 0f;
+        dockUvBottom = 0f;
+        dockUvWidth = 1f;
+        dockUvHeight = 1f;
         producerCoverage = Miuix307BackdropMapping.Coverage.FULL;
     }
 
