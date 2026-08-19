@@ -141,6 +141,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
     private float lastShapeRadius = Float.NaN;
     private boolean firstFrameLogged;
     private boolean firstDrawLogged;
+    private boolean coordinateDiagnosticsLogged;
     private ViewTreeObserver preDrawObserver;
     private ViewTreeObserver.OnPreDrawListener preDrawListener;
 
@@ -289,6 +290,10 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
                 textureSource.updateTexImage();
                 textureSource.getTransformMatrix(textureMatrix);
                 hasConsumedFrame = true;
+                if (!coordinateDiagnosticsLogged) {
+                    final float[] matrixSnapshot = textureMatrix.clone();
+                    post(() -> logCoordinateDiagnostics(matrixSnapshot));
+                }
                 if (!firstFrameLogged) {
                     firstFrameLogged = true;
                     MainHook.log(TAG + " first OES frame configRot=" + configRotation);
@@ -460,6 +465,51 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         cropH = Math.max(0.0001f, Math.min(1f - cropY, height));
     }
 
+    private void logCoordinateDiagnostics(float[] matrix) {
+        if (coordinateDiagnosticsLogged || shuttingDown || matrix == null || matrix.length < 16) return;
+        View materialHost = materialHostRef.get();
+        View root = materialHost != null ? materialHost.getRootView() : getRootView();
+        if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0
+                || getWidth() <= 0 || getHeight() <= 0) return;
+
+        int[] rootWindow = new int[2];
+        int[] viewWindow = new int[2];
+        int[] rootScreen = new int[2];
+        int[] viewScreen = new int[2];
+        root.getLocationInWindow(rootWindow);
+        getLocationInWindow(viewWindow);
+        root.getLocationOnScreen(rootScreen);
+        getLocationOnScreen(viewScreen);
+
+        float rootWidth = root.getWidth();
+        float rootHeight = root.getHeight();
+        float left = clamp01((viewWindow[0] - rootWindow[0]) / rootWidth);
+        float top = clamp01((viewWindow[1] - rootWindow[1]) / rootHeight);
+        float width = Math.max(0.0001f, Math.min(1f - left, getWidth() / rootWidth));
+        float height = Math.max(0.0001f, Math.min(1f, getHeight() / rootHeight));
+        float glBottom = clamp01(1f - (top + height));
+
+        float[] bl = mapTextureCoordinate(matrix, left, glBottom);
+        float[] br = mapTextureCoordinate(matrix, left + width, glBottom);
+        float[] tl = mapTextureCoordinate(matrix, left, Math.min(1f, glBottom + height));
+        float[] tr = mapTextureCoordinate(matrix, left + width, Math.min(1f, glBottom + height));
+
+        coordinateDiagnosticsLogged = true;
+        MainHook.log(TAG + " texture matrix=" + formatTextureMatrix(matrix));
+        MainHook.log(TAG + " coordinate diagnostic rootWindow=" + formatPoint(rootWindow)
+                + " rootScreen=" + formatPoint(rootScreen)
+                + " viewWindow=" + formatPoint(viewWindow)
+                + " viewScreen=" + formatPoint(viewScreen)
+                + " rootSize=" + root.getWidth() + "x" + root.getHeight()
+                + " viewSize=" + getWidth() + "x" + getHeight()
+                + " cropGL=[" + left + "," + glBottom + "," + width + "," + height + "]"
+                + " cropTop=[" + left + "," + top + "," + width + "," + height + "]");
+        MainHook.log(TAG + " mapped corners bl=" + formatTexturePoint(bl)
+                + " br=" + formatTexturePoint(br)
+                + " tl=" + formatTexturePoint(tl)
+                + " tr=" + formatTexturePoint(tr));
+    }
+
     /**
      * HyperOS ViewRootImpl.checkSurTexSize() keeps its PassBlur SurfaceTexture bound while display
      * rotation changes the producer geometry. Mirror that contract: resize the existing BufferQueue
@@ -501,6 +551,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         frameAvailable.set(false);
         firstFrameLogged = false;
         firstDrawLogged = false;
+        coordinateDiagnosticsLogged = false;
         updateCrop();
         applyOutputCornerRadius();
         MainHook.log(TAG + " producer geometry updated in place surface="
@@ -586,6 +637,36 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         }
     }
 
+    private static float[] mapTextureCoordinate(float[] matrix, float x, float y) {
+        float tx = matrix[0] * x + matrix[4] * y + matrix[12];
+        float ty = matrix[1] * x + matrix[5] * y + matrix[13];
+        float tw = matrix[3] * x + matrix[7] * y + matrix[15];
+        if (Math.abs(tw) > 0.000001f && Math.abs(tw - 1f) > 0.000001f) {
+            tx /= tw;
+            ty /= tw;
+        }
+        return new float[]{tx, ty};
+    }
+
+    private static String formatTextureMatrix(float[] matrix) {
+        StringBuilder value = new StringBuilder("[");
+        for (int i = 0; i < 16; i++) {
+            if (i > 0) value.append(',');
+            value.append(matrix[i]);
+        }
+        return value.append(']').toString();
+    }
+
+    private static String formatPoint(int[] point) {
+        return point == null || point.length < 2
+                ? "[?]" : "[" + point[0] + "," + point[1] + "]";
+    }
+
+    private static String formatTexturePoint(float[] point) {
+        return point == null || point.length < 2
+                ? "[?]" : "[" + point[0] + "," + point[1] + "]";
+    }
+
     private void resetInputForNewGlContext() {
         Miuix307PassBlurBridge.Binding stale = binding;
         binding = null;
@@ -597,6 +678,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         frameAvailable.set(false);
         firstFrameLogged = false;
         firstDrawLogged = false;
+        coordinateDiagnosticsLogged = false;
 
         Surface currentProducer = producerSurface;
         producerSurface = null;
