@@ -23,7 +23,8 @@ public class Miuix307TextureViewBackdropMappingTest {
         assertTrue(source.contains("uniform vec4 uBackdropRect"));
         assertTrue(source.contains("uniform int uConfigRot"));
         assertTrue(source.contains("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
-        assertTrue(source.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)"));
+        assertTrue(source.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)")
+                || source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
         assertTrue("diagnostic refraction must stay in Dock-local UV space before backdrop mapping",
                 source.indexOf("lensUv = mix(vUv, refractedUv, edgeWeight)")
                         < source.indexOf("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
@@ -41,7 +42,7 @@ public class Miuix307TextureViewBackdropMappingTest {
         int rot1 = source.indexOf("if (uConfigRot == 1) {\\n");
         int rot2 = source.indexOf("else if (uConfigRot == 2) {\\n", rot1);
         int rot3 = source.indexOf("else if (uConfigRot == 3) {\\n", rot2);
-        int transformed = source.indexOf("uTexMatrix * vec4(orientedUv, 0.0, 1.0)", rot3);
+        int transformed = source.indexOf("uTexMatrix * vec4(", rot3);
         assertTrue(rot1 >= 0 && rot2 > rot1 && rot3 > rot2 && transformed > rot3);
 
         String rot1Branch = source.substring(rot1, rot2);
@@ -54,6 +55,18 @@ public class Miuix307TextureViewBackdropMappingTest {
                 rot2Branch.contains("orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\\n"));
         assertTrue("configRot=3 must use the opposite quarter-turn from the pre-swap calibration",
                 rot3Branch.contains("orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\\n"));
+    }
+
+    @Test
+    public void surfaceTextureCropIsPrecompensatedBeforeFinalMatrix() throws Exception {
+        String source = view();
+        assertTrue("screen-space Dock mapping must neutralize SurfaceTexture's extra X crop before sampling",
+                source.contains("vec2 textureInputUv = orientedUv")
+                        && source.contains("uTexMatrix[0][0]")
+                        && source.contains("uTexMatrix[3][0]")
+                        && source.contains("(orientedUv.x - textureOffsetX) / textureScaleX"));
+        assertTrue("SurfaceTexture matrix must still perform the final OES transform/Y flip",
+                source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
     }
 
     @Test
