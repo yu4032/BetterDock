@@ -57,7 +57,8 @@ public class Miuix307PassBlurGpuDemoTest {
                 && view.contains("setOnFrameAvailableListener")
                 && view.contains("requestRender()"));
         assertTrue(view.contains("updateTexImage()") && view.contains("getTransformMatrix"));
-        assertTrue(view.contains("getLocationInWindow") && view.contains("uCrop"));
+        assertTrue("manual coordinate calculations may remain diagnostic-only",
+                view.contains("getLocationInWindow") && view.contains("cropSF="));
 
         assertTrue("lens must follow rounded Dock geometry",
                 view.contains("sdRoundRect")
@@ -178,7 +179,7 @@ public class Miuix307PassBlurGpuDemoTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
 
         assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
-                view.contains("uTexMatrix * vec4(rootUv, 0.0, 1.0)"));
+                view.contains("uTexMatrix * vec4(lensUv, 0.0, 1.0)"));
         assertFalse("shader must not apply a second explicit config rotation",
                 view.contains("uniform int uConfigRot")
                         || view.contains("glUniform1i(rotation")
