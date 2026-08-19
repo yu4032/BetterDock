@@ -29,13 +29,16 @@ public class Miuix307TextureViewBackdropMappingTest {
         assertTrue(source.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
         assertTrue(source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
         assertTrue("Prismal displacement must remain in Dock-local space before root mapping",
-                source.contains("vec2 uvG = vUv + baseOffset")
-                        && source.contains("sampleBackdrop(uvG)"));
-        assertFalse("Stage-B material must not reintroduce capture/readback or shader blur",
+                source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv")
+                        && source.contains("vec2 uvCenter = backdropUv(vScreenTexCoord, baseOffset, pinchMix)")
+                        && source.contains("sampleBackdrop(uvCenter)"));
+        assertFalse("Stage-B material must not reintroduce capture/readback",
                 source.contains("Bitmap")
                         || source.contains("captureScreenAsync")
-                        || source.contains("glReadPixels")
-                        || source.contains("blurRadius"));
+                        || source.contains("glReadPixels"));
+        assertTrue("upstream Prismal blur must stay GPU-only over the OES sampler",
+                source.contains("uBlurRadiusPx")
+                        && source.contains("sampleBackdropRaw"));
     }
 
     @Test
