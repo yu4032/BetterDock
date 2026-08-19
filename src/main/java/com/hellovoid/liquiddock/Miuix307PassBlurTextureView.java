@@ -29,14 +29,13 @@ import java.nio.FloatBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Feedback-safe Stage-B HyperOS 3.0.307 PassBlur calibration backend.
+ * Feedback-safe HyperOS 3.0.307 PassBlur -> external-OES -> TextureView renderer.
  *
  * PassBlur renders into a caller-owned input SurfaceTexture attached to an external OES texture.
  * A dedicated EGL thread renders into this TextureView, which remains inside the already-excluded
- * Floating Dock root. Stage B maps Dock-local UVs into the material host's real window-frame rect,
- * applies the inverse HyperOS config rotation, and finally applies the SurfaceTexture transform
- * matrix. A strong rounded edge lens is enabled only as a diagnostic spatial-refraction marker;
- * the center remains passthrough and no tint, blur, highlight, or color dispersion is applied.
+ * Floating Dock root. The proven Stage-B mapping converts Dock-local UVs into the material host's
+ * real window-frame rect, applies the inverse HyperOS config rotation, and finally applies the
+ * SurfaceTexture transform matrix. Prismal optics operate only before that frozen mapping.
  */
 final class Miuix307PassBlurTextureView extends TextureView
         implements TextureView.SurfaceTextureListener {
@@ -59,57 +58,7 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "  gl_Position = vec4(aPosition, 0.0, 1.0);\n"
             + "}\n";
 
-    private static final String FRAGMENT_SHADER =
-            "#extension GL_OES_EGL_image_external : require\n"
-            + "precision mediump float;\n"
-            + "uniform samplerExternalOES uTexture;\n"
-            + "uniform mat4 uTexMatrix;\n"
-            + "uniform vec4 uBackdropRect;\n"
-            + "uniform int uConfigRot;\n"
-            + "uniform vec2 uViewSize;\n"
-            + "varying vec2 vUv;\n"
-            + "float sdRoundRect(vec2 p, vec2 h, float r) {\n"
-            + "  vec2 q = abs(p) - (h - vec2(r));\n"
-            + "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
-            + "}\n"
-            + "void main() {\n"
-            + "  vec2 halfSize = max(uViewSize * 0.5 - vec2(0.5), vec2(1.0));\n"
-            + "  float radius = clamp(uViewSize.y * 0.44, 18.0, min(halfSize.x, halfSize.y));\n"
-            + "  vec2 p = vUv * uViewSize - uViewSize * 0.5;\n"
-            + "  float sd = sdRoundRect(p, halfSize, radius);\n"
-            + "  float insidePx = max(-sd, 0.0);\n"
-            + "  float bandPx = clamp(uViewSize.y * 0.34, 28.0, 64.0);\n"
-            + "  float edgeWeight = (1.0 - smoothstep(0.0, bandPx, insidePx))\n"
-            + "                   * smoothstep(0.0, 3.0, insidePx);\n"
-            + "  edgeWeight *= edgeWeight;\n"
-            + "  float stepPx = 1.0;\n"
-            + "  vec2 grad = vec2(\n"
-            + "      sdRoundRect(p + vec2(stepPx, 0.0), halfSize, radius)\n"
-            + "        - sdRoundRect(p - vec2(stepPx, 0.0), halfSize, radius),\n"
-            + "      sdRoundRect(p + vec2(0.0, stepPx), halfSize, radius)\n"
-            + "        - sdRoundRect(p - vec2(0.0, stepPx), halfSize, radius));\n"
-            + "  vec2 normal = length(grad) > 0.001 ? normalize(grad) : vec2(0.0);\n"
-            + "  float displacementPx = 14.0;\n"
-            + "  vec2 refractedUv = clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0);\n"
-            + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
-            + "  vec2 rootUv = uBackdropRect.xy + lensUv * uBackdropRect.zw;\n"
-            + "  vec2 orientedUv = rootUv;\n"
-            + "  if (uConfigRot == 1) {\n"
-            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
-            + "  } else if (uConfigRot == 2) {\n"
-            + "    orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\n"
-            + "  } else if (uConfigRot == 3) {\n"
-            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
-            + "  }\n"
-            + "  vec2 textureInputUv = orientedUv;\n"
-            + "  float textureScaleX = uTexMatrix[0][0];\n"
-            + "  float textureOffsetX = uTexMatrix[3][0];\n"
-            + "  if (abs(textureScaleX) > 0.000001) {\n"
-            + "    textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX;\n"
-            + "  }\n"
-            + "  vec4 transformed = uTexMatrix * vec4(textureInputUv, 0.0, 1.0);\n"
-            + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
-            + "}\n";
+    private static final String FRAGMENT_SHADER = Miuix307PrismalMaterial.FRAGMENT_SHADER;
 
     private static final class ProducerGeometry {
         final int surfaceWidth;
@@ -149,6 +98,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile SurfaceTexture outputSurfaceTexture;
     private volatile Surface outputWindowSurface;
     private volatile Miuix307PassBlurBridge.Binding binding;
+    private volatile Miuix307PrismalMaterial.Params opticalParams;
     private volatile int outputWidth;
     private volatile int outputHeight;
     private volatile float backdropX;
@@ -177,6 +127,8 @@ final class Miuix307PassBlurTextureView extends TextureView
     Miuix307PassBlurTextureView(Context context, View materialHost) {
         super(context);
         materialHostRef = new WeakReference<>(materialHost);
+        opticalParams = Miuix307PrismalMaterial.defaults(
+                context.getResources().getDisplayMetrics().density);
         quadBuffer = ByteBuffer.allocateDirect(QUAD.length * Float.BYTES)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer();
@@ -452,6 +404,18 @@ final class Miuix307PassBlurTextureView extends TextureView
             GLES20.glUniform4f(backdropRect, backdropX, backdropY, backdropW, backdropH);
             GLES20.glUniform1i(rotation, configRotation);
             GLES20.glUniform2f(viewSize, Math.max(1, outputWidth), Math.max(1, outputHeight));
+
+            float cornerRadiusPx = Math.max(1f, outputHeight * 0.44f);
+            View materialHost = materialHostRef.get();
+            if (materialHost != null) {
+                float nativeRadius = MiuixGlassHook.readNativeOpticsRadius(materialHost);
+                if (!Float.isNaN(nativeRadius) && !Float.isInfinite(nativeRadius)
+                        && nativeRadius > 0f) {
+                    cornerRadiusPx = nativeRadius;
+                }
+            }
+            Miuix307PrismalMaterial.applyUniforms(program, opticalParams, cornerRadiusPx);
+
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
             GLES20.glDisableVertexAttribArray(position);
             GLES20.glDisableVertexAttribArray(uv);
@@ -469,9 +433,9 @@ final class Miuix307PassBlurTextureView extends TextureView
             gpuBackdropActive = currentBinding != null && currentBinding.bound;
             if (gpuBackdropActive && !firstDrawLogged) {
                 firstDrawLogged = true;
-                MainHook.log(TAG + " first EGL passthrough draw"
+                MainHook.log(TAG + " first EGL material draw"
                         + " textureDomain=dock-local"
-                        + " lens=strong-edge-14px"
+                        + " material=prismal-full"
                         + " backdropRect=[" + backdropX + "," + backdropY + ","
                         + backdropW + "," + backdropH + "]"
                         + " output=" + outputWidth + "x" + outputHeight
