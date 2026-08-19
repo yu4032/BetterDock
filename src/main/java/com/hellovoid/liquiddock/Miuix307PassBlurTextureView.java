@@ -101,7 +101,13 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "  } else if (uConfigRot == 3) {\n"
             + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
             + "  }\n"
-            + "  vec4 transformed = uTexMatrix * vec4(orientedUv, 0.0, 1.0);\n"
+            + "  vec2 textureInputUv = orientedUv;\n"
+            + "  float textureScaleX = uTexMatrix[0][0];\n"
+            + "  float textureOffsetX = uTexMatrix[3][0];\n"
+            + "  if (abs(textureScaleX) > 0.000001) {\n"
+            + "    textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX;\n"
+            + "  }\n"
+            + "  vec4 transformed = uTexMatrix * vec4(textureInputUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
             + "}\n";
 
@@ -759,7 +765,13 @@ final class Miuix307PassBlurTextureView extends TextureView
             orientedX = 1f - rootY;
             orientedY = rootX;
         }
-        return mapTextureCoordinate(matrix, orientedX, orientedY);
+        float textureInputX = orientedX;
+        float textureScaleX = matrix != null && matrix.length > 12 ? matrix[0] : 1f;
+        float textureOffsetX = matrix != null && matrix.length > 12 ? matrix[12] : 0f;
+        if (Math.abs(textureScaleX) > 0.000001f) {
+            textureInputX = (orientedX - textureOffsetX) / textureScaleX;
+        }
+        return mapTextureCoordinate(matrix, textureInputX, orientedY);
     }
 
     private static float[] mapTextureCoordinate(float[] matrix, float x, float y) {
