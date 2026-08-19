@@ -82,13 +82,19 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+        String migration = Files.readString(MAIN.resolve("config/ConfigMigration.java"));
 
         assertTrue(material.contains("static Params fromConfig(LiquidDockConfig.Glass glass, float density)"));
-        assertTrue("upstream pixel/dp semantics must be explicit rather than the old synthetic depth scale",
+        assertTrue("upstream parameter semantics must be direct after one-time migration",
                 material.contains("glass.thickness * d")
-                        && material.contains("heightDp * d")
-                        && material.contains("glass.lensRefraction / 12f")
+                        && material.contains("glass.prismalHeightTransitionWidth * d")
+                        && material.contains("glass.lensRefraction")
                         && material.contains("p.normalStrength * 0.9f"));
+        assertFalse("legacy /12 lens conversion must not run every material update",
+                material.contains("glass.lensRefraction / 12f"));
+        assertTrue("legacy lens values must be converted once by config migration",
+                migration.contains("prismalLensScale")
+                        && migration.contains("legacyValue / 12f"));
         assertFalse("old depthEffect compatibility multiplier must not alter upstream lens depth",
                 material.contains("glass.depthEffect / 0.08f"));
         assertTrue(material.contains("glass.ior")
