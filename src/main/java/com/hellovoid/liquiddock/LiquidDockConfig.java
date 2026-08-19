@@ -194,14 +194,21 @@ final class LiquidDockConfig {
 
     static final class Glass {
         final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture, miuix307Pipeline;
+        final boolean prismalShowNormals;
         final LiquidBlurMode blurMode;
         final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
                 lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
                 rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
                 recentsPrearmDistance;
+        final float prismalRefractionInset, prismalDisplacementScale, prismalHeightTransitionWidth,
+                prismalSminSmoothing, prismalEdgeRefractionFalloff, prismalFresnelReflect,
+                prismalDispersionR, prismalDispersionB, prismalVibrancy, prismalPlainHighlight,
+                prismalLightDirX, prismalLightDirY, prismalShadowSoftness, prismalTransmittance,
+                prismalBackdropScaleX, prismalBackdropScaleY, prismalParallaxScale;
         final int tintAlpha, captureFps, stopDelayMs, probeFps, motionThreshold,
                 motionBitThreshold, motionHoldMs, blackThreshold, homeSettleDelayMs,
-                tintR, tintG, tintB, specularSharp;
+                tintR, tintG, tintB, specularSharp,
+                prismalShadowR, prismalShadowG, prismalShadowB, prismalShadowAlpha;
 
         Glass(ConfigReader c) {
             enabled = c.b(ConfigSchema.Glass.ENABLED.name(),
@@ -213,8 +220,9 @@ final class LiquidDockConfig {
             blurMode = LiquidBlurMode.fromPersisted(c.s(ConfigSchema.Glass.BLUR_MODE.name(),
                     ConfigSchema.Glass.BLUR_MODE.runtimeFallback()));
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
+            // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
-                    ConfigSchema.Glass.CHROMATIC.runtimeFallback()) / 100f;
+                    ConfigSchema.Glass.CHROMATIC.runtimeFallback());
             tintAlpha = channel(c.i(ConfigSchema.Glass.TINT_ALPHA.name(),
                     ConfigSchema.Glass.TINT_ALPHA.runtimeFallback()));
             captureFps = clamp(c.i(ConfigSchema.Glass.CAPTURE_FPS.name(),
@@ -277,6 +285,51 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.HIGHLIGHT_ALPHA.runtimeFallback()) / 100f;
             recentsPrearmDistance = c.f(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.name(),
                     ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.runtimeFallback());
+
+            prismalRefractionInset = c.f(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET.name(),
+                    ConfigSchema.Glass.PRISMAL_REFRACTION_INSET.runtimeFallback());
+            prismalDisplacementScale = c.i(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE.name(),
+                    ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE.runtimeFallback()) / 100f;
+            prismalHeightTransitionWidth = c.f(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.name(),
+                    ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.runtimeFallback());
+            prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(),
+                    ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.runtimeFallback());
+            prismalEdgeRefractionFalloff = c.i(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.name(),
+                    ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.runtimeFallback()) / 100f;
+            prismalFresnelReflect = c.i(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT.name(),
+                    ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT.runtimeFallback()) / 100f;
+            prismalDispersionR = c.i(ConfigSchema.Glass.PRISMAL_DISPERSION_R.name(),
+                    ConfigSchema.Glass.PRISMAL_DISPERSION_R.runtimeFallback()) / 100f;
+            prismalDispersionB = c.i(ConfigSchema.Glass.PRISMAL_DISPERSION_B.name(),
+                    ConfigSchema.Glass.PRISMAL_DISPERSION_B.runtimeFallback()) / 100f;
+            prismalVibrancy = c.i(ConfigSchema.Glass.PRISMAL_VIBRANCY.name(),
+                    ConfigSchema.Glass.PRISMAL_VIBRANCY.runtimeFallback()) / 100f;
+            prismalPlainHighlight = c.i(ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT.name(),
+                    ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT.runtimeFallback()) / 100f;
+            prismalLightDirX = c.i(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X.name(),
+                    ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X.runtimeFallback()) / 100f;
+            prismalLightDirY = c.i(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y.name(),
+                    ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y.runtimeFallback()) / 100f;
+            prismalShadowR = channel(c.i(ConfigSchema.Glass.PRISMAL_SHADOW_RED.name(),
+                    ConfigSchema.Glass.PRISMAL_SHADOW_RED.runtimeFallback()));
+            prismalShadowG = channel(c.i(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN.name(),
+                    ConfigSchema.Glass.PRISMAL_SHADOW_GREEN.runtimeFallback()));
+            prismalShadowB = channel(c.i(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE.name(),
+                    ConfigSchema.Glass.PRISMAL_SHADOW_BLUE.runtimeFallback()));
+            prismalShadowAlpha = channel(c.i(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA.name(),
+                    ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA.runtimeFallback()));
+            prismalShadowSoftness = c.i(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS.name(),
+                    ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS.runtimeFallback()) / 100f;
+            prismalTransmittance = c.i(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE.name(),
+                    ConfigSchema.Glass.PRISMAL_TRANSMITTANCE.runtimeFallback()) / 100f;
+            prismalBackdropScaleX = c.i(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X.name(),
+                    ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X.runtimeFallback()) / 100f;
+            prismalBackdropScaleY = c.i(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y.name(),
+                    ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y.runtimeFallback()) / 100f;
+            prismalParallaxScale = c.i(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE.name(),
+                    ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE.runtimeFallback()) / 100f;
+            prismalShowNormals = c.b(ConfigSchema.Glass.PRISMAL_SHOW_NORMALS.name(),
+                    ConfigSchema.Glass.PRISMAL_SHOW_NORMALS.runtimeFallback());
         }
     }
 

@@ -17,7 +17,6 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     @Test
     public void launcherDragObjectUsesArrayCompatibleDragViewResolution() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
-
         assertTrue(drag.contains("java.lang.reflect.Array"));
         assertTrue(drag.contains("views.getClass().isArray()"));
         assertTrue(drag.contains("Array.getLength(views)"));
@@ -27,8 +26,6 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     @Test
     public void ordinaryDockDragWithoutExcludableSurfaceFreezesLastCleanBackdrop() throws Exception {
         String glass = read("DockLiquidGlassView.java");
-
-        // Capture fallback must retain the proven 307 drag behavior.
         assertTrue(glass.contains("dockDragCaptureFrozen"));
         assertTrue(glass.contains("Liquid capture frozen: Dock drag has no excludable Surface"));
         assertTrue(glass.contains("if (dockDragCaptureFrozen) return false;"));
@@ -39,8 +36,6 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     public void systemDockDragFreezesCaptureAtMiuiDragListenerBoundary() throws Exception {
         String drag = read("Miuix307DragCaptureHook.java");
         String glass = read("DockLiquidGlassView.java");
-
-        // The zero-copy renderer needs no capture freeze, but fallback must retain this path.
         assertTrue(drag.contains("android.view.IMiuiDragListener"));
         assertTrue(drag.contains("setSystemDockDragActive(true)"));
         assertTrue(drag.contains("setSystemDockDragActive(false)"));
@@ -53,28 +48,34 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     @Test
     public void disprovenSystemDragLayerNameGuessIsRemoved() throws Exception {
         String exclusions = read("CaptureExclusionNames.java");
-
         assertFalse(exclusions.contains("MaskSnapshotLayer_dragIcon"));
         assertFalse(exclusions.contains("MaskDark_dragIcon"));
         assertFalse(exclusions.contains("MaskIcon_dragIcon"));
     }
 
     @Test
-    public void native307BackgroundKeepsParentBlurOffWhileZeroCopyChildOwnsBackdrop() throws Exception {
+    public void native307BackgroundKeepsParentBlurOffWhileNeutralPassBlurGpuChildOwnsBackdrop()
+            throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
         String renderer = read("Miuix307ZeroCopyRenderer.java");
+        String passBlur = read("Miuix307PassBlurBridge.java");
 
-        // Device traces proved parent/vendor region blur post-processes the entire Floating Dock.
-        // Zero-copy therefore keeps that parent stage at zero and moves pass-window blur to a
-        // dedicated bottom child, leaving the host's sharp optical overlay above it.
         assertTrue(pipeline.contains("HotSeatsListContentMiuiXBlurBackground"));
         assertTrue(pipeline.contains("HotSeatsListContentBlurBackground2"));
         assertTrue(glassHook.contains("suppressVendorGpuBlur"));
         assertTrue(glassHook.contains("setPassWindowBlurRadius(dockBg, 0)"));
         assertTrue(glassHook.contains("Miuix307ZeroCopyRenderer.install"));
-        assertTrue(renderer.contains("new Miuix307ZeroCopyBackdropView"));
-        assertTrue(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertTrue(renderer.contains("new Miuix307PassBlurTextureView"));
+        assertFalse(renderer.contains("new Miuix307PassBlurGpuView"));
+        assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
+        assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
+        assertFalse("neutral renderer must not erase the safe replacement stroke",
+                renderer.contains("materialHost.setForeground(null)"));
+        assertTrue("the shell must still configure a replacement stroke with no vendor body",
+                glassHook.contains("DockStrokeRenderer.configureReplacingForeground("));
+        assertTrue(passBlur.contains("\"SetPassBlurSurface\""));
+        assertTrue(passBlur.contains("DEMO_SCALE = 1.0f"));
         assertFalse(glassHook.contains("enforcePrismalOpticalOnly"));
         assertFalse(glassHook.contains("installNativeBackgroundPreserver"));
         assertFalse(glassHook.contains("nativeBackgroundHiddenByGlass"));
@@ -84,7 +85,6 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     public void thirdPartyBackground2PreservesVendorMiShadowLikeDefaultMaterial() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
-
         assertFalse(pipeline.contains("installCompatMiShadowSuppression(classLoader)"));
         assertFalse(pipeline.contains("shouldSuppressCompatMiShadow"));
         assertFalse(glassHook.contains("shouldSuppressCompatMiShadow"));
@@ -95,10 +95,6 @@ public class Miuix307ThemeDragDeviceRegressionTest {
     public void thirdPartyBackground2DisablesVendorGpuBlurAtBlurUtilitiesBoundary() throws Exception {
         String pipeline = read("Miuix307MaterialPipeline.java");
         String glassHook = read("MiuixGlassHook.java");
-
-        // The themed parent may request its own region blur. Keep it suppressed so only the
-        // dedicated zero-copy child owns pass-window blur and the capture fallback is not
-        // post-processed when it is selected.
         assertTrue(pipeline.contains("installCompatBackgroundBlurSuppression(classLoader)"));
         assertTrue(pipeline.contains("com.miui.home.launcher.common.BlurUtilities"));
         assertTrue(pipeline.contains("\"setBackgroundBlur\""));

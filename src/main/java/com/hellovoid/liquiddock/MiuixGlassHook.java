@@ -12,23 +12,22 @@ import java.lang.reflect.Field;
 /**
  * MiuiX-specific glass installer for OS3.0.307+ docks.
  *
- * The vendor background remains the authoritative Dock visual shell. Its parent-level
- * compositor blur stays disabled so it cannot post-process LiquidDock children. The primary 307
- * renderer is a dedicated zero-copy pass-window child; the proven capture renderer is retained as
- * a runtime fallback when that child cannot activate.
+ * The vendor background remains the authoritative Dock visual shell. Its parent-level compositor
+ * blur stays disabled so it cannot post-process LiquidDock children. The primary Background2 demo
+ * backend is PassBlur -> SurfaceTexture -> GLES; the proven capture renderer remains a runtime
+ * fallback when that GPU data path cannot activate.
  */
 final class MiuixGlassHook {
     private static final String TAG = "[DC][MG]";
     private static final String ZERO_COPY_TAG = "[DC][ZC]";
     private static final float SQUIRCLE_CP = 0.58f;
-    private static final int ZERO_COPY_VALIDATION_FRAMES = 12;
+    private static final int ZERO_COPY_VALIDATION_FRAMES = 90;
     private static final String NATIVE_BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground";
     private static final String COMPAT_BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
 
     private static DockLiquidGlassView glassRef;
-    private static Miuix307ZeroCopyBackdropView zeroCopyRef;
     private static DockLiquidGlassHostView hostRef;
     private static View backgroundRef;
     private static ViewTreeObserver vendorBlurObserver;
@@ -51,14 +50,9 @@ final class MiuixGlassHook {
     }
 
     static boolean isZeroCopyActive() {
-        Miuix307ZeroCopyBackdropView backdrop = zeroCopyRef;
         DockLiquidGlassHostView host = hostRef;
-        return backdrop != null && backdrop.isBlurActive()
-                && host != null && host.getParent() == backgroundRef;
-    }
-
-    static Miuix307ZeroCopyBackdropView currentZeroCopyBackdrop() {
-        return zeroCopyRef;
+        return host != null && host.getParent() == backgroundRef
+                && Miuix307ZeroCopyRenderer.isActive();
     }
 
     /**
@@ -81,11 +75,7 @@ final class MiuixGlassHook {
         return readRadius(dockBg);
     }
 
-    /**
-     * The themed 4.50 background can still request a parent-level region blur through this
-     * utility. Zero-copy owns blur on its dedicated child instead, so the parent request remains
-     * suppressed exactly like the capture renderer did.
-     */
+    /** The themed 4.50 background must not place its own region blur above the GPU demo. */
     static int suppressCompatBackgroundBlurRadius(View dockBg, int requestedRadius) {
         if (dockBg == null || requestedRadius <= 0) return requestedRadius;
         if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;
@@ -118,7 +108,6 @@ final class MiuixGlassHook {
         }
         hostRef = null;
         glassRef = null;
-        zeroCopyRef = null;
         backgroundRef = null;
         vendorGpuBlurLoggedFor = null;
         compatBackgroundBlurLoggedFor = null;
@@ -152,13 +141,12 @@ final class MiuixGlassHook {
 
         backgroundRef = dockBg;
         hostRef = host;
-        zeroCopyRef = zeroCopyCandidate ? Miuix307ZeroCopyRenderer.currentBackdrop() : null;
 
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
         installVendorGpuBlurSuppressor(dockBg);
 
-        if (zeroCopyCandidate && zeroCopyRef != null) {
-            scheduleZeroCopyValidation(dockBg, workspace, config, host, zeroCopyRef, 0);
+        if (zeroCopyCandidate) {
+            scheduleZeroCopyValidation(dockBg, workspace, config, host, 0);
         } else {
             MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; capture fallback reason=install");
             installCaptureFallback(dockBg, workspace, config, host);
@@ -167,35 +155,35 @@ final class MiuixGlassHook {
         DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);
         MainHook.log(TAG + " glass composed inside native 307 material shell class="
                 + dockBg.getClass().getSimpleName()
-                + " renderer=" + (zeroCopyRef != null ? "zero-copy-pending" : "capture"));
+                + " renderer=" + (zeroCopyCandidate ? "passblur-gles-pending" : "capture"));
         return true;
     }
 
     private static void scheduleZeroCopyValidation(
             View dockBg, View workspace, LiquidDockConfig config,
-            DockLiquidGlassHostView host, Miuix307ZeroCopyBackdropView backdrop, int frame) {
-        if (dockBg != backgroundRef || host != hostRef || backdrop != zeroCopyRef) return;
+            DockLiquidGlassHostView host, int frame) {
+        if (dockBg != backgroundRef || host != hostRef) return;
 
-        if (backdrop.isBlurActive()) {
+        if (Miuix307ZeroCopyRenderer.isActive()) {
             if (zeroCopyActiveLoggedFor != dockBg) {
                 zeroCopyActiveLoggedFor = dockBg;
-                MainHook.log(ZERO_COPY_TAG + " zero-copy active radius=" + backdrop.blurRadiusPx()
-                        + " size=" + backdrop.getWidth() + "x" + backdrop.getHeight());
+                MainHook.log(ZERO_COPY_TAG + " zero-copy active backend=passblur-gles"
+                        + " size=" + Miuix307ZeroCopyRenderer.activeWidth()
+                        + "x" + Miuix307ZeroCopyRenderer.activeHeight());
             }
             return;
         }
 
-        if (backdrop.isActivationExhausted() || frame >= ZERO_COPY_VALIDATION_FRAMES) {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; capture fallback reason="
-                    + (backdrop.isActivationExhausted() ? "activation-exhausted" : "validation-timeout"));
-            Miuix307ZeroCopyRenderer.clear();
-            zeroCopyRef = null;
-            installCaptureFallback(dockBg, workspace, config, host);
+        if (Miuix307ZeroCopyRenderer.isActivationExhausted()
+                || frame >= ZERO_COPY_VALIDATION_FRAMES) {
+            MainHook.log(ZERO_COPY_TAG + " zero-copy still pending; legacy capture disabled reason="
+                    + (Miuix307ZeroCopyRenderer.isActivationExhausted()
+                    ? "activation-exhausted" : "validation-timeout"));
             return;
         }
 
-        backdrop.postOnAnimation(() -> scheduleZeroCopyValidation(
-                dockBg, workspace, config, host, backdrop, frame + 1));
+        host.postOnAnimation(() -> scheduleZeroCopyValidation(
+                dockBg, workspace, config, host, frame + 1));
     }
 
     /** The archived renderer is retained unchanged as the runtime fallback. */
@@ -203,7 +191,6 @@ final class MiuixGlassHook {
             View dockBg, View workspace, LiquidDockConfig config, DockLiquidGlassHostView host) {
         if (dockBg == null || config == null || host == null || dockBg != backgroundRef) return;
         Miuix307ZeroCopyRenderer.clear();
-        zeroCopyRef = null;
 
         DockLiquidGlassView glass = LiquidGlassFactory.create(
                 dockBg, workspace, config.glass, config.dock,
@@ -268,11 +255,7 @@ final class MiuixGlassHook {
         return NATIVE_BACKGROUND_CLASS.equals(name) || COMPAT_BACKGROUND_CLASS.equals(name);
     }
 
-    /**
-     * Disable every parent/vendor compositor blur stage on the bound 307 background. Zero-copy
-     * applies pass-window blur only to its dedicated bottom child, so this parent must remain
-     * clear or SurfaceFlinger would blur the optical overlay a second time.
-     */
+    /** Keep the vendor/root compositor stages clear so the GPU child remains visually sharp. */
     static void suppressVendorGpuBlur(View dockBg) {
         if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
         MiBlurBridge.setPassWindowBlurRadius(dockBg, 0);
@@ -321,10 +304,7 @@ final class MiuixGlassHook {
         } catch (Throwable ignored) {}
     }
 
-    /**
-     * Keep the vendor View alive for layout, outline and MiShadow, but remove its opaque material
-     * body so the zero-copy child/capture fallback is the only visible backdrop inside the shape.
-     */
+    /** Keep vendor geometry/shadow ownership but make its material body transparent. */
     private static void suppressVendorMaterialBody(View dockBg, float nativeRadius) {
         if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
         float radius = Math.max(0f, nativeRadius);
