@@ -2,7 +2,6 @@ package com.hellovoid.liquiddock;
 
 import android.view.Surface;
 import android.view.SurfaceControl;
-import android.view.SurfaceView;
 import android.view.View;
 
 import java.lang.reflect.Method;
@@ -24,7 +23,6 @@ final class Miuix307PassBlurBridge {
         final Method setMiBlurWinExc;
         final float scale;
         final String rootName;
-        final String outputName;
         boolean bound = true;
 
         Binding(
@@ -33,23 +31,20 @@ final class Miuix307PassBlurBridge {
                 Method setUpdateTextureFlag,
                 Method setMiBlurWinExc,
                 float scale,
-                String rootName,
-                String outputName) {
+                String rootName) {
             this.rootSurface = rootSurface;
             this.setPassBlurSurface = setPassBlurSurface;
             this.setUpdateTextureFlag = setUpdateTextureFlag;
             this.setMiBlurWinExc = setMiBlurWinExc;
             this.scale = scale;
             this.rootName = rootName;
-            this.outputName = outputName;
         }
     }
 
     private Miuix307PassBlurBridge() {}
 
-    static Binding bind(
-            View materialHost, SurfaceView outputView, Surface producerSurface, float requestedScale) {
-        if (materialHost == null || outputView == null || producerSurface == null) return null;
+    static Binding bind(View materialHost, Surface producerSurface, float requestedScale) {
+        if (materialHost == null || producerSurface == null) return null;
         try {
             Method getViewRootImpl = View.class.getDeclaredMethod("getViewRootImpl");
             getViewRootImpl.setAccessible(true);
@@ -67,15 +62,14 @@ final class Miuix307PassBlurBridge {
                 return null;
             }
             SurfaceControl rootSurface = (SurfaceControl) rootValue;
-            SurfaceControl outputSurface = outputView.getSurfaceControl();
-            if (!rootSurface.isValid() || outputSurface == null || !outputSurface.isValid()) {
-                MainHook.log(TAG + " PassBlur bind unavailable: invalid root/output surface");
+            if (!rootSurface.isValid()) {
+                MainHook.log(TAG + " PassBlur bind unavailable: invalid root surface");
                 return null;
             }
 
             SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
             Class<?> transactionClass = SurfaceControl.Transaction.class;
-            Method SetPassBlurSurface = transactionClass.getMethod(
+            Method setPassBlurSurface = transactionClass.getMethod(
                     "SetPassBlurSurface", SurfaceControl.class, Surface.class);
             Method setUpdateTextureFlag = transactionClass.getMethod(
                     "setUpdateTextureFlag", SurfaceControl.class, Boolean.TYPE, Float.TYPE);
@@ -83,20 +77,20 @@ final class Miuix307PassBlurBridge {
                     "setMiBlurWinExc", SurfaceControl.class, String[].class);
 
             String rootName = surfaceName(rootSurface);
-            String outputName = surfaceName(outputSurface);
             String[] exclusions = new String[]{
                     rootName,
-                    outputName,
                     "NavigationBar",
                     "StatusBar",
                     "GestureStub",
                     "DockAssistantView"
             };
 
-            // Deliberately pin the first feasibility demo to full-resolution compositor output.
+            // Keep the calibration producer at full resolution. TextureView output is composited
+            // into the already-excluded Floating Dock root, so no child SurfaceView exclusion is
+            // required and no feedback-sensitive layer name is part of this contract.
             float scale = DEMO_SCALE;
             setMiBlurWinExc.invoke(transaction, rootSurface, (Object) exclusions);
-            SetPassBlurSurface.invoke(transaction, rootSurface, producerSurface);
+            setPassBlurSurface.invoke(transaction, rootSurface, producerSurface);
             setUpdateTextureFlag.invoke(
                     transaction, rootSurface, Boolean.TRUE, Float.valueOf(scale));
             transaction.apply();
@@ -104,16 +98,15 @@ final class Miuix307PassBlurBridge {
             MainHook.log(TAG + " PassBlur producer bound scale=" + scale
                     + " requestedScale=" + requestedScale
                     + " root=" + rootName
-                    + " output=" + outputName
+                    + " output=TextureView-in-root"
                     + " exclusions=" + Arrays.toString(exclusions));
             return new Binding(
                     rootSurface,
-                    SetPassBlurSurface,
+                    setPassBlurSurface,
                     setUpdateTextureFlag,
                     setMiBlurWinExc,
                     scale,
-                    rootName,
-                    outputName);
+                    rootName);
         } catch (Throwable error) {
             MainHook.log(TAG + " PassBlur bind unavailable: " + error);
             return null;
@@ -134,8 +127,7 @@ final class Miuix307PassBlurBridge {
                     Float.valueOf(binding.scale));
             binding.setMiBlurWinExc.invoke(transaction, binding.rootSurface, (Object) new String[0]);
             transaction.apply();
-            MainHook.log(TAG + " PassBlur producer unbound root=" + binding.rootName
-                    + " output=" + binding.outputName);
+            MainHook.log(TAG + " PassBlur producer unbound root=" + binding.rootName);
         } catch (Throwable error) {
             MainHook.log(TAG + " PassBlur unbind failed: " + error);
         }
