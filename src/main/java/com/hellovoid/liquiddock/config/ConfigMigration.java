@@ -40,7 +40,7 @@ public final class ConfigMigration {
         migrateIntDefault(sp, e, "liquid_tint_g", 244, 0);
         migrateIntDefault(sp, e, "liquid_tint_b", 255, 255);
         migrateIntDefault(sp, e, "liquid_dome", 100, 78);
-        migrateDpDefault(sp, e, "liquid_lens_refraction", 12f, 1f);
+        migrateLegacyLensScale(sp, e);
         migrateIntDefault(sp, e, "liquid_specular_strength", 105, 152);
         migrateIntDefault(sp, e, "liquid_rim_light", 100, 122);
 
@@ -59,6 +59,22 @@ public final class ConfigMigration {
         migrateIntDefault(sp, e, "liquid_prismal_shadow_softness", 100, 1000);
 
         e.putBoolean(PRISMAL_PARITY_V2, true).commit();
+    }
+
+    private static void migrateLegacyLensScale(
+            SharedPreferences sp, SharedPreferences.Editor e) {
+        String key = "liquid_lens_refraction";
+        boolean present = sp.contains(key) || sp.contains(key + "_tenths");
+        float oldValue;
+        if (sp.contains(key + "_tenths")) {
+            oldValue = sp.getInt(key + "_tenths", 120) / 10f;
+        } else {
+            oldValue = sp.getInt(key, 12);
+        }
+        // The first PassBlur adapter interpreted this control as value / 12. Preserve the exact
+        // optical meaning for every legacy custom value, not only for the neutral default 12.
+        float prismalScale = present ? Math.max(0.25f, oldValue / 12f) : 1f;
+        putDpPreference(e, key, prismalScale);
     }
 
     private static void migrateIntDefault(
