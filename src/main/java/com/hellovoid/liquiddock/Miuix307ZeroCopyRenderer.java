@@ -5,13 +5,12 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
-import java.lang.reflect.Field;
 
-/** Builds the optically neutral HyperOS 307 PassBlur -> OES diagnostic composition. */
+/** Builds the feedback-safe HyperOS 307 PassBlur -> OES -> TextureView calibration composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
 
-    private static WeakReference<Miuix307PassBlurGpuView> gpuBackdropRef =
+    private static WeakReference<Miuix307PassBlurTextureView> gpuBackdropRef =
             new WeakReference<>(null);
     private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
@@ -24,19 +23,18 @@ final class Miuix307ZeroCopyRenderer {
         if (materialHost == null || host == null || glassConfig == null) return false;
 
         if (!Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)) {
-            MainHook.log(TAG + " PassBlur GLES demo unsupported source="
+            MainHook.log(TAG + " PassBlur TextureView calibration unsupported source="
                     + materialHost.getClass().getSimpleName());
             return false;
         }
 
-        Miuix307PassBlurGpuView gpuBackdrop = new Miuix307PassBlurGpuView(
+        Miuix307PassBlurTextureView gpuBackdrop = new Miuix307PassBlurTextureView(
                 materialHost.getContext(), materialHost);
         gpuBackdrop.setId(View.generateViewId());
-        gpuBackdrop.setGlassRadius(readHostRadius(host));
 
-        // The neutral path keeps tone/tint and the old advanced optical highlight disabled. The
-        // shell's replacement foreground stroke is allowed back above the independent GPU surface;
-        // MiuixGlassHook configures it with no vendor/material foreground underneath.
+        // Stage A is intentionally optically neutral. No tone/tint, highlight, rounded-edge lens,
+        // displacement, or material post-processing is injected here. The shell's safe foreground
+        // stroke may remain above the TextureView because it does not alter backdrop sampling.
         host.removeAllViews();
         host.addView(gpuBackdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -44,7 +42,7 @@ final class Miuix307ZeroCopyRenderer {
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
-        MainHook.log(TAG + " PassBlur GLES neutral lens installed; awaiting first GPU frame"
+        MainHook.log(TAG + " PassBlur TextureView EGL calibration installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx);
         return true;
     }
@@ -54,52 +52,35 @@ final class Miuix307ZeroCopyRenderer {
     }
 
     static boolean isActive() {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         return gpuBackdrop != null && gpuBackdrop.isGpuBackdropActive();
     }
 
     static boolean isActivationExhausted() {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         return gpuBackdrop == null || gpuBackdrop.isActivationExhausted();
     }
 
     static int activeWidth() {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         return gpuBackdrop != null ? gpuBackdrop.getWidth() : 0;
     }
 
     static int activeHeight() {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         return gpuBackdrop != null ? gpuBackdrop.getHeight() : 0;
     }
 
     static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
-        DockLiquidGlassHostView host = hostRef.get();
-        if (gpuBackdrop != null) {
-            gpuBackdrop.setGlassRadius(host != null ? readHostRadius(host) : 0f);
-        }
+        // Calibration deliberately ignores optical configuration until accurate backdrop mapping is
+        // proven on-device. Geometry remains owned by the normal Dock/View shell.
     }
 
     static void clear() {
-        Miuix307PassBlurGpuView gpuBackdrop = gpuBackdropRef.get();
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         gpuBackdropRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
         if (gpuBackdrop != null) gpuBackdrop.shutdown();
-    }
-
-    private static float readHostRadius(DockLiquidGlassHostView host) {
-        if (host == null) return 0f;
-        try {
-            Field field = DockLiquidGlassHostView.class.getDeclaredField("radius");
-            field.setAccessible(true);
-            Object value = field.get(host);
-            if (value instanceof Number) return Math.max(0f, ((Number) value).floatValue());
-        } catch (Throwable error) {
-            MainHook.log(TAG + " host radius reflection unavailable: " + error);
-        }
-        int min = Math.min(host.getWidth(), host.getHeight());
-        return min > 0 ? min * 0.5f : 0f;
     }
 }
