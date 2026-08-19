@@ -196,7 +196,7 @@ public class ConfigCodecTest {
     public void absentPreferencesExportCompleteHistoricalDefaults() {
         Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
 
-        assertEquals(104, exported.size());
+        assertEquals(126, exported.size());
         assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
         assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
         assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
@@ -209,6 +209,10 @@ public class ConfigCodecTest {
         assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
         assertEquals(48, exported.get("liquid_capture_bleed_top"));
         assertEquals(1200, exported.get("liquid_home_settle_delay"));
+        assertEquals(5, exported.get("liquid_prismal_refraction_inset"));
+        assertEquals(79, exported.get("liquid_prismal_fresnel_reflect"));
+        assertEquals(100, exported.get("liquid_prismal_transmittance"));
+        assertEquals(Boolean.FALSE, exported.get("liquid_prismal_show_normals"));
         assertEquals(Boolean.FALSE, exported.get("workstation_dock_customization"));
         assertEquals(0, exported.get("workstation_all_apps_landscape_top_spacing"));
         assertEquals(0, exported.get("workstation_all_apps_landscape_bottom_spacing"));
@@ -216,6 +220,27 @@ public class ConfigCodecTest {
         assertEquals(0, exported.get("workstation_all_apps_portrait_bottom_spacing"));
         assertFalse(exported.containsKey("dock_divider_enabled"));
         assertFalse(exported.containsKey("dock_divider_width_dp"));
+    }
+
+    @Test
+    public void prismalControlsRoundTripWithoutDisturbingLegacyStorageRules() {
+        Map<String, Object> prefs = new HashMap<>();
+        prefs.put("liquid_prismal_displacement_scale", 135);
+        prefs.put("liquid_prismal_refraction_inset", 7);
+        prefs.put("liquid_prismal_refraction_inset_tenths", 72);
+        prefs.put("liquid_prismal_show_normals", true);
+
+        Map<String, Object> exported = ConfigCodec.exportValues(prefs);
+        assertEquals(135, exported.get("liquid_prismal_displacement_scale"));
+        assertEquals(7.2d,
+                ((Number) exported.get("liquid_prismal_refraction_inset")).doubleValue(), 0.0001d);
+        assertEquals(Boolean.TRUE, exported.get("liquid_prismal_show_normals"));
+
+        Map<String, Object> imported = ConfigCodec.importValues(exported);
+        assertEquals(135, imported.get("liquid_prismal_displacement_scale"));
+        assertEquals(7, imported.get("liquid_prismal_refraction_inset"));
+        assertEquals(72, imported.get("liquid_prismal_refraction_inset_tenths"));
+        assertEquals(Boolean.TRUE, imported.get("liquid_prismal_show_normals"));
     }
 
     @Test

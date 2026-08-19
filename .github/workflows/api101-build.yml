@@ -2,7 +2,15 @@ name: API101 migration build
 
 on:
   push:
-    branches: [ main, api101-migration, refactor/modular-architecture, fix/home-app-ownership-convergence ]
+    branches:
+      - main
+      - api101-migration
+      - refactor/modular-architecture
+      - 'fix/**'
+      - 'feat/**'
+      - 'demo/**'
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:

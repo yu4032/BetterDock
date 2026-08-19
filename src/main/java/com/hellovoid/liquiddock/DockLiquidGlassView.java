@@ -1384,16 +1384,7 @@ final class DockLiquidGlassView extends View implements ViewTreeObserver.OnPreDr
      *  dragging, the glass keeps capturing continuously so the background follows the icon
      *  rearrangement; the drag surface layer is excluded from captures. */
     void setDockDragging(boolean dragging, String dragSurfaceLayerName) {
-        // Ordinary v1.3.0/API101 path: preserve the established live-drag behavior exactly.
-        // The 307 adapter deliberately calls the Surface-aware overload below instead.
-        dockDragging = dragging;
-        dragLayerName = dragging ? dragSurfaceLayerName : null;
-        if (dragging) {
-            resetCaptureCircuit("drag-start");
-            beginObservationBurst();
-            observationValid = false;
-            requestStateCapture("drag-start");
-        }
+        setDockDragging(dragging, dragSurfaceLayerName, null);
     }
 
     void setDockDragging(boolean dragging, String dragSurfaceLayerName,

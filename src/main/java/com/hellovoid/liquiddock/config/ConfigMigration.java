@@ -7,6 +7,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class ConfigMigration {
+    private static final String PRISMAL_PARITY_V2 = "liquid_prismal_parity_v2";
+    private static final String PRISMAL_OFFICIAL_PARITY_V3 =
+            "liquid_prismal_official_parity_v3";
+
     private ConfigMigration() { }
 
     public static void migrate(Context context, SharedPreferences preferences) {
@@ -18,6 +22,107 @@ public final class ConfigMigration {
         migrateLiquidDimensionsToDp(context, preferences);
         migrateDockDimensionsToDp(context, preferences);
         migrateAxisDistances(preferences);
+        migratePrismalParityV2(preferences);
+        migratePrismalOfficialParityV3(preferences);
+    }
+
+    /**
+     * One-time migration from the first PassBlur/Prismal adapter defaults to the V2 upstream
+     * recipe. V3 below corrects the handful of values that V2 incorrectly took from renderer
+     * field initializers instead of the effective PrismalFrameLayout + applyBase() state.
+     */
+    private static void migratePrismalParityV2(SharedPreferences sp) {
+        if (sp.getBoolean(PRISMAL_PARITY_V2, false)) return;
+        SharedPreferences.Editor e = sp.edit();
+
+        migrateDpDefault(sp, e, "liquid_blur", 6f, 2.5f);
+        migrateIntDefault(sp, e, "liquid_chromatic", 8, 0);
+        migrateIntDefault(sp, e, "liquid_tint_alpha", 38, 35);
+        migrateIntDefault(sp, e, "liquid_tint_r", 238, 0);
+        migrateIntDefault(sp, e, "liquid_tint_g", 244, 0);
+        migrateIntDefault(sp, e, "liquid_tint_b", 255, 255);
+        migrateIntDefault(sp, e, "liquid_dome", 100, 78);
+        migrateLegacyLensScale(sp, e);
+        migrateIntDefault(sp, e, "liquid_specular_strength", 105, 152);
+        migrateIntDefault(sp, e, "liquid_rim_light", 100, 122);
+
+        migrateDpDefault(sp, e, "liquid_prismal_refraction_inset", 5f, 20f);
+        migrateIntDefault(sp, e, "liquid_prismal_displacement_scale", 100, 115);
+        migrateDpDefault(sp, e, "liquid_prismal_height_transition_width", 15f, 19f);
+        migrateDpDefault(sp, e, "liquid_prismal_smin_smoothing", 2f, 1.8f);
+        migrateIntDefault(sp, e, "liquid_prismal_edge_refraction_falloff", 200, 400);
+        migrateIntDefault(sp, e, "liquid_prismal_fresnel_reflect", 79, 100);
+        migrateIntDefault(sp, e, "liquid_prismal_light_dir_x", 100, -50);
+        migrateIntDefault(sp, e, "liquid_prismal_light_dir_y", 62, -80);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_r", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_g", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_b", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_alpha", 0, 35);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_softness", 100, 1000);
+
+        e.putBoolean(PRISMAL_PARITY_V2, true).commit();
+    }
+
+    /**
+     * Correct V2 values that were copied from PrismalGlassRenderer's private initializers.
+     * Prismal's public Quick Start constructs PrismalFrameLayout first and then calls applyBase();
+     * applyBase intentionally does not overwrite these five controls. Only absent values or exact
+     * V2 defaults are changed, so ordinary user overrides survive the correction.
+     */
+    private static void migratePrismalOfficialParityV3(SharedPreferences sp) {
+        if (sp.getBoolean(PRISMAL_OFFICIAL_PARITY_V3, false)) return;
+        SharedPreferences.Editor e = sp.edit();
+
+        migrateDpDefault(sp, e, "liquid_blur", 2.5f, 2f);
+        migrateIntDefault(sp, e, "liquid_chromatic", 0, 26);
+        migrateIntDefault(sp, e, "liquid_dome", 78, 130);
+        migrateDpDefault(sp, e, "liquid_lens_refraction", 1f, 1.3f);
+        migrateIntDefault(sp, e, "liquid_prismal_fresnel_reflect", 100, 198);
+
+        e.putBoolean(PRISMAL_OFFICIAL_PARITY_V3, true).commit();
+    }
+
+    private static void migrateLegacyLensScale(
+            SharedPreferences sp, SharedPreferences.Editor e) {
+        String key = "liquid_lens_refraction";
+        boolean present = sp.contains(key) || sp.contains(key + "_tenths");
+        float oldValue;
+        if (sp.contains(key + "_tenths")) {
+            oldValue = sp.getInt(key + "_tenths", 120) / 10f;
+        } else {
+            oldValue = sp.getInt(key, 12);
+        }
+        // The first PassBlur adapter interpreted this control as value / 12. Preserve the exact
+        // optical meaning for every legacy custom value, not only for the neutral default 12.
+        float prismalScale = present ? prismalLensScale(oldValue) : 1f;
+        putDpPreference(e, key, prismalScale);
+    }
+
+    static float prismalLensScale(float legacyValue) {
+        return Math.max(0.25f, legacyValue / 12f);
+    }
+
+    private static void migrateIntDefault(
+            SharedPreferences sp, SharedPreferences.Editor e,
+            String key, int oldDefault, int newDefault) {
+        if (!sp.contains(key) || sp.getInt(key, oldDefault) == oldDefault) {
+            e.putInt(key, newDefault);
+        }
+    }
+
+    private static void migrateDpDefault(
+            SharedPreferences sp, SharedPreferences.Editor e,
+            String key, float oldDefault, float newDefault) {
+        boolean present = sp.contains(key) || sp.contains(key + "_tenths");
+        float current;
+        if (sp.contains(key + "_tenths")) {
+            current = sp.getInt(key + "_tenths", Math.round(oldDefault * 10f)) / 10f;
+        } else {
+            current = sp.getInt(key, Math.round(oldDefault));
+        }
+        if (!present || Math.abs(current - oldDefault) <= 0.0001f) {
+            putDpPreference(e, key, newDefault);
+        }
     }
 
     private static void migrateAxisDistances(SharedPreferences sp) {

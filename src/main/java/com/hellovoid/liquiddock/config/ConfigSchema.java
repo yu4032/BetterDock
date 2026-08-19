@@ -141,13 +141,13 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> SQUIRCLE_CONTROL_POINT = integer(
                 "sq_outer_cp", 58, 58, 58, 40, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_WIDTH = dp(
-                "sq_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
+                "sq_stroke_w", 1, 4, 4, 0, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SQUIRCLE_STROKE_OFFSET = dp(
                 "sq_stroke_off", 3, 8, 8, 0, 16, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> FILL_DIFF_STROKE_WIDTH = dp(
-                "stroke_w", 1, 2, 2, 1, 6, ConfigKey.ExportMode.ALWAYS);
+                "stroke_w", 1, 2, 2, 0, 6, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STANDARD_STROKE_WIDTH = dp(
-                "std_stroke_w", 1, 4, 4, 1, 10, ConfigKey.ExportMode.ALWAYS);
+                "std_stroke_w", 1, 4, 4, 0, 10, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_RED = integer(
                 "stroke_base_r", 255, 255, 255, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> STROKE_GREEN = integer(
@@ -281,6 +281,53 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> RECENTS_PREARM_DISTANCE = dp(
                 "liquid_recents_prearm_distance", 8, 8, 0, 1, 48, ConfigKey.ExportMode.ALWAYS);
 
+        // Current Prismal upstream controls. Percent-like values use x100 storage;
+        // distance-valued controls use the existing DP_TENTHS representation.
+        public static final ConfigKey<Integer> PRISMAL_REFRACTION_INSET = dp(
+                "liquid_prismal_refraction_inset", 5, 5, 5, 0, 80, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_DISPLACEMENT_SCALE = integer(
+                "liquid_prismal_displacement_scale", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_HEIGHT_TRANSITION_WIDTH = dp(
+                "liquid_prismal_height_transition_width", 15, 15, 15, 1, 120, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SMIN_SMOOTHING = dp(
+                "liquid_prismal_smin_smoothing", 2, 2, 2, 0, 24, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_EDGE_REFRACTION_FALLOFF = integer(
+                "liquid_prismal_edge_refraction_falloff", 200, 200, 200, 0, 2000, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_FRESNEL_REFLECT = integer(
+                "liquid_prismal_fresnel_reflect", 79, 79, 79, 0, 500, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_DISPERSION_R = integer(
+                "liquid_prismal_dispersion_r", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_DISPERSION_B = integer(
+                "liquid_prismal_dispersion_b", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_VIBRANCY = integer(
+                "liquid_prismal_vibrancy", 128, 128, 128, 0, 300, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_PLAIN_HIGHLIGHT = integer(
+                "liquid_prismal_plain_highlight", 8, 8, 8, 0, 100, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_LIGHT_DIR_X = integer(
+                "liquid_prismal_light_dir_x", 100, 100, 100, -200, 200, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_LIGHT_DIR_Y = integer(
+                "liquid_prismal_light_dir_y", 62, 62, 62, -200, 200, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SHADOW_RED = integer(
+                "liquid_prismal_shadow_r", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SHADOW_GREEN = integer(
+                "liquid_prismal_shadow_g", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SHADOW_BLUE = integer(
+                "liquid_prismal_shadow_b", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SHADOW_ALPHA = integer(
+                "liquid_prismal_shadow_alpha", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_SHADOW_SOFTNESS = integer(
+                "liquid_prismal_shadow_softness", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_TRANSMITTANCE = integer(
+                "liquid_prismal_transmittance", 100, 100, 100, 0, 100, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_BACKDROP_SCALE_X = integer(
+                "liquid_prismal_backdrop_scale_x", 100, 100, 100, 25, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_BACKDROP_SCALE_Y = integer(
+                "liquid_prismal_backdrop_scale_y", 100, 100, 100, 25, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> PRISMAL_PARALLAX_SCALE = integer(
+                "liquid_prismal_parallax_scale", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Boolean> PRISMAL_SHOW_NORMALS = bool(
+                "liquid_prismal_show_normals", false, false, false, ConfigKey.ExportMode.ALWAYS);
+
         private Glass() {}
     }
 
@@ -390,7 +437,18 @@ public final class ConfigSchema {
                 Glass.TINT_GREEN, Glass.TINT_BLUE, Glass.DEPTH_EFFECT, Glass.BRIGHTNESS,
                 Glass.SPECULAR_SHARPNESS, Glass.SPECULAR_STRENGTH, Glass.RIM_LIGHT,
                 Glass.CAUSTICS, Glass.EDGE_BAND, Glass.HIGHLIGHT_ALPHA,
-                Glass.RECENTS_PREARM_DISTANCE);
+                Glass.RECENTS_PREARM_DISTANCE,
+                Glass.PRISMAL_REFRACTION_INSET, Glass.PRISMAL_DISPLACEMENT_SCALE,
+                Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, Glass.PRISMAL_SMIN_SMOOTHING,
+                Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, Glass.PRISMAL_FRESNEL_REFLECT,
+                Glass.PRISMAL_DISPERSION_R, Glass.PRISMAL_DISPERSION_B,
+                Glass.PRISMAL_VIBRANCY, Glass.PRISMAL_PLAIN_HIGHLIGHT,
+                Glass.PRISMAL_LIGHT_DIR_X, Glass.PRISMAL_LIGHT_DIR_Y,
+                Glass.PRISMAL_SHADOW_RED, Glass.PRISMAL_SHADOW_GREEN,
+                Glass.PRISMAL_SHADOW_BLUE, Glass.PRISMAL_SHADOW_ALPHA,
+                Glass.PRISMAL_SHADOW_SOFTNESS, Glass.PRISMAL_TRANSMITTANCE,
+                Glass.PRISMAL_BACKDROP_SCALE_X, Glass.PRISMAL_BACKDROP_SCALE_Y,
+                Glass.PRISMAL_PARALLAX_SCALE, Glass.PRISMAL_SHOW_NORMALS);
         add(keys, Workstation.DOCK_CUSTOMIZATION, Workstation.DOCK_WIDTH_OFFSET,
                 Workstation.GRID_HORIZONTAL_OFFSET,
                 Workstation.ALL_APPS_LANDSCAPE_HORIZONTAL_OFFSET,

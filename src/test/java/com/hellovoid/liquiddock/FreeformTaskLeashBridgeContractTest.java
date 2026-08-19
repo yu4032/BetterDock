@@ -102,14 +102,17 @@ public class FreeformTaskLeashBridgeContractTest {
         assertTrue(layerResolver.contains("FreeformLeashRuntime.install"));
     }
 
-    @Test public void captureGateFailsClosedAndMergesSurfaceControls() throws Exception {
+    @Test public void captureGateFailsClosedToWallpaperForVisibleFreeform() throws Exception {
         String source = source(
                 "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java");
         assertTrue(source.contains("LiveScreenCapture.class.getDeclaredMethod"));
-        assertTrue(source.contains("resolution.borrowedRemoteLeashes()"));
-        assertTrue(source.contains("allValid(remote)"));
-        assertTrue(source.contains("args[3] = merge"));
+        assertTrue(source.contains("resolution.hasVisibleFreeformTasks()"));
+        assertTrue(source.contains("args[3] = null"));
+        assertTrue(source.contains("args[4] = null"));
         assertTrue(source.contains("args[5] = 2"));
+        assertTrue(source.contains("WALLPAPER_VISIBLE_FREEFORM"));
+        assertFalse(source.contains("resolution.borrowedRemoteLeashes()"));
+        assertFalse(source.contains("args[3] = merge"));
         assertTrue(source.contains("resolution.close()"));
         assertTrue(source.contains("setCaptureGateInstalled(true)"));
         assertTrue(source.contains("setCaptureGateInstalled(false)"));

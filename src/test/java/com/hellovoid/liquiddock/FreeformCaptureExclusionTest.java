@@ -31,9 +31,49 @@ public class FreeformCaptureExclusionTest {
                 sourceFor.invoke(null, CaptureScene.HOME, false, false, false));
     }
 
-    @Test public void appRemainsFullDisplaySubjectToFinalLeashGate() {
+    @Test public void appWithoutFreeformRemainsFullDisplay() {
         assertEquals(CaptureSourcePolicy.Source.FULL_DISPLAY,
                 CaptureSourcePolicy.sourceFor(CaptureScene.APP, false, false));
+    }
+
+    @Test public void visibleFreeformForcesMode1CaptureToWallpaper() throws Exception {
+        String gate = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/FreeformCaptureLeashHook.java"));
+        int visibleStart = gate.indexOf("if (visibleFreeform)");
+        assertTrue("missing visible-freeform capture branch", visibleStart >= 0);
+        int logStart = gate.indexOf("logGateStateIfChanged", visibleStart);
+        assertTrue("missing gate logging after visible-freeform branch", logStart > visibleStart);
+        String visibleBranch = gate.substring(visibleStart, logStart);
+
+        assertTrue("visible freeform must rewrite mode-1 to wallpaper mode",
+                visibleBranch.contains("args[5] = 2"));
+        assertTrue("visible freeform must clear handle exclusions before wallpaper capture",
+                visibleBranch.contains("args[3] = null"));
+        assertTrue("visible freeform must clear name exclusions before wallpaper capture",
+                visibleBranch.contains("args[4] = null"));
+        assertTrue("visible freeform action must explicitly record wallpaper ownership",
+                visibleBranch.contains("WALLPAPER_VISIBLE_FREEFORM"));
+        assertFalse("visible freeform must never pass unresolved APP capture through",
+                visibleBranch.contains("PASS_THROUGH_UNRESOLVED_FREEFORM"));
+        assertFalse("visible freeform must not remain mode-1 by excluding task leashes",
+                visibleBranch.contains("EXCLUDE_TASK_LEASHES"));
+    }
+
+    @Test public void appVisibleFreeformIsWallpaperOwnedBeforeMode1Submission() throws Exception {
+        String dock = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/DockLiquidGlassView.java"));
+        int sourceStart = dock.indexOf("final boolean visibleFreeform");
+        assertTrue("missing capture source selection", sourceStart >= 0);
+        int capturingStart = dock.indexOf("capturing = true", sourceStart);
+        assertTrue("missing capture submission boundary", capturingStart > sourceStart);
+        String sourceSelection = dock.substring(sourceStart, capturingStart);
+
+        assertTrue("APP source selection must inspect visible freeform state",
+                sourceSelection.contains("requestScene == CaptureScene.APP"));
+        assertTrue("APP source selection must query current visible freeform state",
+                sourceSelection.contains("freeformLayerResolver.hasVisibleFreeformTasks()"));
+        assertTrue("APP + visible freeform must select wallpaper before capture submission",
+                sourceSelection.contains("selectedSource = CaptureSourcePolicy.Source.WALLPAPER"));
     }
 
     @Test public void temporaryDockPreflightHasNoTaskStateAuthority() throws Exception {
@@ -51,9 +91,9 @@ public class FreeformCaptureExclusionTest {
         assertFalse(resolver.contains("getRunningTasks"));
         assertFalse(resolver.contains("getWindowingMode"));
         assertFalse(resolver.contains("displayId(task)"));
-        assertTrue("Actual freeform exclusion must merge SurfaceControl task leashes",
-                gate.contains("resolution.borrowedRemoteLeashes()"));
-        assertTrue("Unsafe snapshot resolution must keep wallpaper fallback",
+        assertTrue("Final freeform gate must still inspect the authoritative resolution",
+                gate.contains("resolution.hasVisibleFreeformTasks()"));
+        assertTrue("Unexpected gate exceptions must retain a wallpaper fallback",
                 gate.contains("args[5] = 2"));
     }
 

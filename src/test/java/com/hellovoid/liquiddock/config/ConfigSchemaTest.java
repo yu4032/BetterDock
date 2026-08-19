@@ -113,7 +113,7 @@ public class ConfigSchemaTest {
     }
 
     @Test
-    public void composeLiquidSpecsKeepTheirCurrentDefaultsAndBounds() {
+    public void composeLiquidSpecsKeepLegacyDefaultsAndBounds() {
         assertComposeIntSpec(ConfigSchema.Glass.BLUR, 6, 0, 60);
         assertComposeIntSpec(ConfigSchema.Glass.THICKNESS, 18, 1, 60);
         assertComposeIntSpec(ConfigSchema.Glass.IOR, 155, 100, 200);
@@ -149,16 +149,41 @@ public class ConfigSchemaTest {
     }
 
     @Test
+    public void composePrismalSpecsUseUpstreamDefaultsAndDeclaredGuiBounds() {
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, 5, 0, 80);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, 100, 0, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, 15, 1, 120);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, 2, 0, 24);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, 200, 0, 2000);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT, 79, 0, 500);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_R, 100, 0, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_B, 100, 0, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_VIBRANCY, 128, 0, 300);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT, 8, 0, 100);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X, 100, -200, 200);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y, 62, -200, 200);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_RED, 0, 0, 255);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, 0, 0, 255);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, 0, 0, 255);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, 0, 0, 255);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, 100, 0, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, 100, 0, 100);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, 100, 25, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, 100, 25, 400);
+        assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, 100, 0, 400);
+    }
+
+    @Test
     public void composeStrokeSpecsKeepTheirCurrentDefaultsAndBounds() {
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_RED, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_GREEN, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_BLUE, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Dock.STROKE_ALPHA, 255, 0, 255);
-        assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, 1, 1, 10);
+        assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, 1, 0, 10);
         assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET, 3, 0, 16);
         assertComposeIntSpec(ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT, 58, 40, 80);
-        assertComposeIntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, 1, 1, 6);
-        assertComposeIntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, 1, 1, 10);
+        assertComposeIntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, 1, 0, 6);
+        assertComposeIntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, 1, 0, 10);
     }
 
     @Test

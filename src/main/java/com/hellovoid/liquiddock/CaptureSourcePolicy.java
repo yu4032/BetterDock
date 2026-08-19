@@ -40,17 +40,12 @@ final class CaptureSourcePolicy {
     }
 
     /**
-     * Workstation All Apps is a Launcher-owned overlay, so its local layer is the cleanest
-     * source. Recents is different: App -> Overview is a mixed SurfaceFlinger composition
-     * containing the app/remote-animation leash plus Launcher task views. Capturing only the
-     * Launcher ViewRoot drops the app part of that transition, so Recents must use the composed
-     * display and let DockLiquidGlassView exclude the Floating Dock surface.
+     * Every known workstation scene is a composed-display scene. The workstation Dock lives on
+     * its own WindowManager root and is excluded from mode-1 capture by the MiuiX 307 ownership
+     * bridge. UNKNOWN remains non-live until scene ownership is known.
      */
     static Source sourceForWorkstationScene(CaptureScene scene, boolean localLayerAvailable) {
-        if (scene == CaptureScene.RECENTS) return Source.FULL_DISPLAY;
-        if (scene == CaptureScene.ALL_APPS) {
-            return localLayerAvailable ? Source.LOCAL_LAYER : Source.FULL_DISPLAY;
-        }
-        return Source.WALLPAPER;
+        if (scene == null || scene == CaptureScene.UNKNOWN) return Source.WALLPAPER;
+        return Source.FULL_DISPLAY;
     }
 }

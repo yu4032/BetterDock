@@ -8,6 +8,8 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -21,7 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * the Dock window is insufficient. Reuse the original behavior here: resolve that drag Surface
  * name after the runtime startDrag overload returns, briefly retry on later animation frames when
  * the vendor creates the Surface asynchronously, feed it to DockLiquidGlassView.setDockDragging,
- * and clear it at endDrag(). No gesture, Recents, lifecycle, or ownership hook is installed here.
+ * then keep the last clean backdrop frozen through MIUI's drop-settling animation. No gesture,
+ * Recents, lifecycle, or ownership hook is installed here.
  */
 final class Miuix307DragCaptureHook {
     private static final String TAG = "[DC][MG]";
@@ -29,13 +32,23 @@ final class Miuix307DragCaptureHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static volatile WeakReference<View> backgroundRef = new WeakReference<>(null);
 
-    // A vendor startDrag overload may delegate to another startDrag overload. Treat those nested
-    // callbacks as one drag session, but allow a later callback or short frame retry to upgrade a
-    // temporarily-null Surface name to the concrete "drag surface#..." name.
     private static volatile boolean dragActive;
     private static volatile String activeDragLayerName;
     private static volatile SurfaceControl activeDragSurface;
     private static volatile long dragSessionId;
+
+    // endDrag is earlier than the real release animation. Keep the captured APP/HOME backdrop
+    // frozen until MIUI's DragObject lifecycle completes. A retained DragView may stay attached
+    // and report isShown() even after that authoritative callback, so View visibility is only a
+    // fallback gate when the vendor finish hook/object is unavailable.
+    private static volatile Object settlingDragObject;
+    private static volatile List<WeakReference<View>> settlingDragViews = Collections.emptyList();
+    private static volatile boolean dropSettling;
+    private static volatile boolean dropReleaseScheduled;
+    private static volatile boolean settlingDragViewCheckScheduled;
+    private static volatile int settlingDropCallbacksRemaining;
+    private static volatile boolean dropAnimationFinishHookInstalled;
+    private static volatile boolean systemDockDragActive;
 
     private Miuix307DragCaptureHook() {}
 
@@ -71,28 +84,41 @@ final class Miuix307DragCaptureHook {
                 throw new IllegalStateException("no instance startDrag overloads");
             }
 
-            // The no-arg endDrag callback is device-proven to execute on 307. Keep that precise
-            // hook instead of broadening the end side unnecessarily.
+            installDropAnimationFinishHook(classLoader);
+
             HookUtil.hookMethod(dragController, "endDrag", new Class<?>[0],
                     chain -> {
+                        Object dragObject = currentDragObject(chain.getThisObject());
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        onEndDrag();
+                        onEndDrag(dragObject);
                         return result;
                     });
             installSystemDockDragHooks(classLoader);
-            MainHook.log(TAG + " drag-only capture hook installed startOverloads=" + startHooks);
+            MainHook.log(TAG + " drag-only capture hook installed startOverloads=" + startHooks
+                    + " dropAnimationHook=" + dropAnimationFinishHookInstalled);
         } catch (Throwable error) {
             MainHook.log(TAG + " drag-only capture hook unavailable: " + error);
         }
     }
 
-    /**
-     * 307 Dock system drag is not the Launcher DragView surface. Decompiled
-     * HotSeatsListContent.startDragInDockForSystem() calls View.startDragAndDrop(), and the
-     * resulting mask/leash surfaces are owned by MIUI WMS/Shell. Freeze capture before that
-     * call can create those surfaces; IMiuiDragListener/onEnd and resetDraggingView are
-     * idempotent resume boundaries.
-     */
+    private static void installDropAnimationFinishHook(ClassLoader classLoader) {
+        try {
+            Class<?> dragObjectClass = Class.forName(
+                    "com.miui.home.launcher.DragObject", false, classLoader);
+            HookUtil.hookMethod(dragObjectClass, "onDropAnimationFinished", new Class<?>[0],
+                    chain -> {
+                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                        onDropAnimationFinished(chain.getThisObject());
+                        return result;
+                    });
+            dropAnimationFinishHookInstalled = true;
+            MainHook.log(TAG + " drop animation lifecycle hook installed");
+        } catch (Throwable error) {
+            dropAnimationFinishHookInstalled = false;
+            MainHook.log(TAG + " drop animation lifecycle hook unavailable: " + error);
+        }
+    }
+
     private static void installSystemDockDragHooks(ClassLoader classLoader) {
         try {
             Class<?> content = Class.forName(
@@ -109,6 +135,7 @@ final class Miuix307DragCaptureHook {
             HookUtil.hookMethod(content, "resetDraggingView", new Class<?>[0], chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
                 setSystemDockDragActive(false);
+                onHotseatDragCleanup();
                 return result;
             });
 
@@ -141,6 +168,8 @@ final class Miuix307DragCaptureHook {
     }
 
     private static void setSystemDockDragActive(boolean active) {
+        if (systemDockDragActive == active) return;
+        systemDockDragActive = active;
         DockLiquidGlassView glass = currentGlass();
         if (glass != null) glass.setSystemDockDragActive(active);
         MainHook.log(TAG + (active
@@ -166,6 +195,12 @@ final class Miuix307DragCaptureHook {
         if (!firstCallback && !betterLayer && !betterSurface) return;
 
         if (firstCallback) {
+            dropSettling = false;
+            dropReleaseScheduled = false;
+            settlingDragViewCheckScheduled = false;
+            settlingDragObject = null;
+            settlingDragViews = Collections.emptyList();
+            settlingDropCallbacksRemaining = 0;
             dragActive = true;
             dragSessionId++;
         }
@@ -213,20 +248,209 @@ final class Miuix307DragCaptureHook {
         });
     }
 
-    private static void onEndDrag() {
-        if (!dragActive && activeDragLayerName == null) return;
-        DockLiquidGlassView glass = currentGlass();
-        if (glass != null) glass.setDockDragging(false, null, null);
+    /** Logical drag end. Physical drop settling may still be running after this boundary. */
+    private static void onEndDrag(Object dragObject) {
+        if (!dragActive && activeDragLayerName == null && activeDragSurface == null) return;
+
         dragActive = false;
         activeDragLayerName = null;
         activeDragSurface = null;
-        // Invalidate any postOnAnimation callback queued by the just-finished drag so it cannot
-        // attach a stale Surface to a rapidly-started next drag session.
         dragSessionId++;
-        MainHook.log(TAG + " drag end");
+
+        settlingDragObject = dragObject;
+        settlingDragViews = snapshotDragViews(dragObject);
+        dropSettling = true;
+        dropReleaseScheduled = false;
+        settlingDragViewCheckScheduled = false;
+        settlingDropCallbacksRemaining = Math.max(1, settlingDragViews.size());
+
+        DockLiquidGlassView glass = currentGlass();
+        if (glass != null) {
+            glass.setDockDragging(true, null, null);
+        }
+
+        int dropAnimationCounter = dropAnimationFinishHookInstalled
+                ? readDropAnimationCounter(dragObject) : 0;
+        MainHook.log(TAG + " drag end -> drop settling counter=" + dropAnimationCounter
+                + " callbacks=" + settlingDropCallbacksRemaining
+                + " dragViews=" + settlingDragViews.size()
+                + "; capture remains frozen");
     }
 
-    /** Resolve the currently bound Prismal view from the MiuiX background's sibling host. */
+    /** Called after MIUI has updated mDropAnimationCounter for one DragView. */
+    private static void onDropAnimationFinished(Object dragObject) {
+        if (!dropSettling || dragObject == null || settlingDragObject != dragObject) return;
+
+        if (settlingDropCallbacksRemaining > 0) {
+            settlingDropCallbacksRemaining--;
+        }
+        int dropAnimationCounter = readDropAnimationCounter(dragObject);
+        if (dropAnimationCounter > 0 || settlingDropCallbacksRemaining > 0) {
+            MainHook.log(TAG + " drop animation finished; counter=" + dropAnimationCounter
+                    + " callbacksRemaining=" + settlingDropCallbacksRemaining);
+            return;
+        }
+        finishDropSettling("drag release anim end", true);
+    }
+
+    /**
+     * resetDraggingView() is fallback-only when the real DragObject finish hook/object exists.
+     * On 307 it can run before the release animation is actually complete.
+     */
+    private static void onHotseatDragCleanup() {
+        if (!dropSettling || dragActive) return;
+        if (dropAnimationFinishHookInstalled && settlingDragObject != null) {
+            MainHook.log(TAG + " hotseat drag cleanup observed; waiting for DragObject animation end");
+            return;
+        }
+        finishDropSettling("hotseat drag cleanup fallback", false);
+    }
+
+    /**
+     * The real DragObject completion callback is authoritative even if its DragView remains
+     * attached/shown for bookkeeping. That exact condition caused a permanent freeze when Dock
+     * width changed during icon removal. Fallback cleanup still uses real View visibility before
+     * crossing the final compositor frame.
+     */
+    private static void finishDropSettling(String reason, boolean vendorFinished) {
+        if (!dropSettling || dropReleaseScheduled) return;
+
+        if (!vendorFinished && hasVisibleSettlingDragView()) {
+            scheduleSettlingDragViewCheck(reason);
+            return;
+        }
+
+        final long releaseSession = dragSessionId;
+        View scheduler = backgroundRef.get();
+        if (scheduler == null) {
+            MainHook.log(TAG + " " + reason + " -> compositor barrier unavailable; stay frozen");
+            return;
+        }
+
+        dropReleaseScheduled = true;
+        MainHook.log(TAG + " " + reason + " -> compositor barrier armed session="
+                + releaseSession + " vendorFinished=" + vendorFinished);
+        scheduler.postOnAnimation(() -> {
+            if (!dropSettling || dragActive || releaseSession != dragSessionId) return;
+
+            dropReleaseScheduled = false;
+            settlingDragViewCheckScheduled = false;
+            dropSettling = false;
+            settlingDragObject = null;
+            settlingDragViews = Collections.emptyList();
+            settlingDropCallbacksRemaining = 0;
+            MainHook.log(TAG + " compositor barrier passed session=" + releaseSession);
+            finishDockDragCapture(reason);
+        });
+    }
+
+    /** Recheck retained DragViews only for the lifecycle fallback path. */
+    private static void scheduleSettlingDragViewCheck(String reason) {
+        if (!dropSettling || dragActive || dropReleaseScheduled || settlingDragViewCheckScheduled) {
+            return;
+        }
+
+        final long releaseSession = dragSessionId;
+        View scheduler = backgroundRef.get();
+        if (scheduler == null) {
+            MainHook.log(TAG + " " + reason + " -> DragView visual check unavailable; stay frozen");
+            return;
+        }
+
+        settlingDragViewCheckScheduled = true;
+        MainHook.log(TAG + " " + reason + " -> DragView still visible; wait VSYNC session="
+                + releaseSession);
+        scheduler.postOnAnimation(() -> {
+            if (!dropSettling || dragActive || releaseSession != dragSessionId) return;
+
+            settlingDragViewCheckScheduled = false;
+            if (hasVisibleSettlingDragView()) {
+                scheduleSettlingDragViewCheck(reason);
+                return;
+            }
+
+            MainHook.log(TAG + " " + reason + " -> DragView visually absent session="
+                    + releaseSession);
+            finishDropSettling(reason, false);
+        });
+    }
+
+    private static boolean hasVisibleSettlingDragView() {
+        List<WeakReference<View>> snapshot = settlingDragViews;
+        for (WeakReference<View> reference : snapshot) {
+            View view = reference != null ? reference.get() : null;
+            if (view == null) continue;
+            if (view.isAttachedToWindow()
+                    && view.getVisibility() == View.VISIBLE
+                    && view.isShown()
+                    && view.getAlpha() > 0.01f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void finishDockDragCapture(String reason) {
+        DockLiquidGlassView glass = currentGlass();
+        if (glass != null) glass.setDockDragging(false, null, null);
+        MainHook.log(TAG + " " + reason);
+    }
+
+    private static Object currentDragObject(Object dragController) {
+        if (dragController == null) return null;
+        try {
+            return HookUtil.getField(dragController, "mDragObject");
+        } catch (Throwable error) {
+            MainHook.log(TAG + " current DragObject unavailable: " + error);
+            return null;
+        }
+    }
+
+    private static int readDropAnimationCounter(Object dragObject) {
+        if (dragObject == null) return 0;
+        try {
+            Object value = HookUtil.getField(dragObject, "mDropAnimationCounter");
+            return value instanceof Number ? Math.max(0, ((Number) value).intValue()) : 0;
+        } catch (Throwable error) {
+            MainHook.log(TAG + " drop animation counter unavailable: " + error);
+            return 0;
+        }
+    }
+
+    private static List<WeakReference<View>> snapshotDragViews(Object dragObject) {
+        if (dragObject == null) return Collections.emptyList();
+        ArrayList<WeakReference<View>> result = new ArrayList<>();
+        try {
+            Object views = HookUtil.getField(dragObject, "mDragViews");
+            if (views instanceof List) {
+                for (Object item : (List<?>) views) {
+                    if (item instanceof View) result.add(new WeakReference<>((View) item));
+                }
+            } else if (views != null && views.getClass().isArray()) {
+                int length = Array.getLength(views);
+                for (int i = 0; i < length; i++) {
+                    Object item = Array.get(views, i);
+                    if (item instanceof View) result.add(new WeakReference<>((View) item));
+                }
+            }
+        } catch (Throwable error) {
+            MainHook.log(TAG + " drag view snapshot unavailable: " + error);
+        }
+        return result.isEmpty() ? Collections.emptyList() : result;
+    }
+
+    private static int countDragViews(Object dragObject) {
+        if (dragObject == null) return 0;
+        try {
+            Object views = HookUtil.getField(dragObject, "mDragViews");
+            if (views instanceof List) return ((List<?>) views).size();
+            if (views != null && views.getClass().isArray()) return Array.getLength(views);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " drag view count unavailable: " + error);
+        }
+        return 0;
+    }
+
     private static DockLiquidGlassView currentGlass() {
         View background = backgroundRef.get();
         if (background == null) return null;
@@ -249,7 +473,7 @@ final class Miuix307DragCaptureHook {
     /** Resolve the launcher-owned drag SurfaceControl without taking ownership of it. */
     private static SurfaceControl resolveDragSurfaceControl(Object dragController) {
         try {
-            Object dragObject = HookUtil.getField(dragController, "mDragObject");
+            Object dragObject = currentDragObject(dragController);
             if (dragObject == null) return null;
             Object views = HookUtil.getField(dragObject, "mDragViews");
             Object dragView;
