@@ -18,13 +18,15 @@ LiquidDock 是一个面向 HyperOS 3 Pad Launcher 的 LSPosed / libxposed API 10
 - **工作台 / Laptop 模式**：独立处理工作台 Dock 宽度、Dock 图标上下偏移、桌面与 All Apps 布局参数，并在模式切换时维护普通桌面布局。
 - **Dock 分隔线**：可调宽度、高度比例、垂直偏移、颜色与透明度。
 - **配置管理**：Schema 驱动的 Remote Preferences、JSON 导入/导出、默认预设和历史配置迁移。
-<p align="center">
-  <img src="artwork/detail.gif" alt="LiquidDock detail"/>
-</p>
+
 当前实际 Hook 点与运行时边界见 [HOOKS.md](HOOKS.md)。
 
 > `main` 现在是 2.x 主线。1.x 时代使用屏幕捕获的主线已归档到 `archive/1.x`。
-> 
+
+<p align="center">
+  <img src="artwork/detail.gif" alt="LiquidDock detail"/>
+</p>
+
 ## 注入边界
 
 ```text
