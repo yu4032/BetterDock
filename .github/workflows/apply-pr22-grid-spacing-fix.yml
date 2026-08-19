@@ -1,16 +1,16 @@
 name: Apply PR22 grid spacing fix
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/port-grid-10x6-v2
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[grid-spacing-applied]') }}
+    if: ${{ github.event.pull_request.head.ref == 'feat/port-grid-10x6-v2' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          home_grid = Path("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java")
+          if "HomeGridGeometryPolicy.compute(" in home_grid.read_text():
+              print("Grid spacing patch already applied")
+              raise SystemExit(0)
 
           def replace_once(path, old, new):
               p = Path(path)
