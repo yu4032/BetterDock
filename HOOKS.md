@@ -39,7 +39,7 @@ com.miui.home
 
 ---
 
-## 307 Zero-copy Liquid Glass
+## 液态玻璃
 
 ### Material owner
 
