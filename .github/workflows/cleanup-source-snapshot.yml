@@ -3,6 +3,8 @@ name: Cleanup source snapshot
 on:
   push:
     branches: [ cleanup/zero-copy-state-dead-code ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
