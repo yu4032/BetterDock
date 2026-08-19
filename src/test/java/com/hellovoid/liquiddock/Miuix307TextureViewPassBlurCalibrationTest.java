@@ -149,13 +149,14 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     }
 
     @Test
-    public void validationTimeoutStillDoesNotFallBackToLegacyCapture() throws Exception {
+    public void validationTimeoutFailsClosedWithoutLegacyCapture() throws Exception {
         String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
         int validation = hook.indexOf("private static void scheduleZeroCopyValidation");
-        int fallbackDefinition = hook.indexOf("private static void installCaptureFallback");
-        assertTrue(validation >= 0 && fallbackDefinition > validation);
-        String validationRegion = hook.substring(validation, fallbackDefinition);
-        assertTrue(validationRegion.contains("legacy capture disabled"));
-        assertFalse(validationRegion.contains("installCaptureFallback("));
+        assertTrue(validation >= 0);
+        String validationRegion = hook.substring(validation);
+        assertTrue(validationRegion.contains("glass remains transparent"));
+        assertFalse(hook.contains("installCaptureFallback")
+                || hook.contains("LiquidGlassFactory")
+                || hook.contains("DockLiquidGlassView"));
     }
 }
