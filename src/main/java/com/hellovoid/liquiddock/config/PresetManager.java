@@ -151,24 +151,28 @@ public final class PresetManager {
         values.put("workstation_dock_customization", false);
         values.put("dock_divider_enabled", false);
         values.put("blur_radius", 100);
+
+        // Effective official Prismal Quick Start optics: PrismalFrameLayout construction followed
+        // by PrismalLiquidGlass.applyBase(). Keep this preset synchronized with the zero-copy
+        // material defaults so applying the preset cannot silently return to the older V2 look.
         values.put("liquid_glass", true);
         values.put("liquid_dimensions_dp", true);
         values.put("liquid_blur_mode", "shader");
-        values.put("liquid_ior", 170);
+        values.put("liquid_ior", 155);
         values.put("liquid_normal_strength", 115);
-        values.put("liquid_dome", 100);
-        values.put("liquid_chromatic", 8);
-        values.put("liquid_tint_alpha", 64);
-        values.put("liquid_tint_r", 119);
-        values.put("liquid_tint_g", 122);
-        values.put("liquid_tint_b", 122);
+        values.put("liquid_dome", 130);
+        values.put("liquid_chromatic", 26);
+        values.put("liquid_tint_alpha", 35);
+        values.put("liquid_tint_r", 0);
+        values.put("liquid_tint_g", 0);
+        values.put("liquid_tint_b", 255);
         values.put("liquid_highlight_width", 100);
         values.put("liquid_highlight_alpha", 100);
         values.put("liquid_depth_effect", 8);
         values.put("liquid_brightness", 108);
         values.put("liquid_specular_sharp", 88);
-        values.put("liquid_specular_strength", 105);
-        values.put("liquid_rim_light", 100);
+        values.put("liquid_specular_strength", 152);
+        values.put("liquid_rim_light", 122);
         values.put("liquid_caustics", 28);
         values.put("liquid_edge_band", 32);
         values.put("liquid_capture_power_limit_fps", 30);
@@ -180,12 +184,36 @@ public final class PresetManager {
         values.put("liquid_black_threshold", 10);
         values.put("liquid_capture_scale", 100);
         values.put("liquid_capture_stop_delay", 150);
-        putDp(values, "liquid_blur", 0f);
+        putDp(values, "liquid_blur", 2f);
         putDp(values, "liquid_thickness", 18f);
-        putDp(values, "liquid_lens_refraction", 12f);
+        putDp(values, "liquid_lens_refraction", 1.3f);
         putDp(values, "liquid_capture_bleed_top", 17f);
         putDp(values, "liquid_capture_bleed_bottom", 16f);
         putDp(values, "liquid_recents_prearm_distance", 8f);
+
+        putDp(values, "liquid_prismal_refraction_inset", 20f);
+        values.put("liquid_prismal_displacement_scale", 115);
+        putDp(values, "liquid_prismal_height_transition_width", 19f);
+        putDp(values, "liquid_prismal_smin_smoothing", 1.8f);
+        values.put("liquid_prismal_edge_refraction_falloff", 400);
+        values.put("liquid_prismal_fresnel_reflect", 198);
+        values.put("liquid_prismal_dispersion_r", 100);
+        values.put("liquid_prismal_dispersion_b", 100);
+        values.put("liquid_prismal_vibrancy", 128);
+        values.put("liquid_prismal_plain_highlight", 8);
+        values.put("liquid_prismal_light_dir_x", -50);
+        values.put("liquid_prismal_light_dir_y", -80);
+        values.put("liquid_prismal_shadow_r", 255);
+        values.put("liquid_prismal_shadow_g", 255);
+        values.put("liquid_prismal_shadow_b", 255);
+        values.put("liquid_prismal_shadow_alpha", 35);
+        values.put("liquid_prismal_shadow_softness", 1000);
+        values.put("liquid_prismal_transmittance", 100);
+        values.put("liquid_prismal_backdrop_scale_x", 100);
+        values.put("liquid_prismal_backdrop_scale_y", 100);
+        values.put("liquid_prismal_parallax_scale", 100);
+        values.put("liquid_prismal_show_normals", false);
+
         values.put("corners_dp", true);
         values.put("dock_stroke", true);
         values.put("stroke_base_r", 180);
@@ -253,5 +281,4 @@ public final class PresetManager {
             this.bottomOffset = bottomOffset;
         }
     }
-
 }
