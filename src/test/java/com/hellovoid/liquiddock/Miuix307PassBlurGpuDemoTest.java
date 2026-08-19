@@ -188,6 +188,23 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
+    public void coordinateDiagnosticsExposeTextureMatrixAndWindowToSampleMapping() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+
+        assertTrue("diagnostics must log the actual SurfaceTexture transform matrix",
+                view.contains("texture matrix=") && view.contains("formatTextureMatrix"));
+        assertTrue("diagnostics must log root and Dock coordinates in both window and screen spaces",
+                view.contains("coordinate diagnostic rootWindow=")
+                        && view.contains("getLocationInWindow")
+                        && view.contains("getLocationOnScreen"));
+        assertTrue("diagnostics must report both GL-bottom and top-left crop conventions",
+                view.contains("cropGL=") && view.contains("cropTop="));
+        assertTrue("diagnostics must map the four crop corners through the real texture matrix",
+                view.contains("mapped corners bl=")
+                        && view.contains("mapTextureCoordinate"));
+    }
+
+    @Test
     public void validationTimeoutLeavesDiagnosticTransparentInsteadOfFallingBackToCapture() throws Exception {
         String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
         int validation = hook.indexOf("private static void scheduleZeroCopyValidation");
