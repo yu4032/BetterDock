@@ -35,15 +35,18 @@ public class Miuix307TextureViewBackdropMappingTest {
     @Test
     public void shaderUsesInverseHyperOsConfigRotationToMapScreenBackToProducer() throws Exception {
         String source = view();
+        assertTrue("configRot=1 branch must exist",
+                source.contains("if (uConfigRot == 1) {\\n"));
         assertTrue("configRot=1 must inverse-map screen coordinates with the former rot3 transform",
-                source.contains("if (uConfigRot == 1) {\\n"
-                        + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);"));
+                source.contains("orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\\n"));
+        assertTrue("configRot=2 branch must exist",
+                source.contains("else if (uConfigRot == 2) {\\n"));
         assertTrue("configRot=2 remains its own inverse",
-                source.contains("else if (uConfigRot == 2) {\\n"
-                        + "    orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);"));
+                source.contains("orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\\n"));
+        assertTrue("configRot=3 branch must exist",
+                source.contains("else if (uConfigRot == 3) {\\n"));
         assertTrue("configRot=3 must inverse-map screen coordinates with the former rot1 transform",
-                source.contains("else if (uConfigRot == 3) {\\n"
-                        + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);"));
+                source.contains("orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\\n"));
     }
 
     @Test
