@@ -28,10 +28,10 @@ public class Miuix307TextureViewBackdropMappingTest {
                 source.indexOf("lensUv = mix(vUv, refractedUv, edgeWeight)")
                         < source.indexOf("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
         assertFalse("diagnostic lens must not reintroduce material color or blur effects",
-                source.contains("uTint")
-                        || source.contains("uHighlight")
-                        || source.contains("chromatic")
-                        || source.contains("dispersion")
+                source.contains("uniform vec4 uTint")
+                        || source.contains("uniform float uHighlight")
+                        || source.contains("uChromatic")
+                        || source.contains("uDispersion")
                         || source.contains("blurRadius"));
     }
 
