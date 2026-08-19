@@ -34,10 +34,20 @@ jobs:
               ],
               "src/main/java/com/hellovoid/liquiddock/config/PresetManager.java": [
                   ('values.put("liquid_chromatic", 26);', 'values.put("liquid_chromatic", 2);'),
+                  ('// Effective official Prismal Quick Start optics: PrismalFrameLayout construction followed\n        // by PrismalLiquidGlass.applyBase(). Keep this preset synchronized with the zero-copy\n        // material defaults so applying the preset cannot silently return to the older V2 look.',
+                   '// Prismal Quick Start optics with LiquidDock\'s intentional chromatic-strength override.\n        // Keep this preset synchronized with the zero-copy material defaults.'),
+              ],
+              "src/main/java/com/hellovoid/liquiddock/config/ConfigMigration.java": [
+                  ('migrateIntDefault(sp, e, "liquid_chromatic", 0, 26);',
+                   'migrateIntDefault(sp, e, "liquid_chromatic", 0, 2);'),
               ],
               "src/main/java/com/hellovoid/liquiddock/Miuix307PrismalMaterial.java": [
                   ('                1.30f,\n                26f,\n                1f,',
                    '                1.30f,\n                2f,\n                1f,'),
+                  ('&& nearly(g.chromatic, 8f)',
+                   '&& (nearly(g.chromatic, 8f) || nearly(g.chromatic, 2f))'),
+                  (' * Effective official Prismal Quick Start state: PrismalFrameLayout constructor defaults\n     * followed by PrismalLiquidGlass.applyBase(). applyBase intentionally leaves blur, chromatic,\n     * liquid-dome, Fresnel, and lens-scale at the FrameLayout values, so renderer field\n     * initializers are not the final public material recipe.',
+                   ' * Prismal Quick Start state adapted for LiquidDock. Geometry and lighting retain the\n     * effective PrismalFrameLayout + applyBase() values, while chromatic strength intentionally\n     * defaults to 2 for LiquidDock.'),
               ],
               "src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java": [
                   ('assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 8, 0, 40);',
@@ -45,6 +55,20 @@ jobs:
               ],
               "src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java": [
                   ('expected.put("liquid_chromatic", 26);', 'expected.put("liquid_chromatic", 2);'),
+              ],
+              "src/test/java/com/hellovoid/liquiddock/PrismalOfficialParityV3Test.java": [
+                  ('/** Locks LiquidDock to PrismalFrameLayout + PrismalLiquidGlass.applyBase() effective values. */',
+                   '/** Locks Prismal parity except for LiquidDock\'s intentional chromatic-strength override. */'),
+                  ('assertEquals(26f, p.chromaticAberration, EPS);',
+                   'assertEquals(2f, p.chromaticAberration, EPS);'),
+                  ('assertEquals(26, p.get("liquid_chromatic"));',
+                   'assertEquals(2, p.get("liquid_chromatic"));'),
+                  ('assertTrue(migration.contains("\\\"liquid_chromatic\\\", 0, 26"));',
+                   'assertTrue(migration.contains("\\\"liquid_chromatic\\\", 0, 2"));'),
+              ],
+              "src/test/java/com/hellovoid/liquiddock/Miuix307PrismalParityRepairTest.java": [
+                  ('assertEquals(4f, p.edgeRefractionFalloff, EPS);',
+                   'assertEquals(4f, p.edgeRefractionFalloff, EPS);\n        assertEquals(2f, p.chromaticAberration, EPS);'),
               ],
           }
 
