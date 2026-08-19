@@ -22,14 +22,17 @@ public class Miuix307TextureViewBackdropMappingTest {
         String source = view();
         assertTrue(source.contains("uniform vec4 uBackdropRect"));
         assertTrue(source.contains("uniform int uConfigRot"));
-        assertTrue(source.contains("uBackdropRect.xy + vUv * uBackdropRect.zw"));
+        assertTrue(source.contains("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
         assertTrue(source.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)"));
-        assertFalse("Stage B must remain optically neutral",
-                source.contains("sdRoundRect")
-                        || source.contains("edgeWeight")
-                        || source.contains("uGlassRadius")
-                        || source.contains("refractedUv")
-                        || source.contains("displacementPx"));
+        assertTrue("diagnostic refraction must stay in Dock-local UV space before backdrop mapping",
+                source.indexOf("lensUv = mix(vUv, refractedUv, edgeWeight)")
+                        < source.indexOf("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
+        assertFalse("diagnostic lens must not reintroduce material color or blur effects",
+                source.contains("uTint")
+                        || source.contains("uHighlight")
+                        || source.contains("chromatic")
+                        || source.contains("dispersion")
+                        || source.contains("blurRadius"));
     }
 
     @Test
