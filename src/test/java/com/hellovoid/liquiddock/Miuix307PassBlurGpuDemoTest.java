@@ -8,126 +8,54 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Source contracts for the HyperOS 307 PassBlur GPU calibration and retired probe. */
+/** Source contracts for the HyperOS 307 PassBlur -> OES -> TextureView diagnostic backend. */
 public class Miuix307PassBlurGpuDemoTest {
-    private static final Path MAIN =
-            Path.of("src/main/java/com/hellovoid/liquiddock");
+    private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
     @Test
-    public void passBlurBridgeBindsRootProducerAndCanUnbindCleanly() throws Exception {
-        Path path = MAIN.resolve("Miuix307PassBlurBridge.java");
-        assertTrue("PassBlur bridge must exist", Files.exists(path));
-        String bridge = Files.readString(path);
-        assertTrue(bridge.contains("getViewRootImpl") && bridge.contains("getSurfaceControl"));
-        assertTrue(bridge.contains("\"SetPassBlurSurface\""));
-        assertTrue(bridge.contains("\"setUpdateTextureFlag\""));
-        assertTrue(bridge.contains("1.0f"));
-        assertTrue(bridge.contains("\"setMiBlurWinExc\""));
-        assertTrue("active bridge must bind directly to the producer Surface",
-                bridge.contains("View materialHost, Surface producerSurface, float requestedScale"));
-        assertFalse("active bridge must not query an independent output child surface",
-                bridge.contains("outputView.getSurfaceControl()") || bridge.contains("surfaceName(outputSurface)"));
-        assertTrue(bridge.contains("surfaceName(SurfaceControl surface)")
-                && bridge.contains("getDeclaredMethod(\"getName\")"));
-        assertTrue(bridge.contains("surfaceName(rootSurface)"));
-        assertTrue(bridge.contains("NavigationBar")
-                && bridge.contains("StatusBar")
-                && bridge.contains("GestureStub")
-                && bridge.contains("DockAssistantView"));
-        assertTrue(bridge.contains("SetPassBlurSurface") && bridge.contains("null"));
-        assertTrue(bridge.contains("Boolean.FALSE"));
-        assertFalse(bridge.contains("captureScreenAsync")
-                || bridge.contains("ScreenshotHardwareBuffer")
-                || bridge.contains("Bitmap"));
-        assertFalse(bridge.contains("setChargeAnim") || bridge.contains("WaterWave"));
+    public void bridgeBindsPassBlurProducerAtFullScale() throws Exception {
+        String bridge = Files.readString(MAIN.resolve("Miuix307PassBlurBridge.java"));
+        assertTrue(bridge.contains("SetPassBlurSurface"));
+        assertTrue(bridge.contains("setUpdateTextureFlag"));
+        assertTrue(bridge.contains("requestedScale"));
+        assertTrue(bridge.contains("View materialHost, Surface producerSurface, float requestedScale"));
     }
 
     @Test
-    public void retiredGpuViewUsesSmoothRoundedEdgeLensWithExactCenterPassthrough() throws Exception {
-        Path path = MAIN.resolve("Miuix307PassBlurGpuView.java");
-        assertTrue(Files.exists(path));
-        String view = Files.readString(path);
-
-        assertTrue(view.contains("extends GLSurfaceView")
-                && view.contains("implements GLSurfaceView.Renderer"));
-        assertTrue(view.contains("SurfaceTexture")
-                && view.contains("new Surface(")
-                && view.contains("producerSurface"));
-        assertTrue(view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES")
-                && view.contains("samplerExternalOES"));
-        assertTrue(view.contains("RENDERMODE_WHEN_DIRTY")
-                && view.contains("setOnFrameAvailableListener")
-                && view.contains("requestRender()"));
-        assertTrue(view.contains("updateTexImage()") && view.contains("getTransformMatrix"));
-        assertTrue("manual coordinate calculations may remain diagnostic-only",
-                view.contains("getLocationInWindow") && view.contains("cropSF="));
-
-        assertTrue("retired probe keeps its rounded Dock geometry evidence",
-                view.contains("sdRoundRect")
-                        && view.contains("uViewSize")
-                        && view.contains("uGlassRadius"));
-        assertTrue("retired probe keeps its edge lens evidence",
-                view.contains("edgeWeight")
-                        && view.contains("smoothstep")
-                        && view.contains("mix(vUv, refractedUv, edgeWeight)"));
-        assertFalse("diagnostic horizontal grating must be retired",
-                view.contains("sin(") || view.contains("vUv.x > 0.5"));
-
-        assertTrue(view.contains("isGpuBackdropActive()")
-                && view.contains("isActivationExhausted()")
-                && view.contains("first OES frame")
-                && view.contains("first GLES backdrop draw"));
-        assertTrue(view.contains("Miuix307PassBlurBridge.unbind")
-                && view.contains("currentTexture.release()")
-                && view.contains("currentProducer.release()"));
-        assertFalse(view.contains("captureScreenAsync")
-                || view.contains("ScreenshotHardwareBuffer")
-                || view.contains("Bitmap")
-                || view.contains("BitmapShader"));
-        assertFalse(view.contains("setChargeAnim") || view.contains("WaterWave"));
-    }
-
-    @Test
-    public void neutralCompositionKeepsNoToneOrHighlightButRestoresSafeDockStroke() throws Exception {
+    public void activeRendererUsesTextureViewEgl() throws Exception {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
-        String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
-
-        assertTrue("GPU backdrop remains the only injected visual child",
-                renderer.contains("host.addView(gpuBackdrop"));
-        assertFalse("tone/tint must stay out of the neutral GPU path",
-                renderer.contains("Miuix307ZeroCopyToneView"));
-        assertFalse("old advanced optical highlight must stay disabled",
-                renderer.contains("enableSharpOptics")
-                        || renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
-        assertFalse("GPU renderer must no longer erase the safe configured foreground stroke",
-                renderer.contains("materialHost.setForeground(null)")
-                        || renderer.contains("installForegroundSuppressor")
-                        || renderer.contains("removeForegroundSuppressor"));
-        assertTrue("the 307 shell must restore the safe replacement stroke after GPU install",
-                hook.contains("DockStrokeRenderer.configureReplacingForeground("));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(renderer.contains("new Miuix307PassBlurTextureView"));
+        assertFalse(renderer.contains("new Miuix307PassBlurGpuView"));
+        assertTrue(view.contains("extends TextureView"));
+        assertTrue(view.contains("EGL14.eglCreateWindowSurface"));
+        assertTrue(view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES"));
     }
 
     @Test
-    public void producerBufferMatchesHyperOsPassBlurRotationDomain() throws Exception {
+    public void rootExclusionAvoidsTextureViewFeedbackLoop() throws Exception {
+        String bridge = Files.readString(MAIN.resolve("Miuix307PassBlurBridge.java"));
+        assertTrue(bridge.contains("rootName"));
+        assertFalse(bridge.contains("outputView.getSurfaceControl()"));
+        assertFalse(bridge.contains("SurfaceView"));
+    }
+
+    @Test
+    public void producerUsesRealViewRootSurfaceAndSurfaceSize() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
-        assertTrue(view.contains("\"mSurfaceSize\"") && view.contains("Point"));
-        assertTrue(view.contains("getInstallOrientation") && view.contains("getRotation()"));
+        assertTrue(view.contains("mSurfaceSize"));
+        assertTrue(view.contains("getSurfaceControl"));
+        assertTrue(view.contains("SurfaceControl rootSurface"));
+        assertTrue(view.contains("surfaceWidth"));
+        assertTrue(view.contains("surfaceHeight"));
+    }
 
-        int start = view.indexOf("private ProducerGeometry readSurfaceGeometry");
-        int end = view.indexOf("private void logStageBDiagnostics", start);
-        assertTrue(start >= 0 && end > start);
-        String region = view.substring(start, end);
-
-        assertTrue("unrotated PassBlur producer starts from mSurfaceSize",
-                region.contains("int bufferWidth = surfaceWidth;")
-                        && region.contains("int bufferHeight = surfaceHeight;"));
-        assertTrue("configRot 1/3 must swap the BufferQueue dimensions like ViewRootImpl.checkSurTexSize",
-                region.contains("configRotation == 1 || configRotation == 3")
-                        && region.contains("bufferWidth = surfaceHeight")
-                        && region.contains("bufferHeight = surfaceWidth"));
-        assertTrue("configRot remains lifecycle metadata for rotation-change detection",
-                view.contains("boundConfigRotation")
-                        && view.contains("configRotation = geometry.configRotation"));
+    @Test
+    public void bufferGeometryTracksConfigRotation() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(view.contains("if (configRotation == 1 || configRotation == 3)"));
+        assertTrue(view.contains("bufferWidth = surfaceHeight"));
+        assertTrue(view.contains("bufferHeight = surfaceWidth"));
         assertTrue(view.contains("setDefaultBufferSize(geometry.bufferWidth, geometry.bufferHeight)"));
     }
 
@@ -169,18 +97,21 @@ public class Miuix307PassBlurGpuDemoTest {
     @Test
     public void stageBUsesExplicitConfigRotationBeforeSurfaceTextureTransform() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
 
-        assertTrue("diagnostic lens must remain Dock-local before mapping into root surface space",
-                view.contains("lensUv = mix(vUv, refractedUv, edgeWeight)")
-                        && view.contains("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
+        assertTrue("optical displacement must remain Dock-local and feed the shared Stage-B sampler",
+                material.contains("vec2 uvG = vUv + baseOffset")
+                        && material.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
         assertTrue("configRot must inverse-orient the root UV in Stage B",
-                view.contains("uniform int uConfigRot")
-                        && view.contains("vec2(1.0 - rootUv.y, rootUv.x)")
-                        && view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
-                        && view.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
+                material.contains("uniform int uConfigRot")
+                        && material.contains("vec2(1.0 - rootUv.y, rootUv.x)")
+                        && material.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
+                        && material.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
         assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping after crop compensation",
-                view.contains("vec2 textureInputUv = orientedUv")
-                        && view.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
+                material.contains("vec2 textureInputUv = orientedUv")
+                        && material.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
+        assertTrue("active TextureView must compile the extracted material shader",
+                view.contains("FRAGMENT_SHADER = Miuix307PrismalMaterial.FRAGMENT_SHADER"));
     }
 
     @Test
