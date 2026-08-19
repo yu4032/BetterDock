@@ -3,6 +3,8 @@ name: Release capture audit
 on:
   push:
     branches: [ release/1.3.0 ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   audit:
