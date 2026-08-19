@@ -1,14 +1,19 @@
 name: Apply zero-copy cleanup
 
 on:
-  push:
-    branches: [ cleanup/zero-copy-state-dead-code ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
   contents: write
 
+concurrency:
+  group: zero-copy-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   apply:
+    if: github.head_ref == 'cleanup/zero-copy-state-dead-code'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +45,8 @@ jobs:
       - name: Commit cleanup
         shell: bash
         run: |
+          git fetch origin cleanup/zero-copy-state-dead-code
+          test "$(git rev-parse origin/cleanup/zero-copy-state-dead-code)" = "$(git rev-parse HEAD)"
           git config user.name 'yu4032'
           git config user.email '4032542465@smail.lnu.edu.cn'
           git add -A
