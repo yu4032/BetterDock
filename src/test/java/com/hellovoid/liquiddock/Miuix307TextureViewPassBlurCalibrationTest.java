@@ -61,24 +61,30 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
                         && material.contains("uTexMatrix")
                         && material.contains("textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX")
                         && material.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
-        assertTrue("material must restore the droplet/meniscus height field and normal",
+        assertTrue("material must carry upstream height field and meniscus normal",
                 material.contains("getHeightFromDist")
                         && material.contains("computeGradientHeight")
+                        && material.contains("N_meniscus")
                         && material.contains("uLiquidDome")
                         && material.contains("uNormalStrength"));
         assertTrue("material must restore two-interface Snell refraction",
                 material.contains("refract(-V, N, 1.0 / uIor)")
                         && material.contains("refract(refIn, -N, uIor)"));
-        assertTrue("material must restore Fresnel and chromatic dispersion",
+        assertTrue("material must restore Fresnel and independent RGB dispersion",
                 material.contains("pow(1.0 - cosVNeff, 5.0)")
+                        && material.contains("uFresnelReflect")
                         && material.contains("uChromaticAberration")
+                        && material.contains("uDispersionR")
+                        && material.contains("uDispersionB")
                         && material.contains("uvR")
                         && material.contains("uvB"));
-        assertTrue("material must restore specular, rim and caustic lighting",
+        assertTrue("material must restore upstream dual specular, rim and caustic lighting",
                 material.contains("uSpecularSharp")
                         && material.contains("uSpecularStrength")
+                        && material.contains("specP")
+                        && material.contains("specS")
                         && material.contains("uRimLight")
-                        && material.contains("uCausticStrength"));
+                        && material.contains("uCausticIntensity"));
         assertFalse("temporary fixed 14px diagnostic lens must be gone",
                 view.contains("float displacementPx = 14.0")
                         || material.contains("float displacementPx = 14.0"));
@@ -97,12 +103,13 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
 
-        assertTrue("material must translate the existing typed Glass config instead of inventing a new config layer",
+        assertTrue("material must translate the typed Glass config instead of inventing a side channel",
                 material.contains("static Params fromConfig(LiquidDockConfig.Glass glass, float density)"));
-        assertTrue("dp optical controls must keep the legacy density conversion",
+        assertTrue("pixel optical controls must retain density conversion and old lens setting stays a compatibility multiplier",
                 material.contains("glass.thickness * d")
-                        && material.contains("glass.lensRefraction * d"));
-        assertTrue("all existing user-facing optical controls must reach the material",
+                        && material.contains("glass.prismalHeightTransitionWidth * d")
+                        && material.contains("glass.lensRefraction / 12f"));
+        assertTrue("existing user-facing optical controls must still reach the upstream material adapter",
                 material.contains("glass.ior")
                         && material.contains("glass.normalStrength")
                         && material.contains("glass.dome")
@@ -119,7 +126,8 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
                         && material.contains("glass.tintR")
                         && material.contains("glass.tintG")
                         && material.contains("glass.tintB")
-                        && material.contains("glass.tintAlpha"));
+                        && material.contains("glass.tintAlpha")
+                        && material.contains("glass.blur"));
         assertTrue("TextureView must expose a hot optical-config update without rebuilding PassBlur",
                 view.contains("void setGlassConfig(LiquidDockConfig.Glass glassConfig)")
                         && view.contains("Miuix307PrismalMaterial.fromConfig"));
