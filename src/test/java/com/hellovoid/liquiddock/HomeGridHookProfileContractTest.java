@@ -45,7 +45,7 @@ public class HomeGridHookProfileContractTest {
 
         assertTrue(module.contains("runtimeConfig.enabled && runtimeConfig.grid.enabled"));
         assertTrue(drop.contains("boolean customGridEnabled"));
-        assertTrue(drop.contains("if (!customGridEnabled) return;"));
+        assertTrue(drop.contains("!customGridEnabled || installed"));
     }
 
     @Test
