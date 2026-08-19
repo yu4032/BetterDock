@@ -5,9 +5,9 @@ import android.opengl.GLES20;
 /**
  * Upstream-Prismal optical parameter adapter for the HyperOS 3.0.307 zero-copy backend.
  *
- * The glass equations themselves live in {@link Miuix307PrismalShader}. This class only preserves
- * Prismal's parameter semantics and uploads uniforms. PassBlur/OES coordinate mapping is deliberately
- * kept out of the material so changing compositor geometry cannot alter the optical model.
+ * The glass equations themselves live in {@link Miuix307PrismalShader}. This class preserves
+ * Prismal's parameter semantics and uploads uniforms. PassBlur/OES coordinate mapping stays out
+ * of the material so compositor geometry cannot alter the optical model.
  */
 final class Miuix307PrismalMaterial {
     static final class Params {
@@ -135,7 +135,12 @@ final class Miuix307PrismalMaterial {
 
     private Miuix307PrismalMaterial() {}
 
-    /** Current Prismal renderer + PrismalLiquidGlass.applyBase() calibration. */
+    /**
+     * Effective official Prismal Quick Start state: PrismalFrameLayout constructor defaults
+     * followed by PrismalLiquidGlass.applyBase(). applyBase intentionally leaves blur, chromatic,
+     * liquid-dome, Fresnel, and lens-scale at the FrameLayout values, so renderer field
+     * initializers are not the final public material recipe.
+     */
     static Params defaults(float density) {
         float d = Math.max(0.1f, density);
         return new Params(
@@ -147,10 +152,10 @@ final class Miuix307PrismalMaterial {
                 1.8f,
                 20f,
                 4f,
-                0.78f,
-                1f,
-                1f,
-                0f,
+                1.30f,
+                1.98f,
+                1.30f,
+                26f,
                 1f,
                 1f,
                 1.28f,
@@ -168,7 +173,7 @@ final class Miuix307PrismalMaterial {
                 1f,
                 1f,
                 1f,
-                2.5f,
+                2f,
                 0f,
                 0f,
                 1f,
@@ -183,8 +188,8 @@ final class Miuix307PrismalMaterial {
     /**
      * Live LiquidDock controls map one-to-one to current Prismal units. An exactly untouched
      * first-generation PassBlur profile is recognized only as a whole and upgraded in memory;
-     * normal configuration migration persists the new values once. Per-field remapping is
-     * deliberately forbidden so a user can later choose values such as displacement=1.0 or blur=6.
+     * normal configuration migration persists the current values once. Per-field remapping is
+     * deliberately forbidden so later user-chosen values remain literal Prismal controls.
      */
     static Params fromConfig(LiquidDockConfig.Glass glass, float density) {
         if (glass == null || isUntouchedLegacyProfile(glass)) return defaults(density);
@@ -292,8 +297,6 @@ final class Miuix307PrismalMaterial {
                 cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx);
         uniform1f(program, "u_refractionInset", p.refractionInsetPx);
         uniform1f(program, "u_sminSmoothing", p.sminSmoothingPx);
-        // These are part of Prismal's public material API but the current upstream fragment
-        // shader does not consume them, so real GLES drivers are allowed to optimize them out.
         uniform1fOptional(program, "u_edgeRefractionFalloff", p.edgeRefractionFalloff);
 
         uniform1f(program, "u_ior", p.ior);
