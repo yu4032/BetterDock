@@ -86,8 +86,7 @@ final class Miuix307PassBlurBridge {
             };
 
             // Keep the calibration producer at full resolution. TextureView output is composited
-            // into the already-excluded Floating Dock root, so no child SurfaceView exclusion is
-            // required and no feedback-sensitive layer name is part of this contract.
+            // into the already-excluded Floating Dock root, so no child-layer exclusion is required.
             float scale = DEMO_SCALE;
             setMiBlurWinExc.invoke(transaction, rootSurface, (Object) exclusions);
             setPassBlurSurface.invoke(transaction, rootSurface, producerSurface);
@@ -111,6 +110,12 @@ final class Miuix307PassBlurBridge {
             MainHook.log(TAG + " PassBlur bind unavailable: " + error);
             return null;
         }
+    }
+
+    /** Compatibility overload for the retired diagnostic view; output identity is intentionally ignored. */
+    static Binding bind(
+            View materialHost, View ignoredOutputView, Surface producerSurface, float requestedScale) {
+        return bind(materialHost, producerSurface, requestedScale);
     }
 
     static void unbind(Binding binding) {
