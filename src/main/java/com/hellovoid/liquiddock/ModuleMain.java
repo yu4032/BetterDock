@@ -32,11 +32,6 @@ public final class ModuleMain extends XposedModule {
                 Api101Bridge.log("[DC] SystemUI transition source unavailable", error);
             }
             try {
-                DiagnosticTraceHook.installSystemUi(classLoader);
-            } catch (Throwable error) {
-                Api101Bridge.log("[DC] SystemUI diagnostic probes unavailable", error);
-            }
-            try {
                 SystemUiHomeOwnershipSource.install(classLoader);
             } catch (Throwable error) {
                 // HOME ownership fails closed independently from freeform exclusion.
@@ -45,8 +40,8 @@ public final class ModuleMain extends XposedModule {
             try {
                 SystemUiFreeformLeashProvider.install(classLoader);
             } catch (Throwable error) {
-                // SystemUI stability is more important than freeform exclusion. Never let
-                // a LiquidDock capability failure escape into the host process.
+                // Keep the provider available to other non-glass consumers; the retired
+                // screen-capture renderer no longer requests its HardwareBuffer snapshots.
                 Api101Bridge.log("[DC] SystemUI freeform leash provider unavailable", error);
             }
             return;
@@ -56,18 +51,14 @@ public final class ModuleMain extends XposedModule {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
             LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
-            FreeformCaptureLeashHook.install();
-            SystemUiTransitionRuntime.install();
+
+            // release/1.3.0 has one glass renderer: HyperOS PassBlur -> OES -> Prismal.
+            // Do not install the retired Bitmap/screen-capture lifecycle, Recents pre-arm,
+            // workstation wallpaper-capture, or capture diagnostic bridges.
             new MainHook().install(classLoader);
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
-            Miuix307RecentsInputHook.install(classLoader);
-            Miuix307GestureBackdropHoldHook.install(classLoader);
             Miuix307DropFinishCompatHook.install(classLoader);
-            Miuix307CaptureOwnershipHook.install(classLoader);
-            WorkstationWallpaperOnlyHook.install(classLoader);
-            DiagnosticTraceHook.installLauncher(classLoader);
-            AlwaysOnDiagnosticTrace.installLauncher(classLoader);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
