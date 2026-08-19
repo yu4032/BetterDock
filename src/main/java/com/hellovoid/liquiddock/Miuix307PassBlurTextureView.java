@@ -33,8 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * PassBlur renders into a caller-owned input SurfaceTexture attached to an external OES texture.
  * A dedicated EGL thread renders into this TextureView, which remains inside the already-excluded
  * Floating Dock root. Stage B maps Dock-local UVs into the material host's real root-surface rect,
- * applies the HyperOS config rotation, and finally applies the SurfaceTexture transform matrix.
- * The shader remains strict passthrough: no refraction, tint, blur, or optical displacement.
+ * applies the inverse HyperOS config rotation, and finally applies the SurfaceTexture transform
+ * matrix. The shader remains strict passthrough: no refraction, tint, blur, or optical displacement.
  */
 final class Miuix307PassBlurTextureView extends TextureView
         implements TextureView.SurfaceTextureListener {
@@ -69,11 +69,11 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "  vec2 rootUv = uBackdropRect.xy + vUv * uBackdropRect.zw;\n"
             + "  vec2 orientedUv = rootUv;\n"
             + "  if (uConfigRot == 1) {\n"
-            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
+            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
             + "  } else if (uConfigRot == 2) {\n"
             + "    orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\n"
             + "  } else if (uConfigRot == 3) {\n"
-            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
+            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
             + "  }\n"
             + "  vec4 transformed = uTexMatrix * vec4(orientedUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
@@ -704,14 +704,14 @@ final class Miuix307PassBlurTextureView extends TextureView
         float orientedX = rootX;
         float orientedY = rootY;
         if (rotation == 1) {
-            orientedX = rootY;
-            orientedY = 1f - rootX;
+            orientedX = 1f - rootY;
+            orientedY = rootX;
         } else if (rotation == 2) {
             orientedX = 1f - rootX;
             orientedY = 1f - rootY;
         } else if (rotation == 3) {
-            orientedX = 1f - rootY;
-            orientedY = rootX;
+            orientedX = rootY;
+            orientedY = 1f - rootX;
         }
         return mapTextureCoordinate(matrix, orientedX, orientedY);
     }
