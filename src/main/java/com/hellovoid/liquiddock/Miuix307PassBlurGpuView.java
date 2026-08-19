@@ -59,7 +59,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "uniform vec4 uCrop;\n"
             + "uniform vec2 uViewSize;\n"
             + "uniform float uGlassRadius;\n"
-            + "uniform int uConfigRot;\n"
             + "varying vec2 vUv;\n"
             + "float sdRoundRect(vec2 p, vec2 h, float r) {\n"
             + "  vec2 q = abs(p) - (h - vec2(r));\n"
@@ -87,15 +86,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
             + "  vec2 rootUv = vec2(uCrop.x + lensUv.x * uCrop.z,\n"
             + "                     uCrop.y + lensUv.y * uCrop.w);\n"
-            + "  vec2 sampleUv = rootUv;\n"
-            + "  if (uConfigRot == 1) {\n"
-            + "    sampleUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
-            + "  } else if (uConfigRot == 2) {\n"
-            + "    sampleUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\n"
-            + "  } else if (uConfigRot == 3) {\n"
-            + "    sampleUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
-            + "  }\n"
-            + "  vec4 transformed = uTexMatrix * vec4(sampleUv, 0.0, 1.0);\n"
+            + "  vec4 transformed = uTexMatrix * vec4(rootUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
             + "}\n";
 
@@ -313,9 +304,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             int crop = GLES20.glGetUniformLocation(program, "uCrop");
             int viewSize = GLES20.glGetUniformLocation(program, "uViewSize");
             int glassRadius = GLES20.glGetUniformLocation(program, "uGlassRadius");
-            int rotation = GLES20.glGetUniformLocation(program, "uConfigRot");
             if (position < 0 || uv < 0 || texture < 0 || matrix < 0 || crop < 0
-                    || viewSize < 0 || glassRadius < 0 || rotation < 0) {
+                    || viewSize < 0 || glassRadius < 0) {
                 throw new IllegalStateException("shader location unavailable");
             }
 
@@ -335,7 +325,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             GLES20.glUniform4f(crop, cropX, cropY, cropW, cropH);
             GLES20.glUniform2f(viewSize, Math.max(1f, getWidth()), Math.max(1f, getHeight()));
             GLES20.glUniform1f(glassRadius, Math.max(1f, glassRadiusPx));
-            GLES20.glUniform1i(rotation, configRotation);
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
             GLES20.glDisableVertexAttribArray(position);
             GLES20.glDisableVertexAttribArray(uv);
