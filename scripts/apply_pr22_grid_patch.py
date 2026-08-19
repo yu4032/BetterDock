@@ -200,10 +200,9 @@ def main():
     IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
     IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
 )
-
-private val workstationSpecs'''
+private val dockSpecs'''
     sub_once(compose_path,
-        r'private val gridSpecs = listOf\(.*?\n\)\n\nprivate val workstationSpecs',
+        r'private val gridSpecs = listOf\(.*?\n\)\nprivate val dockSpecs',
         grid_specs, flags=re.S, label="Compose gridSpecs")
 
     print("PR22 grid spacing source patch applied")
