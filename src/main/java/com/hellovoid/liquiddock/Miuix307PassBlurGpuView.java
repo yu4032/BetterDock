@@ -447,7 +447,9 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         View materialHost = materialHostRef.get();
         if (materialHost == null) return;
         ProducerGeometry geometry = readSurfaceGeometry(materialHost);
-        Rect screenRect = readSurfaceViewScreenRect();
+        Rect renderRect = readSurfaceViewRenderPosition();
+        Rect screenRect = renderRect != null && !renderRect.isEmpty()
+                ? renderRect : readSurfaceViewScreenRect();
         if (geometry == null || geometry.surfaceWidth <= 0 || geometry.surfaceHeight <= 0
                 || screenRect == null || screenRect.width() <= 0 || screenRect.height() <= 0) {
             return;
@@ -466,6 +468,21 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         float cropBottom = clamp01(bottom);
         cropW = Math.max(0.0001f, cropRight - cropX);
         cropH = Math.max(0.0001f, cropBottom - cropY);
+    }
+
+    private Rect readSurfaceViewRenderPosition() {
+        try {
+            Method method = findMethod(getClass(), "getSurfaceRenderPosition");
+            method.setAccessible(true);
+            Object value = method.invoke(this);
+            if (value instanceof Rect) {
+                Rect rect = new Rect((Rect) value);
+                if (!rect.isEmpty()) return rect;
+            }
+        } catch (Throwable error) {
+            MainHook.log(TAG + " SurfaceView getSurfaceRenderPosition unavailable: " + error);
+        }
+        return null;
     }
 
     private Rect readSurfaceViewScreenRect() {
@@ -495,7 +512,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         getLocationInWindow(viewWindow);
         root.getLocationOnScreen(rootScreen);
         getLocationOnScreen(viewScreen);
-        Rect compositorRect = readSurfaceViewScreenRect();
+        Rect renderRect = readSurfaceViewRenderPosition();
+        Rect layoutRect = readSurfaceViewScreenRect();
 
         float rootWidth = root.getWidth();
         float rootHeight = root.getHeight();
@@ -518,7 +536,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
                 + " viewScreen=" + formatPoint(viewScreen)
                 + " rootSize=" + root.getWidth() + "x" + root.getHeight()
                 + " viewSize=" + getWidth() + "x" + getHeight()
-                + " compositorRect=" + (compositorRect != null ? compositorRect.toShortString() : "null")
+                + " renderRect=" + (renderRect != null ? renderRect.toShortString() : "null")
+                + " layoutRect=" + (layoutRect != null ? layoutRect.toShortString() : "null")
                 + " cropSF=[" + cropX + "," + cropY + "," + cropW + "," + cropH + "]"
                 + " oldCropGL=[" + left + "," + glBottom + "," + width + "," + height + "]"
                 + " cropTop=[" + left + "," + top + "," + width + "," + height + "]");
@@ -638,6 +657,19 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             }
         }
         throw new NoSuchFieldException(name);
+    }
+
+    private static Method findMethod(Class<?> type, String name, Class<?>... parameterTypes)
+            throws NoSuchMethodException {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredMethod(name, parameterTypes);
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchMethodException(name);
     }
 
     private static boolean isSameSurface(SurfaceControl first, SurfaceControl second) {
