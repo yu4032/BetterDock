@@ -122,7 +122,8 @@ public final class PresetManager {
     private static Map<String, Object> createDefaultValues() {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("liquiddock_enabled", true);
-        values.put("home_grid_8x4", false);
+        values.put("home_grid_extended", false);
+        values.put("grid_profile", "8x4");
         values.put("grid_widget_adaptation", false);
         values.put("grid_margins_dp", true);
         values.put("grid_margins_offset", true);

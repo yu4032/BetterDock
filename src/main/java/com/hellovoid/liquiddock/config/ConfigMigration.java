@@ -1,6 +1,8 @@
 package com.hellovoid.liquiddock.config;
 
 import android.content.Context;
+
+import com.hellovoid.liquiddock.HomeGridProfile;
 import android.content.SharedPreferences;
 
 import java.util.LinkedHashMap;
@@ -15,7 +17,26 @@ public final class ConfigMigration {
 
     private ConfigMigration() { }
 
+    static final class GridProfileState {
+        final boolean enabled;
+        final String profile;
+
+        GridProfileState(boolean enabled, String profile) {
+            this.enabled = enabled;
+            this.profile = profile;
+        }
+    }
+
+    static GridProfileState resolveGridProfileState(
+            Boolean canonicalEnabled, String canonicalProfile, Boolean legacyEnabled) {
+        boolean enabled = canonicalEnabled != null
+                ? canonicalEnabled : legacyEnabled != null && legacyEnabled;
+        String profile = HomeGridProfile.fromPersisted(canonicalProfile).persistedValue();
+        return new GridProfileState(enabled, profile);
+    }
+
     public static void migrate(Context context, SharedPreferences preferences) {
+        migrateGridProfile(preferences);
         migrateMergedHorizontal(preferences);
         migrateLegacyGridKeys(preferences);
         migrateGridToDp(context, preferences);
@@ -27,6 +48,37 @@ public final class ConfigMigration {
         migrateAxisDistances(preferences);
         migratePrismalParityV2(preferences);
         migratePrismalOfficialParityV3(preferences);
+    }
+
+    private static void migrateGridProfile(SharedPreferences sp) {
+        String enabledKey = ConfigSchema.Grid.ENABLED.name();
+        String profileKey = ConfigSchema.Grid.PROFILE.name();
+        String legacyKey = ConfigSchema.Grid.LEGACY_8X4.name();
+
+        Boolean canonicalEnabled = sp.contains(enabledKey)
+                ? sp.getBoolean(enabledKey, false) : null;
+        String canonicalProfile = sp.contains(profileKey)
+                ? sp.getString(profileKey, ConfigSchema.Grid.PROFILE.uiDefault()) : null;
+        Boolean legacyEnabled = sp.contains(legacyKey)
+                ? sp.getBoolean(legacyKey, false) : null;
+        GridProfileState state = resolveGridProfileState(
+                canonicalEnabled, canonicalProfile, legacyEnabled);
+
+        SharedPreferences.Editor editor = sp.edit();
+        boolean changed = false;
+        if (canonicalEnabled == null || canonicalEnabled != state.enabled) {
+            editor.putBoolean(enabledKey, state.enabled);
+            changed = true;
+        }
+        if (canonicalProfile == null || !state.profile.equals(canonicalProfile)) {
+            editor.putString(profileKey, state.profile);
+            changed = true;
+        }
+        if (sp.contains(legacyKey)) {
+            editor.remove(legacyKey);
+            changed = true;
+        }
+        if (changed) editor.commit();
     }
 
     /**

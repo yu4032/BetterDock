@@ -393,20 +393,41 @@ private fun HomePage(
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var grid8x4 by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault())) }
+    var customGrid by remember { mutableStateOf(prefs.getBoolean(
+        ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault())) }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.page_grid), stringResource(R.string.grid_header_summary)) }
         item { SmallTitle(stringResource(R.string.category_grid)) }
         item {
             SettingsCard {
-                BooleanSetting(prefs, ConfigSchema.Grid.ENABLED, stringResource(R.string.enable_grid_8x4), stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
-                BooleanSetting(prefs, ConfigSchema.Grid.WIDGET_ADAPTATION, stringResource(R.string.enable_widget_adaptation), stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
+                BooleanSetting(
+                    prefs, ConfigSchema.Grid.ENABLED,
+                    stringResource(R.string.enable_extended_grid),
+                    stringResource(R.string.enable_extended_grid_summary), masterEnabled
+                ) { customGrid = it }
+                StringDropdown(
+                    prefs = prefs,
+                    key = ConfigSchema.Grid.PROFILE.name(),
+                    title = stringResource(R.string.grid_profile),
+                    default = ConfigSchema.Grid.PROFILE.uiDefault(),
+                    options = listOf(
+                        "8×4 / 4×8" to "8x4",
+                        "10×6 / 6×10" to "10x6",
+                    ),
+                    enabled = masterEnabled && customGrid,
+                )
+                BooleanSetting(
+                    prefs, ConfigSchema.Grid.WIDGET_ADAPTATION,
+                    stringResource(R.string.enable_widget_adaptation),
+                    stringResource(R.string.enable_widget_adaptation_summary),
+                    masterEnabled && customGrid
+                )
             }
         }
         item { SmallTitle(stringResource(R.string.category_landscape)) }
-        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }.forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }.forEach { IntSetting(prefs, it, masterEnabled && customGrid) } } }
         item { SmallTitle(stringResource(R.string.category_portrait)) }
-        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_portrait") || it.key == "indicator_portrait_y" }.forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_portrait") || it.key == "indicator_portrait_y" }.forEach { IntSetting(prefs, it, masterEnabled && customGrid) } } }
     }
 }
 

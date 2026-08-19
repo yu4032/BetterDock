@@ -20,7 +20,11 @@ public final class ConfigSchema {
 
     public static final class Grid {
         public static final ConfigKey<Boolean> ENABLED = bool(
-                "home_grid_8x4", false, false, false, ConfigKey.ExportMode.ALWAYS);
+                "home_grid_extended", false, false, false, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<String> PROFILE = string(
+                "grid_profile", "8x4", "8x4", "8x4", ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Boolean> LEGACY_8X4 = bool(
+                "home_grid_8x4", false, false, false, ConfigKey.ExportMode.NEVER);
         public static final ConfigKey<Boolean> WIDGET_ADAPTATION = bool(
                 "grid_widget_adaptation", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> MARGINS_DP = bool(
@@ -404,7 +408,8 @@ public final class ConfigSchema {
     private static List<ConfigKey<?>> createAll() {
         List<ConfigKey<?>> keys = new ArrayList<>();
         add(keys, Core.ENABLED);
-        add(keys, Grid.ENABLED, Grid.WIDGET_ADAPTATION, Grid.MARGINS_DP, Grid.MARGINS_OFFSET,
+        add(keys, Grid.ENABLED, Grid.PROFILE, Grid.LEGACY_8X4,
+                Grid.WIDGET_ADAPTATION, Grid.MARGINS_DP, Grid.MARGINS_OFFSET,
                 Grid.LANDSCAPE_HORIZONTAL_DISTANCE, Grid.LANDSCAPE_TOP_DISTANCE,
                 Grid.LANDSCAPE_BOTTOM_DISTANCE, Grid.PORTRAIT_HORIZONTAL_DISTANCE,
                 Grid.PORTRAIT_TOP_DISTANCE, Grid.PORTRAIT_BOTTOM_DISTANCE,

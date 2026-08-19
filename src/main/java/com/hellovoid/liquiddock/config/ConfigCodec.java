@@ -1,5 +1,7 @@
 package com.hellovoid.liquiddock.config;
 
+import com.hellovoid.liquiddock.HomeGridProfile;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -25,6 +27,7 @@ public final class ConfigCodec {
             if (!isDirectlyImportable(key) || !jsonValues.containsKey(key.name())) continue;
             importValue(key, jsonValues.get(key.name()), out);
         }
+        importLegacyGridProfile(jsonValues, out);
         importLegacyHorizontalMargins(jsonValues, out);
         importPreAxisLegacyMargins(jsonValues, out);
         importLegacyWorkstationAllAppsOffsets(jsonValues, out);
@@ -32,6 +35,15 @@ public final class ConfigCodec {
     }
 
     private static Object exportValue(ConfigKey<?> key, Map<String, ?> preferences) {
+        if (key == ConfigSchema.Grid.ENABLED && !preferences.containsKey(key.name())
+                && preferences.containsKey(ConfigSchema.Grid.LEGACY_8X4.name())) {
+            return booleanValue(preferences.get(ConfigSchema.Grid.LEGACY_8X4.name()));
+        }
+        if (key == ConfigSchema.Grid.PROFILE) {
+            Object value = preferences.get(key.name());
+            return HomeGridProfile.fromPersisted(
+                    value == null ? String.valueOf(key.exportDefault()) : String.valueOf(value)).persistedValue();
+        }
         if (key == ConfigSchema.Dock.DIMENSIONS_DP || key == ConfigSchema.Glass.DIMENSIONS_DP) {
             return Boolean.TRUE;
         }
@@ -65,8 +77,28 @@ public final class ConfigCodec {
         } else if (key.type() == ConfigKey.Type.INT && value instanceof Number) {
             out.put(key.name(), clamp(((Number) value).intValue(), key.minInt(), key.maxInt()));
         } else if (key.type() == ConfigKey.Type.STRING && value != null) {
-            out.put(key.name(), String.valueOf(value));
+            String string = String.valueOf(value);
+            if (key == ConfigSchema.Grid.PROFILE) {
+                string = HomeGridProfile.fromPersisted(string).persistedValue();
+            }
+            out.put(key.name(), string);
         }
+    }
+
+    private static void importLegacyGridProfile(Map<String, ?> jsonValues,
+                                                Map<String, Object> out) {
+        boolean canonicalEnabled = jsonValues.containsKey(ConfigSchema.Grid.ENABLED.name());
+        boolean canonicalProfile = jsonValues.containsKey(ConfigSchema.Grid.PROFILE.name());
+        boolean legacy = jsonValues.containsKey(ConfigSchema.Grid.LEGACY_8X4.name());
+        if (!canonicalEnabled && legacy) {
+            out.put(ConfigSchema.Grid.ENABLED.name(),
+                    booleanValue(jsonValues.get(ConfigSchema.Grid.LEGACY_8X4.name())));
+        }
+        if ((canonicalEnabled || canonicalProfile || legacy)
+                && !out.containsKey(ConfigSchema.Grid.PROFILE.name())) {
+            out.put(ConfigSchema.Grid.PROFILE.name(), HomeGridProfile.GRID_8X4.persistedValue());
+        }
+        out.remove(ConfigSchema.Grid.LEGACY_8X4.name());
     }
 
     private static void importLegacyHorizontalMargins(Map<String, ?> jsonValues,

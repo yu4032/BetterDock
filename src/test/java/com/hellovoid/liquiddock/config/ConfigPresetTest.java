@@ -15,7 +15,8 @@ public class ConfigPresetTest {
     public void defaultPresetKeepsTheComposePersistedValues() {
         Map<String, Object> expected = new LinkedHashMap<>();
         expected.put("liquiddock_enabled", true);
-        expected.put("home_grid_8x4", false);
+        expected.put("home_grid_extended", false);
+        expected.put("grid_profile", "8x4");
         expected.put("grid_widget_adaptation", false);
         expected.put("grid_margins_dp", true);
         expected.put("grid_margins_offset", true);
@@ -183,7 +184,8 @@ public class ConfigPresetTest {
 
         assertEquals(expected, PresetManager.defaultValues());
         assertEquals(Boolean.TRUE, PresetManager.defaultValues().get("liquiddock_enabled"));
-        assertEquals(Boolean.FALSE, PresetManager.defaultValues().get("home_grid_8x4"));
+        assertEquals(Boolean.FALSE, PresetManager.defaultValues().get("home_grid_extended"));
+        assertEquals("8x4", PresetManager.defaultValues().get("grid_profile"));
         assertEquals(Boolean.FALSE, PresetManager.defaultValues().get("grid_widget_adaptation"));
         assertEquals(Integer.valueOf(155), PresetManager.defaultValues().get("liquid_ior"));
         assertEquals(Integer.valueOf(130), PresetManager.defaultValues().get("liquid_dome"));

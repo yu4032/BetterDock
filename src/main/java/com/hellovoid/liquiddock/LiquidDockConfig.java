@@ -31,13 +31,18 @@ final class LiquidDockConfig {
 
     static final class Grid {
         final boolean enabled, widgetAdaptation, dp, offsets;
+        final HomeGridProfile profile;
         final float landscapeHorizontal, landscapeTop, landscapeBottom, landscapeRowGap;
         final float portraitHorizontal, portraitTop, portraitBottom, portraitRowGap;
         final float landscapeIndicatorY, portraitIndicatorY;
 
         Grid(ConfigReader c) {
-            enabled = c.b(ConfigSchema.Grid.ENABLED.name(),
-                    ConfigSchema.Grid.ENABLED.runtimeFallback());
+            enabled = c.has(ConfigSchema.Grid.ENABLED.name())
+                    ? c.b(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.runtimeFallback())
+                    : c.b(ConfigSchema.Grid.LEGACY_8X4.name(),
+                            ConfigSchema.Grid.LEGACY_8X4.runtimeFallback());
+            profile = HomeGridProfile.fromPersisted(c.s(ConfigSchema.Grid.PROFILE.name(),
+                    ConfigSchema.Grid.PROFILE.runtimeFallback()));
             widgetAdaptation = c.b(ConfigSchema.Grid.WIDGET_ADAPTATION.name(),
                     ConfigSchema.Grid.WIDGET_ADAPTATION.runtimeFallback());
             dp = c.b(ConfigSchema.Grid.MARGINS_DP.name(),
