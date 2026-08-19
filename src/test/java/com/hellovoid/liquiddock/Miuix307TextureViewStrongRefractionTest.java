@@ -16,63 +16,67 @@ public class Miuix307TextureViewStrongRefractionTest {
         return Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
     }
 
+    private static String shader() throws Exception {
+        return Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+    }
+
     private static String material() throws Exception {
         return Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
     }
 
     @Test
-    public void prismalDisplacementStaysDockLocalBeforeBackdropMapping() throws Exception {
-        String source = material();
-        assertTrue(source.contains("uniform vec2 uViewSize"));
+    public void prismalDisplacementStaysDockLocalAfterOesNormalization() throws Exception {
+        String source = shader();
+        assertTrue(source.contains("uniform vec2  u_resolution"));
         assertTrue(source.contains("sdRoundBox"));
         assertTrue(source.contains("getHeightFromDist"));
         assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));
-        assertTrue(source.contains("vec2 uvCenter = backdropUv(vScreenTexCoord, baseOffset, pinchMix)"));
-        assertTrue("all displaced optical samples must enter the shared Stage-B sampler",
-                source.contains("sampleBackdrop(uvCenter)")
-                        && source.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
+        assertTrue(source.contains("vec2 uvCenter = backdropUv(v_screenTexCoord, baseOffset, pinchMix)"));
+        assertTrue(source.contains("texture2D(u_blurredTexture, uvCenter)"));
+        assertFalse("Stage-B must be isolated before the Prismal optical domain",
+                source.contains("uBackdropRect") || source.contains("uTexMatrix")
+                        || source.contains("samplerExternalOES"));
     }
 
     @Test
     public void fixedDiagnosticDisplacementIsGoneAndPhysicalControlsDriveRefraction() throws Exception {
-        String source = material();
-        assertFalse("the temporary fixed 14px diagnostic displacement must stay retired",
-                source.contains("float displacementPx = 14.0"));
-        assertTrue(source.contains("uLensRefractionPx"));
-        assertTrue(source.contains("uThicknessPx"));
-        assertTrue(source.contains("uIor"));
-        assertTrue(source.contains("uNormalStrength"));
-        assertTrue(source.contains("uDisplacementScale"));
-        assertTrue(source.contains("refract(-V, N, 1.0 / uIor)"));
-        assertTrue(source.contains("refract(refIn, -N, uIor)"));
+        String source = shader();
+        assertFalse(source.contains("float displacementPx = 14.0"));
+        assertTrue(source.contains("u_lensRefractionPx"));
+        assertTrue(source.contains("u_glassThickness"));
+        assertTrue(source.contains("u_ior"));
+        assertTrue(source.contains("u_normalStrength"));
+        assertTrue(source.contains("u_displacementScale"));
+        assertTrue(source.contains("refract(-V, N, 1.0 / u_ior)"));
+        assertTrue(source.contains("refract(refIn, -N, u_ior)"));
     }
 
     @Test
     public void fullUpstreamMaterialColorOpticsAreRestoredWithoutCpuReadback() throws Exception {
-        String source = material();
-        assertTrue(source.contains("uniform vec4 uGlassColor"));
-        assertTrue(source.contains("uChromaticAberration"));
-        assertTrue(source.contains("uDispersionR"));
-        assertTrue(source.contains("uDispersionB"));
-        assertTrue(source.contains("uSpecularSharp"));
-        assertTrue(source.contains("uRimLight"));
-        assertTrue(source.contains("uCausticIntensity"));
-        assertTrue(source.contains("uFresnelReflect"));
-        assertTrue(source.contains("uTransmittance"));
-        assertTrue("Prismal blur must stay GPU-side over the live OES texture",
-                source.contains("uBlurRadiusPx") && source.contains("sampleBackdropRaw"));
+        String source = shader();
+        assertTrue(source.contains("uniform vec4  u_glassColor"));
+        assertTrue(source.contains("u_chromaticAberration"));
+        assertTrue(source.contains("u_dispersionR"));
+        assertTrue(source.contains("u_dispersionB"));
+        assertTrue(source.contains("u_shininess"));
+        assertTrue(source.contains("u_rimStrength"));
+        assertTrue(source.contains("u_causticIntensity"));
+        assertTrue(source.contains("u_fresnelReflect"));
+        assertTrue(source.contains("u_transmittance"));
+        assertTrue(source.contains("u_blurredTexture") && source.contains("u_useBlurredTexture"));
         assertFalse(source.contains("Bitmap")
                 || source.contains("captureScreenAsync")
                 || source.contains("glReadPixels"));
     }
 
     @Test
-    public void drawUploadsTextureViewSizeForPixelStableOptics() throws Exception {
+    public void drawUploadsTextureViewSizeAndUpstreamUniformsForPixelStableOptics() throws Exception {
         String source = view();
-        assertTrue(source.contains("glGetUniformLocation(program, \"uViewSize\")"));
-        assertTrue(source.contains("GLES20.glUniform2f"));
-        assertTrue(source.contains("outputWidth"));
-        assertTrue(source.contains("outputHeight"));
-        assertTrue(source.contains("Miuix307PrismalMaterial.applyUniforms"));
+        String params = material();
+        assertTrue(source.contains("Miuix307PrismalMaterial.applyUniforms(")
+                && source.contains("outputWidth")
+                && source.contains("outputHeight"));
+        assertTrue(params.contains("uniform2f(program, \"u_resolution\", width, height)"));
+        assertTrue(params.contains("uniform2f(program, \"u_glassSize\", width, height)"));
     }
 }
