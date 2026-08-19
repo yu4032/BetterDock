@@ -12,11 +12,10 @@ import java.lang.reflect.Modifier;
  * public HyperOS framework methods View.setBackgroundBlur(100, cornerRadii, blendConfig) and
  * View.setBackgroundBlurAlpha(getParentAlpha()). The compat path invokes those framework methods
  * directly so LSPosed does not have to cross the Launcher classloader just to reach BlurUtilities.
+ * Native MiuiX material hosts instead reuse their MaterialConfig through MiuiBlurUtils.
  */
 final class Miuix307CompositorOpticsBridge {
     private static final String TAG = "[DC][ZC]";
-    private static final String COMPAT_BLUR_BACKGROUND2 =
-            "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
     private static final String DARK_COLOR_NAME =
             "hotseats_list_content_background_blur_color_dark";
     private static final String LIGHT_COLOR_NAME =
@@ -27,15 +26,21 @@ final class Miuix307CompositorOpticsBridge {
 
     private Miuix307CompositorOpticsBridge() {}
 
+    static boolean supportsZeroCopyBackdrop(View vendorMaterial) {
+        return vendorMaterial != null
+                && Miuix307MaterialHostPolicy.supportsZeroCopyBackdrop(
+                        vendorMaterial.getClass().getName());
+    }
+
     static boolean usesExactBackgroundBlur(View vendorMaterial) {
         return vendorMaterial != null
-                && COMPAT_BLUR_BACKGROUND2.equals(vendorMaterial.getClass().getName());
+                && Miuix307MaterialHostPolicy.usesExactBackgroundBlur(
+                        vendorMaterial.getClass().getName());
     }
 
     static boolean applyVendorBlurConfig(
             View vendorMaterial, View target, float cornerRadiusPx, int blurRadiusPx) {
         if (vendorMaterial == null || target == null) return false;
-        Class<?> sourceClass = vendorMaterial.getClass();
 
         if (usesExactBackgroundBlur(vendorMaterial)) {
             return applyCompatBlurBackground2(
@@ -106,7 +111,7 @@ final class Miuix307CompositorOpticsBridge {
         }
     }
 
-    /** MaterialConfig path retained for native MiuiX material implementations. */
+    /** MaterialConfig path used by native MiuiX material implementations. */
     private static boolean applyMaterialConfig(View vendorMaterial, View target) {
         Class<?> sourceClass = vendorMaterial.getClass();
         try {
