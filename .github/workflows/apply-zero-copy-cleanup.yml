@@ -1,0 +1,47 @@
+name: Apply zero-copy cleanup
+
+on:
+  push:
+    branches: [ cleanup/zero-copy-state-dead-code ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cleanup/zero-copy-state-dead-code
+          fetch-depth: 1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply cleanup payload
+        shell: bash
+        run: |
+          test -f .github/cleanup-payload/part06
+          cat .github/cleanup-payload/part* | tr -d '\n' | base64 -d > /tmp/cleanup.tar.gz
+          tar -xzf /tmp/cleanup.tar.gz
+          while IFS= read -r path; do
+            [ -z "$path" ] || rm -f -- "$path"
+          done < .cleanup-deletions.txt
+          rm -f .cleanup-deletions.txt
+          rm -rf .github/cleanup-payload
+          rm -f .github/workflows/apply-zero-copy-cleanup.yml
+          rm -f .github/workflows/cleanup-source-snapshot.yml
+      - run: chmod +x ./gradlew
+      - run: ./gradlew testDebugUnitTest --stacktrace
+      - run: ./gradlew assembleDebug --stacktrace
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name 'yu4032'
+          git config user.email '4032542465@smail.lnu.edu.cn'
+          git add -A
+          git commit -m 'refactor: remove retired capture state architecture'
+          git push origin HEAD:cleanup/zero-copy-state-dead-code
