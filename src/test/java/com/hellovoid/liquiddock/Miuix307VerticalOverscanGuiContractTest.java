@@ -26,6 +26,9 @@ public class Miuix307VerticalOverscanGuiContractTest {
         assertTrue(ui.contains("IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, \"下额外采样高度\", \"px\")"));
         assertTrue(preset.contains("values.put(\"liquid_capture_bleed_top\", 48);")
                 && preset.contains("values.put(\"liquid_capture_bleed_bottom\", 16);"));
+        assertFalse("pixel-valued bleed defaults must not recreate DP_TENTHS sidecars",
+                preset.contains("putDp(values, \"liquid_capture_bleed_top\"")
+                        || preset.contains("putDp(values, \"liquid_capture_bleed_bottom\""));
     }
 
     @Test
