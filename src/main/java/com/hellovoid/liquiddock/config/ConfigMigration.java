@@ -10,6 +10,8 @@ public final class ConfigMigration {
     private static final String PRISMAL_PARITY_V2 = "liquid_prismal_parity_v2";
     private static final String PRISMAL_OFFICIAL_PARITY_V3 =
             "liquid_prismal_official_parity_v3";
+    private static final String CAPTURE_BLEED_PIXELS_V4 =
+            "liquid_capture_bleed_pixels_v4";
 
     private ConfigMigration() { }
 
@@ -19,6 +21,7 @@ public final class ConfigMigration {
         migrateGridToDp(context, preferences);
         migrateGridToOffsets(preferences);
         migrateCornersToDp(context, preferences);
+        migrateCaptureBleedToPixels(context, preferences);
         migrateLiquidDimensionsToDp(context, preferences);
         migrateDockDimensionsToDp(context, preferences);
         migrateAxisDistances(preferences);
@@ -181,15 +184,53 @@ public final class ConfigMigration {
         e.putBoolean("dock_dimensions_dp", true).commit();
     }
 
+    private static void migrateCaptureBleedToPixels(Context context, SharedPreferences sp) {
+        if (sp.getBoolean(CAPTURE_BLEED_PIXELS_V4, false)) return;
+        float density = Math.max(0.1f, context.getResources().getDisplayMetrics().density);
+        boolean storedAsDp = sp.getBoolean("liquid_dimensions_dp", false);
+        SharedPreferences.Editor e = sp.edit();
+        migrateCaptureBleedPixelValue(
+                sp, e, "liquid_capture_bleed_top", 48, storedAsDp, density);
+        migrateCaptureBleedPixelValue(
+                sp, e, "liquid_capture_bleed_bottom", 16, storedAsDp, density);
+        e.putBoolean(CAPTURE_BLEED_PIXELS_V4, true).commit();
+    }
+
+    private static void migrateCaptureBleedPixelValue(
+            SharedPreferences sp, SharedPreferences.Editor e, String key,
+            int historicalDefaultPx, boolean storedAsDp, float density) {
+        boolean hasDirect = sp.contains(key);
+        boolean hasTenths = sp.contains(key + "_tenths");
+        if (!hasDirect && !hasTenths) {
+            e.remove(key + "_tenths");
+            return;
+        }
+        float storedValue = hasTenths
+                ? sp.getInt(key + "_tenths", historicalDefaultPx * 10) / 10f
+                : sp.getInt(key, historicalDefaultPx);
+        e.putInt(key, captureBleedPixels(
+                storedValue, storedAsDp, density, historicalDefaultPx));
+        e.remove(key + "_tenths");
+    }
+
+    static int captureBleedPixels(
+            float storedValue, boolean storedAsDp, float density, int historicalDefaultPx) {
+        float safeDensity = Math.max(0.1f, density);
+        float pixels = storedValue;
+        if (storedAsDp) {
+            float oldMigratedDefaultDp = Math.round(historicalDefaultPx / safeDensity);
+            pixels = Math.abs(storedValue - oldMigratedDefaultDp) <= 0.0001f
+                    ? historicalDefaultPx
+                    : storedValue * safeDensity;
+        }
+        return Math.max(0, Math.min(256, Math.round(pixels)));
+    }
+
     private static void migrateLiquidDimensionsToDp(Context context, SharedPreferences sp) {
         if (sp.getBoolean("liquid_dimensions_dp", false)) return;
         float density = Math.max(1f, context.getResources().getDisplayMetrics().density);
         SharedPreferences.Editor e = sp.edit();
         e.putInt("liquid_blur", Math.round(sp.getInt("liquid_blur", 6) / density));
-        e.putInt("liquid_capture_bleed_top",
-                Math.round(sp.getInt("liquid_capture_bleed_top", 48) / density));
-        e.putInt("liquid_capture_bleed_bottom",
-                Math.round(sp.getInt("liquid_capture_bleed_bottom", 16) / density));
         e.putBoolean("liquid_dimensions_dp", true).commit();
     }
 

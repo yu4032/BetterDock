@@ -220,10 +220,10 @@ public final class ConfigSchema {
                 "liquid_capture_power_limit_fps", 20, 20, 20, 5, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_STOP_DELAY = integer(
                 "liquid_capture_stop_delay", 150, 150, 150, 0, 10000, ConfigKey.ExportMode.ALWAYS);
-        public static final ConfigKey<Integer> CAPTURE_BLEED_TOP = dp(
-                "liquid_capture_bleed_top", 17, -1, 48, 0, 256, ConfigKey.ExportMode.ALWAYS);
-        public static final ConfigKey<Integer> CAPTURE_BLEED_BOTTOM = dp(
-                "liquid_capture_bleed_bottom", 6, -1, 16, 0, 256, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> CAPTURE_BLEED_TOP = integer(
+                "liquid_capture_bleed_top", 48, 48, 48, 0, 256, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> CAPTURE_BLEED_BOTTOM = integer(
+                "liquid_capture_bleed_bottom", 16, 16, 16, 0, 256, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> THICKNESS = dp(
                 "liquid_thickness", 18, 18, 18, 1, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> IOR = integer(

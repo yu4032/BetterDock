@@ -186,8 +186,8 @@ public final class PresetManager {
         putDp(values, "liquid_blur", 2f);
         putDp(values, "liquid_thickness", 18f);
         putDp(values, "liquid_lens_refraction", 1.3f);
-        putDp(values, "liquid_capture_bleed_top", 17f);
-        putDp(values, "liquid_capture_bleed_bottom", 16f);
+        values.put("liquid_capture_bleed_top", 48);
+        values.put("liquid_capture_bleed_bottom", 16);
         putDp(values, "liquid_recents_prearm_distance", 8f);
 
         putDp(values, "liquid_prismal_refraction_inset", 20f);

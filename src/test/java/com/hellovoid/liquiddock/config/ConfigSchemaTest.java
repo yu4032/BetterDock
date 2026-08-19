@@ -45,9 +45,14 @@ public class ConfigSchemaTest {
 
     @Test
     public void legacyAndCurrentDefaultsRemainDistinctWhereRequired() {
-        assertEquals(Integer.valueOf(-1), ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback());
-        assertEquals(Integer.valueOf(17), ConfigSchema.Glass.CAPTURE_BLEED_TOP.uiDefault());
+        assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback());
+        assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.uiDefault());
         assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.exportDefault());
+        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback());
+        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.uiDefault());
+        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.exportDefault());
+        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.CAPTURE_BLEED_TOP.storageMode());
+        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.storageMode());
 
         assertEquals(Integer.valueOf(4), ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.runtimeFallback());
         assertEquals(Integer.valueOf(1), ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.uiDefault());
@@ -121,6 +126,8 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.DOME, 100, 0, 200);
         assertComposeIntSpec(ConfigSchema.Glass.LENS_REFRACTION, 12, 0, 60);
         assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 2, 0, 40);
+        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, 48, 0, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, 16, 0, 256);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_ALPHA, 38, 0, 160);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_RED, 238, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_GREEN, 244, 0, 255);
