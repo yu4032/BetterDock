@@ -284,7 +284,9 @@ final class Miuix307PrismalMaterial {
                 cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx);
         uniform1f(program, "u_refractionInset", p.refractionInsetPx);
         uniform1f(program, "u_sminSmoothing", p.sminSmoothingPx);
-        uniform1f(program, "u_edgeRefractionFalloff", p.edgeRefractionFalloff);
+        // These are part of Prismal's public material API but the current upstream fragment
+        // shader does not consume them, so real GLES drivers are allowed to optimize them out.
+        uniform1fOptional(program, "u_edgeRefractionFalloff", p.edgeRefractionFalloff);
 
         uniform1f(program, "u_ior", p.ior);
         uniform1f(program, "u_glassThickness", p.thicknessPx);
@@ -303,7 +305,7 @@ final class Miuix307PrismalMaterial {
         uniform1f(program, "u_fresnelReflect", p.fresnelReflect);
         uniform1f(program, "u_brightness", p.brightness);
         uniform4fRaw(program, "u_glassColor", p.tintR, p.tintG, p.tintB, p.tintA);
-        uniform1f(program, "u_highlightWidth", p.highlightWidth);
+        uniform1fOptional(program, "u_highlightWidth", p.highlightWidth);
 
         uniform2f(program, "u_lightDir", p.lightDirX, p.lightDirY);
         uniform1f(program, "u_specular", p.specularStrength);
@@ -334,6 +336,11 @@ final class Miuix307PrismalMaterial {
     private static void uniform1f(int program, String name, float value) {
         int location = requireUniform(program, name);
         GLES20.glUniform1f(location, value);
+    }
+
+    private static void uniform1fOptional(int program, String name, float value) {
+        int location = GLES20.glGetUniformLocation(program, name);
+        if (location >= 0) GLES20.glUniform1f(location, value);
     }
 
     private static void uniform1i(int program, String name, int value) {
