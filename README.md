@@ -1,40 +1,8 @@
-# LiquidDock 2.0
+# LiquidDock
 
 ![LiquidDock 效果](artwork/liquid-dock-screenshot.jpg)
 
 LiquidDock 是一个面向 HyperOS 3 Pad Launcher 的 LSPosed / libxposed API 101 模块，用于扩展系统 Dock 的液态玻璃、Dock 外观、桌面网格与工作台布局。
-
-> `main` 现在是 2.x 主线。1.x 时代的主线已归档到 `archive/1.x`。
-
-## LiquidDock 2.0
-
-2.0 的核心变化是：**Liquid Glass 不再依赖屏幕截图或场景捕获状态机，而是直接使用 SurfaceFlinger PassBlur 提供的 GPU producer。**
-
-当前 307+ glass 数据路径为：
-
-```text
-Floating Dock / HotSeats SurfaceControl
-        │
-        ├─ SurfaceFlinger PassBlur
-        │      ↓ caller-owned Surface
-        ├─ external OES texture
-        ├─ Dock-local RGBA normalization
-        ├─ partial-coverage mirror guard band
-        ├─ half-resolution Gaussian blur H/V
-        ├─ Prismal optical shader
-        └─ TextureView → Dock
-```
-
-整条 glass 路径保持 GPU 内部传递：
-
-- 不使用 `captureScreenAsync`；
-- 不把背景转换成 `Bitmap`；
-- 不使用 `glReadPixels` 做 CPU readback；
-- 不再 Hook `com.android.systemui`；
-- 不再维护 HOME / APP / RECENTS 截图源选择；
-- 不提供旧截图 renderer 作为 fallback。
-
-如果设备上的 307 material / PassBlur 能力不满足当前 zero-copy 条件，Liquid Glass 会 **fail closed**：保持透明或禁用 glass，而不是退回截图管线。
 
 ## 主要功能
 
@@ -51,38 +19,25 @@ Floating Dock / HotSeats SurfaceControl
 
 当前实际 Hook 点与运行时边界见 [HOOKS.md](HOOKS.md)。
 
+> `main` 现在是 2.x 主线。1.x 时代使用屏幕捕获的主线已归档到 `archive/1.x`。
+> 
 ## 注入边界
 
-2.0 的 Xposed scope 只有：
-
 ```text
-com.miui.home
+com.miui.home 系统桌面
 ```
-
-`com.android.systemui` 不再被 LiquidDock 注入。WMShell transition、HOME ownership、freeform leash provider、截图触发和 capture Binder bridge 均不属于 2.0 主线。
-
-这意味着现在需要维护的状态主要是：
-
-- 当前 vendor Dock background 实例；
-- Dock width / height / radius；
-- View attach / detach 与主题替换；
-- SurfaceControl / producer geometry；
-- display rotation 与 producer coverage；
-- EGL / OES / FBO / TextureView 生命周期。
-
-而不是“当前应该截哪一张屏幕”。
 
 ## 兼容性
 
-Liquid Glass 主路径针对 **HyperOS 3.0.307+ Pad Launcher** 当前观察到的 HotSeats material 与 SurfaceFlinger PassBlur 私有接口实现。
+Liquid Glass 主路径针对 **HyperOS 3.0.307+ Pad Launcher** 版本的 HotSeats material 与 SurfaceFlinger PassBlur 私有接口实现。
 
-307 zero-copy glass 依赖 ROM 中存在对应 vendor class 和隐藏 SurfaceControl transaction API。ROM 更新后如果这些私有接口发生变化，glass 会按 fail-closed 策略停止激活，不会自动切换到 CPU / screenshot fallback。
+液态玻璃效果依赖 ROM 中存在对应 vendor class 和隐藏 SurfaceControl transaction API。ROM 更新后如果这些私有接口发生变化，glass 会按 fail-closed 策略停止激活。
 
-非 glass 功能的可用性仍取决于对应 HyperOS Launcher 类和方法是否存在。
+非玻璃功能的可用性仍取决于对应 HyperOS Launcher 类和方法是否存在。
 
 ## 构建
 
-当前工程使用：
+使用：
 
 - Android SDK / compileSdk 37；
 - JDK 17；
@@ -107,7 +62,6 @@ Debug 与 Release 都经过 Android Gradle Plugin optimization / shrinker 路径
 ## 分支
 
 - **`main`** — 当前 2.x 开发主线。
-- **`release/2.0.0`** — 2.0 发布基线分支。
 - **`archive/1.x`** — 2.0 切换前的旧 `main`；包含 1.x 的 SystemUI / capture 架构历史。
 
 如果需要排查旧截图管线、HOME / APP / RECENTS capture ownership 或 SystemUI / WMShell bridge，请以 `archive/1.x` 为历史参考，不要把其 Hook 关系套用到当前 `main`。
@@ -123,7 +77,7 @@ Debug 与 Release 都经过 Android Gradle Plugin optimization / shrinker 路径
 - **Prismal** — Liquid Glass 光学模型与 Shader 参数设计参考。
 - **LSPosed / libxposed** — Hook API 与模块运行框架。
 - **HyperCeiler** — HyperOS 模块工程实践参考。
-- **HyperLight** — 1.x 历史阶段的屏幕捕获设计参考；2.0 已移除该捕获架构。
+- **HyperLight** — 旧版本屏幕捕获设计参考。
 
 ## 开源许可
 
