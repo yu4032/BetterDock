@@ -74,7 +74,7 @@ public final class ConfigMigration {
         SharedPreferences.Editor e = sp.edit();
 
         migrateDpDefault(sp, e, "liquid_blur", 2.5f, 2f);
-        migrateIntDefault(sp, e, "liquid_chromatic", 0, 26);
+        migrateIntDefault(sp, e, "liquid_chromatic", 0, 2);
         migrateIntDefault(sp, e, "liquid_dome", 78, 130);
         migrateDpDefault(sp, e, "liquid_lens_refraction", 1f, 1.3f);
         migrateIntDefault(sp, e, "liquid_prismal_fresnel_reflect", 100, 198);

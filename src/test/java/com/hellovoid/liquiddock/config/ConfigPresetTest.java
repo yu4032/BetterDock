@@ -69,7 +69,7 @@ public class ConfigPresetTest {
         expected.put("liquid_ior", 155);
         expected.put("liquid_normal_strength", 115);
         expected.put("liquid_dome", 130);
-        expected.put("liquid_chromatic", 26);
+        expected.put("liquid_chromatic", 2);
         expected.put("liquid_tint_alpha", 35);
         expected.put("liquid_tint_r", 0);
         expected.put("liquid_tint_g", 0);

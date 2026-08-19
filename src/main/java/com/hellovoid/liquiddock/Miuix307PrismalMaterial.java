@@ -136,10 +136,9 @@ final class Miuix307PrismalMaterial {
     private Miuix307PrismalMaterial() {}
 
     /**
-     * Effective official Prismal Quick Start state: PrismalFrameLayout constructor defaults
-     * followed by PrismalLiquidGlass.applyBase(). applyBase intentionally leaves blur, chromatic,
-     * liquid-dome, Fresnel, and lens-scale at the FrameLayout values, so renderer field
-     * initializers are not the final public material recipe.
+     * Prismal Quick Start state adapted for LiquidDock. Geometry and lighting retain the
+     * effective PrismalFrameLayout + applyBase() values, while chromatic strength intentionally
+     * defaults to 2 for LiquidDock.
      */
     static Params defaults(float density) {
         float d = Math.max(0.1f, density);
@@ -155,7 +154,7 @@ final class Miuix307PrismalMaterial {
                 1.30f,
                 1.98f,
                 1.30f,
-                26f,
+                2f,
                 1f,
                 1f,
                 1.28f,
@@ -240,7 +239,7 @@ final class Miuix307PrismalMaterial {
 
     private static boolean isUntouchedLegacyProfile(LiquidDockConfig.Glass g) {
         return nearly(g.blur, 6f)
-                && nearly(g.chromatic, 8f)
+                && (nearly(g.chromatic, 8f) || nearly(g.chromatic, 2f))
                 && g.tintR == 238 && g.tintG == 244 && g.tintB == 255 && g.tintAlpha == 38
                 && nearly(g.thickness, 18f)
                 && nearly(g.ior, 1.55f)

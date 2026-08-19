@@ -120,7 +120,7 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, 115, 0, 300);
         assertComposeIntSpec(ConfigSchema.Glass.DOME, 100, 0, 200);
         assertComposeIntSpec(ConfigSchema.Glass.LENS_REFRACTION, 12, 0, 60);
-        assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 8, 0, 40);
+        assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 2, 0, 40);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_ALPHA, 38, 0, 160);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_RED, 238, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_GREEN, 244, 0, 255);

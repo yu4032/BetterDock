@@ -213,7 +213,7 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> BLUR = dp(
                 "liquid_blur", 6, 6, 6, 0, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CHROMATIC = integer(
-                "liquid_chromatic", 8, 8, 8, 0, 40, ConfigKey.ExportMode.ALWAYS);
+                "liquid_chromatic", 2, 2, 2, 0, 40, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> TINT_ALPHA = integer(
                 "liquid_tint_alpha", 38, 38, 38, 0, 160, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_FPS = integer(
