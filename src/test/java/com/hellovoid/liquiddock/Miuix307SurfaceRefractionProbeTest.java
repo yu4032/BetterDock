@@ -27,7 +27,7 @@ public class Miuix307SurfaceRefractionProbeTest {
     @Test
     public void passBlurDemoDoesNotMountTheFixedChargeWaterWaveChild() throws Exception {
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
-        assertTrue(renderer.contains("Miuix307PassBlurGpuView"));
+        assertTrue(renderer.contains("Miuix307PassBlurTextureView"));
         assertFalse(renderer.contains("Miuix307RefractionSurfaceProbeView"));
         assertFalse(renderer.contains("Miuix307RefractionExperiment"));
         assertFalse(renderer.contains("Miuix307SurfaceRefractionProbe.probe"));
