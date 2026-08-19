@@ -8,17 +8,18 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Source contracts for the HyperOS 307 PassBlur GPU demo renderer. */
+/** Source contracts for the HyperOS 307 PassBlur GPU calibration renderer. */
 public class Miuix307ZeroCopyContractTest {
     private static String read(String file) throws Exception {
         return Files.readString(Path.of("src/main/java/com/hellovoid/liquiddock/" + file));
     }
 
     @Test
-    public void zeroCopyRendererUsesNeutralPassBlurGpuBackdropOnly() throws Exception {
+    public void zeroCopyRendererUsesNeutralTextureViewPassBlurBackdropOnly() throws Exception {
         String renderer = read("Miuix307ZeroCopyRenderer.java");
         String hook = read("MiuixGlassHook.java");
-        assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
+        assertTrue(renderer.contains("new Miuix307PassBlurTextureView"));
+        assertFalse(renderer.contains("new Miuix307PassBlurGpuView"));
         assertTrue(renderer.contains("host.addView(gpuBackdrop"));
         assertFalse("neutral renderer must not erase the configured replacement stroke",
                 renderer.contains("materialHost.setForeground(null)"));
@@ -28,9 +29,9 @@ public class Miuix307ZeroCopyContractTest {
         assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertFalse(renderer.contains("host.reloadOpticsPreservingGeometry(glassConfig)"));
         assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
-        assertFalse("demo successful path must retire the fixed charge child",
+        assertFalse("calibration successful path must retire the fixed charge child",
                 renderer.contains("new Miuix307RefractionSurfaceProbeView"));
-        assertFalse("demo successful path must not cover the OES output with framework blur",
+        assertFalse("calibration successful path must not cover the OES output with framework blur",
                 renderer.contains("new Miuix307ZeroCopyBackdropView")
                         || renderer.contains("applyVendorBlurConfig"));
         assertFalse(renderer.contains("captureScreenAsync"));
@@ -60,7 +61,8 @@ public class Miuix307ZeroCopyContractTest {
         assertTrue(renderer.contains("gpuBackdrop.isActivationExhausted()"));
         assertTrue(renderer.contains("static int activeWidth()"));
         assertTrue(renderer.contains("static int activeHeight()"));
-        assertTrue(renderer.contains("gpuBackdrop.setGlassRadius"));
+        assertFalse("Stage A calibration must ignore glass radius/refraction state",
+                renderer.contains("gpuBackdrop.setGlassRadius"));
         assertFalse(renderer.contains("tone.setTone(glassConfig)"));
         assertTrue("clear must stop the PassBlur producer before dropping refs",
                 renderer.contains("gpuBackdrop.shutdown()"));
@@ -76,7 +78,8 @@ public class Miuix307ZeroCopyContractTest {
                 hook.contains("ZERO_COPY_VALIDATION_FRAMES = 90"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.isActive()"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.isActivationExhausted()"));
-        assertTrue(hook.contains("backend=passblur-gles"));
+        assertTrue(hook.contains("backend=passblur-gles")
+                || hook.contains("backend=passblur-textureview-egl"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.activeWidth()"));
         assertTrue(hook.contains("Miuix307ZeroCopyRenderer.activeHeight()"));
         assertTrue("validation timeout must stay neutral instead of masking the GPU demo",
