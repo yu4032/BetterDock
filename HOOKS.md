@@ -4,7 +4,7 @@
 
 ## 运行时边界
 
-Xposed scope 只有：
+Xposed scope：
 
 ```text
 com.miui.home
