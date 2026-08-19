@@ -27,4 +27,18 @@ public class Miuix307EdgeOverscanContractTest {
         assertFalse("Dock-local UV must not be clamped before it can enter the overscan ring",
                 shader.contains("return clamp(scaled + offset, vec2(0.0), vec2(1.0));"));
     }
+
+    @Test
+    public void overscanValidityDoesNotReplaceVisibleDockScissorValidity() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+
+        assertTrue(view.contains("validSampleLeft") && view.contains("validSampleTop"));
+        assertTrue(view.contains("validDockLeft") && view.contains("validDockTop"));
+        assertTrue("normalization mirror guard must use overscan-sample validity",
+                view.contains("validSampleLeft, validSampleBottom, validSampleRight, validSampleTop"));
+        assertTrue("material coverage/scissor must remain tied to the visible Dock",
+                view.contains("producerCoverage = dock.coverage")
+                        && view.contains("validDockLeft * outputWidth")
+                        && view.contains("validDockBottom * outputHeight"));
+    }
 }
