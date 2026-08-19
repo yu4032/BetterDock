@@ -11,8 +11,6 @@ import android.opengl.GLES20;
  * No capture, readback, CPU texture upload, or software blur exists in this material unit.
  */
 final class Miuix307PrismalMaterial {
-    private static final float DISPLACEMENT_SCALE = 1.15f;
-
     static final String FRAGMENT_SHADER = """
             #extension GL_OES_EGL_image_external : require
             precision highp float;
@@ -334,6 +332,31 @@ final class Miuix307PrismalMaterial {
                 1.05f, 1f, 0.28f,
                 0.032f, 1f,
                 238f / 255f, 244f / 255f, 1f, 0f);
+    }
+
+    static Params fromConfig(LiquidDockConfig.Glass glass, float density) {
+        if (glass == null) return defaults(density);
+        float d = Math.max(0.1f, density);
+        return new Params(
+                glass.ior,
+                glass.thickness * d,
+                glass.normalStrength,
+                glass.dome,
+                glass.lensRefraction * d,
+                glass.chromatic,
+                glass.highlightWidth,
+                glass.depthEffect,
+                glass.brightness,
+                glass.specularSharp,
+                glass.specularStrength,
+                glass.rimLight,
+                glass.caustics,
+                glass.edgeBand,
+                glass.highlightAlpha,
+                glass.tintR / 255f,
+                glass.tintG / 255f,
+                glass.tintB / 255f,
+                glass.tintAlpha / 255f);
     }
 
     static void applyUniforms(int program, Params params, float cornerRadiusPx) {
