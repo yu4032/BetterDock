@@ -23,9 +23,16 @@ final class Miuix307ZeroCopyRenderer {
         if (materialHost == null || host == null || glassConfig == null) return false;
 
         if (!Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)) {
+            // The old response here was false, which made MiuixGlassHook instantiate the
+            // retired Bitmap/screen-capture renderer. release/1.3.0 is zero-copy-only: keep the
+            // host transparent and let activation validation fail closed instead of falling back.
             MainHook.log(TAG + " PassBlur TextureView material unsupported source="
-                    + materialHost.getClass().getSimpleName());
-            return false;
+                    + materialHost.getClass().getSimpleName()
+                    + "; legacy capture retired");
+            gpuBackdropRef = new WeakReference<>(null);
+            hostRef = new WeakReference<>(host);
+            materialHostRef = new WeakReference<>(materialHost);
+            return true;
         }
 
         Miuix307PassBlurTextureView gpuBackdrop = new Miuix307PassBlurTextureView(
