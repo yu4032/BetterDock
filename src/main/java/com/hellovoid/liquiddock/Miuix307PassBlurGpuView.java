@@ -57,7 +57,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "precision mediump float;\n"
             + "uniform samplerExternalOES uTexture;\n"
             + "uniform mat4 uTexMatrix;\n"
-            + "uniform vec4 uCrop;\n"
             + "uniform vec2 uViewSize;\n"
             + "uniform float uGlassRadius;\n"
             + "varying vec2 vUv;\n"
@@ -85,9 +84,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "  float displacementPx = clamp(uViewSize.y * 0.055, 4.0, 12.0);\n"
             + "  vec2 refractedUv = clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0);\n"
             + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
-            + "  vec2 rootUv = vec2(uCrop.x + lensUv.x * uCrop.z,\n"
-            + "                     uCrop.y + (1.0 - lensUv.y) * uCrop.w);\n"
-            + "  vec4 transformed = uTexMatrix * vec4(rootUv, 0.0, 1.0);\n"
+            + "  vec4 transformed = uTexMatrix * vec4(lensUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
             + "}\n";
 
@@ -307,10 +304,9 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             int uv = GLES20.glGetAttribLocation(program, "aUv");
             int texture = GLES20.glGetUniformLocation(program, "uTexture");
             int matrix = GLES20.glGetUniformLocation(program, "uTexMatrix");
-            int crop = GLES20.glGetUniformLocation(program, "uCrop");
             int viewSize = GLES20.glGetUniformLocation(program, "uViewSize");
             int glassRadius = GLES20.glGetUniformLocation(program, "uGlassRadius");
-            if (position < 0 || uv < 0 || texture < 0 || matrix < 0 || crop < 0
+            if (position < 0 || uv < 0 || texture < 0 || matrix < 0
                     || viewSize < 0 || glassRadius < 0) {
                 throw new IllegalStateException("shader location unavailable");
             }
@@ -328,7 +324,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexture);
             GLES20.glUniform1i(texture, 0);
             GLES20.glUniformMatrix4fv(matrix, 1, false, textureMatrix, 0);
-            GLES20.glUniform4f(crop, cropX, cropY, cropW, cropH);
             GLES20.glUniform2f(viewSize, Math.max(1f, getWidth()), Math.max(1f, getHeight()));
             GLES20.glUniform1f(glassRadius, Math.max(1f, glassRadiusPx));
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
@@ -342,7 +337,8 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             gpuBackdropActive = binding != null;
             if (gpuBackdropActive && !firstDrawLogged) {
                 firstDrawLogged = true;
-                MainHook.log(TAG + " first GLES backdrop draw crop=["
+                MainHook.log(TAG + " first GLES backdrop draw textureDomain=full"
+                        + " diagnosticCrop=["
                         + cropX + "," + cropY + "," + cropW + "," + cropH + "]"
                         + " configRot=" + configRotation
                         + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
