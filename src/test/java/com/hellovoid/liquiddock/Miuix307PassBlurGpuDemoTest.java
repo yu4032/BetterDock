@@ -197,8 +197,9 @@ public class Miuix307PassBlurGpuDemoTest {
                 view.contains("coordinate diagnostic rootWindow=")
                         && view.contains("getLocationInWindow")
                         && view.contains("getLocationOnScreen"));
-        assertTrue("diagnostics must expose the authoritative SurfaceView compositor rect and SF crop",
-                view.contains("compositorRect=")
+        assertTrue("diagnostics must expose RenderWorker and layout fallback rects plus SF crop",
+                view.contains("renderRect=")
+                        && view.contains("layoutRect=")
                         && view.contains("cropSF=")
                         && view.contains("oldCropGL=")
                         && view.contains("cropTop="));
