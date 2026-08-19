@@ -1,0 +1,19 @@
+name: Cleanup source snapshot
+
+on:
+  push:
+    branches: [ cleanup/zero-copy-state-dead-code ]
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack source tree
+        run: tar --exclude=.git -czf /tmp/LiquidDock-cleanup-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-cleanup-source
+          path: /tmp/LiquidDock-cleanup-source.tar.gz
+          retention-days: 1
