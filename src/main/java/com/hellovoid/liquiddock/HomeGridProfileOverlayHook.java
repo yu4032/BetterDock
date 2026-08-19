@@ -3,6 +3,7 @@ package com.hellovoid.liquiddock;
 import android.content.Context;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Locale;
 
@@ -31,6 +32,11 @@ final class HomeGridProfileOverlayHook {
         if (!customGridEnabled || selectedProfile != HomeGridProfile.GRID_10X6) return;
 
         try {
+            // Resolve the complete vendor contract before registering the first hook. We cannot
+            // atomically roll back libxposed hook registration, so preflight is what makes an
+            // unsupported Launcher build genuinely fail closed instead of leaving a partial grid.
+            preflightPrivateApi(classLoader);
+
             Class<?> compat = Class.forName(PAD_CELL_COUNT, false, classLoader);
             hookAxis(compat, "getCellCountXMin", selectedProfile);
             hookAxis(compat, "getCellCountXDef", selectedProfile);
@@ -47,10 +53,37 @@ final class HomeGridProfileOverlayHook {
             MainHook.log("[DC] extended home grid overlay active profile="
                     + selectedProfile.persistedValue());
         } catch (Throwable error) {
-            // A partial 10x6 private-API install is more dangerous than falling back to the
-            // already-installed base grid path. Keep the failure visible and do not guess.
             MainHook.log("[DC] 10x6 profile overlay unavailable: " + error);
         }
+    }
+
+    private static void preflightPrivateApi(ClassLoader classLoader) throws Exception {
+        Class<?> compat = Class.forName(PAD_CELL_COUNT, false, classLoader);
+        HookUtil.findMethodExact(compat, "getCellCountXMin", new Class<?>[]{Context.class});
+        HookUtil.findMethodExact(compat, "getCellCountXDef", new Class<?>[]{Context.class});
+        HookUtil.findMethodExact(compat, "getCellCountYMin", new Class<?>[]{Context.class});
+        HookUtil.findMethodExact(compat, "getCellCountYDef", new Class<?>[]{Context.class});
+
+        Class<?> gridConfig = Class.forName(GRID_CONFIG, false, classLoader);
+        HookUtil.findMethodExact(gridConfig, "setCountX", new Class<?>[]{int.class});
+        HookUtil.findMethodExact(gridConfig, "setCountY", new Class<?>[]{int.class});
+        HookUtil.findMethodExact(gridConfig, "getCountX", new Class<?>[0]);
+        HookUtil.findMethodExact(gridConfig, "getCountY", new Class<?>[0]);
+
+        Class<?> rule = Class.forName(ROTATION_RULE, false, classLoader);
+        Constructor<?>[] constructors = rule.getDeclaredConstructors();
+        if (constructors.length == 0) {
+            throw new NoSuchMethodException(rule.getName() + "#<init>");
+        }
+        HookUtil.findMethodExact(rule, "checkCellCount", new Class<?>[0]);
+        HookUtil.findMethodExact(rule, "getMHCells", new Class<?>[0]);
+        HookUtil.findMethodExact(rule, "getMVCells", new Class<?>[0]);
+        findTwoArgMethod(rule, "get4x2WidgetCase");
+        findTwoArgMethod(rule, "getDstBlockXY");
+        requireField(rule, "vScreenCoordinate");
+        requireField(rule, "hScreenCoordinate");
+        requireField(rule, "totalBlocks");
+        requireField(rule, "mIsVerticalCellCount");
     }
 
     private static void hookAxis(Class<?> compat, String methodName,
@@ -241,6 +274,20 @@ final class HomeGridProfileOverlayHook {
         throw new NoSuchMethodException(owner.getName() + "#" + name);
     }
 
+    private static Field requireField(Class<?> owner, String name) throws NoSuchFieldException {
+        Class<?> current = owner;
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException(owner.getName() + "#" + name);
+    }
+
     private static int[] transformCounts(Object transform) {
         Object horizontal = HookUtil.invoke(transform, "getMHCells");
         Object vertical = HookUtil.invoke(transform, "getMVCells");
@@ -249,8 +296,12 @@ final class HomeGridProfileOverlayHook {
     }
 
     private static String gridName(Object gridConfig) {
-        Object value = HookUtil.invoke(gridConfig, "getName");
-        if (value instanceof String) return (String) value;
+        try {
+            Object value = HookUtil.invoke(gridConfig, "getName");
+            if (value instanceof String) return (String) value;
+        } catch (Throwable ignored) {
+            // Some launcher variants expose the semantic name as a field instead of a getter.
+        }
         try {
             Object field = HookUtil.getField(gridConfig, "name");
             return field instanceof String ? (String) field : null;
