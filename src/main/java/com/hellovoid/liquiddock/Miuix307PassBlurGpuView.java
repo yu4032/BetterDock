@@ -3,6 +3,7 @@ package com.hellovoid.liquiddock;
 import android.content.Context;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
@@ -85,7 +86,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             + "  vec2 refractedUv = clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0);\n"
             + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
             + "  vec2 rootUv = vec2(uCrop.x + lensUv.x * uCrop.z,\n"
-            + "                     uCrop.y + lensUv.y * uCrop.w);\n"
+            + "                     uCrop.y + (1.0 - lensUv.y) * uCrop.w);\n"
             + "  vec4 transformed = uTexMatrix * vec4(rootUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
             + "}\n";
@@ -444,25 +445,39 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
 
     private void updateCrop() {
         View materialHost = materialHostRef.get();
-        View root = materialHost != null ? materialHost.getRootView() : getRootView();
-        if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0
-                || getWidth() <= 0 || getHeight() <= 0) return;
-        int[] rootLocation = new int[2];
-        int[] viewLocation = new int[2];
-        root.getLocationInWindow(rootLocation);
-        getLocationInWindow(viewLocation);
+        if (materialHost == null) return;
+        ProducerGeometry geometry = readSurfaceGeometry(materialHost);
+        Rect screenRect = readSurfaceViewScreenRect();
+        if (geometry == null || geometry.surfaceWidth <= 0 || geometry.surfaceHeight <= 0
+                || screenRect == null || screenRect.width() <= 0 || screenRect.height() <= 0) {
+            return;
+        }
 
-        float rootWidth = root.getWidth();
-        float rootHeight = root.getHeight();
-        float left = (viewLocation[0] - rootLocation[0]) / rootWidth;
-        float top = (viewLocation[1] - rootLocation[1]) / rootHeight;
-        float width = getWidth() / rootWidth;
-        float height = getHeight() / rootHeight;
+        float surfaceWidth = geometry.surfaceWidth;
+        float surfaceHeight = geometry.surfaceHeight;
+        float left = screenRect.left / surfaceWidth;
+        float top = screenRect.top / surfaceHeight;
+        float right = screenRect.right / surfaceWidth;
+        float bottom = screenRect.bottom / surfaceHeight;
 
         cropX = clamp01(left);
-        cropW = Math.max(0.0001f, Math.min(1f - cropX, width));
-        cropY = clamp01(1f - (top + height));
-        cropH = Math.max(0.0001f, Math.min(1f - cropY, height));
+        cropY = clamp01(top);
+        float cropRight = clamp01(right);
+        float cropBottom = clamp01(bottom);
+        cropW = Math.max(0.0001f, cropRight - cropX);
+        cropH = Math.max(0.0001f, cropBottom - cropY);
+    }
+
+    private Rect readSurfaceViewScreenRect() {
+        try {
+            Field field = findField(getClass(), "mScreenRect");
+            field.setAccessible(true);
+            Object value = field.get(this);
+            if (value instanceof Rect) return new Rect((Rect) value);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " SurfaceView mScreenRect unavailable: " + error);
+        }
+        return null;
     }
 
     private void logCoordinateDiagnostics(float[] matrix) {
@@ -480,6 +495,7 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         getLocationInWindow(viewWindow);
         root.getLocationOnScreen(rootScreen);
         getLocationOnScreen(viewScreen);
+        Rect compositorRect = readSurfaceViewScreenRect();
 
         float rootWidth = root.getWidth();
         float rootHeight = root.getHeight();
@@ -489,10 +505,10 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
         float height = Math.max(0.0001f, Math.min(1f, getHeight() / rootHeight));
         float glBottom = clamp01(1f - (top + height));
 
-        float[] bl = mapTextureCoordinate(matrix, left, glBottom);
-        float[] br = mapTextureCoordinate(matrix, left + width, glBottom);
-        float[] tl = mapTextureCoordinate(matrix, left, Math.min(1f, glBottom + height));
-        float[] tr = mapTextureCoordinate(matrix, left + width, Math.min(1f, glBottom + height));
+        float[] bl = mapTextureCoordinate(matrix, cropX, cropY + cropH);
+        float[] br = mapTextureCoordinate(matrix, cropX + cropW, cropY + cropH);
+        float[] tl = mapTextureCoordinate(matrix, cropX, cropY);
+        float[] tr = mapTextureCoordinate(matrix, cropX + cropW, cropY);
 
         coordinateDiagnosticsLogged = true;
         MainHook.log(TAG + " texture matrix=" + formatTextureMatrix(matrix));
@@ -502,7 +518,9 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
                 + " viewScreen=" + formatPoint(viewScreen)
                 + " rootSize=" + root.getWidth() + "x" + root.getHeight()
                 + " viewSize=" + getWidth() + "x" + getHeight()
-                + " cropGL=[" + left + "," + glBottom + "," + width + "," + height + "]"
+                + " compositorRect=" + (compositorRect != null ? compositorRect.toShortString() : "null")
+                + " cropSF=[" + cropX + "," + cropY + "," + cropW + "," + cropH + "]"
+                + " oldCropGL=[" + left + "," + glBottom + "," + width + "," + height + "]"
                 + " cropTop=[" + left + "," + top + "," + width + "," + height + "]");
         MainHook.log(TAG + " mapped corners bl=" + formatTexturePoint(bl)
                 + " br=" + formatTexturePoint(br)
@@ -528,9 +546,6 @@ final class Miuix307PassBlurGpuView extends GLSurfaceView implements GLSurfaceVi
             return;
         }
 
-        // A root/output identity replacement belongs to the Surface lifecycle, not a pre-draw
-        // geometry refresh. Avoid touching the old native PassBlur binding while rotation is
-        // tearing surfaces down; onSurfaceCreated/bindProducerWhenReady owns the next binding.
         if (!isSameSurface(binding.rootSurface, geometry.rootSurface)
                 || boundOutputSurface == null || !isSameSurface(boundOutputSurface, outputSurface)) {
             return;
