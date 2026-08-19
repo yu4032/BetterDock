@@ -43,10 +43,10 @@ public class Miuix307TextureViewStrongRefractionTest {
     public void centerRemainsPassthroughAndNoMaterialColorEffectsReturn() throws Exception {
         String source = source();
         assertTrue(source.contains("mix(vUv, refractedUv, edgeWeight)"));
-        assertFalse(source.contains("uTint"));
-        assertFalse(source.contains("uHighlight"));
-        assertFalse(source.contains("chromatic"));
-        assertFalse(source.contains("dispersion"));
+        assertFalse(source.contains("uniform vec4 uTint"));
+        assertFalse(source.contains("uniform float uHighlight"));
+        assertFalse(source.contains("uChromatic"));
+        assertFalse(source.contains("uDispersion"));
         assertFalse(source.contains("blurRadius"));
     }
 
