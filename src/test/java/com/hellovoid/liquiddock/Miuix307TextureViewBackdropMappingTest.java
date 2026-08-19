@@ -17,31 +17,33 @@ public class Miuix307TextureViewBackdropMappingTest {
         return Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
     }
 
+    private static String material() throws Exception {
+        return Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+    }
+
     @Test
     public void shaderMapsDockLocalUvIntoRootBackdropBeforeTextureMatrix() throws Exception {
-        String source = view();
+        String source = material();
         assertTrue(source.contains("uniform vec4 uBackdropRect"));
         assertTrue(source.contains("uniform int uConfigRot"));
-        assertTrue(source.contains("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
-        assertTrue(source.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)")
-                || source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
-        assertTrue("diagnostic refraction must stay in Dock-local UV space before backdrop mapping",
-                source.indexOf("lensUv = mix(vUv, refractedUv, edgeWeight)")
-                        < source.indexOf("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
-        assertFalse("diagnostic lens must not reintroduce material color or blur effects",
-                source.contains("uniform vec4 uTint")
-                        || source.contains("uniform float uHighlight")
-                        || source.contains("uChromatic")
-                        || source.contains("uDispersion")
+        assertTrue(source.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
+        assertTrue(source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
+        assertTrue("Prismal displacement must remain in Dock-local space before root mapping",
+                source.contains("vec2 uvG = vUv + baseOffset")
+                        && source.contains("sampleBackdrop(uvG)"));
+        assertFalse("Stage-B material must not reintroduce capture/readback or shader blur",
+                source.contains("Bitmap")
+                        || source.contains("captureScreenAsync")
+                        || source.contains("glReadPixels")
                         || source.contains("blurRadius"));
     }
 
     @Test
     public void swappedQuarterTurnProducerUsesMatchingHyperOsRotationDirection() throws Exception {
-        String source = view();
-        int rot1 = source.indexOf("if (uConfigRot == 1) {\\n");
-        int rot2 = source.indexOf("else if (uConfigRot == 2) {\\n", rot1);
-        int rot3 = source.indexOf("else if (uConfigRot == 3) {\\n", rot2);
+        String source = material();
+        int rot1 = source.indexOf("if (uConfigRot == 1) {");
+        int rot2 = source.indexOf("else if (uConfigRot == 2) {", rot1);
+        int rot3 = source.indexOf("else if (uConfigRot == 3) {", rot2);
         int transformed = source.indexOf("uTexMatrix * vec4(", rot3);
         assertTrue(rot1 >= 0 && rot2 > rot1 && rot3 > rot2 && transformed > rot3);
 
@@ -50,16 +52,16 @@ public class Miuix307TextureViewBackdropMappingTest {
         String rot3Branch = source.substring(rot3, transformed);
 
         assertTrue("configRot=1 must use the quarter-turn direction paired with swapped producer dimensions",
-                rot1Branch.contains("orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\\n"));
+                rot1Branch.contains("orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);"));
         assertTrue("configRot=2 remains its own inverse",
-                rot2Branch.contains("orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\\n"));
+                rot2Branch.contains("orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);"));
         assertTrue("configRot=3 must use the opposite quarter-turn from the pre-swap calibration",
-                rot3Branch.contains("orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\\n"));
+                rot3Branch.contains("orientedUv = vec2(1.0 - rootUv.y, rootUv.x);"));
     }
 
     @Test
     public void surfaceTextureCropIsPrecompensatedBeforeFinalMatrix() throws Exception {
-        String source = view();
+        String source = material();
         assertTrue("screen-space Dock mapping must neutralize SurfaceTexture's extra X crop before sampling",
                 source.contains("vec2 textureInputUv = orientedUv")
                         && source.contains("uTexMatrix[0][0]")
