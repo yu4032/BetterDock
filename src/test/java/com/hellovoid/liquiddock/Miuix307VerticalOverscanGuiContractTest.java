@@ -16,6 +16,7 @@ public class Miuix307VerticalOverscanGuiContractTest {
     public void guiExposesLegacyTopBottomSamplingKeysAsPixelIntegers() throws Exception {
         String schema = Files.readString(MAIN.resolve("java/com/hellovoid/liquiddock/config/ConfigSchema.java"));
         String ui = Files.readString(MAIN.resolve("kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt"));
+        String preset = Files.readString(MAIN.resolve("java/com/hellovoid/liquiddock/config/PresetManager.java"));
 
         assertTrue(schema.contains("CAPTURE_BLEED_TOP = integer(")
                 && schema.contains("\"liquid_capture_bleed_top\", 48, 48, 48, 0, 256"));
@@ -23,6 +24,8 @@ public class Miuix307VerticalOverscanGuiContractTest {
                 && schema.contains("\"liquid_capture_bleed_bottom\", 16, 16, 16, 0, 256"));
         assertTrue(ui.contains("IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, \"上额外采样高度\", \"px\")"));
         assertTrue(ui.contains("IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, \"下额外采样高度\", \"px\")"));
+        assertTrue(preset.contains("values.put(\"liquid_capture_bleed_top\", 48);")
+                && preset.contains("values.put(\"liquid_capture_bleed_bottom\", 16);"));
     }
 
     @Test
