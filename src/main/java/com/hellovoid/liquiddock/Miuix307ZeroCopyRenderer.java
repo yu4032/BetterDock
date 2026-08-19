@@ -6,7 +6,7 @@ import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
 
-/** Builds the feedback-safe HyperOS 307 PassBlur -> OES -> TextureView calibration composition. */
+/** Builds the feedback-safe HyperOS 307 PassBlur -> OES -> TextureView material composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
 
@@ -23,18 +23,19 @@ final class Miuix307ZeroCopyRenderer {
         if (materialHost == null || host == null || glassConfig == null) return false;
 
         if (!Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)) {
-            MainHook.log(TAG + " PassBlur TextureView calibration unsupported source="
+            MainHook.log(TAG + " PassBlur TextureView material unsupported source="
                     + materialHost.getClass().getSimpleName());
             return false;
         }
 
         Miuix307PassBlurTextureView gpuBackdrop = new Miuix307PassBlurTextureView(
                 materialHost.getContext(), materialHost);
+        gpuBackdrop.setGlassConfig(glassConfig);
         gpuBackdrop.setId(View.generateViewId());
 
-        // Stage A is intentionally optically neutral. No tone/tint, highlight, rounded-edge lens,
-        // displacement, or material post-processing is injected here. The shell's safe foreground
-        // stroke may remain above the TextureView because it does not alter backdrop sampling.
+        // Prismal optics are evaluated in Dock-local UV space over the zero-copy OES backdrop.
+        // The shell's safe foreground stroke may remain above the TextureView because it does not
+        // alter producer geometry or backdrop sampling.
         host.removeAllViews();
         host.addView(gpuBackdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -42,7 +43,7 @@ final class Miuix307ZeroCopyRenderer {
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
-        MainHook.log(TAG + " PassBlur TextureView EGL calibration installed; awaiting first GPU frame"
+        MainHook.log(TAG + " PassBlur TextureView EGL Prismal material installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx);
         return true;
     }
@@ -72,8 +73,10 @@ final class Miuix307ZeroCopyRenderer {
     }
 
     static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
-        // Calibration deliberately ignores optical configuration until accurate backdrop mapping is
-        // proven on-device. Geometry remains owned by the normal Dock/View shell.
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
+        if (gpuBackdrop != null && glassConfig != null) {
+            gpuBackdrop.setGlassConfig(glassConfig);
+        }
     }
 
     static void clear() {
