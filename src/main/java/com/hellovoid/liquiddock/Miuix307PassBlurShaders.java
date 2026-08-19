@@ -34,16 +34,39 @@ final class Miuix307PassBlurShaders {
                 return rootUv;
             }
 
-            void main() {
-                if (vUv.x < uValidDockRect.x || vUv.x > uValidDockRect.z
-                        || vUv.y < uValidDockRect.y || vUv.y > uValidDockRect.w) {
-                    gl_FragColor = vec4(0.0);
-                    return;
+            float mirrorIntoValidRange(float value, float lo, float hi) {
+                float span = hi - lo;
+                if (span <= 0.000001) {
+                    return clamp(value, 0.0, 1.0);
+                }
+                if (value >= lo && value <= hi) {
+                    return value;
                 }
 
-                // Keep this mapping intentionally unclamped. Producer-domain validity is handled
-                // above so an invalid Dock rect never collapses into a repeated edge texel.
-                vec2 rootUv = uBackdropRect.xy + vUv * uBackdropRect.zw;
+                float phase = mod((value - lo) / span, 2.0);
+                if (phase < 0.0) phase += 2.0;
+                float mirrored = phase <= 1.0 ? phase : 2.0 - phase;
+                return lo + mirrored * span;
+            }
+
+            vec2 mirrorDockUv(vec2 uv) {
+                return vec2(
+                        mirrorIntoValidRange(uv.x, uValidDockRect.x, uValidDockRect.z),
+                        mirrorIntoValidRange(uv.y, uValidDockRect.y, uValidDockRect.w));
+            }
+
+            void main() {
+                // The Floating Dock PassBlur producer can expose only part of the material while
+                // the Dock is being pulled in from off-screen. Fill the off-domain sampling guard
+                // with a mirrored continuation of real producer pixels instead of transparent
+                // black. The final material pass still scissors PARTIAL coverage, so these guard
+                // pixels are never directly presented; blur/refraction alone may sample them.
+                vec2 sampleDockUv = mirrorDockUv(vUv);
+
+                // Keep Stage-B producer mapping itself intentionally unclamped. Mirroring happens
+                // in Dock-local space against the measured producer-valid interval, so unavailable
+                // coordinates never collapse into one repeated SurfaceTexture edge texel.
+                vec2 rootUv = uBackdropRect.xy + sampleDockUv * uBackdropRect.zw;
                 vec2 orientedUv = orientRootUv(rootUv);
 
                 // HyperOS' SurfaceTexture matrix contains an extra horizontal crop. Neutralize
