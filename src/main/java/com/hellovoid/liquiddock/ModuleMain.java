@@ -6,7 +6,7 @@ import com.hellovoid.liquiddock.config.LegacyConfigMigration;
 
 import io.github.libxposed.api.XposedModule;
 
-/** libxposed API 101 entry point. Launcher is the only hooked process. */
+/** libxposed API 101 entry point. Launcher is the sole injected process; SystemUI stays untouched. */
 public final class ModuleMain extends XposedModule {
     private static final String LAUNCHER_PACKAGE = "com.miui.home";
 
