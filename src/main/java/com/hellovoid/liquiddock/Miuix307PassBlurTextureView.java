@@ -153,6 +153,15 @@ final class Miuix307PassBlurTextureView extends TextureView
         return activationExhausted;
     }
 
+    void setGlassConfig(LiquidDockConfig.Glass glassConfig) {
+        if (glassConfig == null || shuttingDown) return;
+        opticalParams = Miuix307PrismalMaterial.fromConfig(
+                glassConfig, getResources().getDisplayMetrics().density);
+        if (hasConsumedFrame) {
+            renderHandler.post(() -> drawLatestFrame(false));
+        }
+    }
+
     void shutdown() {
         if (shuttingDown) return;
         shuttingDown = true;
