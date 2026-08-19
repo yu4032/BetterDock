@@ -66,7 +66,8 @@ public class Miuix307ThemeDragDeviceRegressionTest {
         assertTrue(glassHook.contains("suppressVendorGpuBlur"));
         assertTrue(glassHook.contains("setPassWindowBlurRadius(dockBg, 0)"));
         assertTrue(glassHook.contains("Miuix307ZeroCopyRenderer.install"));
-        assertTrue(renderer.contains("new Miuix307PassBlurGpuView"));
+        assertTrue(renderer.contains("new Miuix307PassBlurTextureView"));
+        assertFalse(renderer.contains("new Miuix307PassBlurGpuView"));
         assertFalse(renderer.contains("LiquidBlurMode.ADVANCED_MATERIAL"));
         assertFalse(renderer.contains("Miuix307ZeroCopyToneView"));
         assertFalse("neutral renderer must not erase the safe replacement stroke",
