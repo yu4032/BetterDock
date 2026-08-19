@@ -22,7 +22,18 @@ jobs:
           java-version: '17'
           cache: gradle
       - name: Apply Task 2 focused patch
-        run: python3 .github/scripts/apply_grid_profile_config.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/scripts/apply_grid_profile_config.py')
+          text = p.read_text()
+          old = 'value == null ? key.exportDefault() : String.valueOf(value)'
+          new = 'value == null ? String.valueOf(key.exportDefault()) : String.valueOf(value)'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one ConfigCodec generic-fix anchor, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          python3 .github/scripts/apply_grid_profile_config.py
       - name: Verify unit tests
         run: |
           chmod +x ./gradlew
