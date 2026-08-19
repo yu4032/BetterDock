@@ -22,7 +22,9 @@ jobs:
           java-version: '17'
           cache: gradle
       - name: Apply focused patch
-        run: python3 .github/scripts/apply_horizontal_overscan.py
+        run: |
+          python3 .github/scripts/apply_horizontal_overscan.py
+          python3 .github/scripts/update_edge_overscan_contract.py
       - name: Verify unit tests
         run: |
           chmod +x ./gradlew
@@ -32,6 +34,7 @@ jobs:
       - name: Commit verified implementation and remove temporary helpers
         run: |
           rm -f .github/scripts/apply_horizontal_overscan.py
+          rm -f .github/scripts/update_edge_overscan_contract.py
           rm -f .github/workflows/apply-horizontal-overscan.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
