@@ -27,7 +27,8 @@ public final class ModuleMain extends XposedModule {
 
             new MainHook().install(classLoader);
             WorkspaceDropRuleHook.install(classLoader,
-                    runtimeConfig.enabled && runtimeConfig.grid.enabled);
+                    runtimeConfig.enabled && runtimeConfig.grid.enabled,
+                    runtimeConfig.grid.profile);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
