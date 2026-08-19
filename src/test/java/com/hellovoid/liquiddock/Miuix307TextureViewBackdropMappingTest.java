@@ -29,7 +29,8 @@ public class Miuix307TextureViewBackdropMappingTest {
         String source = adapter();
         assertTrue(source.contains("uniform vec4 uBackdropRect"));
         assertTrue(source.contains("uniform int uConfigRot"));
-        assertTrue(source.contains("uBackdropRect.xy + vUv * uBackdropRect.zw"));
+        assertTrue(source.contains("vec2 sampleDockUv = mirrorDockUv(vUv)"));
+        assertTrue(source.contains("uBackdropRect.xy + sampleDockUv * uBackdropRect.zw"));
         assertTrue(source.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
         assertTrue(source.contains("uValidDockRect"));
         assertFalse("normalization must never reintroduce CPU readback",
