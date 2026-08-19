@@ -122,9 +122,9 @@ public class Miuix307PassBlurGpuDemoTest {
         assertFalse("configRot must not physically swap the BufferQueue dimensions",
                 region.contains("bufferWidth = surfaceHeight")
                         || region.contains("bufferHeight = surfaceWidth"));
-        assertTrue("configRot remains a separate shader sampling contract",
-                view.contains("uniform int uConfigRot")
-                        && view.contains("glUniform1i(rotation, configRotation)"));
+        assertTrue("configRot remains lifecycle metadata for rotation-change detection",
+                view.contains("boundConfigRotation")
+                        && view.contains("configRotation = geometry.configRotation"));
         assertTrue(view.contains("setDefaultBufferSize(bufferWidth, bufferHeight)"));
     }
 
@@ -174,14 +174,17 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void shaderAppliesExplicitConfigRotationBeforeSurfaceTextureTransform() throws Exception {
+    public void shaderUsesSurfaceTextureTransformWithoutSecondConfigRotation() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
-        assertTrue(view.contains("uniform int uConfigRot")
-                && view.contains("glUniform1i(rotation"));
-        assertTrue(view.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
-        assertTrue(view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)"));
-        assertTrue(view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
-        assertTrue(view.indexOf("uConfigRot") < view.indexOf("uTexMatrix * vec4"));
+
+        assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
+                view.contains("uTexMatrix * vec4(rootUv, 0.0, 1.0)"));
+        assertFalse("shader must not apply a second explicit config rotation",
+                view.contains("uniform int uConfigRot")
+                        || view.contains("glUniform1i(rotation")
+                        || view.contains("vec2(rootUv.y, 1.0 - rootUv.x)")
+                        || view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
+                        || view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
     }
 
     @Test
