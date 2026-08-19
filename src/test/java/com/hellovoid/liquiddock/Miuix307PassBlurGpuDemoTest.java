@@ -114,7 +114,7 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue(view.contains("getInstallOrientation") && view.contains("getRotation()"));
 
         int start = view.indexOf("private ProducerGeometry readSurfaceGeometry");
-        int end = view.indexOf("private void logStageADiagnostics", start);
+        int end = view.indexOf("private void logStageBDiagnostics", start);
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
@@ -138,7 +138,7 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue("rotation path must have an in-place geometry refresh",
                 view.contains("refreshProducerGeometryInPlace"));
         int start = view.indexOf("private void refreshProducerGeometryInPlace");
-        int end = view.indexOf("private ProducerGeometry readSurfaceGeometry", start);
+        int end = view.indexOf("private void updateBackdropMapping", start);
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
@@ -167,26 +167,30 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void shaderUsesSurfaceTextureTransformWithoutSecondConfigRotation() throws Exception {
+    public void stageBUsesExplicitConfigRotationBeforeSurfaceTextureTransform() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
-        assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
-                view.contains("uTexMatrix * vec4(vUv, 0.0, 1.0)"));
-        assertFalse("shader must not apply a second explicit config rotation",
+        assertTrue("Dock-local UV must be mapped into root surface space first",
+                view.contains("uBackdropRect.xy + vUv * uBackdropRect.zw"));
+        assertTrue("configRot must explicitly orient the root UV in Stage B",
                 view.contains("uniform int uConfigRot")
-                        || view.contains("glUniform1i(rotation")
-                        || view.contains("vec2(rootUv.y, 1.0 - rootUv.x)")
-                        || view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
-                        || view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
+                        && view.contains("vec2(rootUv.y, 1.0 - rootUv.x)")
+                        && view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
+                        && view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
+        assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
+                view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)"));
     }
 
     @Test
-    public void stageADiagnosticsExposeTextureMatrixAndHostScreenGeometry() throws Exception {
+    public void stageBDiagnosticsExposeTextureMatrixAndHostScreenGeometry() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("texture matrix=") && view.contains("formatTextureMatrix"));
-        assertTrue(view.contains("stage-A diagnostic hostScreen="));
+        assertTrue(view.contains("stage-B mapping rootScreen="));
+        assertTrue(view.contains("hostScreen="));
         assertTrue(view.contains("hostSize="));
-        assertTrue(view.contains("producerSurface="));
+        assertTrue(view.contains("rootSurface="));
+        assertTrue(view.contains("backdropRect="));
+        assertTrue(view.contains("mapped corners"));
         assertTrue(view.contains("configRot="));
     }
 
