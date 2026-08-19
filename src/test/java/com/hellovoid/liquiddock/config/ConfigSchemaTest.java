@@ -128,6 +128,8 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 2, 0, 40);
         assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, 48, 0, 256);
         assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, 16, 0, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_LEFT, 0, 0, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_RIGHT, 0, 0, 256);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_ALPHA, 38, 0, 160);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_RED, 238, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_GREEN, 244, 0, 255);
