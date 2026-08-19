@@ -202,6 +202,7 @@ final class LiquidDockConfig {
                 prismalDispersionR, prismalDispersionB, prismalVibrancy, prismalPlainHighlight,
                 prismalLightDirX, prismalLightDirY, prismalShadowSoftness, prismalTransmittance,
                 prismalBackdropScaleX, prismalBackdropScaleY, prismalParallaxScale;
+        final int captureBleedTopPx, captureBleedBottomPx;
         final int tintAlpha, tintR, tintG, tintB, specularSharp,
                 prismalShadowR, prismalShadowG, prismalShadowB, prismalShadowAlpha;
 
@@ -212,6 +213,10 @@ final class LiquidDockConfig {
             // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
                     ConfigSchema.Glass.CHROMATIC.runtimeFallback());
+            captureBleedTopPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_TOP.name(),
+                    ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback()), 0, 256);
+            captureBleedBottomPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.name(),
+                    ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback()), 0, 256);
             tintAlpha = channel(c.i(ConfigSchema.Glass.TINT_ALPHA.name(),
                     ConfigSchema.Glass.TINT_ALPHA.runtimeFallback()));
             thickness = c.f(ConfigSchema.Glass.THICKNESS.name(),

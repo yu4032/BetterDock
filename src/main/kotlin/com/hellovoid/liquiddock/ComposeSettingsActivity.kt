@@ -178,8 +178,8 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_capture_scale" -> "SurfaceFlinger 捕获分辨率；越低越省电"
     "liquid_capture_stop_delay" -> "Dock 隐藏后继续允许捕获的缓冲时间"
     "liquid_recents_prearm_distance" -> "从底部上滑达到此距离时，提前启动多任务实时捕获"
-    "liquid_capture_bleed_top" -> "在 Dock 上方多捕获的折射取样区域"
-    "liquid_capture_bleed_bottom" -> "在 Dock 下方多捕获的折射取样区域"
+    "liquid_capture_bleed_top" -> "在 Dock 上方扩展 zero-copy 折射背景的采样区域"
+    "liquid_capture_bleed_bottom" -> "在 Dock 下方扩展 zero-copy 折射背景的采样区域"
     "stroke_base_r" -> "描边基础颜色的红色通道"
     "stroke_base_g" -> "描边基础颜色的绿色通道"
     "stroke_base_b" -> "描边基础颜色的蓝色通道"
@@ -255,6 +255,8 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.DOME, "穹顶凸起", "%"),
     IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射"),
     IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", ""),
+    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外采样高度", "px"),
+    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, "下额外采样高度", "px"),
     IntSpec(ConfigSchema.Glass.TINT_ALPHA, "玻璃底色透明度", ""),
     IntSpec(ConfigSchema.Glass.TINT_RED, "底色 · 红", ""),
     IntSpec(ConfigSchema.Glass.TINT_GREEN, "底色 · 绿", ""),

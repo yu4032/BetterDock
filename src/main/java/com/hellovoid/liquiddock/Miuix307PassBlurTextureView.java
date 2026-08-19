@@ -41,8 +41,9 @@ final class Miuix307PassBlurTextureView extends TextureView
     private static final String TAG = "[DC][PBTX]";
     private static final int MAX_BIND_RETRY_FRAMES = 24;
     private static final float BLUR_FBO_SCALE = 0.5f;
-    // Keep real scene pixels around the visible Dock so refraction can see approaching content
-    // before it crosses the material edge. Output remains clipped to the Dock itself.
+    // Left/right keep a fixed GPU overscan ring. Top/bottom use the historical GUI pixel
+    // controls so users can tune how early approaching content enters Prismal refraction.
+    // Output remains clipped to the visible Dock itself.
     private static final float EDGE_OVERSCAN_DP = 32f;
 
     private static final float[] QUAD = new float[]{
@@ -93,6 +94,8 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile Miuix307PrismalMaterial.Params opticalParams;
     private volatile int outputWidth;
     private volatile int outputHeight;
+    private volatile int topOverscanPx = 48;
+    private volatile int bottomOverscanPx = 16;
 
     // Stage A samples a real overscan ring around the visible Dock. The sample-valid
     // rectangle is used only by the normalization mirror guard; Dock validity remains separate
@@ -183,6 +186,9 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (glassConfig == null || shuttingDown) return;
         opticalParams = Miuix307PrismalMaterial.fromConfig(
                 glassConfig, getResources().getDisplayMetrics().density);
+        topOverscanPx = Math.max(0, glassConfig.captureBleedTopPx);
+        bottomOverscanPx = Math.max(0, glassConfig.captureBleedBottomPx);
+        updateBackdropMapping();
         if (hasConsumedFrame) renderHandler.post(() -> drawLatestFrame(false));
     }
 
@@ -387,9 +393,11 @@ final class Miuix307PassBlurTextureView extends TextureView
     }
 
     private void ensureFboSize(int width, int height) {
-        int overscanPx = edgeOverscanPx();
+        int overscanPx = horizontalOverscanPx();
+        int topOverscanPx = Math.max(0, this.topOverscanPx);
+        int bottomOverscanPx = Math.max(0, this.bottomOverscanPx);
         int nextWidth = Math.max(1, width + overscanPx * 2);
-        int nextHeight = Math.max(1, height + overscanPx * 2);
+        int nextHeight = Math.max(1, height + topOverscanPx + bottomOverscanPx);
         int nextBlurWidth = Math.max(1, Math.round(nextWidth * BLUR_FBO_SCALE));
         int nextBlurHeight = Math.max(1, Math.round(nextHeight * BLUR_FBO_SCALE));
         if (rawFramebuffer != 0 && blurFramebufferH != 0 && blurFramebufferV != 0
@@ -762,7 +770,7 @@ final class Miuix307PassBlurTextureView extends TextureView
                 + " configRot=" + geometry.configRotation);
     }
 
-    private int edgeOverscanPx() {
+    private int horizontalOverscanPx() {
         float density = getResources().getDisplayMetrics().density;
         return Math.max(1, Math.round(EDGE_OVERSCAN_DP * Math.max(0.1f, density)));
     }
@@ -780,11 +788,13 @@ final class Miuix307PassBlurTextureView extends TextureView
         int[] hostScreen = new int[2];
         materialHost.getLocationOnScreen(hostScreen);
 
-        int overscanPx = edgeOverscanPx();
+        int overscanPx = horizontalOverscanPx();
+        int topOverscanPx = Math.max(0, this.topOverscanPx);
+        int bottomOverscanPx = Math.max(0, this.bottomOverscanPx);
         int sampleWidth = hostWidth + overscanPx * 2;
-        int sampleHeight = hostHeight + overscanPx * 2;
+        int sampleHeight = hostHeight + topOverscanPx + bottomOverscanPx;
         Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(
-                hostScreen[0] - overscanPx, hostScreen[1] - overscanPx,
+                hostScreen[0] - overscanPx, hostScreen[1] - topOverscanPx,
                 sampleWidth, sampleHeight,
                 winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
         Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(
@@ -792,7 +802,7 @@ final class Miuix307PassBlurTextureView extends TextureView
                 winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
 
         float nextDockUvLeft = overscanPx / (float) sampleWidth;
-        float nextDockUvBottom = overscanPx / (float) sampleHeight;
+        float nextDockUvBottom = bottomOverscanPx / (float) sampleHeight;
         float nextDockUvWidth = hostWidth / (float) sampleWidth;
         float nextDockUvHeight = hostHeight / (float) sampleHeight;
 
