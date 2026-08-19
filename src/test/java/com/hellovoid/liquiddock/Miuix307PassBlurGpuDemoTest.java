@@ -193,13 +193,16 @@ public class Miuix307PassBlurGpuDemoTest {
 
         assertTrue("diagnostics must log the actual SurfaceTexture transform matrix",
                 view.contains("texture matrix=") && view.contains("formatTextureMatrix"));
-        assertTrue("diagnostics must log root and Dock coordinates in both window and screen spaces",
+        assertTrue("diagnostics must retain raw window/screen coordinates for comparison",
                 view.contains("coordinate diagnostic rootWindow=")
                         && view.contains("getLocationInWindow")
                         && view.contains("getLocationOnScreen"));
-        assertTrue("diagnostics must report both GL-bottom and top-left crop conventions",
-                view.contains("cropGL=") && view.contains("cropTop="));
-        assertTrue("diagnostics must map the four crop corners through the real texture matrix",
+        assertTrue("diagnostics must expose the authoritative SurfaceView compositor rect and SF crop",
+                view.contains("compositorRect=")
+                        && view.contains("cropSF=")
+                        && view.contains("oldCropGL=")
+                        && view.contains("cropTop="));
+        assertTrue("diagnostics must map the four compositor crop corners through the real texture matrix",
                 view.contains("mapped corners bl=")
                         && view.contains("mapTextureCoordinate"));
     }
