@@ -32,7 +32,6 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
                 view.contains("EGL14.eglCreateWindowSurface"));
         assertTrue("PassBlur input remains an external OES SurfaceTexture",
                 view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES")
-                        && view.contains("samplerExternalOES")
                         && view.contains("new SurfaceTexture(oesTexture)"));
         assertTrue("input and output must remain distinct GPU surfaces",
                 view.contains("inputSurfaceTexture")
@@ -41,33 +40,55 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     }
 
     @Test
-    public void calibrationShaderKeepsSingleSampleGpuPathWithApprovedDiagnosticLens() throws Exception {
-        Path path = MAIN.resolve("Miuix307PassBlurTextureView.java");
-        assertTrue(Files.exists(path));
-        String view = Files.readString(path);
+    public void fullPrismalOpticsReplaceDiagnosticLensWithoutLeavingGpuPath() throws Exception {
+        Path viewPath = MAIN.resolve("Miuix307PassBlurTextureView.java");
+        Path materialPath = MAIN.resolve("Miuix307PrismalMaterial.java");
+        assertTrue(Files.exists(viewPath));
+        assertTrue("full optical model must live in a dedicated material unit",
+                Files.exists(materialPath));
 
-        assertTrue("Stage B must still issue a single final OES sample after coordinate precompensation",
-                view.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)")
-                        && view.contains("gl_FragColor = texture2D(uTexture, transformed.xy)"));
-        assertTrue("Stage B coordinate mapping remains active",
-                view.contains("uniform vec4 uBackdropRect")
-                        && view.contains("uniform int uConfigRot"));
-        assertTrue("approved diagnostic lens must be local-space and bounded",
-                view.contains("sdRoundRect")
-                        && view.contains("edgeWeight")
-                        && view.contains("float displacementPx = 14.0")
-                        && view.contains("lensUv = mix(vUv, refractedUv, edgeWeight)"));
-        assertFalse("diagnostic lens must not add material color/blur effects",
-                view.contains("uniform vec4 uTint")
-                        || view.contains("uniform float uHighlight")
-                        || view.contains("uChromatic")
-                        || view.contains("uDispersion")
-                        || view.contains("blurRadius"));
-        assertFalse("calibration path must remain GPU-only",
+        String view = Files.readString(viewPath);
+        String material = Files.readString(materialPath);
+
+        assertTrue("active TextureView must use the Prismal OES fragment shader",
+                view.contains("FRAGMENT_SHADER = Miuix307PrismalMaterial.FRAGMENT_SHADER"));
+        assertTrue("Prismal material must sample the live external OES producer",
+                material.contains("samplerExternalOES uTexture")
+                        && material.contains("texture2D(uTexture"));
+        assertTrue("approved Stage-B mapping must remain inside every optical sample",
+                material.contains("uBackdropRect")
+                        && material.contains("uConfigRot")
+                        && material.contains("uTexMatrix")
+                        && material.contains("textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX")
+                        && material.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
+        assertTrue("material must restore the droplet/meniscus height field and normal",
+                material.contains("getHeightFromDist")
+                        && material.contains("computeGradientHeight")
+                        && material.contains("uLiquidDome")
+                        && material.contains("uNormalStrength"));
+        assertTrue("material must restore two-interface Snell refraction",
+                material.contains("refract(-V, N, 1.0 / uIor)")
+                        && material.contains("refract(refIn, -N, uIor)"));
+        assertTrue("material must restore Fresnel and chromatic dispersion",
+                material.contains("pow(1.0 - cosVNeff, 5.0)")
+                        && material.contains("uChromaticAberration")
+                        && material.contains("uvR")
+                        && material.contains("uvB"));
+        assertTrue("material must restore specular, rim and caustic lighting",
+                material.contains("uSpecularSharp")
+                        && material.contains("uSpecularStrength")
+                        && material.contains("uRimLight")
+                        && material.contains("uCausticStrength"));
+        assertFalse("temporary fixed 14px diagnostic lens must be gone",
+                view.contains("float displacementPx = 14.0")
+                        || material.contains("float displacementPx = 14.0"));
+        assertFalse("new material path must remain GPU-only",
                 view.contains("Bitmap")
                         || view.contains("captureScreenAsync")
                         || view.contains("ScreenshotHardwareBuffer")
-                        || view.contains("glReadPixels"));
+                        || view.contains("glReadPixels")
+                        || material.contains("Bitmap")
+                        || material.contains("glReadPixels"));
     }
 
     @Test
