@@ -8,7 +8,7 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Contracts for the full Prismal refraction pass on the TextureView/EGL backend. */
+/** Contracts for the upstream Prismal refraction pass on the TextureView/EGL backend. */
 public class Miuix307TextureViewStrongRefractionTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
@@ -24,12 +24,12 @@ public class Miuix307TextureViewStrongRefractionTest {
     public void prismalDisplacementStaysDockLocalBeforeBackdropMapping() throws Exception {
         String source = material();
         assertTrue(source.contains("uniform vec2 uViewSize"));
-        assertTrue(source.contains("sdRoundRect"));
+        assertTrue(source.contains("sdRoundBox"));
         assertTrue(source.contains("getHeightFromDist"));
         assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));
-        assertTrue(source.contains("vec2 uvG = vUv + baseOffset"));
+        assertTrue(source.contains("vec2 uvCenter = backdropUv(vScreenTexCoord, baseOffset, pinchMix)"));
         assertTrue("all displaced optical samples must enter the shared Stage-B sampler",
-                source.contains("sampleBackdrop(uvG)")
+                source.contains("sampleBackdrop(uvCenter)")
                         && source.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
     }
 
@@ -42,22 +42,28 @@ public class Miuix307TextureViewStrongRefractionTest {
         assertTrue(source.contains("uThicknessPx"));
         assertTrue(source.contains("uIor"));
         assertTrue(source.contains("uNormalStrength"));
+        assertTrue(source.contains("uDisplacementScale"));
         assertTrue(source.contains("refract(-V, N, 1.0 / uIor)"));
         assertTrue(source.contains("refract(refIn, -N, uIor)"));
     }
 
     @Test
-    public void fullMaterialColorOpticsAreRestoredWithoutCpuReadback() throws Exception {
+    public void fullUpstreamMaterialColorOpticsAreRestoredWithoutCpuReadback() throws Exception {
         String source = material();
-        assertTrue(source.contains("uniform vec4 uTint"));
+        assertTrue(source.contains("uniform vec4 uGlassColor"));
         assertTrue(source.contains("uChromaticAberration"));
+        assertTrue(source.contains("uDispersionR"));
+        assertTrue(source.contains("uDispersionB"));
         assertTrue(source.contains("uSpecularSharp"));
         assertTrue(source.contains("uRimLight"));
-        assertTrue(source.contains("uCausticStrength"));
+        assertTrue(source.contains("uCausticIntensity"));
+        assertTrue(source.contains("uFresnelReflect"));
+        assertTrue(source.contains("uTransmittance"));
+        assertTrue("Prismal blur must stay GPU-side over the live OES texture",
+                source.contains("uBlurRadiusPx") && source.contains("sampleBackdropRaw"));
         assertFalse(source.contains("Bitmap")
                 || source.contains("captureScreenAsync")
-                || source.contains("glReadPixels")
-                || source.contains("blurRadius"));
+                || source.contains("glReadPixels"));
     }
 
     @Test
