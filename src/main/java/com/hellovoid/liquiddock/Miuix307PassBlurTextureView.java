@@ -95,11 +95,11 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "  vec2 rootUv = uBackdropRect.xy + lensUv * uBackdropRect.zw;\n"
             + "  vec2 orientedUv = rootUv;\n"
             + "  if (uConfigRot == 1) {\n"
-            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
+            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
             + "  } else if (uConfigRot == 2) {\n"
             + "    orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\n"
             + "  } else if (uConfigRot == 3) {\n"
-            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
+            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
             + "  }\n"
             + "  vec4 transformed = uTexMatrix * vec4(orientedUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
@@ -750,14 +750,14 @@ final class Miuix307PassBlurTextureView extends TextureView
         float orientedX = rootX;
         float orientedY = rootY;
         if (rotation == 1) {
-            orientedX = 1f - rootY;
-            orientedY = rootX;
+            orientedX = rootY;
+            orientedY = 1f - rootX;
         } else if (rotation == 2) {
             orientedX = 1f - rootX;
             orientedY = 1f - rootY;
         } else if (rotation == 3) {
-            orientedX = rootY;
-            orientedY = 1f - rootX;
+            orientedX = 1f - rootY;
+            orientedY = rootX;
         }
         return mapTextureCoordinate(matrix, orientedX, orientedY);
     }
