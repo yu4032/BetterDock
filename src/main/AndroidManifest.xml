@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <queries>
         <package android:name="com.miui.home" />
-        <package android:name="com.android.systemui" />
     </queries>
 
     <application
@@ -21,8 +20,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service
-            android:name=".FreeformLeashBrokerService"
-            android:exported="true" />
     </application>
 </manifest>

@@ -260,14 +260,11 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.TINT_GREEN, "底色 · 绿", ""),
     IntSpec(ConfigSchema.Glass.TINT_BLUE, "底色 · 蓝", ""),
     IntSpec(ConfigSchema.Glass.HIGHLIGHT_WIDTH, "边缘高光厚度", "%"),
-    IntSpec(ConfigSchema.Glass.HIGHLIGHT_ALPHA, "高光不透明度", "%"),
-    IntSpec(ConfigSchema.Glass.DEPTH_EFFECT, "深度透镜效果", "%"),
     IntSpec(ConfigSchema.Glass.BRIGHTNESS, "亮度", "%"),
     IntSpec(ConfigSchema.Glass.SPECULAR_SHARPNESS, "高光锐度", ""),
     IntSpec(ConfigSchema.Glass.SPECULAR_STRENGTH, "高光强度", "%"),
     IntSpec(ConfigSchema.Glass.RIM_LIGHT, "边缘光强度", "%"),
     IntSpec(ConfigSchema.Glass.CAUSTICS, "焦散强度", "%"),
-    IntSpec(ConfigSchema.Glass.EDGE_BAND, "边缘光带宽度", "‰"),
     IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "Prismal · 折射内缩"),
     IntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, "Prismal · 位移倍率", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, "Prismal · 高度过渡"),
@@ -289,18 +286,6 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "Prismal · 背景缩放 X", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, "Prismal · 视差倍率", "%"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_FPS, "实时捕获帧率上限", "FPS"),
-    IntSpec(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS, "静态画面探测帧率", "FPS", "liquid_dynamic_app_capture"),
-    IntSpec(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD, "动态亮度变化阈值", "", "liquid_dynamic_app_capture"),
-    IntSpec(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD, "动态像素位变化阈值", "", "liquid_dynamic_app_capture"),
-    IntSpec(ConfigSchema.Glass.DYNAMIC_HOLD_MS, "高频捕获保持时间", "ms", "liquid_dynamic_app_capture"),
-    IntSpec(ConfigSchema.Glass.BLACK_THRESHOLD, "黑帧亮度阈值", ""),
-    IntSpec(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS, "主页壁纸捕获延迟", "ms"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_SCALE, "捕获分辨率", "%"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_STOP_DELAY, "捕获停止延迟", "ms"),
-    IntSpec(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE, "多任务捕获预触发距离"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外捕获高度"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, "下额外捕获高度"),
 )
 private val strokeSpecs = listOf(
     IntSpec(ConfigSchema.Dock.STROKE_RED, "描边底色 · 红", "", "dock_stroke", IntSection.StrokeBackground),
@@ -457,31 +442,13 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 @Composable
 private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
-    var miuix307Pipeline by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.MIUIX_307_PIPELINE.name(), ConfigSchema.Glass.MIUIX_307_PIPELINE.uiDefault())) }
-    var dynamicAppCapture by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(), ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_liquid)) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanSetting(prefs, ConfigSchema.Glass.MIUIX_307_PIPELINE,
-            "HyperOS 3.0.307+ 新材质管线",
-            "实验：使用 SurfaceFlinger PassBlur → OES → Prismal 实时材质",
-            masterEnabled && liquidGlass) { miuix307Pipeline = it }
-        StringDropdown(
-            prefs,
-            ConfigSchema.Glass.BLUR_MODE.name(),
-            "模糊方式",
-            ConfigSchema.Glass.BLUR_MODE.uiDefault(),
-            listOf("标准 Shader 模糊" to "shader", "高级材质模糊" to "advanced_material"),
-            masterEnabled && liquidGlass && !miuix307Pipeline,
-        )
         BooleanSetting(prefs, ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
             "Prismal · 显示法线",
             "调试：用 RGB 直接显示当前 Prismal 表面法线",
-            masterEnabled && liquidGlass && miuix307Pipeline)
-        BooleanSetting(prefs, ConfigSchema.Glass.DYNAMIC_APP_CAPTURE, stringResource(R.string.liquid_dynamic_capture),
-            stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass && !miuix307Pipeline) { dynamicAppCapture = it }
-        liquidSpecs.forEach {
-            IntSetting(prefs, it, masterEnabled && liquidGlass && (it.dependency != "liquid_dynamic_app_capture" || dynamicAppCapture))
-        }
+            masterEnabled && liquidGlass)
+        liquidSpecs.forEach { IntSetting(prefs, it, masterEnabled && liquidGlass) }
     }
 }
 

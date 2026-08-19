@@ -123,13 +123,11 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void validationTimeoutLeavesDiagnosticTransparentInsteadOfFallingBackToCapture() throws Exception {
+    public void validationTimeoutFailsClosedWithoutCaptureFallback() throws Exception {
         String hook = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
-        int validation = hook.indexOf("private static void scheduleZeroCopyValidation");
-        int fallbackDefinition = hook.indexOf("private static void installCaptureFallback");
-        assertTrue(validation >= 0 && fallbackDefinition > validation);
-        String validationRegion = hook.substring(validation, fallbackDefinition);
-        assertFalse(validationRegion.contains("installCaptureFallback("));
-        assertTrue(validationRegion.contains("legacy capture disabled"));
+        assertTrue(hook.contains("private static void scheduleZeroCopyValidation"));
+        assertTrue(hook.contains("glass remains transparent"));
+        assertFalse(hook.contains("installCaptureFallback"));
+        assertFalse(hook.contains("LiquidGlassFactory"));
     }
 }

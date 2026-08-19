@@ -56,9 +56,6 @@ final class Miuix307MaterialPipeline {
         }
 
         try {
-            // Restore only DragController -> drag-surface exclusion behavior skipped by the
-            // specialized early-return. APP/HOME visual handoff is owned by SystemUI transitions.
-            Miuix307DragCaptureHook.install(classLoader);
             installCompatBackgroundBlurSuppression(classLoader);
             installDockCustomizationCompatibility(classLoader, config);
 
@@ -351,7 +348,6 @@ final class Miuix307MaterialPipeline {
         if (background == null || !isSupportedBackground(background)) return false;
         if (MiuixGlassHook.isBoundTo(background)) {
             geometryDeferredLoggedFor = null;
-            Miuix307DragCaptureHook.bind(background);
             observeBoundHierarchy(background, config, classLoader);
             return true;
         }
@@ -382,18 +378,15 @@ final class Miuix307MaterialPipeline {
         clearHierarchyObservation();
 
         // Do not leave a detached previous hierarchy as the drag target during an instance swap.
-        Miuix307DragCaptureHook.bind(null);
         MainHook.log("[DC] MiuiX 307 background instance changed; rebinding Prismal glass"
                 + " class=" + background.getClass().getSimpleName()
                 + " instance=" + Integer.toHexString(System.identityHashCode(background)));
-        boolean installedNow = MiuixGlassHook.install(
-                background, workspaceRef, config, null, classLoader);
+        boolean installedNow = MiuixGlassHook.install(background, config);
         if (!installedNow) {
             // Geometry may arrive before the new background is parented. The matching geometry
             // callback or hierarchy recovery will retry naturally; never poll with a fixed delay.
             MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
         } else {
-            Miuix307DragCaptureHook.bind(background);
             observeBoundHierarchy(background, config, classLoader);
         }
         return installedNow;

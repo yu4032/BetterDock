@@ -113,7 +113,7 @@ public class ConfigSchemaTest {
     }
 
     @Test
-    public void composeLiquidSpecsKeepLegacyDefaultsAndBounds() {
+    public void composeLiquidSpecsExposeOnlyActiveOpticalControls() {
         assertComposeIntSpec(ConfigSchema.Glass.BLUR, 6, 0, 60);
         assertComposeIntSpec(ConfigSchema.Glass.THICKNESS, 18, 1, 60);
         assertComposeIntSpec(ConfigSchema.Glass.IOR, 155, 100, 200);
@@ -126,26 +126,11 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.TINT_GREEN, 244, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_BLUE, 255, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.HIGHLIGHT_WIDTH, 100, 20, 300);
-        assertComposeIntSpec(ConfigSchema.Glass.HIGHLIGHT_ALPHA, 100, 0, 200);
-        assertComposeIntSpec(ConfigSchema.Glass.DEPTH_EFFECT, 8, 0, 50);
         assertComposeIntSpec(ConfigSchema.Glass.BRIGHTNESS, 108, 50, 200);
         assertComposeIntSpec(ConfigSchema.Glass.SPECULAR_SHARPNESS, 88, 1, 200);
         assertComposeIntSpec(ConfigSchema.Glass.SPECULAR_STRENGTH, 105, 0, 300);
         assertComposeIntSpec(ConfigSchema.Glass.RIM_LIGHT, 100, 0, 300);
         assertComposeIntSpec(ConfigSchema.Glass.CAUSTICS, 28, 0, 100);
-        assertComposeIntSpec(ConfigSchema.Glass.EDGE_BAND, 32, 5, 100);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_FPS, 20, 5, 60);
-        assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS, 3, 1, 10);
-        assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD, 12, 1, 240);
-        assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD, 18, 1, 64);
-        assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_HOLD_MS, 900, 0, 5000);
-        assertComposeIntSpec(ConfigSchema.Glass.BLACK_THRESHOLD, 10, 0, 64);
-        assertComposeIntSpec(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS, 1200, 200, 3000);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_SCALE, 50, 10, 100);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_STOP_DELAY, 150, 0, 10000);
-        assertComposeIntSpec(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE, 8, 1, 48);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, 17, 0, 256);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, 6, 0, 256);
     }
 
     @Test

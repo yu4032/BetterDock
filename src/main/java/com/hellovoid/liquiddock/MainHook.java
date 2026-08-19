@@ -1,39 +1,27 @@
 package com.hellovoid.liquiddock;
 
-import android.app.Activity;
-import android.app.WallpaperManager;
-import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Rect;
-import android.os.IBinder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 
-import io.github.libxposed.api.XposedInterface;
 
-/** Core Launcher hooks for LiquidDock — glass, stroke, dock geometry, workstation. */
+/** Core Launcher hooks for LiquidDock — zero-copy glass, stroke, dock geometry, workstation. */
 public class MainHook {
 
     private static View shadowView, oldBg, nativeShadowTarget;
     private static int lastShadowW;
-    private static DockLiquidGlassView liquidGlassView;
-    private static DockLiquidGlassHostView liquidGlassHostView;
-    private static volatile boolean systemUiPanelExpanded;
     private static int bgW, bgH, shadowPad;
     private static float bgR = 30f;
     private static float strokeR = 30f;
     private static volatile boolean workstationMode;
     private static volatile boolean workstationModeHookConfirmed;
-    private static volatile boolean workstationAllAppsOpen;
-    private static boolean dockDragHooksInstalled;
     private static final java.util.Map<Long, HomeItemPosition> normalLayoutBackup =
             new java.util.HashMap<>();
     private static final java.util.WeakHashMap<View, android.animation.ValueAnimator>
@@ -53,12 +41,6 @@ public class MainHook {
             return;
         }
         DockStrokeRenderer.installNativeHook(classLoader, config.dock);
-        RecentsHapticHook.install(classLoader, () -> {
-            DockLiquidGlassView glass = liquidGlassView;
-            // Laptop/workstation Recents has a dedicated button; generic gesture/haptic
-            // pre-arm must never switch its Dock to live capture.
-            if (glass != null && !workstationMode) glass.onRecentsHapticTrigger();
-        });
         installWorkstationDockHooks(classLoader, config.workstation);
         WorkstationDockGeometryHook.install(classLoader, config.workstation);
         if (!config.dock.resizeAnimation)
@@ -111,81 +93,19 @@ public class MainHook {
                 Math.round(config.workstation.allAppsPortraitBottomSpacing * workstationAllAppsScale));
 
         boolean dockCustomization = config.dock.enabled;
-        boolean liquidGlass = config.glass.enabled;
-        if (liquidGlass && config.glass.miuix307Pipeline) {
+        if (config.glass.enabled) {
             if (Miuix307MaterialPipeline.install(classLoader, config)) {
-                log("[DC] MiuiX 307 material active; legacy liquid capture bypassed");
+                log("[DC] MiuiX 307 zero-copy material active");
                 return;
             }
-            log("[DC] MiuiX 307 material unavailable; falling back to legacy pipeline");
+            log("[DC] MiuiX 307 zero-copy material unavailable; liquid glass disabled");
         }
-        if (!dockCustomization && !liquidGlass) {
-            log("[DC] Dock customization and liquid glass both disabled");
-            return;
-        }
-
-        // ── liquid-glass-only path (no dock geometry customization) ──
         if (!dockCustomization) {
-            log("[DC] Dock customization disabled (liquid glass only)");
-            installLiquidGlassCaptureHooks(classLoader);
-            final LiquidDockConfig.Dock strokeCfg = config.dock;
-            try {
-                HookUtil.hookMethod(classLoader,
-                    "com.miui.home.launcher.Launcher", "setupViews",
-                    chain -> {
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (workstationMode) return result;
-                        try {
-                            Object hs = HookUtil.getField(chain.getThisObject(), "mHotSeats");
-                            if (hs == null) return result;
-                            View vBg = (View) HookUtil.getField(hs, "mBlurBackground2");
-                            if (vBg == null) return result;
-                            ViewGroup parent = (ViewGroup) vBg.getParent();
-                            if (parent == null) return result;
-                            int gv = ((FrameLayout.LayoutParams) vBg.getLayoutParams()).gravity;
-                            View workspace = null;
-                            try {
-                                Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
-                                if (w instanceof View) workspace = (View) w;
-                            } catch (Throwable ignored) {}
-                            if (liquidGlassHostView != null && liquidGlassHostView.getParent() != null)
-                                return result;
-                            if (liquidGlassView != null)
-                                log("[DC] re-creating glass view (previous detached)");
-                            int bgIndex = parent.indexOfChild(vBg);
-                            liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIndex), gv,
-                                    vBg, workspace, config, false, 0.58f);
-                            HomeOwnershipRuntime.bind(liquidGlassView, liquidGlassView.getContext());
-                            liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                            bindRecentsView(liquidGlassView, chain.getThisObject());
-                            installDockTouchListener(liquidGlassView, vBg.getRootView());
-                            liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, vBg.getRootView()));
-                            try {
-                                View decor = ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView();
-                                installDockAreaTouchDetector(liquidGlassView, decor);
-                                liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
-                                        ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
-                            } catch (Throwable ignored) {}
-                            syncAll(vBg);
-                            liquidGlassView.post(() -> syncAll(vBg));
-                        } catch (Throwable e) { log("[DC] liquid-only init err: " + e); }
-                        return result;
-                    });
-                // Sync-only hooks for glass tracking
-                Class<?> hsc2 = Class.forName(
-                        "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2",
-                        false, classLoader);
-                HookUtil.hookMethod(hsc2, "setBackgroundWidth", new Class<?>[]{int.class},
-                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
-                HookUtil.hookMethod(hsc2, "setBackgroundHeight", new Class<?>[]{int.class},
-                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
-                HookUtil.hookMethod(hsc2, "setBackgroundRadius", new Class<?>[]{float.class},
-                        chain -> { Object r = chain.proceed(chain.getArgs().toArray(new Object[0])); syncAll((View) chain.getThisObject()); return r; });
-            } catch (Throwable e) { log("[DC] liquid-only hooks err: " + e); }
+            log("[DC] Dock customization disabled; no legacy glass fallback");
             return;
         }
 
-        // ── full dock-customization + liquid-glass path ──
+        // ── Dock customization path; liquid glass is zero-copy-only above ──
         LiquidDockConfig.Dock dock = config.dock;
         log("[DC] init: bl=" + dock.blurRadius + " sq=" + dock.squircle);
         boolean sq = dock.squircle;
@@ -201,7 +121,6 @@ public class MainHook {
         int spacing = Math.round(dock.spacing * dockScale);
         int bottomOffset = Math.round(dock.bottomOffset * dockScale);
         ClassLoader cl = classLoader;
-        installLiquidGlassCaptureHooks(cl);
 
         try {
             String hsc = "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
@@ -359,43 +278,14 @@ public class MainHook {
                             int sqOff = Math.round(c2.squircleStrokeOffset * ds2);
                             float sqCp = c2.squircleCp;
                             boolean dockShadow = c2.shadowEnabled;
-                            boolean liquid = current.glass.enabled;
                             int dsR = Math.max(1, Math.round(c2.shadowRadius * ds2));
                             int dsS = Math.max(1, Math.round(c2.shadowSize * ds2));
                             int dsA = c2.shadowAlpha;
                             int dsY = Math.round(c2.shadowY * ds2);
-                            if (liquidGlassHostView != null && liquidGlassHostView.getParent() != null) return r;
-                            if (liquidGlassView != null) log("[DC] re-creating glass view (previous detached)");
-                            if (liquid) {
-                                View workspace = null;
-                                try {
-                                    Object w = HookUtil.getField(chain.getThisObject(), "mWorkspace");
-                                    if (w instanceof View) workspace = (View) w;
-                                } catch (Throwable ignored) {}
-                                int bgIdx = parent.indexOfChild(oldBg);
-                                liquidGlassView = installLiquidGlassLayer(parent, Math.max(0, bgIdx), gv,
-                                        oldBg, workspace, current, c2.squircle, sqCp);
-                                HomeOwnershipRuntime.bind(liquidGlassView, liquidGlassView.getContext());
-                                liquidGlassView.setSystemUiPanelExpanded(systemUiPanelExpanded);
-                                bindRecentsView(liquidGlassView, chain.getThisObject());
-                                installDockTouchListener(liquidGlassView, oldBg.getRootView());
-                                liquidGlassView.post(() -> installDockTouchListener(liquidGlassView, oldBg.getRootView()));
-                                try {
-                                    View decor = ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView();
-                                    installDockAreaTouchDetector(liquidGlassView, decor);
-                                    liquidGlassView.post(() -> installDockAreaTouchDetector(liquidGlassView,
-                                            ((android.app.Activity) chain.getThisObject()).getWindow().getDecorView()));
-                                } catch (Throwable ignored) {}
-                            }
                             if (workstationMode) {
                                 // Laptop/workstation Dock has its own DockContainerView
-                                // background. Never leave the normal HotSeats background or
-                                // LiquidDock glass visible underneath it.
+                                // background. Never leave the normal HotSeats background visible underneath it.
                                 oldBg.setAlpha(0f);
-                                if (liquidGlassView != null)
-                                    liquidGlassView.setWorkstationMode(true);
-                                if (liquidGlassHostView != null)
-                                    liquidGlassHostView.setVisibility(View.GONE);
                                 return r;
                             }
                             if (dockShadow) {
@@ -417,422 +307,7 @@ public class MainHook {
         } catch (Throwable e) { log("[DC] init err: " + e); }
     }
 
-    private static DockLiquidGlassView installLiquidGlassLayer(
-            ViewGroup parent, int insertIndex, int gravity,
-            View background, View workspace, LiquidDockConfig config,
-            boolean squircle, float squircleCp) {
-        DockLiquidGlassView glass = LiquidGlassFactory.create(background, workspace,
-                config.glass, config.dock, squircle, squircleCp);
-        glass.setId(View.generateViewId());
-
-        DockLiquidGlassHostView host = new DockLiquidGlassHostView(parent.getContext());
-        host.setId(View.generateViewId());
-        host.setLayers(glass);
-
-        float radius = bgR;
-        try {
-            Object value = HookUtil.getField(background, "mCornerRadius");
-            if (value instanceof Float) radius = (Float) value;
-        } catch (Throwable ignored) {}
-        host.setGeometry(radius, squircle, squircleCp);
-        host.reloadOverlay(config.dock, config.glass);
-
-        parent.addView(host, insertIndex,
-                new FrameLayout.LayoutParams(1, 1, gravity));
-        liquidGlassHostView = host;
-        liquidGlassView = glass;
-        return glass;
-    }
-
-    // ── lifecycle / capture hooks ────────────────────────────────────
-
-    private static void installLiquidGlassCaptureHooks(ClassLoader cl) {
-        Class<?> launcherClass;
-        try {
-            launcherClass = Class.forName("com.miui.home.launcher.Launcher", false, cl);
-        } catch (Throwable e) {
-            log("[DC] Launcher class unavailable for liquid capture lifecycle: " + e);
-            return;
-        }
-
-        // SystemUI panel expansion → toggle capture gate
-        try {
-            Class<?> deviceConfig = Class.forName("com.miui.home.launcher.DeviceConfig", false, cl);
-            HookUtil.hookMethod(deviceConfig, "setControlPanelExpanded", new Class<?>[]{boolean.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        boolean expanded = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        systemUiPanelExpanded = expanded;
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setSystemUiPanelExpanded(expanded);
-                        log("[DC] liquid SystemUI panel expanded=" + expanded);
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] SystemUI panel capture gate unavailable: " + e); }
-
-        // Launcher focus is a refresh boundary only. SystemUI owns HOME/APP classification.
-        try {
-            HookUtil.hookMethod(launcherClass, "onWindowFocusChanged", new Class<?>[]{boolean.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        boolean hasFocus = Boolean.TRUE.equals(chain.getArgs().get(0));
-                        log("[DC] liquid focus boundary=" + hasFocus + "; querying SystemUI ownership");
-                        HomeOwnershipRuntime.request("focus");
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] onWindowFocusChanged hook failed: " + e); }
-
-        // Dock gesture target events (resolve before SystemUI baseline catches up)
-        hookDockGestureTarget(cl, "GestureToHome", "HOME");
-        hookDockGestureTarget(cl, "GestureToApp", "APP");
-        hookDockGestureTarget(cl, "GestureToRecent", "RECENTS");
-        hookOverviewStateEvent(cl, "EnterOverviewStateEvent", true);
-        hookOverviewStateEvent(cl, "ExitOverviewStateEvent", false);
-        installAllAppsCaptureHooks(cl);
-
-        // Workstation Recents is entered from the dedicated Dock button. The system DEX
-        // routes HotSeatsListContentAdapter's laptop branch to Launcher.showOrHideRecent().
-        // Hook before the original call so the very first transition frame is mode-1 live.
-        try {
-            HookUtil.hookMethod(launcherClass, "showOrHideRecent", new Class<?>[0],
-                    chain -> {
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (workstationMode && glass != null) {
-                            glass.onWorkstationRecentsButton();
-                            log("[DC] workstation Recents button boundary");
-                        }
-                        return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    });
-        } catch (Throwable e) {
-            log("[DC] workstation showOrHideRecent hook unavailable: " + e);
-        }
-
-        // Configuration changes (rotation)
-        try {
-            HookUtil.hookMethod(launcherClass, "onConfigurationChanged", new Class<?>[]{Configuration.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) {
-                            HomeOwnershipRuntime.request("configuration");
-                            glass.requestCapture("launcher-configuration-changed");
-                            glass.beginRotationStabilize();
-                            glass.postDelayed(() -> glass.requestCapture("launcher-configuration-settled"), 220L);
-                        }
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] liquid configuration hook unavailable: " + e); }
-
-        // Window visibility (capture trigger, not HOME/APP signal)
-        XposedInterface.Hooker visibilityHook = chain -> {
-            if (!launcherClass.isInstance(chain.getThisObject()))
-                return chain.proceed(chain.getArgs().toArray(new Object[0]));
-            Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-            boolean visible = (Integer) chain.getArgs().get(0) == View.VISIBLE;
-            log("[DC] liquid window visibility: " + chain.getArgs().get(0));
-            DockLiquidGlassView glass = liquidGlassView;
-            if (glass != null)
-                glass.requestCapture(visible ? "launcher-window-visible" : "launcher-window-hidden");
-            return r;
-        };
-        try {
-            HookUtil.hookMethod(Activity.class, "onWindowVisibilityChanged", new Class<?>[]{int.class}, visibilityHook);
-        } catch (Throwable e) { log("[DC] onWindowVisibilityChanged hook failed: " + e); }
-
-        // Wallpaper offsets / zoom → notify glass
-        try {
-            HookUtil.hookMethod(WallpaperManager.class, "setWallpaperOffsets",
-                    new Class<?>[]{IBinder.class, float.class, float.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.onWallpaperOffsetChanged(
-                                (Float) chain.getArgs().get(1), (Float) chain.getArgs().get(2));
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] Wallpaper normalized-offset hook unavailable: " + e); }
-
-        try {
-            HookUtil.hookMethod(WallpaperManager.class, "setDisplayOffset",
-                    new Class<?>[]{IBinder.class, int.class, int.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.onWallpaperDisplayOffsetChanged(
-                                (Integer) chain.getArgs().get(1), (Integer) chain.getArgs().get(2));
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] Wallpaper raw-offset hook unavailable: " + e); }
-
-        try {
-            HookUtil.hookMethod(WallpaperManager.class, "setWallpaperZoomOut",
-                    new Class<?>[]{IBinder.class, float.class},
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.onWallpaperZoomChanged((Float) chain.getArgs().get(1));
-                        return r;
-                    });
-        } catch (Throwable e) { log("[DC] Wallpaper zoom hook unavailable: " + e); }
-        installDockDragHooks(cl);
-    }
-
     // ── helpers ──────────────────────────────────────────────────────
-
-    private static void installAllAppsCaptureHooks(ClassLoader cl) {
-        // Workstation All Apps is UI-only for the Dock backdrop. The laptop overlay still
-        // owns Launcher focus while open, but it must never enter the Dock capture state.
-        try {
-            Class<?> laptop = Class.forName(
-                    "com.miui.home.launcher.laptop.AllAppsController", false, cl);
-            HookUtil.hookMethod(laptop, "showAllApps", new Class<?>[]{boolean.class},
-                    chain -> {
-                        if (workstationMode) {
-                            workstationAllAppsOpen = true;
-                            try {
-                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            } catch (Throwable error) {
-                                workstationAllAppsOpen = false;
-                                throw error;
-                            }
-                        }
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(
-                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(
-                                true, resolveLaptopAllAppsCaptureRoot(chain.getThisObject()));
-                        return result;
-                    });
-            HookUtil.hookMethod(laptop, "closeAllApps", new Class<?>[]{boolean.class},
-                    chain -> {
-                        if (workstationMode) {
-                            try {
-                                return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            } finally {
-                                workstationAllAppsOpen = false;
-                            }
-                        }
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(false, null);
-                        return result;
-                    });
-            log("[DC] stock laptop All Apps capture state hooked");
-        } catch (Throwable e) {
-            log("[DC] stock laptop All Apps capture hook unavailable: " + e);
-        }
-
-        // Normal All Apps stays in the Launcher main window. Its transition controller gives
-        // us the target LauncherState early enough to prevent a first-frame display capture.
-        try {
-            Class<?> transition = Class.forName(
-                    "com.miui.home.launcher.allapps.AllAppsTransitionController", false, cl);
-            Class<?> launcherState = Class.forName(
-                    "com.miui.home.launcher.LauncherState", false, cl);
-            HookUtil.hookMethod(transition, "setState", new Class<?>[]{launcherState},
-                    chain -> {
-                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        boolean entering = isStockAllAppsState(chain.getArgs().get(0));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(
-                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null) glass.setAllAppsActive(entering,
-                                entering ? resolveNormalAllAppsCaptureRoot(chain.getThisObject()) : null);
-                        return result;
-                    });
-            Class<?> builder = Class.forName(
-                    "com.miui.home.launcher.anim.AnimatorSetBuilder", false, cl);
-            Class<?> animationConfig = Class.forName(
-                    "com.miui.home.launcher.LauncherStateManager$AnimationConfig", false, cl);
-            HookUtil.hookMethod(transition, "setStateWithAnimation",
-                    new Class<?>[]{launcherState, launcherState, builder, animationConfig},
-                    chain -> {
-                        if (workstationMode) return chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        // Official DEX: the second LauncherState is the destination whose
-                        // getAllAppsVerticalProgress() drives this animation.
-                        boolean entering = isStockAllAppsState(chain.getArgs().get(1));
-                        DockLiquidGlassView glass = liquidGlassView;
-                        if (entering && glass != null) glass.setAllAppsActive(
-                                true, resolveNormalAllAppsCaptureRoot(chain.getThisObject()));
-                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        glass = liquidGlassView;
-                        if (glass != null && !entering) glass.setAllAppsActive(false, null);
-                        return result;
-                    });
-            log("[DC] stock normal All Apps capture state hooked");
-        } catch (Throwable e) {
-            log("[DC] stock normal All Apps capture hook unavailable: " + e);
-        }
-    }
-
-    private static boolean isStockAllAppsState(Object state) {
-        return state != null && "com.miui.home.launcher.uioverrides.AllAppsState"
-                .equals(state.getClass().getName());
-    }
-
-    private static View resolveLaptopAllAppsCaptureRoot(Object controller) {
-        try {
-            Object dragLayer = HookUtil.invoke(controller, "getDragLayer");
-            if (dragLayer instanceof View) return (View) dragLayer;
-        } catch (Throwable ignored) {}
-        try {
-            Object dragLayer = HookUtil.getField(controller, "mDragLayer");
-            if (dragLayer instanceof View) return (View) dragLayer;
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    private static View resolveNormalAllAppsCaptureRoot(Object controller) {
-        try {
-            Object appsView = HookUtil.getField(controller, "mAppsView");
-            if (appsView instanceof View) return (View) appsView;
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    private static void hookDockGestureTarget(ClassLoader cl, String eventName, String target) {
-        try {
-            Class<?> eventClass = Class.forName("com.miui.home.launcher.dock.v3." + eventName, false, cl);
-            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null && !workstationMode)
-                        glass.setGestureCaptureTarget(target);
-                    if (!workstationMode) log("[DC] liquid gesture target=" + target);
-                    return r;
-                });
-            }
-        } catch (Throwable e) { log("[DC] " + eventName + " capture hook unavailable: " + e); }
-    }
-
-    private static void hookOverviewStateEvent(ClassLoader cl, String eventName, boolean active) {
-        try {
-            Class<?> eventClass = Class.forName("com.miui.home.recents.event." + eventName, false, cl);
-            for (Constructor<?> ctor : eventClass.getDeclaredConstructors()) {
-                HookUtil.hook(ctor, chain -> {
-                    Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                    DockLiquidGlassView glass = liquidGlassView;
-                    if (glass != null)
-                        glass.setOverviewActive(active, eventName);
-                    log("[DC] liquid overview active=" + active
-                            + " event=" + eventName + " workstation=" + workstationMode);
-                    return r;
-                });
-            }
-        } catch (Throwable e) {
-            log("[DC] " + eventName + " capture state hook unavailable: " + e);
-        }
-    }
-
-    private static void bindRecentsView(DockLiquidGlassView glass, Object launcher) {
-        try {
-            Object panel = HookUtil.getField(launcher, "mOverviewPanel");
-            if (panel instanceof View) glass.setRecentsView((View) panel);
-        } catch (Throwable e) { log("[DC] recents bind failed: " + e); }
-    }
-
-    /** Install DragController hooks once; callback reads liquidGlassView each time. */
-    private static void installDockDragHooks(ClassLoader cl) {
-        if (dockDragHooksInstalled) return;
-        dockDragHooksInstalled = true;
-        try {
-            Class<?> dc = Class.forName("com.miui.home.launcher.DragController", false, cl);
-            HookUtil.hookMethod(dc, "startDrag",
-                    new Class<?>[]{
-                        android.graphics.drawable.Drawable.class, boolean.class,
-                        Class.forName("com.miui.home.launcher.ItemInfo", false, cl),
-                        int.class, int.class, float.class,
-                        Class.forName("com.miui.home.launcher.DragSource", false, cl),
-                        int.class
-                    },
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.setDockDragging(true, resolveDragSurfaceLayerName(chain.getThisObject()));
-                        return r;
-                    });
-            HookUtil.hookMethod(dc, "endDrag", new Class<?>[0],
-                    chain -> {
-                        Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        DockLiquidGlassView g = liquidGlassView;
-                        if (g != null) g.setDockDragging(false, null);
-                        return r;
-                    });
-            log("[DC] dock drag controller hooked");
-        } catch (Throwable e) { log("[DC] drag controller hook failed: " + e); }
-    }
-
-    private static String resolveDragSurfaceLayerName(Object dragController) {
-        try {
-            Object dragObject = HookUtil.getField(dragController, "mDragObject");
-            if (dragObject == null) return null;
-            Object views = HookUtil.getField(dragObject, "mDragViews");
-            if (!(views instanceof java.util.List) || ((java.util.List<?>) views).isEmpty()) return null;
-            Object dragView = ((java.util.List<?>) views).get(0);
-            if (dragView instanceof View) {
-                Method getSc = View.class.getDeclaredMethod("getSurfaceControl");
-                getSc.setAccessible(true);
-                Object sc = getSc.invoke(dragView);
-                if (sc != null) {
-                    String s = sc.toString();
-                    int i = s.indexOf("name="), j = s.indexOf(')', i);
-                    if (i >= 0 && j > i) {
-                        String name = s.substring(i + 5, j);
-                        log("[DC] drag surface layer: " + name);
-                        return name;
-                    }
-                }
-            }
-        } catch (Throwable e) { log("[DC] drag surface resolve failed: " + e); }
-        return null;
-    }
-
-    private static void installDockTouchListener(DockLiquidGlassView glass, View dockRoot) {
-        try {
-            if (dockRoot == null || dockRoot.getWidth() <= 0 || dockRoot.getHeight() <= 0) return;
-            dockRoot.setOnTouchListener((v, ev) -> {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        glass.onDockTouchEvent();
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                }
-                return false;
-            });
-        } catch (Throwable e) { log("[DC] dock touch listener failed: " + e); }
-    }
-
-    private static void installDockAreaTouchDetector(DockLiquidGlassView glass, View launcherRoot) {
-        try {
-            if (launcherRoot == null || launcherRoot.getWidth() <= 0 || launcherRoot.getHeight() <= 0) return;
-            launcherRoot.setOnTouchListener((v, ev) -> {
-                switch (ev.getActionMasked()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
-                    case android.view.MotionEvent.ACTION_MOVE:
-                        if (glass.isTouchInDockArea(ev.getRawX(), ev.getRawY())) {
-                            glass.onDockTouchEvent();
-                            glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        }
-                        break;
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
-                        glass.onDockGestureMotion(ev.getActionMasked(), ev.getRawY());
-                        break;
-                }
-                return false;
-            });
-        } catch (Throwable e) { log("[DC] dock area touch detector failed: " + e); }
-    }
 
     private static void installDockResizeAnimationBypass(ClassLoader cl, boolean smoothAnimation) {
         try {
@@ -1007,14 +482,12 @@ public class MainHook {
 
     private static void setWorkstationMode(boolean enabled) {
         workstationMode = enabled;
-        if (!enabled) workstationAllAppsOpen = false;
         HomeGridHook.setWorkstationMode(enabled);
         WorkstationDockGeometryHook.onWorkstationModeChanged(enabled);
         log("[DC] Mingou workstation mode changed=" + enabled);
         if (!enabled) {
             if (oldBg != null) oldBg.post(() -> {
-                if (liquidGlassView != null) liquidGlassView.setWorkstationMode(false);
-                else oldBg.setAlpha(1f);
+                oldBg.setAlpha(1f);
                 if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
                 syncAll(oldBg);
             });
@@ -1025,7 +498,6 @@ public class MainHook {
             // DockContainerView. Suppress every normal-mode background layer here.
             oldBg.setAlpha(0f);
             if (shadowView != null) shadowView.setVisibility(View.GONE);
-            if (liquidGlassView != null) liquidGlassView.setWorkstationMode(true);
         });
     }
 
@@ -1144,48 +616,23 @@ public class MainHook {
     }
 
     private static void syncAll(View bg) {
-        if (bg == null) return;
-        if (workstationMode && liquidGlassView == null) return;
-        if (liquidGlassHostView == null && liquidGlassView == null && shadowView == null) return;
+        if (bg == null || shadowView == null) return;
         boolean anim = animating(bg);
         try {
-            bgW = HookUtil.getIntField(bg, "mWidth"); bgH = HookUtil.getIntField(bg, "mHeight");
-            Object r = HookUtil.getField(bg, "mCornerRadius"); if (r instanceof Float) bgR = (Float) r;
-            if (bgW <= 0) return;
-            if (liquidGlassHostView != null) {
-                liquidGlassHostView.setVisibility(workstationMode ? View.GONE : View.VISIBLE);
-                ViewGroup.LayoutParams hlp = liquidGlassHostView.getLayoutParams();
-                if (hlp != null && (hlp.width != bgW || hlp.height != bgH)) {
-                    hlp.width = bgW;
-                    hlp.height = bgH;
-                    liquidGlassHostView.setLayoutParams(hlp);
-                }
-                liquidGlassHostView.setTranslationX(bg.getTranslationX());
-                liquidGlassHostView.setTranslationY(bg.getTranslationY());
-                liquidGlassHostView.setRadius(bgR);
-                liquidGlassHostView.invalidate();
-            } else if (liquidGlassView != null) {
-                // Compatibility fallback for a stale pre-host instance during Launcher setup.
-                ViewGroup.LayoutParams glp = liquidGlassView.getLayoutParams();
-                if (glp != null && (glp.width != bgW || glp.height != bgH)) {
-                    glp.width = bgW;
-                    glp.height = bgH;
-                    liquidGlassView.setLayoutParams(glp);
-                }
-                liquidGlassView.setGlassRadius(bgR);
-                liquidGlassView.invalidate();
+            bgW = HookUtil.getIntField(bg, "mWidth");
+            bgH = HookUtil.getIntField(bg, "mHeight");
+            Object r = HookUtil.getField(bg, "mCornerRadius");
+            if (r instanceof Float) bgR = (Float) r;
+            if (bgW <= 0 || workstationMode) {
+                shadowView.setVisibility(View.GONE);
+                return;
             }
-            if (shadowView != null) {
-                if (workstationMode) { shadowView.setVisibility(View.GONE); return; }
-                if (!anim) {
-                    boolean sizeChanged = bgW != lastShadowW;
-                    lastShadowW = bgW;
-                    // Position can change without a width change (startup/translation/layout).
-                    // Always align X/Y once the Dock settles; only size changes need a posted
-                    // second pass after LayoutParams are applied.
-                    syncShadowGeometry();
-                    if (sizeChanged) shadowView.post(MainHook::syncShadowGeometry);
-                }
+            shadowView.setVisibility(View.VISIBLE);
+            if (!anim) {
+                boolean sizeChanged = bgW != lastShadowW;
+                lastShadowW = bgW;
+                syncShadowGeometry();
+                if (sizeChanged) shadowView.post(MainHook::syncShadowGeometry);
             }
         } catch (Throwable ignored) {}
     }

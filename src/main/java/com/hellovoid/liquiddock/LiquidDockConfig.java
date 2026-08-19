@@ -193,46 +193,27 @@ final class LiquidDockConfig {
     }
 
     static final class Glass {
-        final boolean enabled, dimensionsDp, dynamicAppCapture, fullscreenCapture, miuix307Pipeline;
+        final boolean enabled;
         final boolean prismalShowNormals;
-        final LiquidBlurMode blurMode;
-        final float blur, chromatic, captureScale, thickness, ior, normalStrength, dome,
-                lensRefraction, highlightWidth, depthEffect, brightness, specularStrength,
-                rimLight, caustics, edgeBand, highlightAlpha, bleedTop, bleedBottom,
-                recentsPrearmDistance;
+        final float blur, chromatic, thickness, ior, normalStrength, dome,
+                lensRefraction, highlightWidth, brightness, specularStrength, rimLight, caustics;
         final float prismalRefractionInset, prismalDisplacementScale, prismalHeightTransitionWidth,
                 prismalSminSmoothing, prismalEdgeRefractionFalloff, prismalFresnelReflect,
                 prismalDispersionR, prismalDispersionB, prismalVibrancy, prismalPlainHighlight,
                 prismalLightDirX, prismalLightDirY, prismalShadowSoftness, prismalTransmittance,
                 prismalBackdropScaleX, prismalBackdropScaleY, prismalParallaxScale;
-        final int tintAlpha, captureFps, stopDelayMs, probeFps, motionThreshold,
-                motionBitThreshold, motionHoldMs, blackThreshold, homeSettleDelayMs,
-                tintR, tintG, tintB, specularSharp,
+        final int tintAlpha, tintR, tintG, tintB, specularSharp,
                 prismalShadowR, prismalShadowG, prismalShadowB, prismalShadowAlpha;
 
         Glass(ConfigReader c) {
             enabled = c.b(ConfigSchema.Glass.ENABLED.name(),
                     ConfigSchema.Glass.ENABLED.runtimeFallback());
-            dimensionsDp = c.b(ConfigSchema.Glass.DIMENSIONS_DP.name(),
-                    ConfigSchema.Glass.DIMENSIONS_DP.runtimeFallback());
-            miuix307Pipeline = c.b(ConfigSchema.Glass.MIUIX_307_PIPELINE.name(),
-                    ConfigSchema.Glass.MIUIX_307_PIPELINE.runtimeFallback());
-            blurMode = LiquidBlurMode.fromPersisted(c.s(ConfigSchema.Glass.BLUR_MODE.name(),
-                    ConfigSchema.Glass.BLUR_MODE.runtimeFallback()));
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
             // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
                     ConfigSchema.Glass.CHROMATIC.runtimeFallback());
             tintAlpha = channel(c.i(ConfigSchema.Glass.TINT_ALPHA.name(),
                     ConfigSchema.Glass.TINT_ALPHA.runtimeFallback()));
-            captureFps = clamp(c.i(ConfigSchema.Glass.CAPTURE_FPS.name(),
-                    ConfigSchema.Glass.CAPTURE_FPS.runtimeFallback()), 1, 165);
-            stopDelayMs = Math.max(0, c.i(ConfigSchema.Glass.CAPTURE_STOP_DELAY.name(),
-                    ConfigSchema.Glass.CAPTURE_STOP_DELAY.runtimeFallback()));
-            bleedTop = c.f(ConfigSchema.Glass.CAPTURE_BLEED_TOP.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback());
-            bleedBottom = c.f(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback());
             thickness = c.f(ConfigSchema.Glass.THICKNESS.name(),
                     ConfigSchema.Glass.THICKNESS.runtimeFallback());
             ior = c.i(ConfigSchema.Glass.IOR.name(), ConfigSchema.Glass.IOR.runtimeFallback()) / 100f;
@@ -241,24 +222,6 @@ final class LiquidDockConfig {
             dome = c.i(ConfigSchema.Glass.DOME.name(), ConfigSchema.Glass.DOME.runtimeFallback()) / 100f;
             lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(),
                     ConfigSchema.Glass.LENS_REFRACTION.runtimeFallback());
-            captureScale = c.i(ConfigSchema.Glass.CAPTURE_SCALE.name(),
-                    ConfigSchema.Glass.CAPTURE_SCALE.runtimeFallback()) / 100f;
-            dynamicAppCapture = c.b(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(),
-                    ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.runtimeFallback());
-            fullscreenCapture = c.b(ConfigSchema.Glass.FULLSCREEN_CAPTURE.name(),
-                    ConfigSchema.Glass.FULLSCREEN_CAPTURE.runtimeFallback());
-            probeFps = clamp(c.i(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS.name(),
-                    ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS.runtimeFallback()), 1, 60);
-            motionThreshold = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD.name(),
-                    ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD.runtimeFallback()));
-            motionBitThreshold = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD.name(),
-                    ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD.runtimeFallback()));
-            motionHoldMs = Math.max(0, c.i(ConfigSchema.Glass.DYNAMIC_HOLD_MS.name(),
-                    ConfigSchema.Glass.DYNAMIC_HOLD_MS.runtimeFallback()));
-            blackThreshold = channel(c.i(ConfigSchema.Glass.BLACK_THRESHOLD.name(),
-                    ConfigSchema.Glass.BLACK_THRESHOLD.runtimeFallback()));
-            homeSettleDelayMs = clamp(c.i(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS.name(),
-                    ConfigSchema.Glass.HOME_SETTLE_DELAY_MS.runtimeFallback()), 200, 3000);
             highlightWidth = c.i(ConfigSchema.Glass.HIGHLIGHT_WIDTH.name(),
                     ConfigSchema.Glass.HIGHLIGHT_WIDTH.runtimeFallback()) / 100f;
             tintR = channel(c.i(ConfigSchema.Glass.TINT_RED.name(),
@@ -267,8 +230,6 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.TINT_GREEN.runtimeFallback()));
             tintB = channel(c.i(ConfigSchema.Glass.TINT_BLUE.name(),
                     ConfigSchema.Glass.TINT_BLUE.runtimeFallback()));
-            depthEffect = c.i(ConfigSchema.Glass.DEPTH_EFFECT.name(),
-                    ConfigSchema.Glass.DEPTH_EFFECT.runtimeFallback()) / 100f;
             brightness = c.i(ConfigSchema.Glass.BRIGHTNESS.name(),
                     ConfigSchema.Glass.BRIGHTNESS.runtimeFallback()) / 100f;
             specularSharp = Math.max(1, c.i(ConfigSchema.Glass.SPECULAR_SHARPNESS.name(),
@@ -279,12 +240,6 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.RIM_LIGHT.runtimeFallback()) / 100f;
             caustics = c.i(ConfigSchema.Glass.CAUSTICS.name(),
                     ConfigSchema.Glass.CAUSTICS.runtimeFallback()) / 100f;
-            edgeBand = c.i(ConfigSchema.Glass.EDGE_BAND.name(),
-                    ConfigSchema.Glass.EDGE_BAND.runtimeFallback()) / 1000f;
-            highlightAlpha = c.i(ConfigSchema.Glass.HIGHLIGHT_ALPHA.name(),
-                    ConfigSchema.Glass.HIGHLIGHT_ALPHA.runtimeFallback()) / 100f;
-            recentsPrearmDistance = c.f(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.name(),
-                    ConfigSchema.Glass.RECENTS_PREARM_DISTANCE.runtimeFallback());
 
             prismalRefractionInset = c.f(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET.name(),
                     ConfigSchema.Glass.PRISMAL_REFRACTION_INSET.runtimeFallback());
