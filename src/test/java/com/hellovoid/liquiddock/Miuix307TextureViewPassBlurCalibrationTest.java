@@ -46,8 +46,8 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
         assertTrue(Files.exists(path));
         String view = Files.readString(path);
 
-        assertTrue("Stage B must still issue a single final OES sample",
-                view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)")
+        assertTrue("Stage B must still issue a single final OES sample after coordinate precompensation",
+                view.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)")
                         && view.contains("gl_FragColor = texture2D(uTexture, transformed.xy)"));
         assertTrue("Stage B coordinate mapping remains active",
                 view.contains("uniform vec4 uBackdropRect")
