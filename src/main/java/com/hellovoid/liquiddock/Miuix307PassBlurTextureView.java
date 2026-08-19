@@ -34,7 +34,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * A dedicated EGL thread renders into this TextureView, which remains inside the already-excluded
  * Floating Dock root. Stage B maps Dock-local UVs into the material host's real root-surface rect,
  * applies the inverse HyperOS config rotation, and finally applies the SurfaceTexture transform
- * matrix. The shader remains strict passthrough: no refraction, tint, blur, or optical displacement.
+ * matrix. A strong rounded edge lens is enabled only as a diagnostic spatial-refraction marker;
+ * the center remains passthrough and no tint, blur, highlight, or color dispersion is applied.
  */
 final class Miuix307PassBlurTextureView extends TextureView
         implements TextureView.SurfaceTextureListener {
@@ -64,9 +65,33 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "uniform mat4 uTexMatrix;\n"
             + "uniform vec4 uBackdropRect;\n"
             + "uniform int uConfigRot;\n"
+            + "uniform vec2 uViewSize;\n"
             + "varying vec2 vUv;\n"
+            + "float sdRoundRect(vec2 p, vec2 h, float r) {\n"
+            + "  vec2 q = abs(p) - (h - vec2(r));\n"
+            + "  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
+            + "}\n"
             + "void main() {\n"
-            + "  vec2 rootUv = uBackdropRect.xy + vUv * uBackdropRect.zw;\n"
+            + "  vec2 halfSize = max(uViewSize * 0.5 - vec2(0.5), vec2(1.0));\n"
+            + "  float radius = clamp(uViewSize.y * 0.44, 18.0, min(halfSize.x, halfSize.y));\n"
+            + "  vec2 p = vUv * uViewSize - uViewSize * 0.5;\n"
+            + "  float sd = sdRoundRect(p, halfSize, radius);\n"
+            + "  float insidePx = max(-sd, 0.0);\n"
+            + "  float bandPx = clamp(uViewSize.y * 0.34, 28.0, 64.0);\n"
+            + "  float edgeWeight = (1.0 - smoothstep(0.0, bandPx, insidePx))\n"
+            + "                   * smoothstep(0.0, 3.0, insidePx);\n"
+            + "  edgeWeight *= edgeWeight;\n"
+            + "  float stepPx = 1.0;\n"
+            + "  vec2 grad = vec2(\n"
+            + "      sdRoundRect(p + vec2(stepPx, 0.0), halfSize, radius)\n"
+            + "        - sdRoundRect(p - vec2(stepPx, 0.0), halfSize, radius),\n"
+            + "      sdRoundRect(p + vec2(0.0, stepPx), halfSize, radius)\n"
+            + "        - sdRoundRect(p - vec2(0.0, stepPx), halfSize, radius));\n"
+            + "  vec2 normal = length(grad) > 0.001 ? normalize(grad) : vec2(0.0);\n"
+            + "  float displacementPx = 14.0;\n"
+            + "  vec2 refractedUv = clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0);\n"
+            + "  vec2 lensUv = mix(vUv, refractedUv, edgeWeight);\n"
+            + "  vec2 rootUv = uBackdropRect.xy + lensUv * uBackdropRect.zw;\n"
             + "  vec2 orientedUv = rootUv;\n"
             + "  if (uConfigRot == 1) {\n"
             + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
@@ -396,8 +421,9 @@ final class Miuix307PassBlurTextureView extends TextureView
             int matrix = GLES20.glGetUniformLocation(program, "uTexMatrix");
             int backdropRect = GLES20.glGetUniformLocation(program, "uBackdropRect");
             int rotation = GLES20.glGetUniformLocation(program, "uConfigRot");
+            int viewSize = GLES20.glGetUniformLocation(program, "uViewSize");
             if (position < 0 || uv < 0 || texture < 0 || matrix < 0
-                    || backdropRect < 0 || rotation < 0) {
+                    || backdropRect < 0 || rotation < 0 || viewSize < 0) {
                 throw new IllegalStateException("shader location unavailable");
             }
 
@@ -416,6 +442,7 @@ final class Miuix307PassBlurTextureView extends TextureView
             GLES20.glUniformMatrix4fv(matrix, 1, false, textureMatrix, 0);
             GLES20.glUniform4f(backdropRect, backdropX, backdropY, backdropW, backdropH);
             GLES20.glUniform1i(rotation, configRotation);
+            GLES20.glUniform2f(viewSize, Math.max(1, outputWidth), Math.max(1, outputHeight));
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
             GLES20.glDisableVertexAttribArray(position);
             GLES20.glDisableVertexAttribArray(uv);
@@ -435,6 +462,7 @@ final class Miuix307PassBlurTextureView extends TextureView
                 firstDrawLogged = true;
                 MainHook.log(TAG + " first EGL passthrough draw"
                         + " textureDomain=dock-local"
+                        + " lens=strong-edge-14px"
                         + " backdropRect=[" + backdropX + "," + backdropY + ","
                         + backdropW + "," + backdropH + "]"
                         + " output=" + outputWidth + "x" + outputHeight
