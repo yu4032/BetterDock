@@ -92,6 +92,53 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     }
 
     @Test
+    public void existingLiquidDockGlassConfigDrivesPrismalMaterialAtInstallAndSync() throws Exception {
+        String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+
+        assertTrue("material must translate the existing typed Glass config instead of inventing a new config layer",
+                material.contains("static Params fromConfig(LiquidDockConfig.Glass glass, float density)"));
+        assertTrue("dp optical controls must keep the legacy density conversion",
+                material.contains("glass.thickness * d")
+                        && material.contains("glass.lensRefraction * d"));
+        assertTrue("all existing user-facing optical controls must reach the material",
+                material.contains("glass.ior")
+                        && material.contains("glass.normalStrength")
+                        && material.contains("glass.dome")
+                        && material.contains("glass.chromatic")
+                        && material.contains("glass.highlightWidth")
+                        && material.contains("glass.depthEffect")
+                        && material.contains("glass.brightness")
+                        && material.contains("glass.specularSharp")
+                        && material.contains("glass.specularStrength")
+                        && material.contains("glass.rimLight")
+                        && material.contains("glass.caustics")
+                        && material.contains("glass.edgeBand")
+                        && material.contains("glass.highlightAlpha")
+                        && material.contains("glass.tintR")
+                        && material.contains("glass.tintG")
+                        && material.contains("glass.tintB")
+                        && material.contains("glass.tintAlpha"));
+        assertTrue("TextureView must expose a hot optical-config update without rebuilding PassBlur",
+                view.contains("void setGlassConfig(LiquidDockConfig.Glass glassConfig)")
+                        && view.contains("Miuix307PrismalMaterial.fromConfig"));
+        assertTrue("config-only updates should redraw the latest consumed OES frame",
+                view.contains("if (hasConsumedFrame)")
+                        && view.contains("renderHandler.post(() -> drawLatestFrame(false))"));
+        assertTrue("initial install must apply the same current Glass config",
+                renderer.contains("gpuBackdrop.setGlassConfig(glassConfig)"));
+        int sync = renderer.indexOf("static void sync(LiquidDockConfig.Glass glassConfig, int blurRadiusPx)");
+        assertTrue(sync >= 0);
+        String syncRegion = renderer.substring(sync);
+        assertTrue("hot sync must forward existing settings into the active TextureView",
+                syncRegion.contains("gpuBackdrop.setGlassConfig(glassConfig)"));
+        assertFalse("optical hot sync must not recreate/unbind the producer",
+                syncRegion.contains("new Miuix307PassBlurTextureView")
+                        || syncRegion.contains("Miuix307PassBlurBridge.unbind"));
+    }
+
+    @Test
     public void passBlurBridgeNoLongerDependsOnChildSurfaceViewExclusion() throws Exception {
         String bridge = Files.readString(MAIN.resolve("Miuix307PassBlurBridge.java"));
 
