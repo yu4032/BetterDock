@@ -1,279 +1,358 @@
-# Hook 点总览
+# LiquidDock 2.0 Hook 点总览
 
-本文档记录当前源码实际安装或尝试安装的主要 Hook 点，以及这些 Hook 在运行时承担的职责。LiquidDock 使用 libxposed API 101 原生 interceptor 注入 `com.miui.home` 与 `com.android.systemui`；反射调用但没有安装 Hook 的系统方法会单独注明。
+本文档记录 **当前 `main`（2.x）源码实际安装或尝试安装的主要 Hook 点**。它描述运行时事实，不描述 1.x 的历史架构，也不把普通反射调用误写成 Xposed Hook。
 
-> 当前状态：配置层已完成 Phase 1；freeform task authority 与普通 HOME/APP ownership 已收敛到 SystemUI/WMShell。`MainHook` / `HomeGridHook` / `DockLiquidGlassView` 仍未完成后续模块拆分，因此本文件按**实际调用路径**描述，而不是按目标架构描述。
+## 运行时边界
 
-## 入口、配置迁移与安装顺序
+2.0 的 Xposed scope 只有：
 
-API 101 入口是 `ModuleMain`，按宿主进程分支安装。
+```text
+com.miui.home
+```
 
-`com.android.systemui` 当前顺序为：
+`com.android.systemui` 已从 scope 删除，`ModuleMain` 也不会为 SystemUI / WMShell 安装任何 source/provider。
 
-1. `SystemUiTaskExecutorSource.install(classLoader)`
-2. `SystemUiHomeOwnershipSource.install(classLoader)`
-3. `SystemUiFreeformLeashProvider.install(classLoader)`
-4. `return`，不进入任何 Launcher Hook
+因此当前主线中不存在 1.x 的这些运行时链：
 
-`com.miui.home` 当前顺序为：
+- SystemUI `ShellTaskOrganizer` task-state source；
+- `MultiTaskingTaskRepository` HOME / APP ownership；
+- `FreeformTaskListener` leash provider；
+- SystemUI → Launcher transition / ownership Binder bridge；
+- HOME / APP / RECENTS screenshot source selection；
+- full-display screen capture / wallpaper capture fallback；
+- capture freeze、capture cadence、black-frame retry 等截图状态机。
 
-1. `LegacyConfigMigration.migrateAtProcessStart()`
-2. `new MainHook().install(classLoader)`
-3. `WorkstationWallpaperOnlyHook.install(classLoader)`
+1.x 相关实现与文档语义应到 `archive/1.x` 查看，不应套用到 2.0。
 
-`LegacyConfigMigration` 只在 Remote Preferences 为空时尝试读取 pre-API101 JSON，并在第一次 Launcher 运行时边界同步迁移。普通 `ConfigReader.load()` / `LiquidDockConfig.load()` 是只读 snapshot，不会再因为加载配置而写 Remote Preferences。
+---
 
-### 主开关的当前边界
+## API 101 入口与安装顺序
 
-当前主开关还不是严格的“零 Hook”：
+入口为 `ModuleMain`。
 
-- SystemUI 的 task-state/freeform observer 在 package-ready 时独立安装；
-- `MainHook.install()` 会先安装工作台模式 guard，再读取 `LiquidDockConfig`；
-- `config.enabled == false` 后 Launcher 主体 Hook 才停止继续安装；
-- `WorkstationWallpaperOnlyHook.install()` 仍由 `ModuleMain` 独立调用。
+`onPackageReady()` 只接受 `com.miui.home`，当前顺序是：
 
-因此“主开关关闭 = 完全不安装任何 Hook”仍是后续重构目标，不是当前事实。
+1. `LegacyConfigMigration.migrateAtProcessStart()`；
+2. 读取一次 `LiquidDockConfig` runtime snapshot；
+3. `new MainHook().install(classLoader)`；
+4. `WorkspaceDropRuleHook.install(...)`，只有 master switch 与 custom grid 同时开启时才安装。
 
-## SystemUI / WMShell task-state Hook
+### 主开关边界
 
-普通 HOME/APP 与 freeform task ownership 不再由 Launcher 枚举 task。SystemUI 只被动观察 ROM 已有对象，不创建第二个 `TaskOrganizer`、不注册第二套 task callback、也不维护镜像 task map。
+`MainHook.install()` 会在读取 `config.enabled` **之前**先安装 workstation mode guard。因此 master switch 关闭时，Launcher 主体功能不会继续安装，但 workstation mode guard 仍可能已经注册。
 
-| 目标类 | Hook | 当前作用 |
+其余主要安装顺序为：
+
+1. workstation mode guard；
+2. `DockStrokeRenderer.installNativeHook()`；
+3. workstation Dock icon / visible Dock geometry Hook；
+4. Dock resize animation bypass（按配置）；
+5. `DockDividerHook`；
+6. `HomeGridHook`；
+7. 如果开启 Liquid Glass，尝试 `Miuix307MaterialPipeline.install(...)`；
+8. 307 material 安装成功后，`MainHook` 直接返回，不进入旧 renderer；
+9. 如果 zero-copy material 不可用，则只在 Dock customization 开启时继续 native Dock customization 路径。
+
+**2.0 没有 legacy glass fallback。**
+
+---
+
+## 307 Zero-copy Liquid Glass
+
+### Material owner
+
+`Miuix307MaterialPipeline` 识别两个当前支持的 vendor background：
+
+```text
+com.miui.home.launcher.hotseats.HotSeatsListContentMiuiXBlurBackground
+com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2
+```
+
+前者是当前 MiuiX material background；后者会在部分第三方主题/图标主题下成为实际 HotSeats background。
+
+### 主要 Hook 点
+
+| 目标 | Hook | 作用 |
 |---|---|---|
-| `com.android.wm.shell.ShellTaskOrganizer` | 所有构造函数完成后 | `SystemUiTaskExecutorSource` 读取现有 `getExecutor()` 并发布 task-state executor；读取失败则 HOME capability fail-closed |
-| `com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository` | 所有构造函数完成后 | `SystemUiHomeOwnershipSource` 保存弱引用并解析 `mContext`、`isHomeVisible()`、`getHomeTask()`、`getTopFullscreenTaskInfo(int)`；不复制 `mTasks` |
-| `com.android.wm.shell.freeform.FreeformTaskListener` | 所有构造函数完成后 | `SystemUiFreeformLeashProvider` 观察 ROM 已有 listener，最终按 display 从其 `mTasks` 读取当前可见 freeform `mLeash` |
+| `com.miui.home.launcher.Launcher` | `setupViews()` | 取得 `mHotSeats` / `mWorkspace`，解析当前实际 background，并尝试把 zero-copy glass 绑定到真实 vendor hierarchy |
+| `BlurUtilities` | `setBackgroundBlur(View, int, float[], int[][])` | 仅对受支持的 `BlurBackground2` material owner 把正的 vendor parent blur radius 压为 0，避免和 Prismal 重复合成 |
+| `HotSeatsListContentMiuiXBlurBackground` | `setBackgroundWidth(int)` | 应用 307 Dock width offset，随后同步 glass size |
+| 同上 | `setBackgroundHeight(int)` | 应用 height offset，随后同步 glass size |
+| 同上 | `setBackgroundRadius(float)` | 应用 blur corner offset，并同步 glass geometry / optics |
+| `HotSeatsListContentBlurBackground2` | `onAttachedToWindow()` | 主题背景实例 attach 时尝试重新绑定 glass |
+| 同上 | `setBackgroundWidth(int)` | 同步主题背景 width 与 glass |
+| 同上 | `setBackgroundHeight(int)` | 同步主题背景 height 与 glass |
+| 同上 | `setBackgroundRadius(float)` | 同步主题背景 radius 与 glass |
+| 同上及其父类 | 所有非 static `triggerMeasure(...)` overload | 主题背景真正完成测量/几何更新后重新同步 size / radius |
 
-`SystemUiTaskStateProvider` 是共享 Binder provider，只做 transaction 分发。HOME source 与 freeform source 有独立健康状态；HOME 结构失败不会触发 freeform breaker，freeform breaker 也不会关闭 HOME source。
+`Miuix307MaterialPipeline` 还通过 View attach/global-layout listener 观察 vendor hierarchy 被主题替换或 detach/reattach。这些是普通 Android listener，不是 Xposed Hook。
 
-模块 app 进程中的 `FreeformLeashBrokerService` 不是 task authority。它只允许 SystemUI 注册 provider、Launcher 获取/观察 provider token。Launcher 注册 provider watcher 后，SystemUI provider 注册、替换或死亡会通过 one-way callback 推送；因此 SystemUI 单独重启后不需要用户再制造 focus/configuration 事件才能恢复 HOME/APP 查询。
+### `MiuixGlassHook` 的职责
 
-## `MainHook.install()` 当前职责
+`MiuixGlassHook` 本身不是新的场景状态机，它负责把当前 vendor background 转成 zero-copy glass 容器：
 
-配置开启后，`MainHook` 仍是一个较大的 Launcher 安装/状态中心，当前会负责或触发：
+- vendor background 继续作为 Dock 几何 authority；
+- vendor material body 被替换为透明 `GradientDrawable`；
+- vendor parent GPU blur 被抑制；
+- 在 vendor background 内加入 `DockLiquidGlassHostView`；
+- host 内加入 `Miuix307PassBlurTextureView`；
+- Dock radius / size 改变时同步 host、Prismal 参数和 foreground stroke；
+- zero-copy 激活失败或验证超时只保持透明，不创建截图 renderer。
 
-- `DockStrokeRenderer.installNativeHook()`
-- `RecentsHapticHook.install()`
-- 工作台 Dock / 模式相关 Hook
-- Dock resize 动画控制
-- `DockDividerHook.install()`
-- `HomeGridHook.install(...)`
-- `HomeGridHook` 工作台偏移配置
-- Launcher-owned gesture / Overview / All Apps 场景 Hook
-- Liquid Glass 捕获 Hook
-- Dock 几何、背景、spacing、blur、shadow 等 Hook
+`DockLiquidGlassHostView` 只是轻量 geometry / clip host：最终按当前 Dock path 裁切 `TextureView`，不承担截图、RuntimeShader backdrop 或 CPU blur。
 
-它已不再承担普通 HOME/APP ownership：没有 ownership 用的 `ActivityManager.getRunningTasks(1)`、`foregroundTaskWindowingMode()`、`LauncherSceneOwnershipPolicy` 或 lifecycle fallback。
+---
 
-## 场景判定与捕获触发
+## SurfaceFlinger PassBlur：反射调用，不是 Hook
 
-`CaptureSceneState` 维护 `UNKNOWN` / HOME / APP / RECENTS / ALL_APPS。普通 HOME/APP baseline 来自 SystemUI；Launcher 只保留 gesture target、exact Overview、All Apps、workstation、Dock interaction 等本地 authority。
+下面这些调用对 2.0 glass 很关键，但它们是对系统隐藏 API 的**反射调用**，不是 libxposed interceptor：
+
+| 对象 | 调用 | 作用 |
+|---|---|---|
+| `View` / `ViewRootImpl` | `getViewRootImpl()` / `getSurfaceControl()` | 找到 Floating Dock / HotSeats 所在 root `SurfaceControl` |
+| `SurfaceControl.Transaction` | `SetPassBlurSurface(SurfaceControl, Surface)` | 把 SurfaceFlinger PassBlur 输出绑定到 LiquidDock 提供的 producer `Surface` |
+| 同上 | `setUpdateTextureFlag(SurfaceControl, boolean, float)` | 启用/关闭 PassBlur texture 更新 |
+| 同上 | `setMiBlurWinExc(SurfaceControl, String[])` | 设置 compositor exclusion 名单，避免输出再次采样自身或系统栏层 |
+
+当前 exclusion 包含 root surface 自身以及：
+
+```text
+NavigationBar
+StatusBar
+GestureStub
+DockAssistantView
+```
+
+PassBlur producer 保持 full-resolution scale；最终 `TextureView` 位于已经排除的 Floating Dock root 内，因此不需要再做旧截图管线的 child-layer exclusion 管理。
+
+---
+
+## GPU 渲染阶段
+
+`Miuix307PassBlurTextureView` 的渲染线程维护 EGL / OES / FBO 生命周期，当前数据流是：
+
+### Stage A — OES → Dock-local RGBA
+
+SurfaceFlinger PassBlur 写入 caller-owned `Surface`，对应 `SurfaceTexture` 作为 external OES texture 输入。
+
+normalize shader 负责：
+
+- OES texture matrix；
+- producer surface / buffer geometry；
+- config rotation；
+- Dock 到 producer 的 Stage-B 坐标映射；
+- FULL / PARTIAL / OUTSIDE coverage；
+- partial coverage 的 mirror guard band，避免超出 producer 有效区域后留下透明黑边。
+
+### Stage B — Gaussian blur
+
+Dock-local RGBA 进入半分辨率 blur FBO：
+
+```text
+rawFramebuffer
+  ↓ horizontal Gaussian
+blurFramebufferH
+  ↓ vertical Gaussian
+blurFramebufferV
+```
+
+`BLUR_FBO_SCALE = 0.5f`。
+
+### Stage C — Prismal
+
+Prismal shader 只处理普通 2D texture，不直接理解 OES / SurfaceFlinger producer geometry。折射、色散、Fresnel、dome、specular、rim、caustics、vibrancy、tint 等参数由 `Miuix307PrismalMaterial` 统一映射。
+
+像素数据全程留在 GPU buffer 中；当前 zero-copy glass 不调用 `captureScreenAsync`、Bitmap readback 或 `glReadPixels`。
+
+---
+
+## 307 Glass 的 fail-closed 行为
+
+当前失败路径有意保持简单：
+
+```text
+supported vendor material
+        ↓
+PassBlur/OES activation succeeds ──→ Prismal glass
+        │
+        └─ fails / times out ──────→ transparent glass
+```
+
+不会变成：
+
+```text
+PassBlur fails → screenshot renderer
+```
+
+如果 `Miuix307MaterialPipeline` 连受支持的 background class 都找不到，`MainHook` 会把 Liquid Glass 视为不可用；如果普通 Dock customization 仍开启，则可以继续安装 native Dock 自定义 Hook，但不会恢复旧 glass renderer。
+
+---
+
+## 普通 / Native Dock 自定义 Hook
+
+以下路径主要用于未由 307 zero-copy material 接管的 native Dock customization。
 
 | 目标类 | 方法 | 当前作用 |
 |---|---|---|
-| `com.miui.home.launcher.Launcher` | `onWindowFocusChanged(boolean)` | **只作为 SystemUI ownership refresh trigger**；不直接把 focus=true/false 解释成 HOME/APP |
-| `GestureToHome` | 所有构造函数 | 预置 HOME gesture target |
-| `GestureToApp` | 所有构造函数 | 预置 APP gesture target，并允许短时 APP backdrop pre-arm |
-| `GestureToRecent` | 所有构造函数 | 预置 RECENTS gesture target |
-| `EnterOverviewStateEvent` | 所有构造函数 | 标记 exact Overview / RECENTS 进入 |
-| `ExitOverviewStateEvent` | 所有构造函数 | 标记 exact Overview / RECENTS 退出 |
-| `com.miui.home.launcher.Launcher` | `showOrHideRecent()` | 普通路径提供 Recents 边界；工作台实验路径还用它刷新 native snapshot |
-| `com.miui.home.launcher.DeviceConfig` | `setControlPanelExpanded(boolean)` | 控制中心/通知区域展开时关闭不合适的捕获 |
-| `com.miui.home.launcher.Launcher` | `onConfigurationChanged(Configuration)` | 请求新的 SystemUI ownership baseline，并打开 capture stabilization；网格路径也等待新方向 bounds 稳定 |
-| `android.app.Activity` | `onWindowVisibilityChanged(int)` | 仅 Launcher 实例作为捕获触发/可见性补充，不提供普通 HOME/APP authority |
+| `HotSeatsListContentBlurBackground2` | `setBackgroundWidth(int)` | 普通 Dock width offset，并同步 shadow geometry |
+| 同上 | `setBackgroundHeight(int)` | height offset，并同步 shadow geometry |
+| 同上 | `setBackgroundRadius(float)` | blur radius basis / stroke radius / squircle geometry 同步 |
+| 同上 | `updateBackgroundSize(int,int,float)` | 按配置结束 vendor resize animator；可由 LiquidDock 重新做短时 smooth geometry animation |
+| `HotSeatsListContentLayoutManager$OffsetDecoration` | `getItemOffsets(...)` | 普通 Dock icon spacing；workstation 开启时也可叠加 workstation top/bottom offset |
+| `HotSeatsListContentLayoutManager` | `updateBackgroundView(FrameLayout,int,int,float)` | spacing 改变后补偿 Dock background width |
+| `DeviceConfig` | `getHotSeatsMarginBottom()` | 普通 Dock bottom offset |
+| `BlurUtilities` | `setBackgroundBlur(...)` | native 路径覆盖系统 Dock blur radius |
+| `HotSeats` | `getMingouStaticDockBlurShadowTarget()` | 记录系统原生 Dock shadow target |
+| `MiShadowUtils` | `applyViewShadow(...)` | 只对已确认的原生 Dock shadow target 清除 vendor shadow，避免和 LiquidDock 独立 shadow 重叠 |
+| `Launcher` | `setupViews()` | native 路径初始化 background 引用和可选独立 Dock shadow |
 
-`MainHook` 已删除原先只为 ownership 服务的 `Launcher.onResume/onPause/onStart/onStop` fallback Hook。
+### Dock stroke
 
-普通 ownership 请求一开始即把 baseline 置为 `UNKNOWN`。SystemUI 返回 HOME/APP 后才恢复对应 baseline；如果第一次读到 `homeVisible + non-HOME top fullscreen` 冲突，只允许一次约 160 ms confirmation。provider/协议/结构/timeout 失败均保持 UNKNOWN，不回退 Launcher task query 或 last-good HOME/APP。
+`DockStrokeRenderer.installNativeHook()` Hook：
 
-`CaptureSceneState` 带 revision。异步 SurfaceFlinger 回调只有在 scene/revision/attempt token 仍匹配时才能安装，避免旧帧覆盖新场景。
+```text
+HotSeatsListContentBlurBackground2.setBackgroundRadius(float)
+```
 
-### 当前 source policy 与 mode-1 safety gate
+native blur Dock 直接使用 background foreground 绘制 border。307 in-place glass 则由 material/geometry 同步路径直接调用 `configureReplacingForeground(...)`，不需要再创建历史上的独立 stroke overlay renderer。
 
-普通 source policy 为：
+边框绘制使用 outer path + inner path：先 clip 到 outer，再 `clipOutPath(inner)` 排除 Dock 中心。内部 contour 在动画瞬间无效时宁可跳过该帧，也不会降级成整块填充。
 
-- `UNKNOWN` → wallpaper；
-- HOME → wallpaper；
-- APP → full display；
-- RECENTS → exact Overview 未确认前 wallpaper，确认后 full display；
-- normal All Apps → wallpaper。
+---
 
-`liquid_capture_fullscreen` 仍是低层兼容开关；后端不可用或兼容设置关闭时可以继续退回 vendor wallpaper。工作台模式还有独立 suspension/native snapshot 实验逻辑。
+## Workstation / Laptop 模式 Hook
 
-APP/confirmed Recents 的 mode-1 提交还必须经过 `FreeformCaptureLeashHook`。该 gate 在提交前从 SystemUI 请求当前 display 的可见 freeform task leash snapshot，并把这些 `SurfaceControl` 合并到 exclusion array；snapshot unavailable/unsafe/incomplete 时 fail-closed 到 wallpaper。HOME 即使存在 freeform 也不会因此升级成 full-display capture。
+工作台状态完全在 Launcher 进程内判断，不依赖 SystemUI。
 
-## 壁纸 offset / zoom 监听
+### 状态 authority
 
-LiquidDock 不阻止系统壁纸滚动/缩放调用，而是在原调用后读取变化并更新捕获映射状态。
+优先读取：
 
-| 目标类 | 方法 | 当前作用 |
+```text
+LauncherModeController.isLaptopMode()
+```
+
+并 Hook：
+
+```text
+LaptopStateManager.onLaptopModeChanged(boolean)
+```
+
+如果当前 API 不存在，则回退到 Launcher 内的旧接口：
+
+```text
+DeviceConfig.isMingouLaptopPcModeEnabled()
+DeviceConfig.setMingouLaptopPcModeEnabled(boolean)   // Hook
+```
+
+workstation mode 改变后会同步 `HomeGridHook` 与 `WorkstationDockGeometryHook`，并在进入/退出时备份或恢复普通桌面 item position。
+
+### Workstation Dock
+
+| 目标 | Hook | 作用 |
 |---|---|---|
-| `android.app.WallpaperManager` | `setWallpaperOffsets(IBinder, float, float)` | 原调用继续执行；记录标准化 wallpaper offset |
-| `android.app.WallpaperManager` | `setDisplayOffset(IBinder, int, int)` | 原调用继续执行；记录 display offset |
-| `android.app.WallpaperManager` | `setWallpaperZoomOut(IBinder, float)` | 原调用继续执行；记录 wallpaper zoom |
+| `HotSeatsListContentLayoutManager$OffsetDecoration` | `getItemOffsets(...)` | workstation 模式下增加 Dock icon top / bottom offset |
+| `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | `WorkstationDockGeometryHook` 从 divider anchor 向父级寻找实际 `DockContainer`，对可见 laptop Dock 应用独立 width offset |
 
-## 普通 Dock 几何、模糊与阴影
+普通 HotSeats background 在 workstation 模式下会隐藏；可见 capsule 由独立 laptop `DockContainer` 管理，因此 workstation width 不通过普通 HotSeats blur background 强行实现。
 
-| 目标类 | 方法 | 当前作用 |
-|---|---|---|
-| `com.miui.home.launcher.Launcher` | `setupViews()` | Dock 视图树完成后通过共享 assembly 创建 `DockLiquidGlassHostView`（glass body + sharp overlay）与可选整体 shadow；保存原生背景引用 |
-| `HotSeatsListContentBlurBackground2` | `setBackgroundWidth(int)` | 普通模式宽度偏移；同步 Glass / shadow 几何；工作台实验路径也会在同入口应用独立宽度偏移 |
-| `HotSeatsListContentBlurBackground2` | `setBackgroundHeight(int)` | 普通 Dock 高度偏移并同步几何 |
-| `HotSeatsListContentBlurBackground2` | `setBackgroundRadius(float)` | 原生模糊圆角更新；同时是 `DockStrokeRenderer` 的 native Dock 描边刷新入口 |
-| `HotSeatsListContentBlurBackground2` | `updateBackgroundSize(int, int, float)` | 控制系统 resize animator，必要时由 LiquidDock 使用平滑 resize 动画 |
-| `HotSeatsListContentLayoutManager$OffsetDecoration` | `getItemOffsets(...)` | 普通 Dock 图标 spacing；工作台实验路径可独立应用 top/bottom offset |
-| `HotSeatsListContentLayoutManager` | `updateBackgroundView(FrameLayout, int, int, float)` | spacing 开启时补偿 Dock 背景长度 |
-| `com.miui.home.launcher.DeviceConfig` | `getHotSeatsMarginBottom()` | 应用普通 Dock bottom offset |
-| `com.miui.home.launcher.common.BlurUtilities` | `setBackgroundBlur(View, int, float[], int[][])` | 按配置覆盖原生 blur radius |
-| `com.miui.home.launcher.hotseats.HotSeats` | `getMingouStaticDockBlurShadowTarget()` | 记录 HyperOS 原生 Dock shadow target |
-| `com.miui.home.launcher.common.MiShadowUtils` | `applyViewShadow(...)` | 只对已识别的 Dock 原生 shadow target 清空系统 shadow，避免重复阴影 |
+---
 
-旧文档中的 `HotSeatsListContentBlurBackground2.setBackgroundBlur(...)`、`HotSeats.setBackgroundWidth/Height/Radius` 已不是当前 Hook 点。
+## Dock Divider Hook
 
-## 描边与 Liquid Glass 分层
+`DockDividerHook` Hook：
 
-`DockStrokeRenderer` 仍是唯一的可配置边框 renderer，但宿主因渲染后端而不同：
+```text
+HotSeatsListContentAdapter$LineViewHolder.bindView()
+```
 
-- native blur Dock：继续安装到系统背景 View foreground；
-- Liquid Glass：安装到独立 `DockStrokeOverlayView` foreground，overlay 与 Canvas 高光位于 self-blurred glass body 之上；
-- `StrokeDrawable` 仍构造 outer/inner path，并用 `clipPath(outer)` + `clipOutPath(inner)` 从几何上排除 Dock 中心；
-- 不恢复旧的独立 RenderNode/布局动画描边实现；Liquid Glass overlay 只承担锐利视觉层，不改变 Dock/icon LayoutParams；
-- 不把可配置 Dock border 退化为普通 `Paint.Style.STROKE`。
+从 holder 取得 divider content View，并按 Remote Preferences 应用：
 
-### Liquid Glass 高级材质模糊
+- width；
+- 相对父容器高度的 height percent；
+- Y offset；
+- RGBA color。
 
-`liquid_blur_mode=advanced_material` 时，`MiBlurBridge` 缓存并直接反射 `View.setMiSelfBlur(int, ArrayList)`、`setPassTextureScale(float)` 与 `setMiSelfBlurEnhanceFlag(int,int)`。成功后 `DockLiquidGlassView` 把 `shaderBlurEnabled=0`，原 `blurred()` 直接返回 `source()`，由 SurfaceFlinger self-blur 接管模糊；任一能力调用失败则 active backend 回到 Shader，但持久化模式不变。
+首个 RecyclerView bind 发生在父容器还没有有效高度时，会注册一次普通 `OnLayoutChangeListener` 延迟补几何；这个 listener 不是 Xposed Hook。
 
-最终裁剪由 `DockLiquidGlassHostView.dispatchDraw()` 完成。高级模式下 glass child 自身保持矩形、不使用 `clipToOutline`，使圆角外但仍位于矩形 RenderNode 内的像素可以参与 self-blur，再由 host clip 回 round/squircle 形状。这是对实验中左上角模糊缺口的结构性修复。
+---
 
-### 旧描边阴影
+## 8×4 / 4×8 Home Grid
 
-历史 `stroke_shadow`、`shadow_radius`、`shadow_alpha` key 仍在 `ConfigSchema` / `LiquidDockConfig` 中以保持配置兼容，但**当前 `DockStrokeRenderer` 不消费这些值，旧描边阴影效果已经失效**。
+`HomeGridHook` 只有在 custom grid 开启时安装布局 Hook；关闭时保持 MIUI stock grid，不改 CellLayout / indicator / folder measurement。
 
-这和独立的整个 Dock shadow (`dock_shadow*`) 是两套功能。测试新描边时不应把“没有旧描边阴影”判为回归。
+主要 Hook 范围包括：
 
-## 拖拽与 Recents 触觉
+- `LauncherCellCountCompatPadDevice` 的 X/Y min/default cell count；
+- `GridConfig` count X/Y getter / setter；
+- `CellLayout.calculateXsAndYs()`；
+- `CellLayout.setupLayoutParam(...)`；
+- `CellLayout.onLayout(...)`；
+- `FolderIcon1x1.onMeasure(...)`；
+- orientation transform、workspace refresh、页面 indicator 和旋转后的 geometry refresh 相关 Launcher 方法。
 
-| 目标类 | 方法 | 当前作用 |
-|---|---|---|
-| `com.miui.home.launcher.DragController` | `startDrag(...)` | 标记 Dock 拖拽开始，并尝试解析 drag layer 供捕获排除/调度使用 |
-| `com.miui.home.launcher.DragController` | `endDrag()` | 清除拖拽状态与 drag layer |
-| `HapticFeedbackCompatLinear` | `performEnterRecent(View)` | Recents 语义预触发 |
-| `HapticFeedbackCompatV2` | `performEnterRecent(View)` | 同上，兼容另一 HyperOS 实现 |
-| `HapticFeedbackCompatNormal` | `performEnterRecent(View)` | 同上，兼容另一 HyperOS 实现 |
+关键职责包括：
 
-三个 haptic 类位于 `com.miui.home.launcher.common.*`；`RecentsHapticHook` 使用 superclass-aware 的精确方法查找。
+- 横屏 8×4 / 竖屏 4×8 count；
+- 横竖屏独立 padding / row gap；
+- 重新构建 `mXs` / `mYs`；
+- widget span 和最终 frame 适配；
+- lazy/off-screen page 首次得到有效 bounds 时补 geometry；
+- 小文件夹在新 cell size 下重新对齐；
+- workstation 桌面 / All Apps 独立偏移。
 
-## 桌面 8×4 / 4×8 网格
+### Workspace drop rule
 
-`MainHook` 总会调用 `HomeGridHook.install(...)`，但 `HomeGridHook` 在 `home_grid_8x4 == false` 时会立即返回，不安装布局自定义 Hook。
+`WorkspaceDropRuleHook` 仅在 master switch + custom grid 都开启时 Hook：
 
-开启后主要 Hook：
+```text
+com.miui.home.launcher.compat.LayoutDropRuleForSwapPlaces
+    .isLegalXY(int, int, int, int)
+```
 
-| 目标类 | 方法 | 当前作用 |
-|---|---|---|
-| `LauncherCellCountCompatPadDevice` | `getCellCountXMin/Def(Context)` | 横屏 8 列、竖屏 4 列 |
-| `LauncherCellCountCompatPadDevice` | `getCellCountYMin/Def(Context)` | 横屏 4 行、竖屏 8 行 |
-| `com.miui.home.launcher.grid.GridConfig` | `setCountX/setCountY` | 把系统 6 规范化/扩展为 8 |
-| `com.miui.home.launcher.grid.GridConfig` | `getCountX/getCountY` | 读取时同样规范化 6→8 |
-| `LayoutTransformRuleGridChanged` | 所有构造函数 | 写入当前 8 个 2×2 block 的横竖屏 transform metadata |
-| `LayoutTransformRuleGridChanged` | `checkCellCount()` | 允许 8×4 / 4×8 通过系统校验 |
-| `com.miui.home.launcher.CellLayout` | `calculateXsAndYs()` | 应用自定义 margin/gap，并在原方法后重建最终 `mXs/mYs` |
-| `com.miui.home.launcher.CellLayout` | `setupLayoutParam(...)` | Widget adaptation 开启时应用支持 span 的自定义 allocation |
-| `com.miui.home.launcher.CellLayout` | `onLayout(...)` | lazy page 首次有效 bounds 几何准备；原生布局后重新断言 Widget exact frame |
-| `com.miui.home.launcher.folder.FolderIcon1x1` | `onMeasure(int, int)` | 用真实 CellLayout cell 高度重基准小文件夹测量 |
-| `com.miui.home.launcher.Launcher` | `setupViews()` | 保存 Workspace 弱引用并安排多次页面刷新 |
-| `com.miui.home.launcher.Launcher` | `onConfigurationChanged(Configuration)` | 等待新方向 Workspace bounds 稳定后刷新页面 |
-| `com.miui.home.launcher.ScreenView` | `updateIndicatorPositions(int, boolean)` | 对实际 Workspace 保存基准 translation，再应用方向独立 Y offset |
+返回 `true` 的目的只是移除 MIUI stock 6-column swap-placement pattern 限制。
 
-### 占位/位置 invariants
+它**不会**替换 `GridOccupancyController`：边界、occupied cells、vacancy search 和实际 placement 仍由 Launcher 原逻辑负责。
 
-当前实现刻意**不 Hook** `addOccupied()` 和 `transformToHVArray()`。MIUI 继续拥有 occupied matrix 与 placement/transform 语义，LiquidDock 只扩展 grid metadata 和像素几何。
+---
 
-不要重新引入“猜测 occupied matrix 是 `[x][y]` 还是 `[y][x]`”的单 item 修补逻辑，这类修改历史上会导致重叠、丢图标和旋转越界。
+## 当前不应再加入 HOOKS.md 的 1.x 内容
 
-## Widget adaptation：当前真实路径
+维护 2.0 文档时，下列概念除非明确标成历史说明，否则不应重新写回“当前 Hook 点”：
 
-开关：`grid_widget_adaptation`。只有 `home_grid_8x4 && grid_widget_adaptation` 时 `WidgetGridSizing.gridRect()` 才返回有效自定义矩形。
+- `com.android.systemui` scope；
+- `ShellTaskOrganizer` / WMShell transition observer；
+- HOME / APP ownership provider；
+- freeform leash snapshot；
+- `CaptureSceneState`；
+- wallpaper / full-display capture source policy；
+- `LiveScreenCapture`；
+- Bitmap / HardwareBuffer screenshot renderer；
+- Recents pre-arm / capture hold / capture cadence；
+- SystemUI 控制中心展开对 screenshot capture 的 gating。
 
-当前活动检测逻辑：
+2.0 glass 的判断原则应保持为：
 
-1. 优先调用 `ItemInfo.isWidget()`；
-2. fallback 到 `itemType == 4 || 5 || 19`；
-3. `WidgetGridSizing.isSupportedSpec()` 只允许：
-   - 1×1
-   - 2×1
-   - 2×2
-   - 4×2
+> **只维护“GPU 管线现在能否正确绑定并绘制”的状态，不维护“现在应该截什么”的状态。**
 
-活动尺寸路径是 `CellLayout.setupLayoutParam()` + `CellLayout.onLayout()` 的 exact-frame enforcement。
+---
 
-`HomeGridHook.adaptTwoByOneWidget(...)` 仍存在于源码，但当前没有接到活动布局链，属于待删除 legacy/inert helper；不要把它重新接回去当作当前 2×1 修复方案。
+## 源码事实来源
 
-下一阶段计划引入 `WidgetClassifier` / `WidgetSpecRegistry`，把类型和 span 从核心 Hook 中移出；**该 registry 尚未实现**。
+Hook 行为发生变化时，优先以这些文件为准：
 
-## Divider
-
-`DockDividerHook` 独立 Hook：
-
-| 目标类 | 方法 | 当前作用 |
-|---|---|---|
-| `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | 系统 bind 完成后按配置覆盖 Divider 宽度、高度比例、Y offset 和 RGBA |
-
-Divider 与 `dock_dimensions_dp` 解耦。历史 width/Y JSON 数值是 raw `0.1 dp` 整数，`ConfigSchema.Divider` 故意使用 `DIRECT` 保存旧导入 clamp/导出表示；运行时由 `LiquidDockConfig.Divider` 除以 10 变成真实 dp。
-
-存在 `dock_divider_enabled` 时是 explicit mode；旧配置缺少开关时继续使用 `0 = 不覆盖系统默认` 的 legacy sentinel。
-
-详见 [DIVIDER.md](DIVIDER.md)。
-
-## 工作台 / Laptop：实验实现，不是完成适配
-
-源码中已有多条 Workstation Hook，但这只能说明存在实验性兼容路径，**不能说明工作台已经适配完成**。
-
-主要实验 Hook/入口包括：
-
-| 目标类 | 方法 | 当前作用 |
-|---|---|---|
-| `com.miui.home.launcher.laptop.LaptopStateManager` | `onLaptopModeChanged(boolean)` | 首选工作台状态变化入口；触发状态切换与普通布局 backup/restore |
-| `com.miui.home.launcher.DeviceConfig` | `setMingouLaptopPcModeEnabled(boolean)` | 旧系统 fallback |
-| `HotSeatsListContentBlurBackground2` | `setBackgroundWidth(int)` | 可应用工作台专用 Dock width offset |
-| `HotSeatsListContentLayoutManager$OffsetDecoration` | `getItemOffsets(...)` | 可应用工作台 Dock icon top/bottom offset |
-| `HotSeatsListContentAdapter$LineViewHolder` | `bindView()` | 工作台 Divider 实验配置 |
-| `com.miui.home.launcher.hotseats.HotSeats` | `setMingouStaticDockLiveBlurVisible(boolean)` | 实验性强制 native snapshot/live blur 状态 |
-| `com.miui.home.launcher.hotseats.HotSeats` | `setMingouStaticDockSnapshotMode(boolean)` | 实验性 snapshot mode 维持 |
-| `com.miui.home.launcher.laptop.AllAppsController` | `showAllApps(boolean)` | 切换前后刷新原生 wallpaper snapshot |
-| `com.miui.home.launcher.laptop.AllAppsController` | `showWindow(boolean)` | 同上，覆盖另一条 All Apps 路径 |
-| `com.miui.home.launcher.Launcher` | `showOrHideRecent()` | 工作台 Recents snapshot/capture 边界 |
-| `com.miui.home.launcher.CellLayout` | `onLayout(...)` | 实验性修正 Laptop All Apps/Grid 纵向 offset |
-
-状态初值还会**反射调用** `LauncherModeController.isLaptopMode()`；旧系统 fallback 会反射读取 `DeviceConfig.isMingouLaptopPcModeEnabled()`。这些 getter 只是调用，不是额外 Hook 点。
-
-当前工作台仍可能在 Dock、All Apps、Recents、横竖屏、布局恢复或捕获上出现异常，因此应保持“未适配/不支持”的产品状态，直到完成真机回归。
-
-## API 101 Hook / 反射工具层
-
-所有 Hook/反射统一经过 `HookUtil`，不再依赖旧 `XposedHelpers` shim：
-
-- `HookUtil.hook(...)`：安装 API 101 interceptor
-- `HookUtil.hookMethod(...)`：按精确签名查找并 Hook
-- `HookUtil.findMethodExact(...)`：沿父类链查找精确方法
-- `HookUtil.invoke/invokeStatic(...)`：反射调用
-- `HookUtil.getField/setField` 及基本类型 helper：沿父类链访问字段
-
-`Api101Bridge` 保存进程内 `XposedModule` 实例，并提供日志、Remote Preferences 等 API 101 能力。
-
-## 当前配置边界（非 Hook）
-
-Phase 1 后：
-
-- `ConfigSchema`：key/type/default/range/storage/export metadata
-- `ConfigCodec`：JSON import/export
-- `ConfigMigration`：设置进程历史 SharedPreferences 升级
-- `PresetManager`：预设
-- `ConfigReader`：只读 Remote Preferences snapshot
-- `LiquidDockConfig`：不可变运行时配置
-- `LegacyConfigMigration`：仅 Launcher package-ready 的 pre-API101 JSON compatibility bridge
-
-Hook 和 renderer 不应重新直接读取 raw preference key。新增配置应先进入 schema，再由 typed config 传入运行时。
-
-实现细节以当前 `ModuleMain`、`MainHook`、`SystemUiTaskExecutorSource`、`SystemUiHomeOwnershipSource`、`SystemUiTaskStateProvider`、`SystemUiFreeformLeashProvider`、`HomeOwnershipResolver`、`HomeOwnershipRuntime`、`FreeformLeashBrokerService`、`FreeformLeashBrokerClient`、`FreeformCaptureLeashHook`、`HomeGridHook`、`WidgetGridSizing`、`DockLiquidGlassView`、`LiveScreenCapture`、`CaptureSceneState`、`CaptureCadence`、`DockStrokeRenderer`、`DockDividerHook`、`RecentsHapticHook`、`WorkstationWallpaperOnlyHook`、`HookUtil`、`ConfigSchema`、`ConfigCodec`、`ConfigMigration`、`ConfigReader` 和 `LiquidDockConfig` 为准。
+```text
+src/main/resources/META-INF/xposed/scope.list
+src/main/java/com/hellovoid/liquiddock/ModuleMain.java
+src/main/java/com/hellovoid/liquiddock/MainHook.java
+src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
+src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
+src/main/java/com/hellovoid/liquiddock/Miuix307ZeroCopyRenderer.java
+src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurBridge.java
+src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java
+src/main/java/com/hellovoid/liquiddock/HomeGridHook.java
+src/main/java/com/hellovoid/liquiddock/WorkspaceDropRuleHook.java
+src/main/java/com/hellovoid/liquiddock/DockStrokeRenderer.java
+src/main/java/com/hellovoid/liquiddock/DockDividerHook.java
+src/main/java/com/hellovoid/liquiddock/WorkstationDockGeometryHook.java
+```
