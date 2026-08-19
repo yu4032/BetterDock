@@ -140,7 +140,7 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_BIT_THRESHOLD, 18, 1, 64);
         assertComposeIntSpec(ConfigSchema.Glass.DYNAMIC_HOLD_MS, 900, 0, 5000);
         assertComposeIntSpec(ConfigSchema.Glass.BLACK_THRESHOLD, 10, 0, 64);
-        assertComposeIntSpec(ConfigSchema.Glass.HOME_SETTTLE_DELAY_MS, 1200, 200, 3000);
+        assertComposeIntSpec(ConfigSchema.Glass.HOME_SETTLE_DELAY_MS, 1200, 200, 3000);
         assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_SCALE, 50, 10, 100);
         assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_STOP_DELAY, 150, 0, 10000);
         assertComposeIntSpec(ConfigSchema.Glass.RECENTS_PREARM_DISTANCE, 8, 1, 48);
