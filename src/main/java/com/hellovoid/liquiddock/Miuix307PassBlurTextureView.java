@@ -28,12 +28,13 @@ import java.nio.FloatBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Feedback-safe Stage-A HyperOS 3.0.307 PassBlur calibration backend.
+ * Feedback-safe Stage-B HyperOS 3.0.307 PassBlur calibration backend.
  *
  * PassBlur renders into a caller-owned input SurfaceTexture attached to an external OES texture.
- * A dedicated EGL thread samples that texture and renders strict full-domain passthrough into this
- * TextureView. Because TextureView is composited into the already-excluded Floating Dock root, the
- * output does not publish an independent SurfaceView layer back into the PassBlur scene.
+ * A dedicated EGL thread renders into this TextureView, which remains inside the already-excluded
+ * Floating Dock root. Stage B maps Dock-local UVs into the material host's real root-surface rect,
+ * applies the HyperOS config rotation, and finally applies the SurfaceTexture transform matrix.
+ * The shader remains strict passthrough: no refraction, tint, blur, or optical displacement.
  */
 final class Miuix307PassBlurTextureView extends TextureView
         implements TextureView.SurfaceTextureListener {
@@ -61,9 +62,20 @@ final class Miuix307PassBlurTextureView extends TextureView
             + "precision mediump float;\n"
             + "uniform samplerExternalOES uTexture;\n"
             + "uniform mat4 uTexMatrix;\n"
+            + "uniform vec4 uBackdropRect;\n"
+            + "uniform int uConfigRot;\n"
             + "varying vec2 vUv;\n"
             + "void main() {\n"
-            + "  vec4 transformed = uTexMatrix * vec4(vUv, 0.0, 1.0);\n"
+            + "  vec2 rootUv = uBackdropRect.xy + vUv * uBackdropRect.zw;\n"
+            + "  vec2 orientedUv = rootUv;\n"
+            + "  if (uConfigRot == 1) {\n"
+            + "    orientedUv = vec2(rootUv.y, 1.0 - rootUv.x);\n"
+            + "  } else if (uConfigRot == 2) {\n"
+            + "    orientedUv = vec2(1.0 - rootUv.x, 1.0 - rootUv.y);\n"
+            + "  } else if (uConfigRot == 3) {\n"
+            + "    orientedUv = vec2(1.0 - rootUv.y, rootUv.x);\n"
+            + "  }\n"
+            + "  vec4 transformed = uTexMatrix * vec4(orientedUv, 0.0, 1.0);\n"
             + "  gl_FragColor = texture2D(uTexture, transformed.xy);\n"
             + "}\n";
 
@@ -107,6 +119,10 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile Miuix307PassBlurBridge.Binding binding;
     private volatile int outputWidth;
     private volatile int outputHeight;
+    private volatile float backdropX;
+    private volatile float backdropY;
+    private volatile float backdropW = 1f;
+    private volatile float backdropH = 1f;
 
     private EGLDisplay eglDisplay = EGL14.EGL_NO_DISPLAY;
     private EGLConfig eglConfig;
@@ -120,6 +136,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private boolean firstFrameLogged;
     private boolean firstDrawLogged;
     private boolean firstMatrixLogged;
+    private boolean stageBDiagnosticsLogged;
     private ViewTreeObserver preDrawObserver;
     private ViewTreeObserver.OnPreDrawListener preDrawListener;
 
@@ -169,6 +186,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         installGeometryObserver();
+        updateBackdropMapping();
         if (isAvailable() && getSurfaceTexture() != null && outputWindowSurface == null) {
             onSurfaceTextureAvailable(getSurfaceTexture(), getWidth(), getHeight());
         }
@@ -197,6 +215,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (shuttingDown || surface != outputSurfaceTexture) return;
         outputWidth = Math.max(1, width);
         outputHeight = Math.max(1, height);
+        updateBackdropMapping();
         renderHandler.post(() -> {
             if (eglWindowSurface != EGL14.EGL_NO_SURFACE) {
                 makeCurrent();
@@ -364,7 +383,7 @@ final class Miuix307PassBlurTextureView extends TextureView
                 if (!firstMatrixLogged) {
                     firstMatrixLogged = true;
                     MainHook.log(TAG + " texture matrix=" + formatTextureMatrix(textureMatrix)
-                            + " stage=full-domain configRot=" + configRotation);
+                            + " stage=dock-local configRot=" + configRotation);
                 }
             }
             if (!hasConsumedFrame) return;
@@ -375,7 +394,10 @@ final class Miuix307PassBlurTextureView extends TextureView
             int uv = GLES20.glGetAttribLocation(program, "aUv");
             int texture = GLES20.glGetUniformLocation(program, "uTexture");
             int matrix = GLES20.glGetUniformLocation(program, "uTexMatrix");
-            if (position < 0 || uv < 0 || texture < 0 || matrix < 0) {
+            int backdropRect = GLES20.glGetUniformLocation(program, "uBackdropRect");
+            int rotation = GLES20.glGetUniformLocation(program, "uConfigRot");
+            if (position < 0 || uv < 0 || texture < 0 || matrix < 0
+                    || backdropRect < 0 || rotation < 0) {
                 throw new IllegalStateException("shader location unavailable");
             }
 
@@ -392,6 +414,8 @@ final class Miuix307PassBlurTextureView extends TextureView
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexture);
             GLES20.glUniform1i(texture, 0);
             GLES20.glUniformMatrix4fv(matrix, 1, false, textureMatrix, 0);
+            GLES20.glUniform4f(backdropRect, backdropX, backdropY, backdropW, backdropH);
+            GLES20.glUniform1i(rotation, configRotation);
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
             GLES20.glDisableVertexAttribArray(position);
             GLES20.glDisableVertexAttribArray(uv);
@@ -410,12 +434,18 @@ final class Miuix307PassBlurTextureView extends TextureView
             if (gpuBackdropActive && !firstDrawLogged) {
                 firstDrawLogged = true;
                 MainHook.log(TAG + " first EGL passthrough draw"
-                        + " textureDomain=full"
+                        + " textureDomain=dock-local"
+                        + " backdropRect=[" + backdropX + "," + backdropY + ","
+                        + backdropW + "," + backdropH + "]"
                         + " output=" + outputWidth + "x" + outputHeight
                         + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
                         + " configRot=" + configRotation
                         + " frameCallback=" + fromFrameCallback);
-                post(this::logStageADiagnostics);
+            }
+            if (gpuBackdropActive && !stageBDiagnosticsLogged) {
+                stageBDiagnosticsLogged = true;
+                final float[] matrixSnapshot = textureMatrix.clone();
+                post(() -> logStageBDiagnostics(matrixSnapshot));
             }
         } catch (Throwable error) {
             fail("draw", error);
@@ -477,6 +507,8 @@ final class Miuix307PassBlurTextureView extends TextureView
         boundSurfaceHeight = current.surfaceHeight;
         boundConfigRotation = current.configRotation;
         activationExhausted = false;
+        stageBDiagnosticsLogged = false;
+        updateBackdropMapping();
         MainHook.log(TAG + " producer geometry surface="
                 + current.surfaceWidth + "x" + current.surfaceHeight
                 + " buffer=" + current.bufferWidth + "x" + current.bufferHeight
@@ -501,6 +533,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (observer == null || !observer.isAlive()) return;
         ViewTreeObserver.OnPreDrawListener listener = () -> {
             refreshProducerGeometryInPlace();
+            updateBackdropMapping();
             return true;
         };
         observer.addOnPreDrawListener(listener);
@@ -545,6 +578,8 @@ final class Miuix307PassBlurTextureView extends TextureView
         firstFrameLogged = false;
         firstDrawLogged = false;
         firstMatrixLogged = false;
+        stageBDiagnosticsLogged = false;
+        updateBackdropMapping();
         renderHandler.post(() -> {
             SurfaceTexture currentInput = inputSurfaceTexture;
             if (!shuttingDown && currentInput == input) {
@@ -555,6 +590,45 @@ final class Miuix307PassBlurTextureView extends TextureView
                 + geometry.surfaceWidth + "x" + geometry.surfaceHeight
                 + " buffer=" + geometry.bufferWidth + "x" + geometry.bufferHeight
                 + " configRot=" + geometry.configRotation);
+    }
+
+    private void updateBackdropMapping() {
+        if (shuttingDown || boundSurfaceWidth <= 0 || boundSurfaceHeight <= 0) return;
+        View materialHost = materialHostRef.get();
+        if (materialHost == null || !materialHost.isAttachedToWindow()) return;
+        View root = materialHost.getRootView();
+        if (root == null) return;
+
+        int hostWidth = materialHost.getWidth();
+        int hostHeight = materialHost.getHeight();
+        if (hostWidth <= 0 || hostHeight <= 0) return;
+
+        int[] hostScreen = new int[2];
+        int[] rootScreen = new int[2];
+        materialHost.getLocationOnScreen(hostScreen);
+        root.getLocationOnScreen(rootScreen);
+
+        float nextX = (hostScreen[0] - rootScreen[0]) / (float) boundSurfaceWidth;
+        float top = (hostScreen[1] - rootScreen[1]) / (float) boundSurfaceHeight;
+        float nextW = hostWidth / (float) boundSurfaceWidth;
+        float nextH = hostHeight / (float) boundSurfaceHeight;
+        float nextY = 1f - (top + nextH);
+
+        if (Float.compare(backdropX, nextX) == 0
+                && Float.compare(backdropY, nextY) == 0
+                && Float.compare(backdropW, nextW) == 0
+                && Float.compare(backdropH, nextH) == 0) {
+            return;
+        }
+
+        backdropX = nextX;
+        backdropY = nextY;
+        backdropW = nextW;
+        backdropH = nextH;
+        stageBDiagnosticsLogged = false;
+        if (hasConsumedFrame) {
+            renderHandler.post(() -> drawLatestFrame(false));
+        }
     }
 
     private ProducerGeometry readSurfaceGeometry(View materialHost) {
@@ -590,18 +664,67 @@ final class Miuix307PassBlurTextureView extends TextureView
         }
     }
 
-    private void logStageADiagnostics() {
+    private void logStageBDiagnostics(float[] matrixSnapshot) {
         if (shuttingDown) return;
         View materialHost = materialHostRef.get();
         if (materialHost == null) return;
+        View root = materialHost.getRootView();
+        if (root == null) return;
+
         int[] hostScreen = new int[2];
+        int[] rootScreen = new int[2];
         materialHost.getLocationOnScreen(hostScreen);
-        MainHook.log(TAG + " stage-A diagnostic hostScreen=["
-                + hostScreen[0] + "," + hostScreen[1] + "]"
+        root.getLocationOnScreen(rootScreen);
+
+        float[] bl = mapFinalCoordinate(backdropX, backdropY, configRotation, matrixSnapshot);
+        float[] br = mapFinalCoordinate(
+                backdropX + backdropW, backdropY, configRotation, matrixSnapshot);
+        float[] tl = mapFinalCoordinate(
+                backdropX, backdropY + backdropH, configRotation, matrixSnapshot);
+        float[] tr = mapFinalCoordinate(
+                backdropX + backdropW, backdropY + backdropH, configRotation, matrixSnapshot);
+
+        MainHook.log(TAG + " stage-B mapping rootScreen=["
+                + rootScreen[0] + "," + rootScreen[1] + "]"
+                + " hostScreen=[" + hostScreen[0] + "," + hostScreen[1] + "]"
                 + " hostSize=" + materialHost.getWidth() + "x" + materialHost.getHeight()
-                + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
+                + " rootSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
+                + " backdropRect=[" + backdropX + "," + backdropY + ","
+                + backdropW + "," + backdropH + "]"
                 + " configRot=" + configRotation
-                + " texture matrix=" + formatTextureMatrix(textureMatrix));
+                + " texture matrix=" + formatTextureMatrix(matrixSnapshot)
+                + " mapped corners bl=[" + bl[0] + "," + bl[1] + "]"
+                + " br=[" + br[0] + "," + br[1] + "]"
+                + " tl=[" + tl[0] + "," + tl[1] + "]"
+                + " tr=[" + tr[0] + "," + tr[1] + "]");
+    }
+
+    private static float[] mapFinalCoordinate(
+            float rootX, float rootY, int rotation, float[] matrix) {
+        float orientedX = rootX;
+        float orientedY = rootY;
+        if (rotation == 1) {
+            orientedX = rootY;
+            orientedY = 1f - rootX;
+        } else if (rotation == 2) {
+            orientedX = 1f - rootX;
+            orientedY = 1f - rootY;
+        } else if (rotation == 3) {
+            orientedX = 1f - rootY;
+            orientedY = rootX;
+        }
+        return mapTextureCoordinate(matrix, orientedX, orientedY);
+    }
+
+    private static float[] mapTextureCoordinate(float[] matrix, float x, float y) {
+        float mappedX = matrix[0] * x + matrix[4] * y + matrix[12];
+        float mappedY = matrix[1] * x + matrix[5] * y + matrix[13];
+        float mappedW = matrix[3] * x + matrix[7] * y + matrix[15];
+        if (Math.abs(mappedW) > 0.000001f) {
+            mappedX /= mappedW;
+            mappedY /= mappedW;
+        }
+        return new float[]{mappedX, mappedY};
     }
 
     private void makeCurrent() {
@@ -685,6 +808,10 @@ final class Miuix307PassBlurTextureView extends TextureView
         boundSurfaceWidth = 0;
         boundSurfaceHeight = 0;
         boundConfigRotation = -1;
+        backdropX = 0f;
+        backdropY = 0f;
+        backdropW = 1f;
+        backdropH = 1f;
     }
 
     private void fail(String stage, Throwable error) {
