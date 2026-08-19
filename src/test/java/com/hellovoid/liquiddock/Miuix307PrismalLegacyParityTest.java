@@ -8,10 +8,7 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/**
- * Historical filename; the contract is now upstream-Prismal-first.
- * LiquidDock's old RuntimeShader is only a config compatibility source.
- */
+/** Historical filename; the contract is now upstream-Prismal-first. */
 public class Miuix307PrismalLegacyParityTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
     private static final Path KOTLIN = Path.of("src/main/kotlin/com/hellovoid/liquiddock");
@@ -20,14 +17,18 @@ public class Miuix307PrismalLegacyParityTest {
         return Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
     }
 
+    private static String shader() throws Exception {
+        return Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+    }
+
     @Test
     public void zeroCopyShaderCarriesCurrentUpstreamPrismalGeometryAndOptics() throws Exception {
-        String source = material();
+        String source = shader();
         String[] required = new String[]{
                 "smin_poly", "smax_poly", "sdRoundBox", "pxNorm", "smallGlass", "edgePunch",
-                "N_meniscus", "menBlend", "dropLens", "uDisplacementScale",
-                "uHeightTransitionWidth", "uSminSmoothing", "uRefractionInset",
-                "uFresnelReflect", "refract(-V", "refract(refIn", "uParallaxScale"
+                "N_meniscus", "menBlend", "dropLens", "u_displacementScale",
+                "u_heightTransitionWidth", "u_sminSmoothing", "u_refractionInset",
+                "u_fresnelReflect", "refract(-V", "refract(refIn", "u_parallaxScale"
         };
         for (String marker : required) {
             assertTrue("missing upstream Prismal geometry/optics marker: " + marker,
@@ -37,24 +38,25 @@ public class Miuix307PrismalLegacyParityTest {
 
     @Test
     public void zeroCopyShaderCarriesCurrentUpstreamPrismalColorReflectionAndLighting() throws Exception {
-        String source = material();
+        String source = shader();
         String[] required = new String[]{
-                "applyVibrancy", "uVibrancy", "uPlainHighlight", "uDispersionR", "uDispersionB",
-                "reflW", "reflUv", "skyHaze", "uShadowColor", "innerShadow",
-                "specP", "specS", "pairOpp", "streakOpp", "uLightDir",
-                "uTransmittance", "uCausticIntensity", "uGlassColor",
-                "uPressProgress", "uBackdropPinch", "uGlowCenter", "uGlowStrength"
+                "applyVibrancy", "u_vibrancy", "u_plainHighlight", "u_dispersionR", "u_dispersionB",
+                "reflW", "reflUv", "skyHaze", "u_shadowColor", "innerShadow",
+                "specP", "specS", "pairOpp", "streakOpp", "u_lightDir",
+                "u_transmittance", "u_causticIntensity", "u_glassColor",
+                "u_pressProgress", "u_backdropPinch", "u_glowCenter", "u_glowStrength"
         };
         for (String marker : required) {
             assertTrue("missing upstream Prismal lighting/color marker: " + marker,
                     source.contains(marker));
         }
-        assertFalse("fixed 14px diagnostic lens must never return",
-                source.contains("displacementPx = 14.0"));
+        assertFalse(source.contains("displacementPx = 14.0"));
+        assertFalse(source.contains("uHighlightAlpha"));
+        assertFalse(source.contains("uEdgeBand"));
     }
 
     @Test
-    public void upstreamStaticOpticalParametersAreExposedThroughLiquidDockGuiAndRuntimeConfig() throws Exception {
+    public void upstreamStaticOpticalParametersRemainExposedThroughLiquidDockGuiAndRuntimeConfig() throws Exception {
         String schema = Files.readString(MAIN.resolve("config/ConfigSchema.java"));
         String config = Files.readString(MAIN.resolve("LiquidDockConfig.java"));
         String compose = Files.readString(KOTLIN.resolve("ComposeSettingsActivity.kt"));
@@ -92,21 +94,24 @@ public class Miuix307PrismalLegacyParityTest {
     }
 
     @Test
-    public void upstreamModelStillUsesValidatedZeroCopyOesMappingAndLiveGuiSync() throws Exception {
-        String source = material();
+    public void upstreamModelUsesSeparateZeroCopyOesAdapterAndLiveGuiSync() throws Exception {
+        String material = material();
+        String shader = shader();
+        String adapter = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String renderer = Files.readString(MAIN.resolve("Miuix307ZeroCopyRenderer.java"));
 
-        assertTrue(source.contains("samplerExternalOES uTexture"));
-        assertTrue(source.contains("uBackdropRect"));
-        assertTrue(source.contains("uConfigRot"));
-        assertTrue(source.contains("textureScaleX") && source.contains("textureOffsetX"));
-        assertTrue(source.contains("uTexMatrix"));
+        assertTrue(adapter.contains("samplerExternalOES uTexture"));
+        assertTrue(adapter.contains("uBackdropRect"));
+        assertTrue(adapter.contains("uConfigRot"));
+        assertTrue(adapter.contains("textureScaleX") && adapter.contains("textureOffsetX"));
+        assertTrue(adapter.contains("uTexMatrix"));
+        assertFalse(shader.contains("samplerExternalOES"));
+        assertFalse(shader.contains("uBackdropRect"));
         assertTrue(view.contains("setGlassConfig(LiquidDockConfig.Glass glassConfig)"));
         assertTrue(renderer.contains("gpuBackdrop.setGlassConfig(glassConfig)"));
-        assertTrue(source.contains("fromConfig(LiquidDockConfig.Glass glass, float density)"));
-        assertFalse(source.contains("Bitmap"));
-        assertFalse(source.contains("captureScreenAsync"));
-        assertFalse(source.contains("glReadPixels"));
+        assertTrue(material.contains("fromConfig(LiquidDockConfig.Glass glass, float density)"));
+        assertFalse(adapter.contains("Bitmap") || adapter.contains("captureScreenAsync")
+                || adapter.contains("glReadPixels"));
     }
 }
