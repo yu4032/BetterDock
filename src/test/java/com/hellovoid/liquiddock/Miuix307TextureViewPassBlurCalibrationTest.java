@@ -41,15 +41,17 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     }
 
     @Test
-    public void calibrationShaderIsStrictFullDomainPassthrough() throws Exception {
+    public void calibrationShaderRemainsStrictNeutralPassthroughDuringStageBMapping() throws Exception {
         Path path = MAIN.resolve("Miuix307PassBlurTextureView.java");
         assertTrue(Files.exists(path));
         String view = Files.readString(path);
 
-        assertTrue("SurfaceTexture matrix must be the only producer texture transform",
-                view.contains("uTexMatrix * vec4(vUv, 0.0, 1.0)"));
-        assertFalse("calibration shader must not contain manual Dock crop",
-                view.contains("uniform vec4 uCrop") || view.contains("uCrop."));
+        assertTrue("Stage B may map Dock-local coordinates but must still sample exactly once",
+                view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)")
+                        && view.contains("gl_FragColor = texture2D(uTexture, transformed.xy)"));
+        assertTrue("Stage B coordinate mapping is allowed",
+                view.contains("uniform vec4 uBackdropRect")
+                        && view.contains("uniform int uConfigRot"));
         assertFalse("calibration shader must not contain refraction or rounded edge lens terms",
                 view.contains("sdRoundRect")
                         || view.contains("edgeWeight")
@@ -84,7 +86,7 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
         String view = Files.readString(path);
 
         int start = view.indexOf("private void refreshProducerGeometryInPlace");
-        int end = view.indexOf("private ProducerGeometry readSurfaceGeometry", start);
+        int end = view.indexOf("private void updateBackdropMapping", start);
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
