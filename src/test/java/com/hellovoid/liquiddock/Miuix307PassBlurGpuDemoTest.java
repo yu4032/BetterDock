@@ -108,7 +108,7 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void producerBufferAlwaysMatchesViewRootSurfaceOrientation() throws Exception {
+    public void producerBufferMatchesHyperOsPassBlurRotationDomain() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("\"mSurfaceSize\"") && view.contains("Point"));
         assertTrue(view.contains("getInstallOrientation") && view.contains("getRotation()"));
@@ -118,13 +118,13 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
-        assertTrue("PassBlur producer width must stay in mSurfaceSize orientation",
-                region.contains("int bufferWidth = surfaceWidth;"));
-        assertTrue("PassBlur producer height must stay in mSurfaceSize orientation",
-                region.contains("int bufferHeight = surfaceHeight;"));
-        assertFalse("configRot must not physically swap the BufferQueue dimensions",
-                region.contains("bufferWidth = surfaceHeight")
-                        || region.contains("bufferHeight = surfaceWidth"));
+        assertTrue("unrotated PassBlur producer starts from mSurfaceSize",
+                region.contains("int bufferWidth = surfaceWidth;")
+                        && region.contains("int bufferHeight = surfaceHeight;"));
+        assertTrue("configRot 1/3 must swap the BufferQueue dimensions like ViewRootImpl.checkSurTexSize",
+                region.contains("configRotation == 1 || configRotation == 3")
+                        && region.contains("bufferWidth = surfaceHeight")
+                        && region.contains("bufferHeight = surfaceWidth"));
         assertTrue("configRot remains lifecycle metadata for rotation-change detection",
                 view.contains("boundConfigRotation")
                         && view.contains("configRotation = geometry.configRotation"));
