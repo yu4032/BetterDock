@@ -1,0 +1,234 @@
+name: Apply PR22 grid spacing fix v2
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.event.pull_request.head.ref == 'feat/port-grid-10x6-v2' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/port-grid-10x6-v2
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply source patches
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          HOME = Path("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java")
+          if "HomeGridGeometryPolicy.compute(" in HOME.read_text():
+              print("Grid spacing patch already applied")
+              raise SystemExit(0)
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          # Runtime defaults must match the UI's current dp/offset semantics so an absent
+          # legacy flag leaves Margin=0 available for device-derived automatic spacing.
+          path = "src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java"
+          text = Path(path).read_text()
+          for old, new in (
+              ('"grid_margins_dp", true, false, true, ConfigKey.ExportMode.ALWAYS)',
+               '"grid_margins_dp", true, true, true, ConfigKey.ExportMode.ALWAYS)'),
+              ('"grid_margins_offset", true, false, true, ConfigKey.ExportMode.ALWAYS)',
+               '"grid_margins_offset", true, true, true, ConfigKey.ExportMode.ALWAYS)'),
+          ):
+              if text.count(old) != 1:
+                  raise SystemExit(f"{path}: missing runtime-default anchor {old}")
+              text = text.replace(old, new, 1)
+          write(path, text)
+
+          # MainHook now passes only the two meaningful normal-Workspace controls:
+          # horizontal Edge Offset and inter-cell Margin. Legacy top/bottom values stay
+          # readable for compatibility but no longer influence normal Workspace geometry.
+          path = "src/main/java/com/hellovoid/liquiddock/MainHook.java"
+          text = Path(path).read_text()
+          pattern = re.compile(
+              r"        LiquidDockConfig\.Grid grid = config\.grid;\n"
+              r".*?"
+              r"            Math\.round\(grid\.portraitIndicatorY \* gridScale\)\);",
+              re.S)
+          replacement = '''        LiquidDockConfig.Grid grid = config.grid;
+          boolean customGridEnabled = grid.enabled, dp = grid.dp;
+          float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+          float landEdge = Math.max(0f, grid.landscapeHorizontal);
+          float portEdge = Math.max(0f, grid.portraitHorizontal);
+          float landMargin = grid.landscapeRowGap;
+          float portMargin = grid.portraitRowGap;
+          DockDividerHook.install(classLoader);
+          HomeGridHook.install(classLoader, customGridEnabled,
+              Math.round(landEdge * gridScale), Math.round(landEdge * gridScale),
+              0, 0,
+              Math.round(portEdge * gridScale), Math.round(portEdge * gridScale),
+              0, 0,
+              Math.round(landMargin * gridScale), Math.round(portMargin * gridScale),
+              Math.round(grid.landscapeIndicatorY * gridScale),
+              Math.round(grid.portraitIndicatorY * gridScale));'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f"{path}: MainHook grid block anchor not found")
+          write(path, text)
+
+          path = "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"
+          text = Path(path).read_text()
+          import_anchor = "import android.content.res.Configuration;\n"
+          if text.count(import_anchor) != 1:
+              raise SystemExit(f"{path}: import anchor not found")
+          text = text.replace(import_anchor,
+              import_anchor + "import android.graphics.Insets;\nimport android.view.WindowInsets;\n", 1)
+
+          workstation_anchor = '''            boolean workstation = workstationAllApps
+                  || workstationMode || MainHook.isWorkstationMode();
+          '''
+          if text.count(workstation_anchor) != 1:
+              raise SystemExit(f"{path}: workstation anchor not found")
+          normal_workspace = '''            boolean workstation = workstationAllApps
+                  || workstationMode || MainHook.isWorkstationMode();
+
+              if (!workstation) {
+                  int dockBarHeight = 0;
+                  try {
+                      dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
+                              config, "getDockBarHeight"));
+                  } catch (Throwable ignored) {}
+                  int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
+                  int edgeOffset = Math.max(0,
+                          portrait ? portraitLeft : landscapeLeft);
+                  int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
+                  int screenWidth = width;
+                  android.view.View root = layout.getRootView();
+                  if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
+                  int margin = configuredMargin > 0
+                          ? configuredMargin
+                          : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
+                  HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
+                          width, height, countX, countY,
+                          safe[0], safe[1], safe[2], safe[3],
+                          edgeOffset, margin);
+                  HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
+                  HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
+                  HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
+                  HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
+                  HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
+                  HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
+                  return;
+              }
+          '''
+          text = text.replace(workstation_anchor, normal_workspace, 1)
+
+          helper_anchor = "    private static boolean isLaptopAllApps(Object cellLayout) {"
+          if text.count(helper_anchor) != 1:
+              raise SystemExit(f"{path}: helper anchor not found")
+          helper = '''    private static int[] normalWorkspaceSafeInsets(
+              android.view.View layout, int dockBarHeight) {
+          int left = 0;
+          int top = 0;
+          int right = 0;
+          int bottom = Math.max(0, dockBarHeight);
+          try {
+              WindowInsets windowInsets = layout.getRootWindowInsets();
+              android.view.View root = layout.getRootView();
+              if (windowInsets == null || root == null) {
+                  return new int[]{left, top, right, bottom};
+              }
+              Insets statusBars = windowInsets.getInsetsIgnoringVisibility(
+                      WindowInsets.Type.statusBars());
+              Insets systemBars = windowInsets.getInsetsIgnoringVisibility(
+                      WindowInsets.Type.systemBars());
+              int[] layoutScreen = new int[2];
+              int[] rootScreen = new int[2];
+              layout.getLocationOnScreen(layoutScreen);
+              root.getLocationOnScreen(rootScreen);
+
+              left = Math.max(0,
+                      rootScreen[0] + systemBars.left - layoutScreen[0]);
+              right = Math.max(0,
+                      layoutScreen[0] + layout.getWidth()
+                              - (rootScreen[0] + root.getWidth() - systemBars.right));
+              top = Math.max(0,
+                      rootScreen[1] + statusBars.top - layoutScreen[1]);
+              int systemBottom = Math.max(0,
+                      layoutScreen[1] + layout.getHeight()
+                              - (rootScreen[1] + root.getHeight() - systemBars.bottom));
+              bottom = Math.max(bottom, systemBottom);
+          } catch (Throwable e) {
+              MainHook.log("[DC] workspace system inset resolve failed: " + e);
+          }
+          return new int[]{left, top, right, bottom};
+      }
+
+      ''' + helper_anchor
+          text = text.replace(helper_anchor, helper, 1)
+          write(path, text)
+
+          path = "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt"
+          text = Path(path).read_text()
+          summaries = {
+              '    "grid_landscape_horizontal_distance" -> ': '    "grid_landscape_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"',
+              '    "grid_portrait_horizontal_distance" -> ': '    "grid_portrait_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"',
+              '    "grid_landscape_row_gap" -> ': '    "grid_landscape_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"',
+              '    "grid_portrait_row_gap" -> ': '    "grid_portrait_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"',
+          }
+          lines = text.splitlines()
+          seen = {key: 0 for key in summaries}
+          for i, line in enumerate(lines):
+              for prefix, replacement_line in summaries.items():
+                  if line.startswith(prefix):
+                      lines[i] = replacement_line
+                      seen[prefix] += 1
+          if any(value != 1 for value in seen.values()):
+              raise SystemExit(f"{path}: summary anchors={seen}")
+          text = "\n".join(lines) + ("\n" if Path(path).read_text().endswith("\n") else "")
+
+          grid_pattern = re.compile(
+              r"private val gridSpecs = listOf\(.*?\n\)\n\nprivate val workstationSpecs",
+              re.S)
+          grid_replacement = '''private val gridSpecs = listOf(
+              IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏 Edge Offset"),
+              IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏 Margin"),
+              IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏 Edge Offset"),
+              IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏 Margin"),
+              IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
+              IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
+          )
+
+          private val workstationSpecs'''
+          text, count = grid_pattern.subn(grid_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f"{path}: gridSpecs anchor not found")
+          write(path, text)
+          PY
+      - name: Verify unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Check diff
+        run: git diff --check
+      - name: Commit applied fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java \
+                  src/main/java/com/hellovoid/liquiddock/MainHook.java \
+                  src/main/java/com/hellovoid/liquiddock/HomeGridHook.java \
+                  src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+          git commit -m "fix: separate home grid edge offset and margin [grid-spacing-applied]"
+          git push origin HEAD:feat/port-grid-10x6-v2
