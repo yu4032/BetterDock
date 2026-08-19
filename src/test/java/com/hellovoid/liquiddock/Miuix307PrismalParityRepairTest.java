@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 
 import org.junit.Test;
 
@@ -15,8 +16,16 @@ public class Miuix307PrismalParityRepairTest {
 
     @Test
     public void calibratedBaseMatchesCurrentUpstreamPrismalRecipe() {
-        Miuix307PrismalMaterial.Params p = Miuix307PrismalMaterial.defaults(2f);
+        assertUpstreamBase(Miuix307PrismalMaterial.defaults(2f));
+    }
 
+    @Test
+    public void legacyFallbackProfileMigratesToCurrentUpstreamBase() {
+        LiquidDockConfig config = LiquidDockConfig.from(new ConfigReader(Collections.emptyMap()));
+        assertUpstreamBase(Miuix307PrismalMaterial.fromConfig(config.glass, 2f));
+    }
+
+    private static void assertUpstreamBase(Miuix307PrismalMaterial.Params p) {
         assertEquals(1.55f, p.ior, EPS);
         assertEquals(36f, p.thicknessPx, EPS);
         assertEquals(1.15f, p.normalStrength, EPS);
