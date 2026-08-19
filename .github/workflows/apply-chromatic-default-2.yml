@@ -1,0 +1,70 @@
+name: Apply chromatic default 2
+
+on:
+  push:
+    branches: [ fix/chromatic-default-preset-2 ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chromatic-default-preset-2
+          fetch-depth: 1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply minimal chromatic-default change
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              "src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java": [
+                  ('"liquid_chromatic", 8, 8, 8, 0, 40', '"liquid_chromatic", 2, 2, 2, 0, 40'),
+              ],
+              "src/main/java/com/hellovoid/liquiddock/config/PresetManager.java": [
+                  ('values.put("liquid_chromatic", 26);', 'values.put("liquid_chromatic", 2);'),
+              ],
+              "src/main/java/com/hellovoid/liquiddock/Miuix307PrismalMaterial.java": [
+                  ('                1.30f,\n                26f,\n                1f,',
+                   '                1.30f,\n                2f,\n                1f,'),
+              ],
+              "src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java": [
+                  ('assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 8, 0, 40);',
+                   'assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 2, 0, 40);'),
+              ],
+              "src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java": [
+                  ('expected.put("liquid_chromatic", 26);', 'expected.put("liquid_chromatic", 2);'),
+              ],
+          }
+
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              text = path.read_text()
+              for old, new in pairs:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f"{filename}: expected exactly one occurrence, found {count}: {old!r}")
+                  text = text.replace(old, new)
+              path.write_text(text)
+
+          Path('.github/workflows/apply-chromatic-default-2.yml').unlink()
+      - run: chmod +x ./gradlew
+      - run: ./gradlew testDebugUnitTest --stacktrace
+      - run: ./gradlew assembleDebug --stacktrace
+      - name: Commit verified change
+        shell: bash
+        run: |
+          git config user.name 'yu4032'
+          git config user.email '4032542465@smail.lnu.edu.cn'
+          git add -A
+          git commit -m 'fix: set chromatic defaults to 2'
+          git push origin HEAD:fix/chromatic-default-preset-2
