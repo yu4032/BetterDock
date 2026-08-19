@@ -178,8 +178,9 @@ public class Miuix307PassBlurGpuDemoTest {
                         && view.contains("vec2(1.0 - rootUv.y, rootUv.x)")
                         && view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
                         && view.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
-        assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
-                view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)"));
+        assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping after crop compensation",
+                view.contains("vec2 textureInputUv = orientedUv")
+                        && view.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
     }
 
     @Test
