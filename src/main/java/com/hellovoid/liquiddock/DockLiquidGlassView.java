@@ -7,11 +7,10 @@ import android.view.View;
 /**
  * No-capture compatibility shell retained only for old MainHook call signatures.
  *
- * The rendering implementation that previously lived here used ScreenCapture HardwareBuffers,
- * Bitmap conversion/BitmapShader sampling and a RuntimeShader blur. release/1.3.0 removes that
- * pipeline. Real liquid glass is exclusively Miuix307PassBlurTextureView (PassBlur -> OES ->
- * Prismal). Every method below is intentionally inert so an obsolete fallback branch cannot
- * resurrect CPU/readback capture.
+ * The former renderer performed frame acquisition and CPU-side image sampling before its shader
+ * stage. release/1.3.0 removes that implementation. Real liquid glass is exclusively
+ * Miuix307PassBlurTextureView (PassBlur -> OES -> Prismal). Every method below is intentionally
+ * inert so an obsolete fallback branch cannot resurrect the retired image-copy path.
  */
 final class DockLiquidGlassView extends View {
     interface ActiveBlurBackendListener {
