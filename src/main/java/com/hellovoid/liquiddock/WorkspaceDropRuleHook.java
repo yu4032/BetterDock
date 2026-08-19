@@ -1,15 +1,15 @@
 package com.hellovoid.liquiddock;
 
 /**
- * Removes MIUI's stock swap-placement pattern rule only while LiquidDock's custom 8x4 / 4x8
- * workspace grid is enabled.
+ * Removes MIUI's stock swap-placement pattern rule only while LiquidDock's optional extended
+ * Workspace grid is enabled.
  *
  * GridOccupancyController still owns bounds, occupied cells and vacancy search. The vendor
- * LayoutDropRuleForSwapPlaces adds a separate stock-grid legality filter (for example even-column
- * 1x1 placement and fixed 4-span anchors). On the transposed portrait custom grid that stale rule
- * becomes the invisible barrier even though mVCells, mYs and the occupancy matrix are already 8
- * rows. This is the same narrow rule that the original BetterDock free-placement implementation
- * bypassed; it does not replace the occupancy matrix or transform algorithm.
+ * LayoutDropRuleForSwapPlaces adds a separate stock-grid legality filter, such as even-column
+ * 1x1 placement and fixed 4-span anchors. Once Workspace uses a non-stock profile, that pattern
+ * rule can become an invisible barrier even though the active cell counts, coordinate arrays and
+ * occupancy matrix are already correct. This hook bypasses only that stale pattern filter; it
+ * does not replace the occupancy matrix, bounds checking, vacancy search, or rotation transform.
  */
 final class WorkspaceDropRuleHook {
     private static final String TAG = "[DC][GRID]";
@@ -27,7 +27,7 @@ final class WorkspaceDropRuleHook {
                     new Class<?>[]{int.class, int.class, int.class, int.class},
                     chain -> {
                         // Bounds/occupancy are checked by GridOccupancyController separately.
-                        // This callback removes only the stock 6-column swap-placement pattern.
+                        // This callback removes only the stock-grid swap-placement pattern.
                         return true;
                     });
             installed = true;
