@@ -99,8 +99,10 @@ public class Miuix307PassBlurGpuDemoTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
 
-        assertTrue("optical displacement must remain Dock-local and feed the shared Stage-B sampler",
-                material.contains("vec2 uvG = vUv + baseOffset")
+        assertTrue("Prismal optical offsets must remain Dock-local and feed the shared Stage-B sampler",
+                material.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv")
+                        && material.contains("vec2 uvCenter = backdropUv(vScreenTexCoord, baseOffset, pinchMix)")
+                        && material.contains("sampleBackdrop(uvCenter)")
                         && material.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
         assertTrue("configRot must inverse-orient the root UV in Stage B",
                 material.contains("uniform int uConfigRot")
