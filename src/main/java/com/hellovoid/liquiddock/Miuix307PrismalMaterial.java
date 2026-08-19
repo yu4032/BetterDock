@@ -181,84 +181,92 @@ final class Miuix307PrismalMaterial {
     }
 
     /**
-     * Live LiquidDock controls mapped to Prismal units. Untouched values from the previous
-     * PassBlur adapter are recognized as legacy defaults and migrated in memory to the calibrated
-     * upstream values. Values that differ from those legacy defaults are treated as intentional
-     * user overrides and are consumed directly.
+     * Live LiquidDock controls map one-to-one to current Prismal units. An exactly untouched
+     * first-generation PassBlur profile is recognized only as a whole and upgraded in memory;
+     * normal configuration migration persists the new values once. Per-field remapping is
+     * deliberately forbidden so a user can later choose values such as displacement=1.0 or blur=6.
      */
     static Params fromConfig(LiquidDockConfig.Glass glass, float density) {
-        if (glass == null) return defaults(density);
+        if (glass == null || isUntouchedLegacyProfile(glass)) return defaults(density);
         float d = Math.max(0.1f, density);
-
-        float lensScale = glass.lensRefraction > 4f
-                ? glass.lensRefraction / 12f
-                : glass.lensRefraction;
-        lensScale = Math.max(0.25f, lensScale);
-
-        float blurRadius = migrateLegacyDefault(glass.blur, 6f, 2.5f);
-        float chromatic = migrateLegacyDefault(glass.chromatic, 8f, 0f);
-        float dome = migrateLegacyDefault(glass.dome, 1f, 0.78f);
-        float displacement = migrateLegacyDefault(glass.prismalDisplacementScale, 1f, 1.15f);
-        float heightDp = migrateLegacyDefault(glass.prismalHeightTransitionWidth, 15f, 19f);
-        float smoothing = migrateLegacyDefault(glass.prismalSminSmoothing, 2f, 1.8f);
-        float inset = migrateLegacyDefault(glass.prismalRefractionInset, 5f, 20f);
-        float edgeFalloff = migrateLegacyDefault(glass.prismalEdgeRefractionFalloff, 2f, 4f);
-        float fresnel = migrateLegacyDefault(glass.prismalFresnelReflect, 0.79f, 1f);
-        float lightX = migrateLegacyDefault(glass.prismalLightDirX, 1f, -0.5f);
-        float lightY = migrateLegacyDefault(glass.prismalLightDirY, 0.62f, -0.8f);
-        float specular = migrateLegacyDefault(glass.specularStrength, 1.05f, 1.52f);
-        float rim = migrateLegacyDefault(glass.rimLight, 1f, 1.22f);
-
-        boolean legacyTint = glass.tintR == 238 && glass.tintG == 244
-                && glass.tintB == 255 && glass.tintAlpha == 38;
-        float tintR = legacyTint ? 0f : glass.tintR / 255f;
-        float tintG = legacyTint ? 0f : glass.tintG / 255f;
-        float tintB = legacyTint ? 1f : glass.tintB / 255f;
-        float tintA = legacyTint ? 35f / 255f : glass.tintAlpha / 255f;
-
-        boolean legacyShadow = glass.prismalShadowR == 0 && glass.prismalShadowG == 0
-                && glass.prismalShadowB == 0 && glass.prismalShadowAlpha == 0
-                && nearly(glass.prismalShadowSoftness, 1f);
-        float shadowR = legacyShadow ? 1f : glass.prismalShadowR / 255f;
-        float shadowG = legacyShadow ? 1f : glass.prismalShadowG / 255f;
-        float shadowB = legacyShadow ? 1f : glass.prismalShadowB / 255f;
-        float shadowA = legacyShadow ? 35f / 255f : glass.prismalShadowAlpha / 255f;
-        float shadowSoftness = legacyShadow ? 10f : glass.prismalShadowSoftness;
+        float lensScale = Math.max(0.25f, glass.lensRefraction);
 
         return new Params(
                 glass.ior,
                 Math.max(0f, glass.thickness * d),
                 glass.normalStrength,
-                displacement,
-                Math.max(1f, heightDp * d),
-                Math.max(0f, smoothing),
-                Math.max(0f, inset),
-                Math.max(0.05f, edgeFalloff),
-                dome,
-                fresnel,
+                glass.prismalDisplacementScale,
+                Math.max(1f, glass.prismalHeightTransitionWidth * d),
+                Math.max(0f, glass.prismalSminSmoothing),
+                Math.max(0f, glass.prismalRefractionInset),
+                Math.max(0.05f, glass.prismalEdgeRefractionFalloff),
+                glass.dome,
+                glass.prismalFresnelReflect,
                 lensScale,
-                Math.max(0f, chromatic),
+                Math.max(0f, glass.chromatic),
                 glass.prismalDispersionR,
                 glass.prismalDispersionB,
                 glass.prismalVibrancy,
                 glass.prismalPlainHighlight,
                 glass.brightness,
                 glass.highlightWidth,
-                lightX,
-                lightY,
-                specular,
+                glass.prismalLightDirX,
+                glass.prismalLightDirY,
+                glass.specularStrength,
                 glass.specularSharp,
-                rim,
+                glass.rimLight,
                 glass.caustics,
-                shadowSoftness,
+                glass.prismalShadowSoftness,
                 glass.prismalTransmittance,
                 glass.prismalBackdropScaleX,
                 glass.prismalBackdropScaleY,
                 glass.prismalParallaxScale,
-                Math.max(0f, blurRadius),
-                tintR, tintG, tintB, tintA,
-                shadowR, shadowG, shadowB, shadowA,
+                Math.max(0f, glass.blur),
+                glass.tintR / 255f,
+                glass.tintG / 255f,
+                glass.tintB / 255f,
+                glass.tintAlpha / 255f,
+                glass.prismalShadowR / 255f,
+                glass.prismalShadowG / 255f,
+                glass.prismalShadowB / 255f,
+                glass.prismalShadowAlpha / 255f,
                 glass.prismalShowNormals);
+    }
+
+    private static boolean isUntouchedLegacyProfile(LiquidDockConfig.Glass g) {
+        return nearly(g.blur, 6f)
+                && nearly(g.chromatic, 8f)
+                && g.tintR == 238 && g.tintG == 244 && g.tintB == 255 && g.tintAlpha == 38
+                && nearly(g.thickness, 18f)
+                && nearly(g.ior, 1.55f)
+                && nearly(g.normalStrength, 1.15f)
+                && nearly(g.dome, 1f)
+                && nearly(g.lensRefraction, 12f)
+                && nearly(g.brightness, 1.08f)
+                && g.specularSharp == 88
+                && nearly(g.specularStrength, 1.05f)
+                && nearly(g.rimLight, 1f)
+                && nearly(g.caustics, 0.28f)
+                && nearly(g.prismalRefractionInset, 5f)
+                && nearly(g.prismalDisplacementScale, 1f)
+                && nearly(g.prismalHeightTransitionWidth, 15f)
+                && nearly(g.prismalSminSmoothing, 2f)
+                && nearly(g.prismalEdgeRefractionFalloff, 2f)
+                && nearly(g.prismalFresnelReflect, 0.79f)
+                && nearly(g.prismalDispersionR, 1f)
+                && nearly(g.prismalDispersionB, 1f)
+                && nearly(g.prismalVibrancy, 1.28f)
+                && nearly(g.prismalPlainHighlight, 0.08f)
+                && nearly(g.prismalLightDirX, 1f)
+                && nearly(g.prismalLightDirY, 0.62f)
+                && g.prismalShadowR == 0 && g.prismalShadowG == 0
+                && g.prismalShadowB == 0 && g.prismalShadowAlpha == 0
+                && nearly(g.prismalShadowSoftness, 1f)
+                && nearly(g.prismalTransmittance, 1f)
+                && nearly(g.prismalBackdropScaleX, 1f)
+                && nearly(g.prismalBackdropScaleY, 1f)
+                && nearly(g.prismalParallaxScale, 1f)
+                && !g.prismalShowNormals;
     }
 
     static float blurSigma(Params p) {
@@ -323,10 +331,6 @@ final class Miuix307PrismalMaterial {
         uniform2f(program, "u_glowCenter", 0.5f, 0.5f);
         uniform1f(program, "u_glowStrength", 1f);
         uniform1i(program, "u_showNormals", p.showNormals ? 1 : 0);
-    }
-
-    private static float migrateLegacyDefault(float value, float legacyValue, float upstreamValue) {
-        return nearly(value, legacyValue) ? upstreamValue : value;
     }
 
     private static boolean nearly(float first, float second) {
