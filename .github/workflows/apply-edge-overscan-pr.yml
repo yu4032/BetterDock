@@ -1,0 +1,42 @@
+name: Apply zero-copy edge overscan fix on PR
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.head_ref == 'fix/zero-copy-edge-overscan' && !contains(github.event.pull_request.title, '[overscan-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/zero-copy-edge-overscan
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Apply focused overscan patch
+        run: python3 tools/apply_edge_overscan.py
+      - run: chmod +x ./gradlew
+      - name: Verify unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Verify debug build
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Commit verified patch and remove temporary helpers
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-edge-overscan.yml
+          rm -f .github/workflows/apply-edge-overscan-pr.yml
+          rm -f tools/apply_edge_overscan.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: add zero-copy edge overscan"
+          git push origin HEAD:fix/zero-copy-edge-overscan
