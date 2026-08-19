@@ -8,54 +8,65 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Contracts for the strong diagnostic edge-refraction pass on the TextureView/EGL backend. */
+/** Contracts for the full Prismal refraction pass on the TextureView/EGL backend. */
 public class Miuix307TextureViewStrongRefractionTest {
-    private static final Path VIEW = Path.of(
-            "src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java");
+    private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
-    private static String source() throws Exception {
-        return Files.readString(VIEW);
+    private static String view() throws Exception {
+        return Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+    }
+
+    private static String material() throws Exception {
+        return Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
     }
 
     @Test
-    public void shaderAppliesRoundedEdgeLensBeforeBackdropMapping() throws Exception {
-        String source = source();
+    public void prismalDisplacementStaysDockLocalBeforeBackdropMapping() throws Exception {
+        String source = material();
         assertTrue(source.contains("uniform vec2 uViewSize"));
         assertTrue(source.contains("sdRoundRect"));
-        assertTrue(source.contains("edgeWeight"));
-        assertTrue(source.contains("refractedUv"));
-        assertTrue(source.contains("lensUv = mix(vUv, refractedUv, edgeWeight)"));
-        assertTrue("lens displacement must happen before mapping into the root backdrop rect",
-                source.indexOf("lensUv = mix(vUv, refractedUv, edgeWeight)")
-                        < source.indexOf("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
+        assertTrue(source.contains("getHeightFromDist"));
+        assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));
+        assertTrue(source.contains("vec2 uvG = vUv + baseOffset"));
+        assertTrue("all displaced optical samples must enter the shared Stage-B sampler",
+                source.contains("sampleBackdrop(uvG)")
+                        && source.contains("uBackdropRect.xy + safeDockUv * uBackdropRect.zw"));
     }
 
     @Test
-    public void diagnosticDisplacementIsStrongButBounded() throws Exception {
-        String source = source();
-        assertTrue("diagnostic lens should use a visibly strong 14 px nominal displacement",
+    public void fixedDiagnosticDisplacementIsGoneAndPhysicalControlsDriveRefraction() throws Exception {
+        String source = material();
+        assertFalse("the temporary fixed 14px diagnostic displacement must stay retired",
                 source.contains("float displacementPx = 14.0"));
-        assertTrue(source.contains("displacementPx / uViewSize"));
-        assertTrue(source.contains("clamp(vUv - normal * displacementPx / uViewSize, 0.0, 1.0)"));
+        assertTrue(source.contains("uLensRefractionPx"));
+        assertTrue(source.contains("uThicknessPx"));
+        assertTrue(source.contains("uIor"));
+        assertTrue(source.contains("uNormalStrength"));
+        assertTrue(source.contains("refract(-V, N, 1.0 / uIor)"));
+        assertTrue(source.contains("refract(refIn, -N, uIor)"));
     }
 
     @Test
-    public void centerRemainsPassthroughAndNoMaterialColorEffectsReturn() throws Exception {
-        String source = source();
-        assertTrue(source.contains("mix(vUv, refractedUv, edgeWeight)"));
-        assertFalse(source.contains("uniform vec4 uTint"));
-        assertFalse(source.contains("uniform float uHighlight"));
-        assertFalse(source.contains("uChromatic"));
-        assertFalse(source.contains("uDispersion"));
-        assertFalse(source.contains("blurRadius"));
+    public void fullMaterialColorOpticsAreRestoredWithoutCpuReadback() throws Exception {
+        String source = material();
+        assertTrue(source.contains("uniform vec4 uTint"));
+        assertTrue(source.contains("uChromaticAberration"));
+        assertTrue(source.contains("uSpecularSharp"));
+        assertTrue(source.contains("uRimLight"));
+        assertTrue(source.contains("uCausticStrength"));
+        assertFalse(source.contains("Bitmap")
+                || source.contains("captureScreenAsync")
+                || source.contains("glReadPixels")
+                || source.contains("blurRadius"));
     }
 
     @Test
-    public void drawUploadsTextureViewSizeForPixelStableLens() throws Exception {
-        String source = source();
+    public void drawUploadsTextureViewSizeForPixelStableOptics() throws Exception {
+        String source = view();
         assertTrue(source.contains("glGetUniformLocation(program, \"uViewSize\")"));
         assertTrue(source.contains("GLES20.glUniform2f"));
         assertTrue(source.contains("outputWidth"));
         assertTrue(source.contains("outputHeight"));
+        assertTrue(source.contains("Miuix307PrismalMaterial.applyUniforms"));
     }
 }
