@@ -40,8 +40,7 @@ public final class ModuleMain extends XposedModule {
             try {
                 SystemUiFreeformLeashProvider.install(classLoader);
             } catch (Throwable error) {
-                // Keep the provider available to other non-glass consumers; the retired
-                // screen-capture renderer no longer requests its HardwareBuffer snapshots.
+                // Keep the provider available to other non-glass consumers.
                 Api101Bridge.log("[DC] SystemUI freeform leash provider unavailable", error);
             }
             return;
@@ -53,8 +52,8 @@ public final class ModuleMain extends XposedModule {
             LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
 
             // release/1.3.0 has one glass renderer: HyperOS PassBlur -> OES -> Prismal.
-            // Do not install the retired Bitmap/screen-capture lifecycle, Recents pre-arm,
-            // workstation wallpaper-capture, or capture diagnostic bridges.
+            // Do not install the retired frame-copy lifecycle, Recents pre-arm,
+            // workstation wallpaper acquisition, or capture diagnostic bridges.
             new MainHook().install(classLoader);
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
