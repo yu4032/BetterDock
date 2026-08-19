@@ -63,6 +63,8 @@ final class Miuix307PrismalShader {
             uniform float u_transmittance;
 
             uniform vec2  u_backdropSampleScale;
+            // Visible Dock rectangle inside the larger zero-copy overscan texture.
+            uniform vec4  u_dockUvRect;
             uniform float u_parallaxScale;
 
             uniform float u_pressProgress;
@@ -154,12 +156,21 @@ final class Miuix307PrismalShader {
                 return clamp(mix(vec3(L), rgb, sat), 0.0, 1.0);
             }
 
+            vec2 mapDockUvToBackdrop(vec2 dockUv) {
+                return clamp(
+                    u_dockUvRect.xy + dockUv * u_dockUvRect.zw,
+                    vec2(0.0),
+                    vec2(1.0)
+                );
+            }
+
             vec2 backdropUv(vec2 screenUv, vec2 offset, float pinchMix) {
                 float press = clamp(u_pressProgress, 0.0, 1.0);
                 float pinch = mix(1.0, max(u_backdropPinch, 0.01), press * pinchMix);
                 vec2 s = max(u_backdropSampleScale, vec2(0.01)) / vec2(pinch);
                 vec2 scaled = (screenUv - 0.5) / s + 0.5;
-                return clamp(scaled + offset, vec2(0.0), vec2(1.0));
+                vec2 dockUv = scaled + offset;
+                return mapDockUvToBackdrop(dockUv);
             }
 
             void main() {
@@ -333,12 +344,9 @@ final class Miuix307PrismalShader {
                 float edgeG = reflShell * pow(1.0 - cosVNrim, 1.35) * mix(0.07, 0.62, F);
                 edgeG *= mix(0.72, 0.38, smallGlass);
                 float reflW = min(0.9, edgeG * (0.1 + fresCtl * 0.46) * (0.28 + 0.72 * height));
-                vec2 reflUv = clamp(
-                    v_screenTexCoord + baseOffset
-                        + gDir * (4.0 + 38.0 * pow(1.0 - cosVNrim, 1.25) + length(N.xy) * 14.0) / u_resolution * pxNorm,
-                    vec2(0.0),
-                    vec2(1.0)
-                );
+                vec2 reflDockUv = v_screenTexCoord + baseOffset
+                    + gDir * (4.0 + 38.0 * pow(1.0 - cosVNrim, 1.25) + length(N.xy) * 14.0) / u_resolution * pxNorm;
+                vec2 reflUv = mapDockUvToBackdrop(reflDockUv);
                 vec3 reflSample;
                 if (u_useBlurredTexture == 1) {
                     reflSample = texture2D(u_blurredTexture, reflUv).rgb;
