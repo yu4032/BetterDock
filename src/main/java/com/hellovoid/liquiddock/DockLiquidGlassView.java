@@ -26,6 +26,7 @@ final class DockLiquidGlassView extends View {
 
     void setActiveBlurBackendListener(ActiveBlurBackendListener listener) {}
     void setGlassGeometry(float radius, boolean squircle, float squircleCp) {}
+    void setGlassRadius(float radius) {}
     void setSystemUiPanelExpanded(boolean expanded) {}
     void setWorkstationMode(boolean enabled) {}
     void setLauncherState(boolean lifecycleKnown, boolean resumed) {}
