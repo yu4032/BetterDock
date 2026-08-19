@@ -73,16 +73,24 @@ public class Miuix307PrismalParityRepairTest {
     }
 
     @Test
-    public void passBlurAdapterOwnsOesMappingAndProducerValidityMask() throws Exception {
+    public void passBlurAdapterOwnsOesMappingAndSynthesizesRefractionGuardBand() throws Exception {
         String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
+        String normalize = shaders.substring(shaders.indexOf("OES_NORMALIZE_FRAGMENT"),
+                shaders.indexOf("GAUSSIAN_BLUR_FRAGMENT"));
 
         assertTrue(shaders.contains("samplerExternalOES uTexture"));
         assertTrue(shaders.contains("uTexMatrix"));
         assertTrue(shaders.contains("uBackdropRect"));
         assertTrue(shaders.contains("uConfigRot"));
         assertTrue(shaders.contains("uValidDockRect"));
-        assertTrue(shaders.contains("gl_FragColor = vec4(0.0)"));
-        assertFalse("invalid Stage-B coordinates must not be hidden by explicit edge clamping",
+        assertTrue("partial producer coverage needs a continuous GPU guard band",
+                normalize.contains("float mirrorIntoValidRange("));
+        assertTrue(normalize.contains("vec2 mirrorDockUv("));
+        assertTrue(normalize.contains("vec2 sampleDockUv = mirrorDockUv(vUv)"));
+        assertTrue(normalize.contains("uBackdropRect.xy + sampleDockUv * uBackdropRect.zw"));
+        assertFalse("invalid Dock-local pixels must not remain transparent black",
+                normalize.contains("gl_FragColor = vec4(0.0)"));
+        assertFalse("Stage-B producer coordinates must still not collapse to a texture edge",
                 shaders.contains("return clamp(transformed.xy"));
     }
 
@@ -106,33 +114,17 @@ public class Miuix307PrismalParityRepairTest {
     }
 
     @Test
-    public void gaussianBlurRenormalizesOnlyProducerValidSamples() throws Exception {
+    public void partialCoverageGuardBandProtectsBlurAndPrismalWithoutChangingOptics() throws Exception {
         String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
-        String blur = shaders.substring(shaders.indexOf("GAUSSIAN_BLUR_FRAGMENT"));
-
-        assertTrue("blur must receive the producer-valid Dock rect",
-                blur.contains("uniform vec4 uValidDockRect"));
-        assertTrue("invalid taps must be skipped rather than averaged as black",
-                blur.contains("if (uv.x < uValidDockRect.x"));
-        assertTrue("remaining valid tap weights must be renormalized",
-                blur.contains("norm > 0.000001"));
-        assertFalse("blur must not fold invalid pixels in through texture-edge clamping",
-                blur.contains("vec2 uv = clamp(vUv + delta, 0.0, 1.0)"));
-    }
-
-    @Test
-    public void prismalRefractionFadesBeforeSamplingOutsideProducerDomain() throws Exception {
         String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
-        assertTrue(shader.contains("uniform vec4  u_validBackdropRect"));
-        assertTrue(shader.contains("uniform float u_backdropSafeInsetPx"));
-        assertTrue(shader.contains("float backdropSafety("));
-        assertTrue(shader.contains("baseOffset *= refractionSafety"));
-        assertTrue("RGB dispersion must use the already-safe base offset",
-                shader.contains("baseOffset + chromaPush * u_dispersionR"));
-        assertTrue(view.contains("\"u_validBackdropRect\""));
-        assertTrue(view.contains("\"u_backdropSafeInsetPx\""));
+        assertTrue(shaders.contains("mirrorDockUv(vUv)"));
+        assertFalse("Prismal optical equations should stay producer-geometry agnostic",
+                shader.contains("u_validBackdropRect"));
+        assertTrue("visible partial coverage is still clipped to the real Dock/window intersection",
+                view.contains("producerCoverage == Miuix307BackdropMapping.Coverage.PARTIAL"));
+        assertTrue(view.contains("GLES20.glScissor"));
     }
 
     @Test
