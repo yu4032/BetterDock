@@ -39,11 +39,15 @@ public class DockShadowRegressionContractTest {
     }
 
     @Test
-    public void liquidGlassHostTracksDockTranslationDuringStartupAnimation() throws IOException {
-        String source = mainHook();
-        assertTrue("glass host must inherit Dock translationX on transient startup frames",
-                source.contains("liquidGlassHostView.setTranslationX(bg.getTranslationX());"));
-        assertTrue("glass host must inherit Dock translationY on transient startup frames",
-                source.contains("liquidGlassHostView.setTranslationY(bg.getTranslationY());"));
+    public void zeroCopyGlassHostMovesWithVendorDockAsItsChild() throws IOException {
+        String main = mainHook();
+        String hook = Files.readString(
+                Paths.get("src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java"),
+                StandardCharsets.UTF_8);
+        assertFalse("zero-copy host is a child of the vendor Dock and must not duplicate parent translation",
+                main.contains("liquidGlassHostView.setTranslationX")
+                        || main.contains("liquidGlassHostView.setTranslationY"));
+        assertTrue("zero-copy host must be attached directly to the vendor material host",
+                hook.contains("materialHost.addView(host, materialHost.getChildCount(), hostLp);"));
     }
 }
