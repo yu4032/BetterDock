@@ -10,6 +10,7 @@ import java.util.Map;
 /** Runtime config reader backed by API101 Remote Preferences. */
 public class ConfigReader {
     public static final String REMOTE_GROUP = "config";
+    private static final String ZERO_COPY_PIPELINE_KEY = "liquid_miuix_307_pipeline";
 
     private final Map<String, ?> prefs;
 
@@ -73,8 +74,8 @@ public class ConfigReader {
         Object tenths = prefs.get(key + "_tenths");
         if (tenths instanceof Number) return ((Number) tenths).intValue() / 10f;
         if (tenths instanceof String) {
-            try { return Integer.parseInt((String) tenths) / 10f; }
-            catch (NumberFormatException ignored) {}
+            try { return Integer.parseInt((String) tenths) / 10f;
+            } catch (NumberFormatException ignored) {}
         }
 
         Object value = prefs.get(key);
@@ -87,6 +88,10 @@ public class ConfigReader {
     }
 
     public boolean b(String key, boolean def) {
+        // release/1.3.0 retires the Bitmap/screen-capture glass backend. Keep the persisted
+        // compatibility key readable for old configs, but it can no longer opt back into the
+        // retired path: liquid glass always enters the 307 PassBlur/OES pipeline.
+        if (ZERO_COPY_PIPELINE_KEY.equals(key)) return true;
         Object value = prefs.get(key);
         if (value instanceof Boolean) return (Boolean) value;
         if (value instanceof String) return Boolean.parseBoolean((String) value);
