@@ -37,6 +37,20 @@ public class HomeGridProfileOverlayContractTest {
     }
 
     @Test
+    public void privateApiIsPreflightedBeforeAnyHookRegistration() throws Exception {
+        String source = Files.readString(SOURCE);
+        int preflightCall = source.indexOf("preflightPrivateApi(classLoader);");
+        int firstHook = source.indexOf("hookAxis(compat, \"getCellCountXMin\"");
+
+        assertTrue("private API preflight must exist", preflightCall >= 0);
+        assertTrue("preflight must happen before the first hook registration",
+                firstHook >= 0 && preflightCall < firstHook);
+        assertTrue(source.contains("private static void preflightPrivateApi(ClassLoader classLoader)"));
+        assertTrue(source.contains("findTwoArgMethod(rule, \"get4x2WidgetCase\")"));
+        assertTrue(source.contains("findTwoArgMethod(rule, \"getDstBlockXY\")"));
+    }
+
+    @Test
     public void overlayIsInjectedWithTypedConfigAndFailsClosedOutsideWorkspace() throws Exception {
         String source = Files.readString(SOURCE);
         assertTrue(source.contains("install(ClassLoader classLoader, boolean customGridEnabled,"));
