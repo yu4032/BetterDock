@@ -106,6 +106,36 @@ public class Miuix307PrismalParityRepairTest {
     }
 
     @Test
+    public void gaussianBlurRenormalizesOnlyProducerValidSamples() throws Exception {
+        String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
+        String blur = shaders.substring(shaders.indexOf("GAUSSIAN_BLUR_FRAGMENT"));
+
+        assertTrue("blur must receive the producer-valid Dock rect",
+                blur.contains("uniform vec4 uValidDockRect"));
+        assertTrue("invalid taps must be skipped rather than averaged as black",
+                blur.contains("if (uv.x < uValidDockRect.x"));
+        assertTrue("remaining valid tap weights must be renormalized",
+                blur.contains("norm > 0.000001"));
+        assertFalse("blur must not fold invalid pixels in through texture-edge clamping",
+                blur.contains("vec2 uv = clamp(vUv + delta, 0.0, 1.0)"));
+    }
+
+    @Test
+    public void prismalRefractionFadesBeforeSamplingOutsideProducerDomain() throws Exception {
+        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+
+        assertTrue(shader.contains("uniform vec4  u_validBackdropRect"));
+        assertTrue(shader.contains("uniform float u_backdropSafeInsetPx"));
+        assertTrue(shader.contains("float backdropSafety("));
+        assertTrue(shader.contains("baseOffset *= refractionSafety"));
+        assertTrue("RGB dispersion must use the already-safe base offset",
+                shader.contains("baseOffset + chromaPush * u_dispersionR"));
+        assertTrue(view.contains("\"u_validBackdropRect\""));
+        assertTrue(view.contains("\"u_backdropSafeInsetPx\""));
+    }
+
+    @Test
     public void parityPathRemainsZeroReadback() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
