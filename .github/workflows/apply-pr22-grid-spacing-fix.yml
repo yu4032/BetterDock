@@ -28,215 +28,171 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          home_grid = Path("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java")
-          if "HomeGridGeometryPolicy.compute(" in home_grid.read_text():
+          def sub_once(path, pattern, replacement, flags=0, label=None):
+              p = Path(path)
+              text = p.read_text()
+              new, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f"{path}: {label or pattern!r} matched {count} times")
+              p.write_text(new)
+
+          home_path = Path("src/main/java/com/hellovoid/liquiddock/HomeGridHook.java")
+          if "HomeGridGeometryPolicy.compute(" in home_path.read_text():
               print("Grid spacing patch already applied")
               raise SystemExit(0)
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one replacement, found {count}")
-              p.write_text(text.replace(old, new, 1))
-
-          replace_once(
+          # Align runtime fallbacks with the UI's current dp/offset defaults.
+          sub_once(
               "src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java",
-              '''        public static final ConfigKey<Boolean> MARGINS_DP = bool(
-                          "grid_margins_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
-                  public static final ConfigKey<Boolean> MARGINS_OFFSET = bool(
-                          "grid_margins_offset", true, false, true, ConfigKey.ExportMode.ALWAYS);''',
-              '''        public static final ConfigKey<Boolean> MARGINS_DP = bool(
-                          "grid_margins_dp", true, true, true, ConfigKey.ExportMode.ALWAYS);
-                  public static final ConfigKey<Boolean> MARGINS_OFFSET = bool(
-                          "grid_margins_offset", true, true, true, ConfigKey.ExportMode.ALWAYS);''')
+              r'("grid_margins_dp",\s*true,\s*)false(,\s*true,\s*ConfigKey\.ExportMode\.ALWAYS)',
+              r'\1true\2', label="MARGINS_DP runtime fallback")
+          sub_once(
+              "src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java",
+              r'("grid_margins_offset",\s*true,\s*)false(,\s*true,\s*ConfigKey\.ExportMode\.ALWAYS)',
+              r'\1true\2', label="MARGINS_OFFSET runtime fallback")
 
-          replace_once(
+          # Normal Workspace now receives only horizontal Edge Offset and inter-cell Margin.
+          main_replacement = '''        LiquidDockConfig.Grid grid = config.grid;
+          boolean customGridEnabled = grid.enabled, dp = grid.dp;
+          float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
+          float landEdge = Math.max(0f, grid.landscapeHorizontal);
+          float portEdge = Math.max(0f, grid.portraitHorizontal);
+          float landMargin = grid.landscapeRowGap;
+          float portMargin = grid.portraitRowGap;
+          DockDividerHook.install(classLoader);
+          HomeGridHook.install(classLoader, customGridEnabled,
+              Math.round(landEdge * gridScale), Math.round(landEdge * gridScale),
+              0, 0,
+              Math.round(portEdge * gridScale), Math.round(portEdge * gridScale),
+              0, 0,
+              Math.round(landMargin * gridScale), Math.round(portMargin * gridScale),
+              Math.round(grid.landscapeIndicatorY * gridScale),
+              Math.round(grid.portraitIndicatorY * gridScale));'''
+          sub_once(
               "src/main/java/com/hellovoid/liquiddock/MainHook.java",
-              '''        LiquidDockConfig.Grid grid = config.grid;
-                  boolean customGridEnabled = grid.enabled, dp = grid.dp, offsets = grid.offsets;
-                  float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-                  int landXBase = dp ? 57 : 160, landYBase = dp ? 28 : 80;
-                  int portXBase = dp ? 28 : 80, portYBase = dp ? 57 : 160;
-                  float landLeft = offsets ? grid.landscapeHorizontal : landXBase + grid.landscapeHorizontal;
-                  float landRight = offsets ? grid.landscapeHorizontal : landXBase + grid.landscapeHorizontal;
-                  float landTop = offsets ? grid.landscapeTop : landYBase + grid.landscapeTop;
-                  float landBottom = offsets ? grid.landscapeBottom : landYBase + grid.landscapeBottom;
-                  float portLeft = offsets ? grid.portraitHorizontal : portXBase + grid.portraitHorizontal;
-                  float portRight = offsets ? grid.portraitHorizontal : portXBase + grid.portraitHorizontal;
-                  float portTop = offsets ? grid.portraitTop : portYBase + grid.portraitTop;
-                  float portBottom = offsets ? grid.portraitBottom : portYBase + grid.portraitBottom;
-                  float landGap = grid.landscapeRowGap, portGap = grid.portraitRowGap;
-                  if (!offsets) {
-                      landLeft -= landXBase; landRight -= landXBase;
-                      landTop -= landYBase; landBottom -= landYBase;
-                      portLeft -= portXBase; portRight -= portXBase;
-                      portTop -= portYBase; portBottom -= portYBase;
-                      landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
-                  }
-                  DockDividerHook.install(classLoader);
-                  HomeGridHook.install(classLoader, customGridEnabled,
-                      Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
-                      Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
-                      Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
-                      Math.round(portTop * gridScale), Math.round(portBottom * gridScale),
-                      Math.round(landGap * gridScale), Math.round(portGap * gridScale),
-                      Math.round(grid.landscapeIndicatorY * gridScale),
-                      Math.round(grid.portraitIndicatorY * gridScale));''',
-              '''        LiquidDockConfig.Grid grid = config.grid;
-                  boolean customGridEnabled = grid.enabled, dp = grid.dp;
-                  float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
-                  float landEdge = Math.max(0f, grid.landscapeHorizontal);
-                  float portEdge = Math.max(0f, grid.portraitHorizontal);
-                  float landMargin = grid.landscapeRowGap;
-                  float portMargin = grid.portraitRowGap;
-                  DockDividerHook.install(classLoader);
-                  HomeGridHook.install(classLoader, customGridEnabled,
-                      Math.round(landEdge * gridScale), Math.round(landEdge * gridScale),
-                      0, 0,
-                      Math.round(portEdge * gridScale), Math.round(portEdge * gridScale),
-                      0, 0,
-                      Math.round(landMargin * gridScale), Math.round(portMargin * gridScale),
-                      Math.round(grid.landscapeIndicatorY * gridScale),
-                      Math.round(grid.portraitIndicatorY * gridScale));''')
+              r'        LiquidDockConfig\.Grid grid = config\.grid;\n.*?Math\.round\(grid\.portraitIndicatorY \* gridScale\)\);',
+              main_replacement, flags=re.S, label="MainHook grid setup")
 
-          replace_once(
+          # Imports for local WindowInsets-safe-area resolution.
+          sub_once(
               "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java",
-              '''import android.content.Context;
-          import android.content.res.Configuration;
-          import io.github.libxposed.api.XposedInterface;''',
-              '''import android.content.Context;
-          import android.content.res.Configuration;
-          import android.graphics.Insets;
-          import android.view.WindowInsets;
-          import io.github.libxposed.api.XposedInterface;''')
+              r'import android\.content\.res\.Configuration;\n',
+              'import android.content.res.Configuration;\nimport android.graphics.Insets;\nimport android.view.WindowInsets;\n',
+              label="HomeGrid imports")
 
-          replace_once(
+          # Ordinary Workspace uses profile-neutral X/Y geometry. Workstation and All Apps
+          # remain on their existing path below this early return.
+          normal_workspace = '''\\1
+
+            if (!workstation) {
+                int dockBarHeight = 0;
+                try {
+                    dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
+                            config, "getDockBarHeight"));
+                } catch (Throwable ignored) {}
+                int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
+                int edgeOffset = Math.max(0,
+                        portrait ? portraitLeft : landscapeLeft);
+                int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
+                int screenWidth = width;
+                android.view.View root = layout.getRootView();
+                if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
+                int margin = configuredMargin > 0
+                        ? configuredMargin
+                        : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
+                HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
+                        width, height, countX, countY,
+                        safe[0], safe[1], safe[2], safe[3],
+                        edgeOffset, margin);
+                HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
+                HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
+                HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
+                HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
+                HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
+                HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
+                return;
+            }'''
+          sub_once(
               "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java",
-              '''            boolean workstation = workstationAllApps
-                      || workstationMode || MainHook.isWorkstationMode();
+              r'(\s*boolean workstation = workstationAllApps\s*\n\s*\|\| workstationMode \|\| MainHook\.isWorkstationMode\(\);)',
+              normal_workspace, label="normal Workspace geometry insertion")
 
-              // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''',
-              '''            boolean workstation = workstationAllApps
-                      || workstationMode || MainHook.isWorkstationMode();
+          safe_helper = '''    private static int[] normalWorkspaceSafeInsets(
+            android.view.View layout, int dockBarHeight) {
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = Math.max(0, dockBarHeight);
+        try {
+            WindowInsets windowInsets = layout.getRootWindowInsets();
+            android.view.View root = layout.getRootView();
+            if (windowInsets == null || root == null) {
+                return new int[]{left, top, right, bottom};
+            }
+            Insets statusBars = windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.statusBars());
+            Insets systemBars = windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.systemBars());
+            int[] layoutScreen = new int[2];
+            int[] rootScreen = new int[2];
+            layout.getLocationOnScreen(layoutScreen);
+            root.getLocationOnScreen(rootScreen);
 
-              if (!workstation) {
-                  int dockBarHeight = 0;
-                  try {
-                      dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
-                              config, "getDockBarHeight"));
-                  } catch (Throwable ignored) {}
-                  int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
-                  int edgeOffset = Math.max(0,
-                          portrait ? portraitLeft : landscapeLeft);
-                  int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
-                  int screenWidth = width;
-                  android.view.View root = layout.getRootView();
-                  if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
-                  int margin = configuredMargin > 0
-                          ? configuredMargin
-                          : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
-                  HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
-                          width, height, countX, countY,
-                          safe[0], safe[1], safe[2], safe[3],
-                          edgeOffset, margin);
-                  HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
-                  HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
-                  HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
-                  HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
-                  HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
-                  HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
-                  return;
-              }
+            left = Math.max(0,
+                    rootScreen[0] + systemBars.left - layoutScreen[0]);
+            right = Math.max(0,
+                    layoutScreen[0] + layout.getWidth()
+                            - (rootScreen[0] + root.getWidth() - systemBars.right));
+            top = Math.max(0,
+                    rootScreen[1] + statusBars.top - layoutScreen[1]);
+            int systemBottom = Math.max(0,
+                    layoutScreen[1] + layout.getHeight()
+                            - (rootScreen[1] + root.getHeight() - systemBars.bottom));
+            bottom = Math.max(bottom, systemBottom);
+        } catch (Throwable e) {
+            MainHook.log("[DC] workspace system inset resolve failed: " + e);
+        }
+        return new int[]{left, top, right, bottom};
+    }
 
-              // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''')
-
-          replace_once(
+    private static boolean isLaptopAllApps(Object cellLayout) {'''
+          sub_once(
               "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java",
-              '''    private static boolean isLaptopAllApps(Object cellLayout) {''',
-              '''    private static int[] normalWorkspaceSafeInsets(
-                  android.view.View layout, int dockBarHeight) {
-              int left = 0;
-              int top = 0;
-              int right = 0;
-              int bottom = Math.max(0, dockBarHeight);
-              try {
-                  WindowInsets windowInsets = layout.getRootWindowInsets();
-                  android.view.View root = layout.getRootView();
-                  if (windowInsets == null || root == null) {
-                      return new int[]{left, top, right, bottom};
-                  }
-                  Insets statusBars = windowInsets.getInsetsIgnoringVisibility(
-                          WindowInsets.Type.statusBars());
-                  Insets systemBars = windowInsets.getInsetsIgnoringVisibility(
-                          WindowInsets.Type.systemBars());
-                  int[] layoutScreen = new int[2];
-                  int[] rootScreen = new int[2];
-                  layout.getLocationOnScreen(layoutScreen);
-                  root.getLocationOnScreen(rootScreen);
+              r'    private static boolean isLaptopAllApps\(Object cellLayout\) \{',
+              safe_helper, label="safe inset helper")
 
-                  left = Math.max(0,
-                          rootScreen[0] + systemBars.left - layoutScreen[0]);
-                  right = Math.max(0,
-                          layoutScreen[0] + layout.getWidth()
-                                  - (rootScreen[0] + root.getWidth() - systemBars.right));
-                  top = Math.max(0,
-                          rootScreen[1] + statusBars.top - layoutScreen[1]);
-                  int systemBottom = Math.max(0,
-                          layoutScreen[1] + layout.getHeight()
-                                  - (rootScreen[1] + root.getHeight() - systemBars.bottom));
-                  bottom = Math.max(bottom, systemBottom);
-              } catch (Throwable e) {
-                  MainHook.log("[DC] workspace system inset resolve failed: " + e);
-              }
-              return new int[]{left, top, right, bottom};
+          # UI exposes only the two actual normal-Workspace geometry controls per orientation.
+          compose = Path("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt")
+          text = compose.read_text()
+          replacements = {
+              "grid_landscape_horizontal_distance": "Edge Offset 只调整左右边缘，不改变纵向位置",
+              "grid_portrait_horizontal_distance": "Edge Offset 只调整左右边缘，不改变纵向位置",
+              "grid_landscape_row_gap": "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%",
+              "grid_portrait_row_gap": "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%",
           }
+          for key, value in replacements.items():
+              pattern = rf'(^\s*"{re.escape(key)}"\s*->\s*)"[^"]*"'
+              text, count = re.subn(pattern, rf'\1"{value}"', text, count=1, flags=re.M)
+              if count != 1:
+                  raise SystemExit(f"Compose summary {key}: matched {count} times")
+          compose.write_text(text)
 
-          private static boolean isLaptopAllApps(Object cellLayout) {''')
-
-          replace_once(
-              "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt",
-              '''    "grid_landscape_horizontal_distance" -> "同时调整横屏布局左右两侧的水平距离"
-              "grid_landscape_top_distance" -> "相对扣除 Dock 后的可用区域调整横屏顶部距离"
-              "grid_landscape_bottom_distance" -> "相对扣除 Dock 后的可用区域调整横屏底部距离"
-              "grid_portrait_horizontal_distance" -> "同时调整竖屏布局左右两侧的水平距离"
-              "grid_portrait_top_distance" -> "相对扣除 Dock 后的可用区域调整竖屏顶部距离"
-              "grid_portrait_bottom_distance" -> "相对扣除 Dock 后的可用区域调整竖屏底部距离"
-              "grid_landscape_row_gap" -> "增减横屏图标行之间的垂直距离"
-              "grid_portrait_row_gap" -> "增减竖屏图标行之间的垂直距离"''',
-              '''    "grid_landscape_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"
-              "grid_landscape_top_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
-              "grid_landscape_bottom_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
-              "grid_portrait_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"
-              "grid_portrait_top_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
-              "grid_portrait_bottom_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
-              "grid_landscape_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"
-              "grid_portrait_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"''')
-
-          replace_once(
-              "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt",
-              '''private val gridSpecs = listOf(
-              IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏水平距离偏移"),
-              IntSpec(ConfigSchema.Grid.LANDSCAPE_TOP_DISTANCE, "横屏顶部距离偏移"),
-              IntSpec(ConfigSchema.Grid.LANDSCAPE_BOTTOM_DISTANCE, "横屏底部距离偏移"),
-              IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏水平距离偏移"),
-              IntSpec(ConfigSchema.Grid.PORTRAIT_TOP_DISTANCE, "竖屏顶部距离偏移"),
-              IntSpec(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE, "竖屏底部距离偏移"),
-              IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏图标纵向间距偏移"),
-              IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏图标纵向间距偏移"),
-              IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
-              IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
-          )''',
-              '''private val gridSpecs = listOf(
+          grid_specs = '''private val gridSpecs = listOf(
               IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏 Edge Offset"),
               IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏 Margin"),
               IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏 Edge Offset"),
               IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏 Margin"),
               IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
               IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
-          )''')
+          )
+
+          private val workstationSpecs'''
+          sub_once(
+              "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt",
+              r'private val gridSpecs = listOf\(.*?\n\)\n\nprivate val workstationSpecs',
+              grid_specs, flags=re.S, label="Compose gridSpecs")
           PY
       - name: Verify unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
