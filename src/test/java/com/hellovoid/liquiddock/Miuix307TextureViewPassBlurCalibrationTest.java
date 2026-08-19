@@ -41,24 +41,29 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     }
 
     @Test
-    public void calibrationShaderRemainsStrictNeutralPassthroughDuringStageBMapping() throws Exception {
+    public void calibrationShaderKeepsSingleSampleGpuPathWithApprovedDiagnosticLens() throws Exception {
         Path path = MAIN.resolve("Miuix307PassBlurTextureView.java");
         assertTrue(Files.exists(path));
         String view = Files.readString(path);
 
-        assertTrue("Stage B may map Dock-local coordinates but must still sample exactly once",
+        assertTrue("Stage B must still issue a single final OES sample",
                 view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)")
                         && view.contains("gl_FragColor = texture2D(uTexture, transformed.xy)"));
-        assertTrue("Stage B coordinate mapping is allowed",
+        assertTrue("Stage B coordinate mapping remains active",
                 view.contains("uniform vec4 uBackdropRect")
                         && view.contains("uniform int uConfigRot"));
-        assertFalse("calibration shader must not contain refraction or rounded edge lens terms",
+        assertTrue("approved diagnostic lens must be local-space and bounded",
                 view.contains("sdRoundRect")
-                        || view.contains("edgeWeight")
-                        || view.contains("refractedUv")
-                        || view.contains("uGlassRadius")
-                        || view.contains("displacementPx"));
-        assertFalse("normal calibration path must remain GPU-only",
+                        && view.contains("edgeWeight")
+                        && view.contains("float displacementPx = 14.0")
+                        && view.contains("lensUv = mix(vUv, refractedUv, edgeWeight)"));
+        assertFalse("diagnostic lens must not add material color/blur effects",
+                view.contains("uniform vec4 uTint")
+                        || view.contains("uniform float uHighlight")
+                        || view.contains("uChromatic")
+                        || view.contains("uDispersion")
+                        || view.contains("blurRadius"));
+        assertFalse("calibration path must remain GPU-only",
                 view.contains("Bitmap")
                         || view.contains("captureScreenAsync")
                         || view.contains("ScreenshotHardwareBuffer")
