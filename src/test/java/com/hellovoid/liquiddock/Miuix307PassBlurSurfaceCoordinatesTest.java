@@ -14,24 +14,36 @@ public class Miuix307PassBlurSurfaceCoordinatesTest {
             "src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurGpuView.java");
 
     @Test
-    public void cropUsesSurfaceViewCompositorRectInsteadOfRawWindowCoordinates() throws Exception {
+    public void cropUsesRenderWorkerSurfacePositionBeforeLayoutFallback() throws Exception {
         String source = Files.readString(VIEW);
         int start = source.indexOf("private void updateCrop()");
         int end = source.indexOf("private void logCoordinateDiagnostics", start);
         assertTrue(start >= 0 && end > start);
         String crop = source.substring(start, end);
 
-        assertTrue("crop must read SurfaceView.mScreenRect, the rect actually used to position its SurfaceControl",
-                crop.contains("readSurfaceViewScreenRect") && source.contains("\"mScreenRect\""));
-        assertTrue("crop must normalize against ViewRootImpl.mSurfaceSize rather than root View dimensions",
+        assertTrue("hardware-accelerated SurfaceView crop must prefer RenderWorker's final compositor rect",
+                crop.contains("readSurfaceViewRenderPosition")
+                        && source.contains("getSurfaceRenderPosition"));
+        assertTrue("mScreenRect may remain only as a startup fallback before RenderWorker reports",
+                source.contains("readSurfaceViewScreenRect")
+                        && crop.contains("readSurfaceViewScreenRect"));
+        assertTrue("crop must normalize the compositor rect against ViewRootImpl.mSurfaceSize",
                 crop.contains("readSurfaceGeometry")
                         && crop.contains("surfaceWidth")
                         && crop.contains("surfaceHeight"));
-        assertFalse("raw getLocationInWindow coordinates are in the wrong space under configRot",
+        assertFalse("raw getLocationInWindow coordinates are not the hardware compositor position",
                 crop.contains("getLocationInWindow"));
         assertFalse("crop must not pre-flip Y before SurfaceTexture's transform matrix",
                 crop.contains("1f - (top + height)")
                         || crop.contains("1.0f - (top + height)"));
+    }
+
+    @Test
+    public void diagnosticsExposeRenderWorkerAndLayoutRectsSeparately() throws Exception {
+        String source = Files.readString(VIEW);
+        assertTrue("device logs must distinguish the final RenderWorker rect from mScreenRect fallback",
+                source.contains("renderRect=")
+                        && source.contains("layoutRect="));
     }
 
     @Test
