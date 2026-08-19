@@ -73,8 +73,12 @@ public final class ConfigMigration {
         }
         // The first PassBlur adapter interpreted this control as value / 12. Preserve the exact
         // optical meaning for every legacy custom value, not only for the neutral default 12.
-        float prismalScale = present ? Math.max(0.25f, oldValue / 12f) : 1f;
+        float prismalScale = present ? prismalLensScale(oldValue) : 1f;
         putDpPreference(e, key, prismalScale);
+    }
+
+    static float prismalLensScale(float legacyValue) {
+        return Math.max(0.25f, legacyValue / 12f);
     }
 
     private static void migrateIntDefault(
