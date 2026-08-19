@@ -49,7 +49,7 @@ public class MainHook {
             log("[DC] workstation active; using isolated workstation parameters");
 
         LiquidDockConfig.Grid grid = config.grid;
-        boolean grid8x4 = grid.enabled, dp = grid.dp, offsets = grid.offsets;
+        boolean customGridEnabled = grid.enabled, dp = grid.dp, offsets = grid.offsets;
         float gridScale = dp ? android.content.res.Resources.getSystem().getDisplayMetrics().density : 1f;
         int landXBase = dp ? 57 : 160, landYBase = dp ? 28 : 80;
         int portXBase = dp ? 28 : 80, portYBase = dp ? 57 : 160;
@@ -70,7 +70,7 @@ public class MainHook {
             landGap -= dp ? 1 : 3; portGap -= dp ? 1 : 3;
         }
         DockDividerHook.install(classLoader);
-        HomeGridHook.install(classLoader, grid8x4,
+        HomeGridHook.install(classLoader, customGridEnabled,
             Math.round(landLeft * gridScale), Math.round(landRight * gridScale),
             Math.round(landTop * gridScale), Math.round(landBottom * gridScale),
             Math.round(portLeft * gridScale), Math.round(portRight * gridScale),
@@ -78,6 +78,7 @@ public class MainHook {
             Math.round(landGap * gridScale), Math.round(portGap * gridScale),
             Math.round(grid.landscapeIndicatorY * gridScale),
             Math.round(grid.portraitIndicatorY * gridScale));
+        HomeGridProfileOverlayHook.install(classLoader, customGridEnabled, grid.profile);
         HomeGridHook.setWorkstationHorizontalOffset(Math.round(
                 config.workstation.gridHorizontalOffset * gridScale));
         // All Apps controls are absolute edge spacing in dp. They must not inherit the
