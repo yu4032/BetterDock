@@ -8,7 +8,7 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Source contracts for the HyperOS 307 PassBlur -> OES GPU demo. */
+/** Source contracts for the HyperOS 307 PassBlur GPU calibration and retired probe. */
 public class Miuix307PassBlurGpuDemoTest {
     private static final Path MAIN =
             Path.of("src/main/java/com/hellovoid/liquiddock");
@@ -23,11 +23,13 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue(bridge.contains("\"setUpdateTextureFlag\""));
         assertTrue(bridge.contains("1.0f"));
         assertTrue(bridge.contains("\"setMiBlurWinExc\""));
-        assertTrue(bridge.contains("outputView.getSurfaceControl()"));
+        assertTrue("active bridge must bind directly to the producer Surface",
+                bridge.contains("View materialHost, Surface producerSurface, float requestedScale"));
+        assertFalse("active bridge must not query an independent output child surface",
+                bridge.contains("outputView.getSurfaceControl()") || bridge.contains("surfaceName(outputSurface)"));
         assertTrue(bridge.contains("surfaceName(SurfaceControl surface)")
                 && bridge.contains("getDeclaredMethod(\"getName\")"));
-        assertTrue(bridge.contains("surfaceName(rootSurface)")
-                && bridge.contains("surfaceName(outputSurface)"));
+        assertTrue(bridge.contains("surfaceName(rootSurface)"));
         assertTrue(bridge.contains("NavigationBar")
                 && bridge.contains("StatusBar")
                 && bridge.contains("GestureStub")
@@ -41,7 +43,7 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void gpuViewUsesSmoothRoundedEdgeLensWithExactCenterPassthrough() throws Exception {
+    public void retiredGpuViewUsesSmoothRoundedEdgeLensWithExactCenterPassthrough() throws Exception {
         Path path = MAIN.resolve("Miuix307PassBlurGpuView.java");
         assertTrue(Files.exists(path));
         String view = Files.readString(path);
@@ -60,11 +62,11 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue("manual coordinate calculations may remain diagnostic-only",
                 view.contains("getLocationInWindow") && view.contains("cropSF="));
 
-        assertTrue("lens must follow rounded Dock geometry",
+        assertTrue("retired probe keeps its rounded Dock geometry evidence",
                 view.contains("sdRoundRect")
                         && view.contains("uViewSize")
                         && view.contains("uGlassRadius"));
-        assertTrue("lens must fade continuously from edge to an exact passthrough center",
+        assertTrue("retired probe keeps its edge lens evidence",
                 view.contains("edgeWeight")
                         && view.contains("smoothstep")
                         && view.contains("mix(vUv, refractedUv, edgeWeight)"));
@@ -107,12 +109,12 @@ public class Miuix307PassBlurGpuDemoTest {
 
     @Test
     public void producerBufferAlwaysMatchesViewRootSurfaceOrientation() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("\"mSurfaceSize\"") && view.contains("Point"));
         assertTrue(view.contains("getInstallOrientation") && view.contains("getRotation()"));
 
         int start = view.indexOf("private ProducerGeometry readSurfaceGeometry");
-        int end = view.indexOf("private static int readConfigRotation", start);
+        int end = view.indexOf("private void logStageADiagnostics", start);
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
@@ -126,12 +128,12 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue("configRot remains lifecycle metadata for rotation-change detection",
                 view.contains("boundConfigRotation")
                         && view.contains("configRotation = geometry.configRotation"));
-        assertTrue(view.contains("setDefaultBufferSize(bufferWidth, bufferHeight)"));
+        assertTrue(view.contains("setDefaultBufferSize(geometry.bufferWidth, geometry.bufferHeight)"));
     }
 
     @Test
     public void rotationResizesExistingProducerInPlaceWithoutNativeHotRebind() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
         assertTrue("rotation path must have an in-place geometry refresh",
                 view.contains("refreshProducerGeometryInPlace"));
@@ -140,7 +142,7 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue(start >= 0 && end > start);
         String region = view.substring(start, end);
 
-        assertTrue("same producer SurfaceTexture must be resized like ViewRootImpl.checkSurTexSize",
+        assertTrue("same input SurfaceTexture must be resized without producer teardown",
                 region.contains("setDefaultBufferSize(geometry.bufferWidth, geometry.bufferHeight)"));
         assertTrue("config rotation must update without tearing down the producer",
                 region.contains("configRotation = geometry.configRotation"));
@@ -151,35 +153,25 @@ public class Miuix307PassBlurGpuDemoTest {
         assertFalse("geometry-only rotation must not null/unbind PassBlur",
                 region.contains("Miuix307PassBlurBridge.unbind")
                         || region.contains("binding = null")
-                        || region.contains("bindProducerWhenReady("));
-
-        assertTrue("pre-draw and SurfaceChanged must use the in-place refresh",
-                view.contains("post(this::refreshProducerGeometryInPlace)")
-                        && view.contains("refreshProducerGeometryInPlace();"));
-        assertFalse("old hot rebind helper must be retired",
-                view.contains("producer geometry changed; rebinding PassBlur"));
+                        || region.contains("SetPassBlurSurface"));
+        assertTrue("pre-draw must drive the in-place geometry refresh",
+                view.contains("refreshProducerGeometryInPlace();"));
     }
 
     @Test
-    public void independentSurfaceGetsExplicitWindowCropAndCornerRadius() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
-        assertTrue("SurfaceView output must establish a crop before applying rounded corners",
-                view.contains("setWindowCrop")
-                        && view.contains("getWidth()")
-                        && view.contains("getHeight()"));
-        assertTrue("rounded SurfaceControl corner radius must remain enabled",
-                view.contains("setCornerRadius"));
-        assertTrue("shape update must log the actual output geometry for device validation",
-                view.contains("output shape crop=")
-                        && view.contains("cornerRadius="));
+    public void activeTextureViewHasNoIndependentSurfaceControlShapeHack() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertFalse(view.contains("setWindowCrop"));
+        assertFalse(view.contains("setCornerRadius"));
+        assertFalse(view.contains("getSurfaceControl()"));
     }
 
     @Test
     public void shaderUsesSurfaceTextureTransformWithoutSecondConfigRotation() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
         assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
-                view.contains("uTexMatrix * vec4(lensUv, 0.0, 1.0)"));
+                view.contains("uTexMatrix * vec4(vUv, 0.0, 1.0)"));
         assertFalse("shader must not apply a second explicit config rotation",
                 view.contains("uniform int uConfigRot")
                         || view.contains("glUniform1i(rotation")
@@ -189,24 +181,13 @@ public class Miuix307PassBlurGpuDemoTest {
     }
 
     @Test
-    public void coordinateDiagnosticsExposeTextureMatrixAndWindowToSampleMapping() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurGpuView.java"));
-
-        assertTrue("diagnostics must log the actual SurfaceTexture transform matrix",
-                view.contains("texture matrix=") && view.contains("formatTextureMatrix"));
-        assertTrue("diagnostics must retain raw window/screen coordinates for comparison",
-                view.contains("coordinate diagnostic rootWindow=")
-                        && view.contains("getLocationInWindow")
-                        && view.contains("getLocationOnScreen"));
-        assertTrue("diagnostics must expose RenderWorker and layout fallback rects plus SF crop",
-                view.contains("renderRect=")
-                        && view.contains("layoutRect=")
-                        && view.contains("cropSF=")
-                        && view.contains("oldCropGL=")
-                        && view.contains("cropTop="));
-        assertTrue("diagnostics must map the four compositor crop corners through the real texture matrix",
-                view.contains("mapped corners bl=")
-                        && view.contains("mapTextureCoordinate"));
+    public void stageADiagnosticsExposeTextureMatrixAndHostScreenGeometry() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(view.contains("texture matrix=") && view.contains("formatTextureMatrix"));
+        assertTrue(view.contains("stage-A diagnostic hostScreen="));
+        assertTrue(view.contains("hostSize="));
+        assertTrue(view.contains("producerSurface="));
+        assertTrue(view.contains("configRot="));
     }
 
     @Test
