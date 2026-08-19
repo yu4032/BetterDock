@@ -1,5 +1,7 @@
 package com.hellovoid.liquiddock;
 
+import com.hellovoid.liquiddock.config.ConfigSchema;
+
 import org.junit.Test;
 
 import java.nio.file.Files;
@@ -33,6 +35,12 @@ public class GridSpacingSemanticsContractTest {
 
         assertTrue(compose.contains("Edge Offset 只调整左右边缘，不改变纵向位置"));
         assertTrue(compose.contains("Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"));
+    }
+
+    @Test
+    public void absentLegacyUnitFlagsUseCurrentDpAndOffsetSemantics() {
+        assertTrue(ConfigSchema.Grid.MARGINS_DP.runtimeFallback());
+        assertTrue(ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());
     }
 
     @Test
