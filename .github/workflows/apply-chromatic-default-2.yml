@@ -3,6 +3,8 @@ name: Apply chromatic default 2
 on:
   push:
     branches: [ fix/chromatic-default-preset-2 ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
   contents: write
