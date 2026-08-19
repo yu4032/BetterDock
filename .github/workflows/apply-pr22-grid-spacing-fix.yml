@@ -116,42 +116,42 @@ jobs:
           replace_once(
               "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java",
               '''            boolean workstation = workstationAllApps
-                          || workstationMode || MainHook.isWorkstationMode();
+                      || workstationMode || MainHook.isWorkstationMode();
 
-                  // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''',
+              // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''',
               '''            boolean workstation = workstationAllApps
-                          || workstationMode || MainHook.isWorkstationMode();
+                      || workstationMode || MainHook.isWorkstationMode();
 
-                  if (!workstation) {
-                      int dockBarHeight = 0;
-                      try {
-                          dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
-                                  config, "getDockBarHeight"));
-                      } catch (Throwable ignored) {}
-                      int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
-                      int edgeOffset = Math.max(0,
-                              portrait ? portraitLeft : landscapeLeft);
-                      int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
-                      int screenWidth = width;
-                      android.view.View root = layout.getRootView();
-                      if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
-                      int margin = configuredMargin > 0
-                              ? configuredMargin
-                              : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
-                      HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
-                              width, height, countX, countY,
-                              safe[0], safe[1], safe[2], safe[3],
-                              edgeOffset, margin);
-                      HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
-                      HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
-                      HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
-                      HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
-                      HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
-                      HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
-                      return;
-                  }
+              if (!workstation) {
+                  int dockBarHeight = 0;
+                  try {
+                      dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
+                              config, "getDockBarHeight"));
+                  } catch (Throwable ignored) {}
+                  int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
+                  int edgeOffset = Math.max(0,
+                          portrait ? portraitLeft : landscapeLeft);
+                  int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
+                  int screenWidth = width;
+                  android.view.View root = layout.getRootView();
+                  if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
+                  int margin = configuredMargin > 0
+                          ? configuredMargin
+                          : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
+                  HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
+                          width, height, countX, countY,
+                          safe[0], safe[1], safe[2], safe[3],
+                          edgeOffset, margin);
+                  HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
+                  HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
+                  HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
+                  HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
+                  HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
+                  HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
+                  return;
+              }
 
-                  // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''')
+              // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated''')
 
           replace_once(
               "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java",
