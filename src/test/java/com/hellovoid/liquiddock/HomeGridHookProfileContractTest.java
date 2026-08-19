@@ -37,19 +37,25 @@ public class HomeGridHookProfileContractTest {
     }
 
     @Test
-    public void workspaceDropRuleUsesProfileNeutralCanonicalMaster() throws Exception {
+    public void workspaceDropRuleReceivesTypedProfileAndAppliesRotationSafePolicy() throws Exception {
         String module = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/ModuleMain.java"));
         String drop = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/WorkspaceDropRuleHook.java"));
 
-        assertTrue(module.contains("runtimeConfig.enabled && runtimeConfig.grid.enabled"));
-        assertTrue(drop.contains("boolean customGridEnabled"));
+        assertTrue(module.contains("runtimeConfig.enabled && runtimeConfig.grid.enabled,"));
+        assertTrue(module.contains("runtimeConfig.grid.profile"));
+        assertTrue(drop.contains("boolean customGridEnabled, HomeGridProfile profile"));
         assertTrue(drop.contains("!customGridEnabled || installed"));
+        assertTrue(drop.contains("int cellX = (Integer) chain.getArg(0)"));
+        assertTrue(drop.contains("int cellY = (Integer) chain.getArg(1)"));
+        assertTrue(drop.contains("int spanX = (Integer) chain.getArg(2)"));
+        assertTrue(drop.contains("int spanY = (Integer) chain.getArg(3)"));
+        assertTrue(drop.contains("WorkspaceDropPolicy.isPlacementAllowed("));
     }
 
     @Test
-    public void landscapeTenBySixAllowsFourByTwoAtLastValidOrigin() {
+    public void landscapeTenBySixStillComputesFourByTwoFrameAtGeometricEdge() {
         int[] xs = axis(10, 100);
         int[] ys = axis(6, 120);
         assertArrayEquals(new int[]{600, 480, 400, 240},
@@ -59,7 +65,7 @@ public class HomeGridHookProfileContractTest {
     }
 
     @Test
-    public void portraitSixByTenAllowsFourByTwoAtLastValidOrigin() {
+    public void portraitSixByTenStillComputesFourByTwoFrameAtGeometricEdge() {
         int[] xs = axis(6, 100);
         int[] ys = axis(10, 120);
         assertArrayEquals(new int[]{200, 960, 400, 240},
