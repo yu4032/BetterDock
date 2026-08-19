@@ -1,30 +1,14 @@
 # LiquidDock 2.0 Hook 点总览
 
-本文档记录 **当前 `main`（2.x）源码实际安装或尝试安装的主要 Hook 点**。它描述运行时事实，不描述 1.x 的历史架构，也不把普通反射调用误写成 Xposed Hook。
+本文档记录 **当前 `main`（2.x）源码实际安装或尝试安装的主要 Hook 点**。
 
 ## 运行时边界
 
-2.0 的 Xposed scope 只有：
+Xposed scope 只有：
 
 ```text
 com.miui.home
 ```
-
-`com.android.systemui` 已从 scope 删除，`ModuleMain` 也不会为 SystemUI / WMShell 安装任何 source/provider。
-
-因此当前主线中不存在 1.x 的这些运行时链：
-
-- SystemUI `ShellTaskOrganizer` task-state source；
-- `MultiTaskingTaskRepository` HOME / APP ownership；
-- `FreeformTaskListener` leash provider；
-- SystemUI → Launcher transition / ownership Binder bridge；
-- HOME / APP / RECENTS screenshot source selection；
-- full-display screen capture / wallpaper capture fallback；
-- capture freeze、capture cadence、black-frame retry 等截图状态机。
-
-1.x 相关实现与文档语义应到 `archive/1.x` 查看，不应套用到 2.0。
-
----
 
 ## API 101 入口与安装顺序
 
@@ -39,7 +23,7 @@ com.miui.home
 
 ### 主开关边界
 
-`MainHook.install()` 会在读取 `config.enabled` **之前**先安装 workstation mode guard。因此 master switch 关闭时，Launcher 主体功能不会继续安装，但 workstation mode guard 仍可能已经注册。
+`MainHook.install()` 会在读取 `config.enabled` 之前先安装 workstation mode guard。因此 master switch 关闭时，Launcher 主体功能不会继续安装，但 workstation mode guard 仍可能已经注册。
 
 其余主要安装顺序为：
 
@@ -52,8 +36,6 @@ com.miui.home
 7. 如果开启 Liquid Glass，尝试 `Miuix307MaterialPipeline.install(...)`；
 8. 307 material 安装成功后，`MainHook` 直接返回，不进入旧 renderer；
 9. 如果 zero-copy material 不可用，则只在 Dock customization 开启时继续 native Dock customization 路径。
-
-**2.0 没有 legacy glass fallback。**
 
 ---
 
@@ -162,7 +144,7 @@ blurFramebufferV
 
 Prismal shader 只处理普通 2D texture，不直接理解 OES / SurfaceFlinger producer geometry。折射、色散、Fresnel、dome、specular、rim、caustics、vibrancy、tint 等参数由 `Miuix307PrismalMaterial` 统一映射。
 
-像素数据全程留在 GPU buffer 中；当前 zero-copy glass 不调用 `captureScreenAsync`、Bitmap readback 或 `glReadPixels`。
+像素数据全程留在 GPU buffer 中。
 
 ---
 
@@ -178,19 +160,13 @@ PassBlur/OES activation succeeds ──→ Prismal glass
         └─ fails / times out ──────→ transparent glass
 ```
 
-不会变成：
-
-```text
-PassBlur fails → screenshot renderer
-```
-
-如果 `Miuix307MaterialPipeline` 连受支持的 background class 都找不到，`MainHook` 会把 Liquid Glass 视为不可用；如果普通 Dock customization 仍开启，则可以继续安装 native Dock 自定义 Hook，但不会恢复旧 glass renderer。
+如果 `Miuix307MaterialPipeline` 连受支持的 background class 都找不到，`MainHook` 会把 Liquid Glass 视为不可用；如果普通 Dock customization 仍开启，则可以继续安装 native Dock 自定义 Hook，但不会恢复旧版本 glass renderer。
 
 ---
 
 ## 普通 / Native Dock 自定义 Hook
 
-以下路径主要用于未由 307 zero-copy material 接管的 native Dock customization。
+以下路径主要用于 native Dock customization。
 
 | 目标类 | 方法 | 当前作用 |
 |---|---|---|
@@ -273,13 +249,13 @@ HotSeatsListContentAdapter$LineViewHolder.bindView()
 - Y offset；
 - RGBA color。
 
-首个 RecyclerView bind 发生在父容器还没有有效高度时，会注册一次普通 `OnLayoutChangeListener` 延迟补几何；这个 listener 不是 Xposed Hook。
+首个 RecyclerView bind 发生在父容器还没有有效高度时，会注册一次普通 `OnLayoutChangeListener` 延迟补几何。
 
 ---
 
 ## 8×4 / 4×8 Home Grid
 
-`HomeGridHook` 只有在 custom grid 开启时安装布局 Hook；关闭时保持 MIUI stock grid，不改 CellLayout / indicator / folder measurement。
+`HomeGridHook` 只有在 custom grid 开启时安装布局 Hook；关闭时保持 MIUI stock grid，不会修改 CellLayout / indicator / folder measurement。
 
 主要 Hook 范围包括：
 
@@ -312,47 +288,6 @@ com.miui.home.launcher.compat.LayoutDropRuleForSwapPlaces
 
 返回 `true` 的目的只是移除 MIUI stock 6-column swap-placement pattern 限制。
 
-它**不会**替换 `GridOccupancyController`：边界、occupied cells、vacancy search 和实际 placement 仍由 Launcher 原逻辑负责。
+不会替换 `GridOccupancyController`：边界、occupied cells、vacancy search 和实际 placement 仍由 Launcher 原逻辑负责。
 
----
 
-## 当前不应再加入 HOOKS.md 的 1.x 内容
-
-维护 2.0 文档时，下列概念除非明确标成历史说明，否则不应重新写回“当前 Hook 点”：
-
-- `com.android.systemui` scope；
-- `ShellTaskOrganizer` / WMShell transition observer；
-- HOME / APP ownership provider；
-- freeform leash snapshot；
-- `CaptureSceneState`；
-- wallpaper / full-display capture source policy；
-- `LiveScreenCapture`；
-- Bitmap / HardwareBuffer screenshot renderer；
-- Recents pre-arm / capture hold / capture cadence；
-- SystemUI 控制中心展开对 screenshot capture 的 gating。
-
-2.0 glass 的判断原则应保持为：
-
-> **只维护“GPU 管线现在能否正确绑定并绘制”的状态，不维护“现在应该截什么”的状态。**
-
----
-
-## 源码事实来源
-
-Hook 行为发生变化时，优先以这些文件为准：
-
-```text
-src/main/resources/META-INF/xposed/scope.list
-src/main/java/com/hellovoid/liquiddock/ModuleMain.java
-src/main/java/com/hellovoid/liquiddock/MainHook.java
-src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java
-src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java
-src/main/java/com/hellovoid/liquiddock/Miuix307ZeroCopyRenderer.java
-src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurBridge.java
-src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java
-src/main/java/com/hellovoid/liquiddock/HomeGridHook.java
-src/main/java/com/hellovoid/liquiddock/WorkspaceDropRuleHook.java
-src/main/java/com/hellovoid/liquiddock/DockStrokeRenderer.java
-src/main/java/com/hellovoid/liquiddock/DockDividerHook.java
-src/main/java/com/hellovoid/liquiddock/WorkstationDockGeometryHook.java
-```
