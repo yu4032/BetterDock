@@ -3,7 +3,9 @@
 ![LiquidDock 效果](artwork/liquid-dock-screenshot.jpg)
 
 LiquidDock 是一个面向 HyperOS 3 Pad Launcher 的 LSPosed / libxposed API 101 模块，用于扩展系统 Dock 的液态玻璃、Dock 外观、桌面网格与工作台布局。
+
 ![LiquidDock detail](artwork/detail.gif)
+
 ## 主要功能
 
 - **Zero-copy Liquid Glass**：针对 HyperOS 3.0.307+ HotSeats material background，使用 PassBlur + GLES + Prismal 完成折射、色散、穹顶、Fresnel、镜面、焦散、振动度与 tint 等光学效果。
