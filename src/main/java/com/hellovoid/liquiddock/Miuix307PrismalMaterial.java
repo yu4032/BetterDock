@@ -503,11 +503,11 @@ final class Miuix307PrismalMaterial {
                 0f, 1f, 1f, 48f, 0.8f, 0.6f, 0.15f, 0.032f, 1f, 2.5f * d,
                 5f * d, displacement, height, 2f * d, 2f, 0.79f,
                 1f, 1f, 1.28f, 0.08f, 1f, 0.62f, 1f, 1f,
-                1f, 1f, 1f, 1f, 1f, 0f,
+                1f, 1f, 1f, 1f, 1f, 1f, 0f,
                 0f, 0f, 0f, 0f, false);
     }
 
-    static Params fromConfig(LiquidDockConfig.Glass glass, float density, float blurRadiusPx) {
+    static Params fromConfig(LiquidDockConfig.Glass glass, float density) {
         if (glass == null) return defaults(density);
         float d = Math.max(0.1f, density);
         float heightPx = Math.max(1f, glass.prismalHeightTransitionWidth * d);
@@ -523,7 +523,7 @@ final class Miuix307PrismalMaterial {
                 lensPx, lensDepth, glass.chromatic, glass.highlightWidth,
                 glass.brightness, glass.specularSharp, glass.specularStrength,
                 glass.rimLight, glass.caustics, glass.edgeBand, glass.highlightAlpha,
-                Math.max(0f, blurRadiusPx),
+                Math.max(0f, glass.blur * d),
                 glass.prismalRefractionInset * d, glass.prismalDisplacementScale,
                 glass.prismalHeightTransitionWidth * d, glass.prismalSminSmoothing * d,
                 glass.prismalEdgeRefractionFalloff, glass.prismalFresnelReflect,
