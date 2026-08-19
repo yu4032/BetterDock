@@ -84,7 +84,7 @@ public class Miuix307PrismalLegacyParityTest {
                 "glass.prismalVibrancy", "glass.prismalPlainHighlight", "glass.prismalLightDirX",
                 "glass.prismalLightDirY", "glass.prismalShadowAlpha", "glass.prismalShadowSoftness",
                 "glass.prismalTransmittance", "glass.prismalBackdropScaleX",
-                "glass.prismalBackdropScaleY", "glass.prismalParallaxScale"
+                "glass.prismalBackdropScaleY", "glass.prismalParallaxScale", "glass.blur"
         };
         for (String field : fields) {
             assertTrue("missing GUI-to-Prismal mapping: " + field, material.contains(field));
@@ -102,8 +102,9 @@ public class Miuix307PrismalLegacyParityTest {
         assertTrue(source.contains("uConfigRot"));
         assertTrue(source.contains("textureScaleX") && source.contains("textureOffsetX"));
         assertTrue(source.contains("uTexMatrix"));
-        assertTrue(view.contains("setGlassConfig(LiquidDockConfig.Glass glassConfig, int blurRadiusPx)"));
-        assertTrue(renderer.contains("gpuBackdrop.setGlassConfig(glassConfig, blurRadiusPx)"));
+        assertTrue(view.contains("setGlassConfig(LiquidDockConfig.Glass glassConfig)"));
+        assertTrue(renderer.contains("gpuBackdrop.setGlassConfig(glassConfig)"));
+        assertTrue(source.contains("fromConfig(LiquidDockConfig.Glass glass, float density)"));
         assertFalse(source.contains("Bitmap"));
         assertFalse(source.contains("captureScreenAsync"));
         assertFalse(source.contains("glReadPixels"));
