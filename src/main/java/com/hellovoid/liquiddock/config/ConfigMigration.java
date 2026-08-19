@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class ConfigMigration {
+    private static final String PRISMAL_PARITY_V2 = "liquid_prismal_parity_v2";
+
     private ConfigMigration() { }
 
     public static void migrate(Context context, SharedPreferences preferences) {
@@ -18,6 +20,68 @@ public final class ConfigMigration {
         migrateLiquidDimensionsToDp(context, preferences);
         migrateDockDimensionsToDp(context, preferences);
         migrateAxisDistances(preferences);
+        migratePrismalParityV2(preferences);
+    }
+
+    /**
+     * One-time migration from the first PassBlur/Prismal adapter defaults to the current upstream
+     * Prismal recipe. Only values that are absent or still equal the old default are changed;
+     * intentional user overrides survive. The marker prevents a later deliberate value such as
+     * displacement=1.0 or blur=6.0 from being mistaken for an old default again.
+     */
+    private static void migratePrismalParityV2(SharedPreferences sp) {
+        if (sp.getBoolean(PRISMAL_PARITY_V2, false)) return;
+        SharedPreferences.Editor e = sp.edit();
+
+        migrateDpDefault(sp, e, "liquid_blur", 6f, 2.5f);
+        migrateIntDefault(sp, e, "liquid_chromatic", 8, 0);
+        migrateIntDefault(sp, e, "liquid_tint_alpha", 38, 35);
+        migrateIntDefault(sp, e, "liquid_tint_r", 238, 0);
+        migrateIntDefault(sp, e, "liquid_tint_g", 244, 0);
+        migrateIntDefault(sp, e, "liquid_tint_b", 255, 255);
+        migrateIntDefault(sp, e, "liquid_dome", 100, 78);
+        migrateDpDefault(sp, e, "liquid_lens_refraction", 12f, 1f);
+        migrateIntDefault(sp, e, "liquid_specular_strength", 105, 152);
+        migrateIntDefault(sp, e, "liquid_rim_light", 100, 122);
+
+        migrateDpDefault(sp, e, "liquid_prismal_refraction_inset", 5f, 20f);
+        migrateIntDefault(sp, e, "liquid_prismal_displacement_scale", 100, 115);
+        migrateDpDefault(sp, e, "liquid_prismal_height_transition_width", 15f, 19f);
+        migrateDpDefault(sp, e, "liquid_prismal_smin_smoothing", 2f, 1.8f);
+        migrateIntDefault(sp, e, "liquid_prismal_edge_refraction_falloff", 200, 400);
+        migrateIntDefault(sp, e, "liquid_prismal_fresnel_reflect", 79, 100);
+        migrateIntDefault(sp, e, "liquid_prismal_light_dir_x", 100, -50);
+        migrateIntDefault(sp, e, "liquid_prismal_light_dir_y", 62, -80);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_r", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_g", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_b", 0, 255);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_alpha", 0, 35);
+        migrateIntDefault(sp, e, "liquid_prismal_shadow_softness", 100, 1000);
+
+        e.putBoolean(PRISMAL_PARITY_V2, true).commit();
+    }
+
+    private static void migrateIntDefault(
+            SharedPreferences sp, SharedPreferences.Editor e,
+            String key, int oldDefault, int newDefault) {
+        if (!sp.contains(key) || sp.getInt(key, oldDefault) == oldDefault) {
+            e.putInt(key, newDefault);
+        }
+    }
+
+    private static void migrateDpDefault(
+            SharedPreferences sp, SharedPreferences.Editor e,
+            String key, float oldDefault, float newDefault) {
+        boolean present = sp.contains(key) || sp.contains(key + "_tenths");
+        float current;
+        if (sp.contains(key + "_tenths")) {
+            current = sp.getInt(key + "_tenths", Math.round(oldDefault * 10f)) / 10f;
+        } else {
+            current = sp.getInt(key, Math.round(oldDefault));
+        }
+        if (!present || Math.abs(current - oldDefault) <= 0.0001f) {
+            putDpPreference(e, key, newDefault);
+        }
     }
 
     private static void migrateAxisDistances(SharedPreferences sp) {
