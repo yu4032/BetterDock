@@ -170,13 +170,14 @@ public class Miuix307PassBlurGpuDemoTest {
     public void stageBUsesExplicitConfigRotationBeforeSurfaceTextureTransform() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
-        assertTrue("Dock-local UV must be mapped into root surface space first",
-                view.contains("uBackdropRect.xy + vUv * uBackdropRect.zw"));
-        assertTrue("configRot must explicitly orient the root UV in Stage B",
+        assertTrue("diagnostic lens must remain Dock-local before mapping into root surface space",
+                view.contains("lensUv = mix(vUv, refractedUv, edgeWeight)")
+                        && view.contains("uBackdropRect.xy + lensUv * uBackdropRect.zw"));
+        assertTrue("configRot must inverse-orient the root UV in Stage B",
                 view.contains("uniform int uConfigRot")
-                        && view.contains("vec2(rootUv.y, 1.0 - rootUv.x)")
+                        && view.contains("vec2(1.0 - rootUv.y, rootUv.x)")
                         && view.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
-                        && view.contains("vec2(1.0 - rootUv.y, rootUv.x)"));
+                        && view.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
         assertTrue("SurfaceTexture transform must remain the final producer-to-texture mapping",
                 view.contains("uTexMatrix * vec4(orientedUv, 0.0, 1.0)"));
     }
