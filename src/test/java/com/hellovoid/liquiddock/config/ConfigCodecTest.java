@@ -196,7 +196,7 @@ public class ConfigCodecTest {
     public void absentPreferencesExportCompleteHistoricalDefaults() {
         Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
 
-        assertEquals(126, exported.size());
+        assertEquals(128, exported.size());
         assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
         assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
         assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
@@ -208,6 +208,9 @@ public class ConfigCodecTest {
         assertEquals(Boolean.FALSE, exported.get("liquid_glass"));
         assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
         assertEquals(48, exported.get("liquid_capture_bleed_top"));
+        assertEquals(16, exported.get("liquid_capture_bleed_bottom"));
+        assertEquals(0, exported.get("liquid_capture_bleed_left"));
+        assertEquals(0, exported.get("liquid_capture_bleed_right"));
         assertEquals(1200, exported.get("liquid_home_settle_delay"));
         assertEquals(5, exported.get("liquid_prismal_refraction_inset"));
         assertEquals(79, exported.get("liquid_prismal_fresnel_reflect"));

@@ -224,6 +224,10 @@ public final class ConfigSchema {
                 "liquid_capture_bleed_top", 48, 48, 48, 0, 256, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_BLEED_BOTTOM = integer(
                 "liquid_capture_bleed_bottom", 16, 16, 16, 0, 256, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> CAPTURE_BLEED_LEFT = integer(
+                "liquid_capture_bleed_left", 0, 0, 0, 0, 256, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> CAPTURE_BLEED_RIGHT = integer(
+                "liquid_capture_bleed_right", 0, 0, 0, 0, 256, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> THICKNESS = dp(
                 "liquid_thickness", 18, 18, 18, 1, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> IOR = integer(
@@ -428,7 +432,8 @@ public final class ConfigSchema {
                 Divider.COLOR_RED, Divider.COLOR_GREEN, Divider.COLOR_BLUE, Divider.ALPHA);
         add(keys, Glass.ENABLED, Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,
                 Glass.TINT_ALPHA, Glass.CAPTURE_FPS, Glass.CAPTURE_STOP_DELAY,
-                Glass.CAPTURE_BLEED_TOP, Glass.CAPTURE_BLEED_BOTTOM, Glass.THICKNESS,
+                Glass.CAPTURE_BLEED_TOP, Glass.CAPTURE_BLEED_BOTTOM,
+                Glass.CAPTURE_BLEED_LEFT, Glass.CAPTURE_BLEED_RIGHT, Glass.THICKNESS,
                 Glass.IOR, Glass.NORMAL_STRENGTH, Glass.DOME, Glass.LENS_REFRACTION,
                 Glass.CAPTURE_SCALE, Glass.DYNAMIC_APP_CAPTURE, Glass.FULLSCREEN_CAPTURE,
                 Glass.DYNAMIC_APP_PROBE_FPS, Glass.DYNAMIC_MOTION_THRESHOLD,

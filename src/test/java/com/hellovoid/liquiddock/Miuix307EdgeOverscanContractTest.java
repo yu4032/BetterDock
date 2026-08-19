@@ -17,9 +17,11 @@ public class Miuix307EdgeOverscanContractTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
 
-        assertTrue("normalization FBO must include an overscan ring around the visible Dock",
+        assertTrue("normalization FBO must keep the 32dp base and support asymmetric horizontal overscan",
                 view.contains("EDGE_OVERSCAN_DP")
-                        && view.contains("overscanPx")
+                        && view.contains("horizontalOverscanPx()")
+                        && view.contains("leftOverscanPx")
+                        && view.contains("rightOverscanPx")
                         && view.contains("uDockUvRect"));
         assertTrue("Prismal must map Dock-local UV into the larger overscan texture",
                 shader.contains("uniform vec4  u_dockUvRect")
