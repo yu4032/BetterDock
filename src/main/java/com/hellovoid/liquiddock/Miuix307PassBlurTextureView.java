@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import android.content.Context;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.opengl.EGL14;
 import android.opengl.EGLConfig;
@@ -32,7 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * PassBlur renders into a caller-owned input SurfaceTexture attached to an external OES texture.
  * A dedicated EGL thread renders into this TextureView, which remains inside the already-excluded
- * Floating Dock root. Stage B maps Dock-local UVs into the material host's real root-surface rect,
+ * Floating Dock root. Stage B maps Dock-local UVs into the material host's real window-frame rect,
  * applies the inverse HyperOS config rotation, and finally applies the SurfaceTexture transform
  * matrix. A strong rounded edge lens is enabled only as a diagnostic spatial-refraction marker;
  * the center remains passthrough and no tint, blur, highlight, or color dispersion is applied.
@@ -157,6 +158,8 @@ final class Miuix307PassBlurTextureView extends TextureView
     private int oesTexture;
     private int boundSurfaceWidth;
     private int boundSurfaceHeight;
+    private int boundBufferWidth;
+    private int boundBufferHeight;
     private int boundConfigRotation = -1;
     private boolean firstFrameLogged;
     private boolean firstDrawLogged;
@@ -467,6 +470,7 @@ final class Miuix307PassBlurTextureView extends TextureView
                         + backdropW + "," + backdropH + "]"
                         + " output=" + outputWidth + "x" + outputHeight
                         + " producerSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
+                        + " producerBuffer=" + boundBufferWidth + "x" + boundBufferHeight
                         + " configRot=" + configRotation
                         + " frameCallback=" + fromFrameCallback);
             }
@@ -533,6 +537,8 @@ final class Miuix307PassBlurTextureView extends TextureView
         configRotation = current.configRotation;
         boundSurfaceWidth = current.surfaceWidth;
         boundSurfaceHeight = current.surfaceHeight;
+        boundBufferWidth = current.bufferWidth;
+        boundBufferHeight = current.bufferHeight;
         boundConfigRotation = current.configRotation;
         activationExhausted = false;
         stageBDiagnosticsLogged = false;
@@ -593,6 +599,8 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (!isSameSurface(binding.rootSurface, geometry.rootSurface)) return;
         if (geometry.surfaceWidth == boundSurfaceWidth
                 && geometry.surfaceHeight == boundSurfaceHeight
+                && geometry.bufferWidth == boundBufferWidth
+                && geometry.bufferHeight == boundBufferHeight
                 && geometry.configRotation == boundConfigRotation) {
             return;
         }
@@ -600,6 +608,8 @@ final class Miuix307PassBlurTextureView extends TextureView
         configRotation = geometry.configRotation;
         boundSurfaceWidth = geometry.surfaceWidth;
         boundSurfaceHeight = geometry.surfaceHeight;
+        boundBufferWidth = geometry.bufferWidth;
+        boundBufferHeight = geometry.bufferHeight;
         boundConfigRotation = geometry.configRotation;
         hasConsumedFrame = false;
         frameAvailable.set(false);
@@ -621,25 +631,26 @@ final class Miuix307PassBlurTextureView extends TextureView
     }
 
     private void updateBackdropMapping() {
-        if (shuttingDown || boundSurfaceWidth <= 0 || boundSurfaceHeight <= 0) return;
+        if (shuttingDown) return;
         View materialHost = materialHostRef.get();
         if (materialHost == null || !materialHost.isAttachedToWindow()) return;
-        View root = materialHost.getRootView();
-        if (root == null) return;
 
         int hostWidth = materialHost.getWidth();
         int hostHeight = materialHost.getHeight();
         if (hostWidth <= 0 || hostHeight <= 0) return;
 
-        int[] hostScreen = new int[2];
-        int[] rootScreen = new int[2];
-        materialHost.getLocationOnScreen(hostScreen);
-        root.getLocationOnScreen(rootScreen);
+        // HyperOS separates the content window frame (mWinFrameInScreen) from mSurfaceSize,
+        // which may be inflated by surfaceInsets or temporarily expanded during relayout.
+        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");
+        if (winFrame == null || winFrame.width() <= 0 || winFrame.height() <= 0) return;
 
-        float nextX = (hostScreen[0] - rootScreen[0]) / (float) boundSurfaceWidth;
-        float top = (hostScreen[1] - rootScreen[1]) / (float) boundSurfaceHeight;
-        float nextW = hostWidth / (float) boundSurfaceWidth;
-        float nextH = hostHeight / (float) boundSurfaceHeight;
+        int[] hostScreen = new int[2];
+        materialHost.getLocationOnScreen(hostScreen);
+
+        float nextX = (hostScreen[0] - winFrame.left) / (float) winFrame.width();
+        float top = (hostScreen[1] - winFrame.top) / (float) winFrame.height();
+        float nextW = hostWidth / (float) winFrame.width();
+        float nextH = hostHeight / (float) winFrame.height();
         float nextY = 1f - (top + nextH);
 
         if (Float.compare(backdropX, nextX) == 0
@@ -676,6 +687,10 @@ final class Miuix307PassBlurTextureView extends TextureView
             int configRotation = readConfigRotation(materialHost);
             int bufferWidth = surfaceWidth;
             int bufferHeight = surfaceHeight;
+            if (configRotation == 1 || configRotation == 3) {
+                bufferWidth = surfaceHeight;
+                bufferHeight = surfaceWidth;
+            }
 
             Method getSurfaceControl = viewRoot.getClass().getDeclaredMethod("getSurfaceControl");
             getSurfaceControl.setAccessible(true);
@@ -703,6 +718,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         int[] rootScreen = new int[2];
         materialHost.getLocationOnScreen(hostScreen);
         root.getLocationOnScreen(rootScreen);
+        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");
 
         float[] bl = mapFinalCoordinate(backdropX, backdropY, configRotation, matrixSnapshot);
         float[] br = mapFinalCoordinate(
@@ -716,7 +732,9 @@ final class Miuix307PassBlurTextureView extends TextureView
                 + rootScreen[0] + "," + rootScreen[1] + "]"
                 + " hostScreen=[" + hostScreen[0] + "," + hostScreen[1] + "]"
                 + " hostSize=" + materialHost.getWidth() + "x" + materialHost.getHeight()
+                + " winFrame=" + formatRect(winFrame)
                 + " rootSurface=" + boundSurfaceWidth + "x" + boundSurfaceHeight
+                + " producerBuffer=" + boundBufferWidth + "x" + boundBufferHeight
                 + " backdropRect=[" + backdropX + "," + backdropY + ","
                 + backdropW + "," + backdropH + "]"
                 + " configRot=" + configRotation
@@ -835,6 +853,8 @@ final class Miuix307PassBlurTextureView extends TextureView
     private void resetBoundGeometry() {
         boundSurfaceWidth = 0;
         boundSurfaceHeight = 0;
+        boundBufferWidth = 0;
+        boundBufferHeight = 0;
         boundConfigRotation = -1;
         backdropX = 0f;
         backdropY = 0f;
@@ -860,6 +880,20 @@ final class Miuix307PassBlurTextureView extends TextureView
         int rotation = display.getRotation();
         int result = (installOrientation + rotation) % 4;
         return result < 0 ? result + 4 : result;
+    }
+
+    private static Rect readViewRootRectField(View view, String fieldName) {
+        if (view == null) return null;
+        try {
+            Object viewRoot = getViewRootImpl(view);
+            if (viewRoot == null) return null;
+            Field field = findField(viewRoot.getClass(), fieldName);
+            field.setAccessible(true);
+            Object value = field.get(viewRoot);
+            return value instanceof Rect ? new Rect((Rect) value) : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static Object getViewRootImpl(View view) throws Exception {
@@ -935,6 +969,11 @@ final class Miuix307PassBlurTextureView extends TextureView
             return 0;
         }
         return shader;
+    }
+
+    private static String formatRect(Rect rect) {
+        if (rect == null) return "unavailable";
+        return "[" + rect.left + "," + rect.top + "," + rect.right + "," + rect.bottom + "]";
     }
 
     private static String formatTextureMatrix(float[] matrix) {
