@@ -1,0 +1,102 @@
+name: Apply zero-copy edge overscan fix
+
+on:
+  push:
+    branches:
+      - fix/zero-copy-edge-overscan
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, 'fix: add zero-copy edge overscan') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/zero-copy-edge-overscan
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Apply focused overscan patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f'missing replacement anchor in {path}: {old[:120]!r}')
+              if s.count(old) != 1:
+                  raise SystemExit(f'non-unique replacement anchor in {path}: {s.count(old)}')
+              p.write_text(s.replace(old, new, 1))
+
+          view = 'src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java'
+          shader = 'src/main/java/com/hellovoid/liquiddock/Miuix307PrismalShader.java'
+
+          replace_once(view,
+          '''    private static final float BLUR_FBO_SCALE = 0.5f;\n''',
+          '''    private static final float BLUR_FBO_SCALE = 0.5f;\n    // Keep real scene pixels around the visible Dock so refraction can see approaching content\n    // before it crosses the material edge. Output remains clipped to the Dock itself.\n    private static final float EDGE_OVERSCAN_DP = 32f;\n''')
+
+          replace_once(view,
+          '''    // Unclamped host-to-producer mapping plus the valid Dock-local sub-rectangle.\n    private volatile float backdropX;\n    private volatile float backdropY;\n    private volatile float backdropW = 1f;\n    private volatile float backdropH = 1f;\n    private volatile float validDockLeft;\n    private volatile float validDockBottom;\n    private volatile float validDockRight = 1f;\n    private volatile float validDockTop = 1f;\n    private volatile Miuix307BackdropMapping.Coverage producerCoverage =\n            Miuix307BackdropMapping.Coverage.FULL;\n''',
+          '''    // Stage A samples a real overscan ring around the visible Dock. The sample-valid\n    // rectangle is used only by the normalization mirror guard; Dock validity remains separate\n    // so half-pulled animations are still clipped to pixels that are actually on-screen.\n    private volatile float backdropX;\n    private volatile float backdropY;\n    private volatile float backdropW = 1f;\n    private volatile float backdropH = 1f;\n    private volatile float validSampleLeft;\n    private volatile float validSampleBottom;\n    private volatile float validSampleRight = 1f;\n    private volatile float validSampleTop = 1f;\n    private volatile float validDockLeft;\n    private volatile float validDockBottom;\n    private volatile float validDockRight = 1f;\n    private volatile float validDockTop = 1f;\n    // Visible Dock coordinates inside the larger overscan texture: x, y, width, height.\n    private volatile float dockUvLeft;\n    private volatile float dockUvBottom;\n    private volatile float dockUvWidth = 1f;\n    private volatile float dockUvHeight = 1f;\n    private volatile Miuix307BackdropMapping.Coverage producerCoverage =\n            Miuix307BackdropMapping.Coverage.FULL;\n''')
+
+          replace_once(view,
+          '''    private void ensureFboSize(int width, int height) {\n        int nextWidth = Math.max(1, width);\n        int nextHeight = Math.max(1, height);\n        int nextBlurWidth = Math.max(1, Math.round(nextWidth * BLUR_FBO_SCALE));\n''',
+          '''    private void ensureFboSize(int width, int height) {\n        int overscanPx = edgeOverscanPx();\n        int nextWidth = Math.max(1, width + overscanPx * 2);\n        int nextHeight = Math.max(1, height + overscanPx * 2);\n        int nextBlurWidth = Math.max(1, Math.round(nextWidth * BLUR_FBO_SCALE));\n''')
+
+          replace_once(view,
+          '''        GLES20.glUniform4f(\n                requireUniform(normalizeProgram, "uValidDockRect"),\n                validDockLeft, validDockBottom, validDockRight, validDockTop);\n''',
+          '''        GLES20.glUniform4f(\n                requireUniform(normalizeProgram, "uValidDockRect"),\n                validSampleLeft, validSampleBottom, validSampleRight, validSampleTop);\n''')
+
+          replace_once(view,
+          '''        Miuix307PrismalMaterial.applyUniforms(\n                materialProgram, opticalParams, cornerRadiusPx, outputWidth, outputHeight);\n        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);\n''',
+          '''        Miuix307PrismalMaterial.applyUniforms(\n                materialProgram, opticalParams, cornerRadiusPx, outputWidth, outputHeight);\n        int uDockUvRect = requireUniform(materialProgram, "u_dockUvRect");\n        GLES20.glUniform4f(\n                uDockUvRect, dockUvLeft, dockUvBottom, dockUvWidth, dockUvHeight);\n        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);\n''')
+
+          old_mapping = '''    private void updateBackdropMapping() {\n        if (shuttingDown) return;\n        View materialHost = materialHostRef.get();\n        if (materialHost == null || !materialHost.isAttachedToWindow()) return;\n        int hostWidth = materialHost.getWidth();\n        int hostHeight = materialHost.getHeight();\n        if (hostWidth <= 0 || hostHeight <= 0) return;\n\n        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");\n        if (winFrame == null || winFrame.width() <= 0 || winFrame.height() <= 0) return;\n        int[] hostScreen = new int[2];\n        materialHost.getLocationOnScreen(hostScreen);\n\n        Miuix307BackdropMapping.Result next = Miuix307BackdropMapping.compute(\n                hostScreen[0], hostScreen[1], hostWidth, hostHeight,\n                winFrame.left, winFrame.top, winFrame.width(), winFrame.height());\n        boolean unchanged = Float.compare(backdropX, next.backdropX) == 0\n                && Float.compare(backdropY, next.backdropY) == 0\n                && Float.compare(backdropW, next.backdropW) == 0\n                && Float.compare(backdropH, next.backdropH) == 0\n                && Float.compare(validDockLeft, next.validLeft) == 0\n                && Float.compare(validDockBottom, next.validBottom) == 0\n                && Float.compare(validDockRight, next.validRight) == 0\n                && Float.compare(validDockTop, next.validTop) == 0\n                && producerCoverage == next.coverage;\n        if (unchanged) return;\n\n        backdropX = next.backdropX;\n        backdropY = next.backdropY;\n        backdropW = next.backdropW;\n        backdropH = next.backdropH;\n        validDockLeft = next.validLeft;\n        validDockBottom = next.validBottom;\n        validDockRight = next.validRight;\n        validDockTop = next.validTop;\n        producerCoverage = next.coverage;\n        stageBDiagnosticsLogged = false;\n        if (hasConsumedFrame) renderHandler.post(() -> drawLatestFrame(false));\n    }\n'''
+
+          new_mapping = '''    private int edgeOverscanPx() {\n        float density = getResources().getDisplayMetrics().density;\n        return Math.max(1, Math.round(EDGE_OVERSCAN_DP * Math.max(0.1f, density)));\n    }\n\n    private void updateBackdropMapping() {\n        if (shuttingDown) return;\n        View materialHost = materialHostRef.get();\n        if (materialHost == null || !materialHost.isAttachedToWindow()) return;\n        int hostWidth = materialHost.getWidth();\n        int hostHeight = materialHost.getHeight();\n        if (hostWidth <= 0 || hostHeight <= 0) return;\n\n        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");\n        if (winFrame == null || winFrame.width() <= 0 || winFrame.height() <= 0) return;\n        int[] hostScreen = new int[2];\n        materialHost.getLocationOnScreen(hostScreen);\n\n        int overscanPx = edgeOverscanPx();\n        int sampleWidth = hostWidth + overscanPx * 2;\n        int sampleHeight = hostHeight + overscanPx * 2;\n        Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(\n                hostScreen[0] - overscanPx, hostScreen[1] - overscanPx,\n                sampleWidth, sampleHeight,\n                winFrame.left, winFrame.top, winFrame.width(), winFrame.height());\n        Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(\n                hostScreen[0], hostScreen[1], hostWidth, hostHeight,\n                winFrame.left, winFrame.top, winFrame.width(), winFrame.height());\n\n        float nextDockUvLeft = overscanPx / (float) sampleWidth;\n        float nextDockUvBottom = overscanPx / (float) sampleHeight;\n        float nextDockUvWidth = hostWidth / (float) sampleWidth;\n        float nextDockUvHeight = hostHeight / (float) sampleHeight;\n\n        boolean unchanged = Float.compare(backdropX, sample.backdropX) == 0\n                && Float.compare(backdropY, sample.backdropY) == 0\n                && Float.compare(backdropW, sample.backdropW) == 0\n                && Float.compare(backdropH, sample.backdropH) == 0\n                && Float.compare(validSampleLeft, sample.validLeft) == 0\n                && Float.compare(validSampleBottom, sample.validBottom) == 0\n                && Float.compare(validSampleRight, sample.validRight) == 0\n                && Float.compare(validSampleTop, sample.validTop) == 0\n                && Float.compare(validDockLeft, dock.validLeft) == 0\n                && Float.compare(validDockBottom, dock.validBottom) == 0\n                && Float.compare(validDockRight, dock.validRight) == 0\n                && Float.compare(validDockTop, dock.validTop) == 0\n                && Float.compare(dockUvLeft, nextDockUvLeft) == 0\n                && Float.compare(dockUvBottom, nextDockUvBottom) == 0\n                && Float.compare(dockUvWidth, nextDockUvWidth) == 0\n                && Float.compare(dockUvHeight, nextDockUvHeight) == 0\n                && producerCoverage == dock.coverage;\n        if (unchanged) return;\n\n        backdropX = sample.backdropX;\n        backdropY = sample.backdropY;\n        backdropW = sample.backdropW;\n        backdropH = sample.backdropH;\n        validSampleLeft = sample.validLeft;\n        validSampleBottom = sample.validBottom;\n        validSampleRight = sample.validRight;\n        validSampleTop = sample.validTop;\n        validDockLeft = dock.validLeft;\n        validDockBottom = dock.validBottom;\n        validDockRight = dock.validRight;\n        validDockTop = dock.validTop;\n        dockUvLeft = nextDockUvLeft;\n        dockUvBottom = nextDockUvBottom;\n        dockUvWidth = nextDockUvWidth;\n        dockUvHeight = nextDockUvHeight;\n        producerCoverage = dock.coverage;\n        stageBDiagnosticsLogged = false;\n        if (hasConsumedFrame) renderHandler.post(() -> drawLatestFrame(false));\n    }\n'''
+          replace_once(view, old_mapping, new_mapping)
+
+          replace_once(view,
+          '''        validDockLeft = 0f;\n        validDockBottom = 0f;\n        validDockRight = 1f;\n        validDockTop = 1f;\n        producerCoverage = Miuix307BackdropMapping.Coverage.FULL;\n''',
+          '''        validSampleLeft = 0f;\n        validSampleBottom = 0f;\n        validSampleRight = 1f;\n        validSampleTop = 1f;\n        validDockLeft = 0f;\n        validDockBottom = 0f;\n        validDockRight = 1f;\n        validDockTop = 1f;\n        dockUvLeft = 0f;\n        dockUvBottom = 0f;\n        dockUvWidth = 1f;\n        dockUvHeight = 1f;\n        producerCoverage = Miuix307BackdropMapping.Coverage.FULL;\n''')
+
+          replace_once(view,
+          '''                        + " validDockRect=[" + validDockLeft + "," + validDockBottom + ","\n                        + validDockRight + "," + validDockTop + "]"\n                        + " output=" + outputWidth + "x" + outputHeight\n''',
+          '''                        + " validSampleRect=[" + validSampleLeft + "," + validSampleBottom + ","\n                        + validSampleRight + "," + validSampleTop + "]"\n                        + " validDockRect=[" + validDockLeft + "," + validDockBottom + ","\n                        + validDockRight + "," + validDockTop + "]"\n                        + " dockUvRect=[" + dockUvLeft + "," + dockUvBottom + ","\n                        + dockUvWidth + "," + dockUvHeight + "]"\n                        + " output=" + outputWidth + "x" + outputHeight\n''')
+
+          replace_once(shader,
+          '''            uniform vec2  u_backdropSampleScale;\n            uniform float u_parallaxScale;\n''',
+          '''            uniform vec2  u_backdropSampleScale;\n            // Visible Dock rectangle inside the larger zero-copy overscan texture.\n            uniform vec4  u_dockUvRect;\n            uniform float u_parallaxScale;\n''')
+
+          replace_once(shader,
+          '''            vec2 backdropUv(vec2 screenUv, vec2 offset, float pinchMix) {\n                float press = clamp(u_pressProgress, 0.0, 1.0);\n                float pinch = mix(1.0, max(u_backdropPinch, 0.01), press * pinchMix);\n                vec2 s = max(u_backdropSampleScale, vec2(0.01)) / vec2(pinch);\n                vec2 scaled = (screenUv - 0.5) / s + 0.5;\n                return clamp(scaled + offset, vec2(0.0), vec2(1.0));\n            }\n''',
+          '''            vec2 mapDockUvToBackdrop(vec2 dockUv) {\n                return clamp(\n                    u_dockUvRect.xy + dockUv * u_dockUvRect.zw,\n                    vec2(0.0),\n                    vec2(1.0)\n                );\n            }\n\n            vec2 backdropUv(vec2 screenUv, vec2 offset, float pinchMix) {\n                float press = clamp(u_pressProgress, 0.0, 1.0);\n                float pinch = mix(1.0, max(u_backdropPinch, 0.01), press * pinchMix);\n                vec2 s = max(u_backdropSampleScale, vec2(0.01)) / vec2(pinch);\n                vec2 scaled = (screenUv - 0.5) / s + 0.5;\n                vec2 dockUv = scaled + offset;\n                return mapDockUvToBackdrop(dockUv);\n            }\n''')
+
+          replace_once(shader,
+          '''                vec2 reflUv = clamp(\n                    v_screenTexCoord + baseOffset\n                        + gDir * (4.0 + 38.0 * pow(1.0 - cosVNrim, 1.25) + length(N.xy) * 14.0) / u_resolution * pxNorm,\n                    vec2(0.0),\n                    vec2(1.0)\n                );\n''',
+          '''                vec2 reflDockUv = v_screenTexCoord + baseOffset\n                    + gDir * (4.0 + 38.0 * pow(1.0 - cosVNrim, 1.25) + length(N.xy) * 14.0) / u_resolution * pxNorm;\n                vec2 reflUv = mapDockUvToBackdrop(reflDockUv);\n''')
+          PY
+      - run: chmod +x ./gradlew
+      - name: Verify unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Verify debug build
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Commit verified patch and remove helper workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-edge-overscan.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java \
+                  src/main/java/com/hellovoid/liquiddock/Miuix307PrismalShader.java \
+                  .github/workflows/apply-edge-overscan.yml
+          git commit -m "fix: add zero-copy edge overscan"
+          git push origin HEAD:fix/zero-copy-edge-overscan
