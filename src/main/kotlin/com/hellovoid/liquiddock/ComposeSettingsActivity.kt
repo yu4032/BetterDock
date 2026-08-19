@@ -75,7 +75,7 @@ private enum class Page(val titleRes: Int) {
 }
 
 // Ordinary UI writes are mirrored to API101 Remote Preferences by LiquidDockApp's
-// SharedPreferences listener.  No per-control JSON/file/root synchronization exists.
+// SharedPreferences listener. No per-control JSON/file/root synchronization exists.
 
 private enum class IntSection { General, StrokeBackground, StrokeGeometry }
 
@@ -128,26 +128,47 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
-    "liquid_blur" -> "液态玻璃对捕获背景的模糊范围"
-    "liquid_thickness" -> "影响折射路径的虚拟玻璃厚度"
+    "liquid_blur" -> "液态玻璃对实时 OES 背景的模糊范围"
+    "liquid_thickness" -> "影响 Snell 折射路径的虚拟玻璃厚度"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
-    "liquid_normal_strength" -> "表面法线起伏对折射的影响"
-    "liquid_dome" -> "控制玻璃中心向外凸起的程度"
-    "liquid_lens_refraction" -> "控制圆角边缘的透镜偏移距离"
-    "liquid_chromatic" -> "边缘红蓝通道分离的强度"
-    "liquid_tint_alpha" -> "玻璃底色覆盖背景的强度"
-    "liquid_tint_r" -> "玻璃底色的红色通道"
-    "liquid_tint_g" -> "玻璃底色的绿色通道"
-    "liquid_tint_b" -> "玻璃底色的蓝色通道"
-    "liquid_highlight_width" -> "调整外圈高光描边的粗细"
-    "liquid_highlight_alpha" -> "调整外圈高光描边的明暗"
-    "liquid_depth_effect" -> "增加从中心到边缘的深度变化"
-    "liquid_brightness" -> "整体调整液态玻璃输出亮度"
-    "liquid_specular_sharp" -> "越高，高光越集中且边缘更硬"
-    "liquid_specular_strength" -> "控制表面镜面高光的亮度"
-    "liquid_rim_light" -> "控制玻璃边缘受光强度"
-    "liquid_caustics" -> "控制折射聚光形成的亮斑"
-    "liquid_edge_band" -> "控制 Shader 边缘光带覆盖宽度"
+    "liquid_normal_strength" -> "Prismal 表面高度场对法线的影响"
+    "liquid_dome" -> "控制玻璃穹顶/meniscus 的凸起程度"
+    "liquid_lens_refraction" -> "兼容旧配置：作为 Prismal 边缘透镜距离倍率"
+    "liquid_chromatic" -> "Prismal 色散总强度"
+    "liquid_tint_alpha" -> "玻璃颜色乘色强度"
+    "liquid_tint_r" -> "玻璃颜色 · 红"
+    "liquid_tint_g" -> "玻璃颜色 · 绿"
+    "liquid_tint_b" -> "玻璃颜色 · 蓝"
+    "liquid_highlight_width" -> "兼容控制 Prismal 边缘高光带宽"
+    "liquid_highlight_alpha" -> "LiquidDock 对 Prismal 高光总强度的兼容倍率"
+    "liquid_depth_effect" -> "兼容控制 Prismal lens-depth 倍率"
+    "liquid_brightness" -> "Prismal 整体输出亮度"
+    "liquid_specular_sharp" -> "Prismal 镜面高光锐度"
+    "liquid_specular_strength" -> "Prismal 双镜面高光强度"
+    "liquid_rim_light" -> "Prismal 边缘光强度"
+    "liquid_caustics" -> "Prismal 焦散强度"
+    "liquid_edge_band" -> "兼容调整 Prismal rim band 宽度"
+    "liquid_prismal_refraction_inset" -> "Prismal 折射遮罩向内收缩的距离"
+    "liquid_prismal_displacement_scale" -> "Prismal 折射与视差位移总倍率"
+    "liquid_prismal_height_transition_width" -> "Prismal 高度场从边缘过渡到中心的宽度"
+    "liquid_prismal_smin_smoothing" -> "Prismal 圆角 SDF 的多项式平滑尺度"
+    "liquid_prismal_edge_refraction_falloff" -> "边缘折射向内部衰减的曲线强度"
+    "liquid_prismal_fresnel_reflect" -> "Fresnel 背景反射与 sky haze 强度"
+    "liquid_prismal_dispersion_r" -> "红色通道相对色散倍率"
+    "liquid_prismal_dispersion_b" -> "蓝色通道相对色散倍率"
+    "liquid_prismal_vibrancy" -> "Prismal 折射背景的色彩鲜艳度"
+    "liquid_prismal_plain_highlight" -> "Prismal 基础边缘高光"
+    "liquid_prismal_light_dir_x" -> "Prismal 光源水平方向"
+    "liquid_prismal_light_dir_y" -> "Prismal 光源垂直方向"
+    "liquid_prismal_shadow_r" -> "Prismal 内阴影 · 红"
+    "liquid_prismal_shadow_g" -> "Prismal 内阴影 · 绿"
+    "liquid_prismal_shadow_b" -> "Prismal 内阴影 · 蓝"
+    "liquid_prismal_shadow_alpha" -> "Prismal 内阴影透明度"
+    "liquid_prismal_shadow_softness" -> "Prismal 内阴影扩散柔和度"
+    "liquid_prismal_transmittance" -> "Prismal 玻璃最终透射/Alpha"
+    "liquid_prismal_backdrop_scale_x" -> "Prismal 背景取样水平缩放"
+    "liquid_prismal_backdrop_scale_y" -> "Prismal 背景取样垂直缩放"
+    "liquid_prismal_parallax_scale" -> "Prismal 表面视差倍率"
     "liquid_capture_power_limit_fps" -> "动画和动态应用实时捕获的统一帧率上限"
     "liquid_dynamic_app_probe_fps" -> "静态应用中检测画面变化的低频帧率"
     "liquid_dynamic_motion_threshold" -> "越低越容易因亮度变化进入高频捕获"
@@ -208,8 +229,7 @@ private val dividerSpecs = listOf(
     IntSpec(ConfigSchema.Divider.ALPHA, "分隔线透明度", ""),
 )
 private val dividerKeys = dividerSpecs.map { it.key }
-private fun hasLegacyDividerConfig(prefs: SharedPreferences): Boolean =
-    dividerKeys.any(prefs::contains)
+private fun hasLegacyDividerConfig(prefs: SharedPreferences): Boolean = dividerKeys.any(prefs::contains)
 private fun ensureDividerDefaults(prefs: SharedPreferences) {
     val e = prefs.edit()
     dividerSpecs.forEach { if (!prefs.contains(it.key)) e.putInt(it.key, it.default) }
@@ -224,8 +244,8 @@ private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_HORIZONTAL_OFFSET, "所有应用 · 竖屏水平间距"),
     IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_TOP_SPACING, "所有应用 · 竖屏上间距"),
     IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_BOTTOM_SPACING, "所有应用 · 竖屏下间距"),
-    IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台图标上间距"),
-    IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台图标下间距"),
+    IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台 Dock 图标上间距"),
+    IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台 Dock 图标下间距"),
 )
 private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊"),
@@ -234,7 +254,7 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, "法线强度", "%"),
     IntSpec(ConfigSchema.Glass.DOME, "穹顶凸起", "%"),
     IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射"),
-    IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", "%"),
+    IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", ""),
     IntSpec(ConfigSchema.Glass.TINT_ALPHA, "玻璃底色透明度", ""),
     IntSpec(ConfigSchema.Glass.TINT_RED, "底色 · 红", ""),
     IntSpec(ConfigSchema.Glass.TINT_GREEN, "底色 · 绿", ""),
@@ -248,6 +268,27 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.RIM_LIGHT, "边缘光强度", "%"),
     IntSpec(ConfigSchema.Glass.CAUSTICS, "焦散强度", "%"),
     IntSpec(ConfigSchema.Glass.EDGE_BAND, "边缘光带宽度", "‰"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "Prismal · 折射内缩"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, "Prismal · 位移倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, "Prismal · 高度过渡"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, "Prismal · SDF 平滑"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, "Prismal · 边缘折射衰减", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT, "Prismal · Fresnel 反射", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_R, "Prismal · 红色散倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_B, "Prismal · 蓝色散倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_VIBRANCY, "Prismal · 鲜艳度", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT, "Prismal · 基础高光", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X, "Prismal · 光源 X", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y, "Prismal · 光源 Y", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_RED, "Prismal · 内阴影红", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, "Prismal · 内阴影绿", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, "Prismal · 内阴影蓝", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, "Prismal · 内阴影透明度", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, "Prismal · 透射率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "Prismal · 背景缩放 X", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, "Prismal · 视差倍率", "%"),
     IntSpec(ConfigSchema.Glass.CAPTURE_FPS, "实时捕获帧率上限", "FPS"),
     IntSpec(ConfigSchema.Glass.DYNAMIC_APP_PROBE_FPS, "静态画面探测帧率", "FPS", "liquid_dynamic_app_capture"),
     IntSpec(ConfigSchema.Glass.DYNAMIC_MOTION_THRESHOLD, "动态亮度变化阈值", "", "liquid_dynamic_app_capture"),
@@ -302,18 +343,13 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
             )
         },
     ) { padding ->
-        // MIUI-style horizontal slide between pages: entering a submenu slides in from
-        // the right (old page slides out left); going back reverses.  Uses AnimatedContent
-        // so the page transition animates instead of snapping.
         AnimatedContent(
             targetState = page,
             transitionSpec = {
                 if (targetState.ordinal > initialState.ordinal) {
-                    // Forward (into a submenu): new page slides in from the right.
                     (slideInHorizontally { it } + fadeIn()) togetherWith
                             (slideOutHorizontally { -it / 3 } + fadeOut())
                 } else {
-                    // Back: current page slides out to the right, home peeks in from left.
                     (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
                             (slideOutHorizontally { it } + fadeOut())
                 }
@@ -321,8 +357,7 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
             label = "page",
         ) { target ->
             when (target) {
-                Page.Home -> HomePage(padding, prefs, masterEnabled,
-                    { masterEnabled = it }) { page = it }
+                Page.Home -> HomePage(padding, prefs, masterEnabled, { masterEnabled = it }) { page = it }
                 Page.Grid -> GridPage(padding, prefs, masterEnabled)
                 Page.Dock -> DockPage(padding, prefs, masterEnabled)
                 Page.Divider -> DividerPage(padding, prefs, masterEnabled)
@@ -345,8 +380,7 @@ private fun HomePage(
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.app_name)) }
         item { SmallTitle(stringResource(R.string.category_master)) }
-        item { SettingsCard { BooleanSetting(prefs, ConfigSchema.Core.ENABLED, stringResource(R.string.enable_liquiddock),
-            stringResource(R.string.enable_liquiddock_summary)) { onMasterChanged(it) } } }
+        item { SettingsCard { BooleanSetting(prefs, ConfigSchema.Core.ENABLED, stringResource(R.string.enable_liquiddock), stringResource(R.string.enable_liquiddock_summary)) { onMasterChanged(it) } } }
         item { SmallTitle(stringResource(R.string.category_customization)) }
         item {
             SettingsCard {
@@ -368,26 +402,20 @@ private fun HomePage(
 
 @Composable
 private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var grid8x4 by remember {
-        mutableStateOf(prefs.getBoolean(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault()))
-    }
+    var grid8x4 by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Grid.ENABLED.name(), ConfigSchema.Grid.ENABLED.uiDefault())) }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.page_grid), stringResource(R.string.grid_header_summary)) }
         item { SmallTitle(stringResource(R.string.category_grid)) }
         item {
             SettingsCard {
-                BooleanSetting(prefs, ConfigSchema.Grid.ENABLED, stringResource(R.string.enable_grid_8x4),
-                    stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
-                BooleanSetting(prefs, ConfigSchema.Grid.WIDGET_ADAPTATION, stringResource(R.string.enable_widget_adaptation),
-                    stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
+                BooleanSetting(prefs, ConfigSchema.Grid.ENABLED, stringResource(R.string.enable_grid_8x4), stringResource(R.string.enable_grid_8x4_summary), masterEnabled) { grid8x4 = it }
+                BooleanSetting(prefs, ConfigSchema.Grid.WIDGET_ADAPTATION, stringResource(R.string.enable_widget_adaptation), stringResource(R.string.enable_widget_adaptation_summary), masterEnabled && grid8x4)
             }
         }
         item { SmallTitle(stringResource(R.string.category_landscape)) }
-        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }
-            .forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_landscape") || it.key == "indicator_landscape_y" }.forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
         item { SmallTitle(stringResource(R.string.category_portrait)) }
-        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_portrait") || it.key == "indicator_portrait_y" }
-            .forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
+        item { SettingsCard { gridSpecs.filter { it.key.startsWith("grid_portrait") || it.key == "indicator_portrait_y" }.forEach { IntSetting(prefs, it, masterEnabled && grid8x4) } } }
     }
 }
 
@@ -397,12 +425,9 @@ private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
     var resizeAnimation by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.RESIZE_ANIMATION.name(), ConfigSchema.Dock.RESIZE_ANIMATION.uiDefault())) }
     var smoothResize by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.name(), ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_dock)) {
-        BooleanSetting(prefs, ConfigSchema.Dock.ENABLED, stringResource(R.string.dock_customization),
-            stringResource(R.string.dock_customization_summary), masterEnabled) { dockEnabled = it }
-        BooleanSetting(prefs, ConfigSchema.Dock.RESIZE_ANIMATION, stringResource(R.string.dock_resize_animation),
-            stringResource(R.string.dock_resize_animation_summary), masterEnabled && dockEnabled) { resizeAnimation = it }
-        BooleanSetting(prefs, ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION, stringResource(R.string.dock_smooth_resize_animation),
-            stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation) { smoothResize = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.ENABLED, stringResource(R.string.dock_customization), stringResource(R.string.dock_customization_summary), masterEnabled) { dockEnabled = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.RESIZE_ANIMATION, stringResource(R.string.dock_resize_animation), stringResource(R.string.dock_resize_animation_summary), masterEnabled && dockEnabled) { resizeAnimation = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION, stringResource(R.string.dock_smooth_resize_animation), stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation) { smoothResize = it }
         dockSpecs.forEach { IntSetting(prefs, it, masterEnabled && dockEnabled) }
     }
 }
@@ -410,13 +435,9 @@ private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
 @Composable
 private fun DividerPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
     val legacyDefault = remember { hasLegacyDividerConfig(prefs) }
-    var enabled by remember {
-        mutableStateOf(prefs.getBoolean(ConfigSchema.Divider.ENABLED.name(), legacyDefault))
-    }
+    var enabled by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Divider.ENABLED.name(), legacyDefault)) }
     SettingsList(padding, stringResource(R.string.page_divider)) {
-        BooleanSetting(prefs, ConfigSchema.Divider.ENABLED, "自定义 Dock 分隔线",
-            "独立于 Dock 尺寸、模糊和单位开关；宽度与偏移固定使用 dp",
-            masterEnabled, default = legacyDefault) {
+        BooleanSetting(prefs, ConfigSchema.Divider.ENABLED, "自定义 Dock 分隔线", "独立于 Dock 尺寸、模糊和单位开关；宽度与偏移固定使用 dp", masterEnabled, default = legacyDefault) {
             enabled = it
             if (it) ensureDividerDefaults(prefs)
         }
@@ -426,13 +447,9 @@ private fun DividerPage(padding: PaddingValues, prefs: SharedPreferences, master
 
 @Composable
 private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
-    var enabled by remember {
-        mutableStateOf(prefs.getBoolean(ConfigSchema.Workstation.DOCK_CUSTOMIZATION.name(), ConfigSchema.Workstation.DOCK_CUSTOMIZATION.uiDefault()))
-    }
+    var enabled by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Workstation.DOCK_CUSTOMIZATION.name(), ConfigSchema.Workstation.DOCK_CUSTOMIZATION.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_workstation)) {
-        BooleanSetting(prefs, ConfigSchema.Workstation.DOCK_CUSTOMIZATION, stringResource(R.string.workstation_customization),
-            stringResource(R.string.workstation_customization_summary),
-            masterEnabled) { enabled = it }
+        BooleanSetting(prefs, ConfigSchema.Workstation.DOCK_CUSTOMIZATION, stringResource(R.string.workstation_customization), stringResource(R.string.workstation_customization_summary), masterEnabled) { enabled = it }
         workstationSpecs.forEach { IntSetting(prefs, it, masterEnabled && enabled) }
     }
 }
@@ -443,23 +460,23 @@ private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterE
     var miuix307Pipeline by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.MIUIX_307_PIPELINE.name(), ConfigSchema.Glass.MIUIX_307_PIPELINE.uiDefault())) }
     var dynamicAppCapture by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.name(), ConfigSchema.Glass.DYNAMIC_APP_CAPTURE.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_liquid)) {
-        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable),
-            stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
         BooleanSetting(prefs, ConfigSchema.Glass.MIUIX_307_PIPELINE,
             "HyperOS 3.0.307+ 新材质管线",
-            "实验：使用系统 MiuiX 实时材质模糊；关闭时完全保持旧捕获管线",
+            "实验：使用 SurfaceFlinger PassBlur → OES → Prismal 实时材质",
             masterEnabled && liquidGlass) { miuix307Pipeline = it }
         StringDropdown(
             prefs,
             ConfigSchema.Glass.BLUR_MODE.name(),
             "模糊方式",
             ConfigSchema.Glass.BLUR_MODE.uiDefault(),
-            listOf(
-                "标准 Shader 模糊" to "shader",
-                "高级材质模糊" to "advanced_material",
-            ),
+            listOf("标准 Shader 模糊" to "shader", "高级材质模糊" to "advanced_material"),
             masterEnabled && liquidGlass && !miuix307Pipeline,
         )
+        BooleanSetting(prefs, ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
+            "Prismal · 显示法线",
+            "调试：用 RGB 直接显示当前 Prismal 表面法线",
+            masterEnabled && liquidGlass && miuix307Pipeline)
         BooleanSetting(prefs, ConfigSchema.Glass.DYNAMIC_APP_CAPTURE, stringResource(R.string.liquid_dynamic_capture),
             stringResource(R.string.liquid_dynamic_capture_summary), masterEnabled && liquidGlass && !miuix307Pipeline) { dynamicAppCapture = it }
         liquidSpecs.forEach {
@@ -478,9 +495,7 @@ private fun StrokePage(padding: PaddingValues, prefs: SharedPreferences, masterE
         BooleanSetting(prefs, ConfigSchema.Dock.SQUIRCLE, "方圆形连续曲线", "iPad 风格连续圆角", masterEnabled) { squircle = it }
         BooleanSetting(prefs, ConfigSchema.Dock.FILL_DIFF, "Fill-Diff 描边", "通过填充与挖空获得清晰抗锯齿", masterEnabled) { fillDiff = it }
         SmallTitle("描边背景色")
-        strokeSpecs.filter { it.section == IntSection.StrokeBackground }.forEach {
-            IntSetting(prefs, it, masterEnabled && dockStroke)
-        }
+        strokeSpecs.filter { it.section == IntSection.StrokeBackground }.forEach { IntSetting(prefs, it, masterEnabled && dockStroke) }
         SmallTitle("方圆形与线宽")
         strokeSpecs.filter { it.section == IntSection.StrokeGeometry }.forEach {
             val enabled = when (it.dependency) {
@@ -538,37 +553,29 @@ private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity,
         item { PageHeader("引用与许可", "LiquidDock 使用的框架与实现参考") }
         item {
             SettingsCard {
-                BooleanSetting(prefs, ConfigSchema.Debug.LOGGING, "调试日志",
-                    "输出诊断日志到 Download/liquiddock.log，重启桌面生效")
+                BooleanSetting(prefs, ConfigSchema.Debug.LOGGING, "调试日志", "输出诊断日志到 Download/liquiddock.log，重启桌面生效")
             }
         }
         item { SmallTitle("界面与运行框架") }
         item {
             SettingsCard {
-                ArrowPreference("Compose Miuix", summary = "MIUIX Compose 界面框架 · Apache-2.0",
-                    onClick = { openUrl(activity, "https://github.com/compose-miuix-ui/miuix") })
-                ArrowPreference("AndroidX / Jetpack", summary = "Activity、Preference、AppCompat · Apache-2.0",
-                    onClick = { openUrl(activity, "https://source.android.com/docs/setup/about/licenses") })
-                ArrowPreference("LSPosed API", summary = "模块 Hook API · GPL-3.0",
-                    onClick = { openUrl(activity, "https://github.com/LSPosed/LSPosed") })
+                ArrowPreference("Compose Miuix", summary = "MIUIX Compose 界面框架 · Apache-2.0", onClick = { openUrl(activity, "https://github.com/compose-miuix-ui/miuix") })
+                ArrowPreference("AndroidX / Jetpack", summary = "Activity、Preference、AppCompat · Apache-2.0", onClick = { openUrl(activity, "https://source.android.com/docs/setup/about/licenses") })
+                ArrowPreference("LSPosed API", summary = "模块 Hook API · GPL-3.0", onClick = { openUrl(activity, "https://github.com/LSPosed/LSPosed") })
             }
         }
         item { SmallTitle("实现参考") }
         item {
             SettingsCard {
-                ArrowPreference("HyperCeiler", summary = "设置分层、交互方式与模块工程实践参考 · GPL-3.0",
-                    onClick = { openUrl(activity, "https://github.com/ReChronoRain/HyperCeiler") })
-                ArrowPreference("Prismal", summary = "液态玻璃光学模型与 Shader 参数设计参考 · MIT",
-                    onClick = { openUrl(activity, "https://github.com/styropyr0/Prismal") })
-                ArrowPreference("HyperLight", summary = "降采样与屏幕捕获思路启发",
-                    onClick = {})
+                ArrowPreference("HyperCeiler", summary = "设置分层、交互方式与模块工程实践参考 · GPL-3.0", onClick = { openUrl(activity, "https://github.com/ReChronoRain/HyperCeiler") })
+                ArrowPreference("Prismal", summary = "液态玻璃光学模型与 Shader 参数设计参考 · MIT", onClick = { openUrl(activity, "https://github.com/styropyr0/Prismal") })
+                ArrowPreference("HyperLight", summary = "降采样与屏幕捕获思路启发", onClick = {})
             }
         }
         item { SmallTitle("许可说明") }
         item {
             SettingsCard {
-                ArrowPreference("第三方开源声明", summary = "完整依赖版本、用途与许可证文本链接",
-                    onClick = { openUrl(activity, "https://github.com/yu4032/LiquidDock/blob/main/THIRD_PARTY_NOTICES.md") })
+                ArrowPreference("第三方开源声明", summary = "完整依赖版本、用途与许可证文本链接", onClick = { openUrl(activity, "https://github.com/yu4032/LiquidDock/blob/main/THIRD_PARTY_NOTICES.md") })
             }
         }
     }
@@ -586,17 +593,13 @@ private fun SettingsList(padding: PaddingValues, title: String, content: @Compos
 private fun PageHeader(title: String, summary: String? = null) {
     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Text(title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-        if (!summary.isNullOrBlank()) {
-            Text(summary, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
-        }
+        if (!summary.isNullOrBlank()) Text(summary, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
     }
 }
 
 @Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Column(content = content)
-    }
+    Card(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) { Column(content = content) }
 }
 
 @Composable
@@ -631,35 +634,31 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         if (decimalDp) editor.putInt("${spec.key}_tenths", (value * 10f).roundToInt())
         editor.apply()
     }
-    val displayValue = if (decimalDp) String.format(java.util.Locale.ROOT, "%.1f", value)
-        else value.roundToInt().toString()
+    val displayValue = if (decimalDp) String.format(java.util.Locale.ROOT, "%.1f", value) else value.roundToInt().toString()
     SliderPreference(
-        value = value.toFloat(),
+        value = value,
         onValueChange = { save(it) },
         title = spec.title,
         summary = spec.summary,
         valueText = "",
         enabled = enabled,
         valueRange = spec.min.toFloat()..spec.max.toFloat(),
-        steps = if (decimalDp) ((spec.max - spec.min) * 10 - 1).coerceAtLeast(0)
-            else (spec.max - spec.min - 1).coerceAtLeast(0),
+        steps = if (decimalDp) ((spec.max - spec.min) * 10 - 1).coerceAtLeast(0) else (spec.max - spec.min - 1).coerceAtLeast(0),
         endActions = {
             Button(
                 onClick = {
                     val input = EditText(context).apply {
                         setText(displayValue)
                         selectAll()
-                        inputType = InputType.TYPE_CLASS_NUMBER or
-                                InputType.TYPE_NUMBER_FLAG_SIGNED or
+                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
                                 if (decimalDp) InputType.TYPE_NUMBER_FLAG_DECIMAL else 0
                     }
                     android.app.AlertDialog.Builder(context)
                         .setTitle(spec.title)
                         .setView(input)
                         .setNegativeButton("取消", null)
-                        .setPositiveButton("确定") { _, _ ->
-                            input.text.toString().toFloatOrNull()?.let(::save)
-                        }.show()
+                        .setPositiveButton("确定") { _, _ -> input.text.toString().toFloatOrNull()?.let(::save) }
+                        .show()
                 },
                 enabled = enabled,
                 minWidth = 72.dp,
