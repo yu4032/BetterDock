@@ -7,6 +7,7 @@ import org.junit.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -41,6 +42,26 @@ public class GridSpacingSemanticsContractTest {
     public void absentLegacyUnitFlagsUseCurrentDpAndOffsetSemantics() {
         assertTrue(ConfigSchema.Grid.MARGINS_DP.runtimeFallback());
         assertTrue(ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());
+    }
+
+    @Test
+    public void edgeOffsetAndMarginNoLongerExposeNoOpNegativeRanges() {
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE.minInt());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE.minInt());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.LANDSCAPE_ROW_GAP.minInt());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.PORTRAIT_ROW_GAP.minInt());
+    }
+
+    @Test
+    public void rowGapRuntimeFallbackNoLongerDependsOnLegacyOffsetFlags() throws Exception {
+        String config = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java"));
+
+        assertTrue(config.contains(
+                "ConfigSchema.Grid.LANDSCAPE_ROW_GAP.runtimeFallback()"));
+        assertTrue(config.contains(
+                "ConfigSchema.Grid.PORTRAIT_ROW_GAP.runtimeFallback()"));
+        assertFalse(config.contains("offsets ? 0 : (dp ? 1 : 3)"));
     }
 
     @Test
