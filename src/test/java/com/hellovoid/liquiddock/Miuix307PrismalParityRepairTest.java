@@ -22,8 +22,8 @@ public class Miuix307PrismalParityRepairTest {
         assertEquals(1.15f, p.normalStrength, EPS);
         assertEquals(1.15f, p.displacementScale, EPS);
         assertEquals(38f, p.heightTransitionWidthPx, EPS);
-        assertEquals(3.6f, p.sminSmoothingPx, EPS);
-        assertEquals(40f, p.refractionInsetPx, EPS);
+        assertEquals(1.8f, p.sminSmoothingPx, EPS);
+        assertEquals(20f, p.refractionInsetPx, EPS);
         assertEquals(4f, p.edgeRefractionFalloff, EPS);
         assertEquals(1.08f, p.brightness, EPS);
         assertEquals(1.22f, p.rimLight, EPS);
@@ -45,22 +45,22 @@ public class Miuix307PrismalParityRepairTest {
 
     @Test
     public void glassShaderIsPureTwoDimensionalUpstreamPrismalDomain() throws Exception {
-        String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
 
-        assertTrue(material.contains("uniform sampler2D uBackgroundTexture"));
-        assertTrue(material.contains("uniform sampler2D uBlurredTexture"));
-        assertTrue(material.contains("uniform int uUseBlurredTexture"));
-        assertFalse(material.contains("samplerExternalOES"));
-        assertFalse(material.contains("uTexMatrix"));
-        assertFalse(material.contains("uBackdropRect"));
-        assertFalse(material.contains("uConfigRot"));
-        assertFalse(material.contains("uBlurRadiusPx"));
-        assertFalse(material.contains("uHighlightAlpha"));
-        assertFalse(material.contains("uEdgeBand"));
+        assertTrue(shader.contains("uniform sampler2D u_backgroundTexture"));
+        assertTrue(shader.contains("uniform sampler2D u_blurredTexture"));
+        assertTrue(shader.contains("uniform int       u_useBlurredTexture"));
+        assertFalse(shader.contains("samplerExternalOES"));
+        assertFalse(shader.contains("uTexMatrix"));
+        assertFalse(shader.contains("uBackdropRect"));
+        assertFalse(shader.contains("uConfigRot"));
+        assertFalse(shader.contains("uBlurRadiusPx"));
+        assertFalse(shader.contains("uHighlightAlpha"));
+        assertFalse(shader.contains("uEdgeBand"));
 
-        assertTrue(material.contains("pow(smoothstep(refractionHeight, 0.0, edgeDist), 0.82)"));
-        assertTrue(material.contains("gl_FragColor = vec4(color, opacity * uTransmittance);"));
-        assertFalse(material.contains("gl_FragColor = vec4(clamp(color"));
+        assertTrue(shader.contains("pow(smoothstep(refractionHeight, 0.0, edgeDist), 0.82)"));
+        assertTrue(shader.contains("gl_FragColor = vec4(color, opacity * u_transmittance);"));
+        assertFalse(shader.contains("gl_FragColor = vec4(clamp(color"));
     }
 
     @Test
@@ -101,7 +101,8 @@ public class Miuix307PrismalParityRepairTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
         String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
-        String all = view + shaders + material;
+        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String all = view + shaders + material + shader;
 
         assertFalse(all.contains("captureScreenAsync"));
         assertFalse(all.contains("glReadPixels"));
