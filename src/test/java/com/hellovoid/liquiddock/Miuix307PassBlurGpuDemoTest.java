@@ -98,7 +98,8 @@ public class Miuix307PassBlurGpuDemoTest {
                 && adapter.contains("vec2(1.0 - rootUv.y, rootUv.x)")
                 && adapter.contains("vec2(1.0 - rootUv.x, 1.0 - rootUv.y)")
                 && adapter.contains("vec2(rootUv.y, 1.0 - rootUv.x)"));
-        assertTrue(adapter.contains("vec2 textureInputUv = orientedUv")
+        assertTrue(adapter.contains("compensateSurfaceTextureCropPreservingOrientation")
+                && adapter.contains("float determinant")
                 && adapter.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
         assertTrue(view.contains("Miuix307PassBlurShaders.OES_NORMALIZE_FRAGMENT"));
         assertTrue(view.contains("Miuix307PrismalShader.FRAGMENT_SHADER"));

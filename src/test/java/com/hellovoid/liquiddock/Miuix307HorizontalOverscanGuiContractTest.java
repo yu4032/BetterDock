@@ -36,12 +36,14 @@ public class Miuix307HorizontalOverscanGuiContractTest {
         String view = Files.readString(MAIN.resolve("java/com/hellovoid/liquiddock/Miuix307PassBlurTextureView.java"));
 
         assertTrue(config.contains("captureBleedLeftPx") && config.contains("captureBleedRightPx"));
-        assertTrue(view.contains("leftOverscanPx") && view.contains("rightOverscanPx"));
-        assertTrue(view.contains("horizontalOverscanPx() + Math.max(0, this.leftExtraOverscanPx)"));
-        assertTrue(view.contains("horizontalOverscanPx() + Math.max(0, this.rightExtraOverscanPx)"));
-        assertTrue(view.contains("width + leftOverscanPx + rightOverscanPx"));
-        assertTrue(view.contains("hostScreen[0] - leftOverscanPx"));
-        assertTrue(view.contains("leftOverscanPx / (float) sampleWidth"));
+        assertTrue(view.contains("leftExtraOverscanPx") && view.contains("rightExtraOverscanPx"));
+        assertTrue(view.contains(
+                "Math.max(horizontalOverscanPx() + Math.max(0, leftExtraOverscanPx), opticalX)"));
+        assertTrue(view.contains(
+                "Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX)"));
+        assertTrue(view.contains("width + insets.left + insets.right"));
+        assertTrue(view.contains("viewScreen[0] - insets.left"));
+        assertTrue(view.contains("insets.left / (float) sampleWidth"));
         assertFalse("horizontal FBO width must no longer assume symmetric overscan",
                 view.contains("width + overscanPx * 2"));
     }

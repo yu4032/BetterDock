@@ -41,6 +41,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private static final String TAG = "[DC][PBTX]";
     private static final int MAX_BIND_RETRY_FRAMES = 24;
     private static final float BLUR_FBO_SCALE = 0.5f;
+    private static final int BLUR_KERNEL_RADIUS_TEXELS = 15;
     // Left/right keep the fixed 32dp GPU overscan as a compatibility baseline and can add
     // independent GUI pixel extras. Top/bottom remain fully controlled by their historical pixel
     // values. Output remains clipped to the visible Dock itself.
@@ -52,6 +53,20 @@ final class Miuix307PassBlurTextureView extends TextureView
             -1f,  1f, 0f, 1f,
              1f,  1f, 1f, 1f
     };
+
+    private static final class SamplingInsets {
+        final int left;
+        final int right;
+        final int top;
+        final int bottom;
+
+        SamplingInsets(int left, int right, int top, int bottom) {
+            this.left = Math.max(0, left);
+            this.right = Math.max(0, right);
+            this.top = Math.max(0, top);
+            this.bottom = Math.max(0, bottom);
+        }
+    }
 
     private static final class ProducerGeometry {
         final int surfaceWidth;
@@ -96,6 +111,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile Miuix307PrismalMaterial.Params opticalParams;
     private volatile int outputWidth;
     private volatile int outputHeight;
+    private volatile int maxTextureSize;
     private volatile int topOverscanPx = 48;
     private volatile int bottomOverscanPx = 16;
     private volatile int leftExtraOverscanPx;
@@ -295,6 +311,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         outputSurfaceTexture = surface;
         outputWidth = Math.max(1, width);
         outputHeight = Math.max(1, height);
+        updateBackdropMapping();
         Surface window = new Surface(surface);
         Surface stale = outputWindowSurface;
         outputWindowSurface = window;
@@ -349,12 +366,42 @@ final class Miuix307PassBlurTextureView extends TextureView
                     eglDisplay, eglConfig, window, attrs, 0);
             checkEglHandle("eglCreateWindowSurface", eglWindowSurface != EGL14.EGL_NO_SURFACE);
             makeCurrent();
+            queryMaxTextureSize();
+            // Mapping is View/screen geometry and therefore belongs on the UI thread. Do not
+            // allocate the first FBO until that mapping has been recomputed with the real GPU
+            // texture limit; otherwise one first frame could use capped FBOs with uncapped UVs.
+            mainHandler.post(() -> {
+                if (shuttingDown || outputWindowSurface != window) return;
+                updateBackdropMapping();
+                renderHandler.post(() -> finishOutputAttach(window, width, height));
+            });
+        } catch (Throwable error) {
+            fail("output attach", error);
+        }
+    }
+
+    private void finishOutputAttach(Surface window, int width, int height) {
+        if (shuttingDown || outputWindowSurface != window
+                || eglWindowSurface == EGL14.EGL_NO_SURFACE) return;
+        try {
+            makeCurrent();
             ensureGlResources();
             ensureFboSize(Math.max(1, width), Math.max(1, height));
             drawLatestFrame(false);
         } catch (Throwable error) {
-            fail("output attach", error);
+            fail("output attach finish", error);
         }
+    }
+
+    private void queryMaxTextureSize() {
+        if (maxTextureSize > 0) return;
+        int[] value = new int[1];
+        GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE, value, 0);
+        if (value[0] <= 0) {
+            throw new IllegalStateException("GL_MAX_TEXTURE_SIZE unavailable");
+        }
+        maxTextureSize = value[0];
+        MainHook.log(TAG + " GL_MAX_TEXTURE_SIZE=" + maxTextureSize);
     }
 
     private void destroyOutputWindow(Surface stale) {
@@ -463,12 +510,16 @@ final class Miuix307PassBlurTextureView extends TextureView
     }
 
     private void ensureFboSize(int width, int height) {
-        int leftOverscanPx = horizontalOverscanPx() + Math.max(0, this.leftExtraOverscanPx);
-        int rightOverscanPx = horizontalOverscanPx() + Math.max(0, this.rightExtraOverscanPx);
-        int topOverscanPx = Math.max(0, this.topOverscanPx);
-        int bottomOverscanPx = Math.max(0, this.bottomOverscanPx);
-        int nextWidth = Math.max(1, width + leftOverscanPx + rightOverscanPx);
-        int nextHeight = Math.max(1, height + topOverscanPx + bottomOverscanPx);
+        if (maxTextureSize <= 0) {
+            throw new IllegalStateException("FBO allocation before GL_MAX_TEXTURE_SIZE query");
+        }
+        if (width > maxTextureSize || height > maxTextureSize) {
+            throw new IllegalStateException("visible material exceeds GL_MAX_TEXTURE_SIZE "
+                    + width + "x" + height + " max=" + maxTextureSize);
+        }
+        SamplingInsets insets = resolveSamplingInsets(width, height);
+        int nextWidth = Math.max(1, width + insets.left + insets.right);
+        int nextHeight = Math.max(1, height + insets.top + insets.bottom);
         int nextBlurWidth = Math.max(1, Math.round(nextWidth * BLUR_FBO_SCALE));
         int nextBlurHeight = Math.max(1, Math.round(nextHeight * BLUR_FBO_SCALE));
         if (rawFramebuffer != 0 && blurFramebufferH != 0 && blurFramebufferV != 0
@@ -852,37 +903,74 @@ final class Miuix307PassBlurTextureView extends TextureView
         return Math.max(1, Math.round(EDGE_OVERSCAN_DP * Math.max(0.1f, density)));
     }
 
+    private int blurSamplingGuardPx() {
+        return Math.max(0, (int) Math.ceil(
+                BLUR_KERNEL_RADIUS_TEXELS / Math.max(BLUR_FBO_SCALE, 0.0001f)));
+    }
+
+    private SamplingInsets resolveSamplingInsets(int width, int height) {
+        int opticalX = Miuix307PrismalMaterial.requiredSampleGuardPx(
+                opticalParams, width, height, true);
+        int opticalY = Miuix307PrismalMaterial.requiredSampleGuardPx(
+                opticalParams, width, height, false);
+        int blurGuard = blurSamplingGuardPx();
+        opticalX += blurGuard;
+        opticalY += blurGuard;
+
+        int left = Math.max(horizontalOverscanPx() + Math.max(0, leftExtraOverscanPx), opticalX);
+        int right = Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX);
+        int top = Math.max(Math.max(0, topOverscanPx), opticalY);
+        int bottom = Math.max(Math.max(0, bottomOverscanPx), opticalY);
+
+        int[] horizontal = fitInsetPairToTextureLimit(width, left, right, maxTextureSize);
+        int[] vertical = fitInsetPairToTextureLimit(height, top, bottom, maxTextureSize);
+        return new SamplingInsets(horizontal[0], horizontal[1], vertical[0], vertical[1]);
+    }
+
+    private static int[] fitInsetPairToTextureLimit(
+            int visible, int before, int after, int maxTextureSize) {
+        int safeVisible = Math.max(1, visible);
+        int safeBefore = Math.max(0, before);
+        int safeAfter = Math.max(0, after);
+        if (maxTextureSize <= 0) return new int[]{safeBefore, safeAfter};
+
+        int available = Math.max(0, maxTextureSize - safeVisible);
+        long desired = (long) safeBefore + safeAfter;
+        if (desired <= available) return new int[]{safeBefore, safeAfter};
+        if (available <= 0 || desired <= 0) return new int[]{0, 0};
+
+        int fittedBefore = (int) Math.round(safeBefore * (available / (double) desired));
+        fittedBefore = Math.max(0, Math.min(available, fittedBefore));
+        int fittedAfter = available - fittedBefore;
+        return new int[]{fittedBefore, fittedAfter};
+    }
+
     private void updateBackdropMapping() {
-        if (shuttingDown) return;
-        View materialHost = materialHostRef.get();
-        if (materialHost == null || !materialHost.isAttachedToWindow()) return;
-        int hostWidth = materialHost.getWidth();
-        int hostHeight = materialHost.getHeight();
-        if (hostWidth <= 0 || hostHeight <= 0) return;
+        if (shuttingDown || !isAttachedToWindow()) return;
+        int visibleWidth = outputWidth > 0 ? outputWidth : getWidth();
+        int visibleHeight = outputHeight > 0 ? outputHeight : getHeight();
+        if (visibleWidth <= 0 || visibleHeight <= 0) return;
 
-        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");
+        Rect winFrame = readViewRootRectField(this, "mWinFrameInScreen");
         if (winFrame == null || winFrame.width() <= 0 || winFrame.height() <= 0) return;
-        int[] hostScreen = new int[2];
-        materialHost.getLocationOnScreen(hostScreen);
+        int[] viewScreen = new int[2];
+        getLocationOnScreen(viewScreen);
 
-        int leftOverscanPx = horizontalOverscanPx() + Math.max(0, this.leftExtraOverscanPx);
-        int rightOverscanPx = horizontalOverscanPx() + Math.max(0, this.rightExtraOverscanPx);
-        int topOverscanPx = Math.max(0, this.topOverscanPx);
-        int bottomOverscanPx = Math.max(0, this.bottomOverscanPx);
-        int sampleWidth = hostWidth + leftOverscanPx + rightOverscanPx;
-        int sampleHeight = hostHeight + topOverscanPx + bottomOverscanPx;
+        SamplingInsets insets = resolveSamplingInsets(visibleWidth, visibleHeight);
+        int sampleWidth = visibleWidth + insets.left + insets.right;
+        int sampleHeight = visibleHeight + insets.top + insets.bottom;
         Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(
-                hostScreen[0] - leftOverscanPx, hostScreen[1] - topOverscanPx,
+                viewScreen[0] - insets.left, viewScreen[1] - insets.top,
                 sampleWidth, sampleHeight,
                 winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
         Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(
-                hostScreen[0], hostScreen[1], hostWidth, hostHeight,
+                viewScreen[0], viewScreen[1], visibleWidth, visibleHeight,
                 winFrame.left, winFrame.top, winFrame.width(), winFrame.height());
 
-        float nextDockUvLeft = leftOverscanPx / (float) sampleWidth;
-        float nextDockUvBottom = bottomOverscanPx / (float) sampleHeight;
-        float nextDockUvWidth = hostWidth / (float) sampleWidth;
-        float nextDockUvHeight = hostHeight / (float) sampleHeight;
+        float nextDockUvLeft = insets.left / (float) sampleWidth;
+        float nextDockUvBottom = insets.bottom / (float) sampleHeight;
+        float nextDockUvWidth = visibleWidth / (float) sampleWidth;
+        float nextDockUvHeight = visibleHeight / (float) sampleHeight;
 
         boolean unchanged = Float.compare(backdropX, sample.backdropX) == 0
                 && Float.compare(backdropY, sample.backdropY) == 0
@@ -968,11 +1056,13 @@ final class Miuix307PassBlurTextureView extends TextureView
         View root = materialHost.getRootView();
         if (root == null) return;
 
+        int[] viewScreen = new int[2];
         int[] hostScreen = new int[2];
         int[] rootScreen = new int[2];
+        getLocationOnScreen(viewScreen);
         materialHost.getLocationOnScreen(hostScreen);
         root.getLocationOnScreen(rootScreen);
-        Rect winFrame = readViewRootRectField(materialHost, "mWinFrameInScreen");
+        Rect winFrame = readViewRootRectField(this, "mWinFrameInScreen");
 
         float[] bl = mapFinalCoordinate(backdropX, backdropY, configRotation, matrixSnapshot);
         float[] br = mapFinalCoordinate(
@@ -984,6 +1074,7 @@ final class Miuix307PassBlurTextureView extends TextureView
 
         MainHook.log(TAG + " stage-B mapping rootScreen=["
                 + rootScreen[0] + "," + rootScreen[1] + "]"
+                + " viewScreen=[" + viewScreen[0] + "," + viewScreen[1] + "]"
                 + " hostScreen=[" + hostScreen[0] + "," + hostScreen[1] + "]"
                 + " hostSize=" + materialHost.getWidth() + "x" + materialHost.getHeight()
                 + " winFrame=" + formatRect(winFrame)
@@ -1016,13 +1107,42 @@ final class Miuix307PassBlurTextureView extends TextureView
             orientedX = 1f - rootY;
             orientedY = rootX;
         }
-        float textureInputX = orientedX;
-        float textureScaleX = matrix != null && matrix.length > 12 ? matrix[0] : 1f;
-        float textureOffsetX = matrix != null && matrix.length > 12 ? matrix[12] : 0f;
-        if (Math.abs(textureScaleX) > 0.000001f) {
-            textureInputX = (orientedX - textureOffsetX) / textureScaleX;
+        float[] input = compensateSurfaceTextureCropPreservingOrientation(
+                orientedX, orientedY, matrix);
+        return mapTextureCoordinate(matrix, input[0], input[1]);
+    }
+
+    private static float[] compensateSurfaceTextureCropPreservingOrientation(
+            float x, float y, float[] matrix) {
+        if (matrix == null || matrix.length < 16) return new float[]{x, y};
+        float a00 = matrix[0];
+        float a01 = matrix[4];
+        float a10 = matrix[1];
+        float a11 = matrix[5];
+        float scale0 = (float) Math.hypot(a00, a10);
+        float scale1 = (float) Math.hypot(a01, a11);
+        float determinant = a00 * a11 - a01 * a10;
+        if (scale0 <= 0.000001f || scale1 <= 0.000001f
+                || Math.abs(determinant) <= 0.000001f) {
+            return new float[]{x, y};
         }
-        return mapTextureCoordinate(matrix, textureInputX, orientedY);
+
+        float o00 = a00 / scale0;
+        float o10 = a10 / scale0;
+        float o01 = a01 / scale1;
+        float o11 = a11 / scale1;
+        if (Math.abs(o00 * o01 + o10 * o11) > 0.001f) return new float[]{x, y};
+
+        float biasX = -Math.min(0f, o00) - Math.min(0f, o01);
+        float biasY = -Math.min(0f, o10) - Math.min(0f, o11);
+        float desiredX = o00 * x + o01 * y + biasX;
+        float desiredY = o10 * x + o11 * y + biasY;
+        float rhsX = desiredX - matrix[12];
+        float rhsY = desiredY - matrix[13];
+        return new float[]{
+                (a11 * rhsX - a01 * rhsY) / determinant,
+                (-a10 * rhsX + a00 * rhsY) / determinant
+        };
     }
 
     private static float[] mapTextureCoordinate(float[] matrix, float x, float y) {

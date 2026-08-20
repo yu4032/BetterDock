@@ -44,7 +44,8 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
                 && adapter.contains("uBackdropRect")
                 && adapter.contains("uConfigRot")
                 && adapter.contains("uTexMatrix"));
-        assertTrue(adapter.contains("textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX")
+        assertTrue(adapter.contains("compensateSurfaceTextureCropPreservingOrientation")
+                && adapter.contains("orientationBias")
                 && adapter.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
 
         assertTrue(shader.contains("getHeightFromDist")

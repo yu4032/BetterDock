@@ -40,8 +40,12 @@ public class Miuix307VerticalOverscanGuiContractTest {
         assertTrue(view.contains("horizontalOverscanPx")
                 && view.contains("topOverscanPx")
                 && view.contains("bottomOverscanPx"));
-        assertTrue(view.contains("height + topOverscanPx + bottomOverscanPx"));
-        assertTrue(view.contains("bottomOverscanPx / (float) sampleHeight"));
+        assertTrue(view.contains("height + insets.top + insets.bottom"));
+        assertTrue(view.contains(
+                "Math.max(Math.max(0, topOverscanPx), opticalY)"));
+        assertTrue(view.contains(
+                "Math.max(Math.max(0, bottomOverscanPx), opticalY)"));
+        assertTrue(view.contains("insets.bottom / (float) sampleHeight"));
         assertFalse("fixed symmetric vertical overscan must no longer control FBO height",
                 view.contains("height + overscanPx * 2"));
     }

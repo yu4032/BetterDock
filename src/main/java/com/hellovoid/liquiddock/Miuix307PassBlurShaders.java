@@ -55,6 +55,42 @@ final class Miuix307PassBlurShaders {
                         mirrorIntoValidRange(uv.y, uValidDockRect.y, uValidDockRect.w));
             }
 
+            vec2 compensateSurfaceTextureCropPreservingOrientation(vec2 orientedUv) {
+                // SurfaceTexture commonly supplies a signed-permutation orientation matrix with
+                // independent crop scales and translation. Normalize both columns to recover only
+                // orientation, then solve the original affine transform backwards so its crop is
+                // neutralized without cancelling flips or quarter turns.
+                vec2 column0 = vec2(uTexMatrix[0][0], uTexMatrix[0][1]);
+                vec2 column1 = vec2(uTexMatrix[1][0], uTexMatrix[1][1]);
+                float scale0 = length(column0);
+                float scale1 = length(column1);
+                float a00 = uTexMatrix[0][0];
+                float a01 = uTexMatrix[1][0];
+                float a10 = uTexMatrix[0][1];
+                float a11 = uTexMatrix[1][1];
+                float determinant = a00 * a11 - a01 * a10;
+                if (scale0 <= 0.000001 || scale1 <= 0.000001 || abs(determinant) <= 0.000001) {
+                    return orientedUv;
+                }
+
+                vec2 orientation0 = column0 / scale0;
+                vec2 orientation1 = column1 / scale1;
+                // A crop matrix should keep its two texture axes orthogonal. If a future producer
+                // supplies a real shear, preserve the framework transform instead of guessing.
+                if (abs(dot(orientation0, orientation1)) > 0.001) return orientedUv;
+
+                vec2 orientationBias = vec2(
+                        -min(0.0, orientation0.x) - min(0.0, orientation1.x),
+                        -min(0.0, orientation0.y) - min(0.0, orientation1.y));
+                vec2 desired = orientation0 * orientedUv.x
+                        + orientation1 * orientedUv.y + orientationBias;
+                vec2 translation = vec2(uTexMatrix[3][0], uTexMatrix[3][1]);
+                vec2 rhs = desired - translation;
+                return vec2(
+                        (a11 * rhs.x - a01 * rhs.y) / determinant,
+                        (-a10 * rhs.x + a00 * rhs.y) / determinant);
+            }
+
             void main() {
                 // The Floating Dock PassBlur producer can expose only part of the material while
                 // the Dock is being pulled in from off-screen. Fill the off-domain sampling guard
@@ -69,15 +105,8 @@ final class Miuix307PassBlurShaders {
                 vec2 rootUv = uBackdropRect.xy + sampleDockUv * uBackdropRect.zw;
                 vec2 orientedUv = orientRootUv(rootUv);
 
-                // HyperOS' SurfaceTexture matrix contains an extra horizontal crop. Neutralize
-                // that crop before applying the matrix so root-space calibration stays stable.
-                vec2 textureInputUv = orientedUv;
-                float textureScaleX = uTexMatrix[0][0];
-                float textureOffsetX = uTexMatrix[3][0];
-                if (abs(textureScaleX) > 0.000001) {
-                    textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX;
-                }
-
+                vec2 textureInputUv =
+                        compensateSurfaceTextureCropPreservingOrientation(orientedUv);
                 vec4 transformed = uTexMatrix * vec4(textureInputUv, 0.0, 1.0);
                 gl_FragColor = texture2D(uTexture, transformed.xy);
             }

@@ -42,9 +42,13 @@ public class Miuix307TextureViewCoordinateParityTest {
 
         assertTrue("mapping must read ViewRootImpl mWinFrameInScreen",
                 region.contains("mWinFrameInScreen"));
-        assertTrue("host screen coordinates must feed the pure window-frame mapping helper",
-                region.contains("materialHost.getLocationOnScreen(hostScreen)")
+        assertTrue("TextureView screen coordinates must feed the pure window-frame mapping helper",
+                region.contains("getLocationOnScreen(viewScreen)")
                         && region.contains("Miuix307BackdropMapping.compute"));
+        assertFalse("material parent geometry must not be mixed into the TextureView/FBO UV domain",
+                region.contains("materialHost.getLocationOnScreen")
+                        || region.contains("materialHost.getWidth()")
+                        || region.contains("materialHost.getHeight()"));
         assertTrue("mapping helper must receive window-frame content geometry",
                 region.contains("winFrame.left")
                         && region.contains("winFrame.top")

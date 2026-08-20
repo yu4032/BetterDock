@@ -20,11 +20,12 @@ public class Miuix307EdgeOverscanContractTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
 
-        assertTrue("normalization FBO must keep the 32dp base and support asymmetric horizontal overscan",
+        assertTrue("normalization FBO must keep the 32dp base and asymmetric resolved insets",
                 view.contains("EDGE_OVERSCAN_DP")
                         && view.contains("horizontalOverscanPx()")
-                        && view.contains("leftOverscanPx")
-                        && view.contains("rightOverscanPx")
+                        && view.contains("SamplingInsets")
+                        && view.contains("insets.left")
+                        && view.contains("insets.right")
                         && view.contains("uDockUvRect"));
         assertTrue("Prismal must map Dock-local UV into the larger overscan texture",
                 shader.contains("uniform vec4  u_dockUvRect")
@@ -77,7 +78,7 @@ public class Miuix307EdgeOverscanContractTest {
         assertTrue(view.contains("private static final int BLUR_KERNEL_RADIUS_TEXELS = 15;"));
         assertTrue(view.contains("private int blurSamplingGuardPx()"));
         assertTrue(view.contains(
-                "Math.ceil(BLUR_KERNEL_RADIUS_TEXELS / Math.max(BLUR_FBO_SCALE, 0.0001f))"));
+                "BLUR_KERNEL_RADIUS_TEXELS / Math.max(BLUR_FBO_SCALE, 0.0001f)"));
         assertTrue("blur halo must be added after the material optical reach is known",
                 view.contains("int opticalX = Miuix307PrismalMaterial.requiredSampleGuardPx(")
                         && view.contains("int opticalY = Miuix307PrismalMaterial.requiredSampleGuardPx(")
