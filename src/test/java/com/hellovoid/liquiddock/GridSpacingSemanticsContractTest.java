@@ -67,13 +67,28 @@ public class GridSpacingSemanticsContractTest {
     }
 
     @Test
-    public void normalWorkspaceGeometryUsesSystemInsetsAndDockHeight() throws Exception {
+    public void normalWorkspaceGeometryUsesLauncherVerticalReserves() throws Exception {
         String hook = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"));
 
-        assertTrue(hook.contains("WindowInsets.Type.statusBars()"));
+        assertTrue(hook.contains("getTop"));
+        assertTrue(hook.contains("getIndicatorBarHeight"));
+        assertTrue(hook.contains("getBottom"));
         assertTrue(hook.contains("getDockBarHeight"));
         assertTrue(hook.contains("HomeGridGeometryPolicy.compute"));
+    }
+
+    @Test
+    public void workspaceRefreshWaitsForMeasuredBounds() throws Exception {
+        String hook = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"));
+
+        assertTrue(hook.contains(
+                "workspace.post(() -> refreshWorkspaceGridIfReady(workspace))"));
+        assertTrue(hook.contains(
+                "workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 180L)"));
+        assertTrue(hook.contains(
+                "workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 500L)"));
     }
 
     @Test
