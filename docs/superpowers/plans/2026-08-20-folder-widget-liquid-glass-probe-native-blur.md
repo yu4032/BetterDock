@@ -19,6 +19,7 @@
 - Do not add a second `SetPassBlurSurface`/PassBlur producer.
 - Cover `LauncherAppWidgetHostView` and `MaMlHostView` in probes.
 - Large-folder prototype must restore the stock image while editing/opening a folder and on prototype failure.
+- Drag-preview behavior is a device-validation target for this prototype; no separate `DragView` blur is added in steps 1/2.
 
 ---
 
@@ -50,4 +51,4 @@
 - [x] Write a failing source-contract test requiring `mIconImageView`, an index-0 background layer, `createBackgroundBlurDrawable`, blur/corner radius setup, and edit/open/close lifecycle hooks.
 - [x] Verify RED through CI.
 - [x] Implement the minimal prototype, preserving the stock image as fallback.
-- [x] Verify all tests and `assembleDebug` pass.
+- [x] Verify all tests and `assembleDebug` pass for the implementation checkpoint; final branch-head CI is still the delivery gate after documentation updates.
