@@ -79,6 +79,54 @@ public class Miuix307GlassCustomizationContractTest {
         assertFalse(ui.contains("动画和动态应用实时捕获的统一帧率上限"));
     }
 
+    @Test
+    public void everyVisibleZeroCopyOpticalUniformIsActuallyConsumed() throws Exception {
+        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+
+        String[] uniforms = new String[]{
+                "u_refractionInset", "u_sminSmoothing", "u_edgeRefractionFalloff",
+                "u_ior", "u_glassThickness", "u_normalStrength", "u_displacementScale",
+                "u_heightTransitionWidth", "u_lensRefractionPx", "u_lensDepthEffect",
+                "u_legacySCurveStrength", "u_legacyLensRefractionPx", "u_legacyThicknessPx",
+                "u_chromaticAberration", "u_dispersionR", "u_dispersionB", "u_vibrancy",
+                "u_plainHighlight", "u_liquidDome", "u_fresnelReflect", "u_brightness",
+                "u_glassColor", "u_highlightWidth", "u_lightDir", "u_specular",
+                "u_shininess", "u_rimStrength", "u_shadowColor", "u_shadowSoftness",
+                "u_causticIntensity", "u_transmittance", "u_backdropSampleScale",
+                "u_parallaxScale", "u_showNormals"
+        };
+        for (String uniform : uniforms) {
+            assertTrue("visible optical uniform declared but not consumed: " + uniform,
+                    occurrences(shader, uniform) >= 2);
+        }
+        String[] configFields = new String[]{
+                "glass.blur", "glass.thickness", "glass.ior", "glass.normalStrength",
+                "glass.dome", "glass.lensRefraction", "glass.depthEffect",
+                "glass.legacySCurveStrength", "glass.chromatic", "glass.highlightWidth",
+                "glass.brightness", "glass.specularStrength", "glass.specularSharp",
+                "glass.rimLight", "glass.caustics", "glass.prismalRefractionInset",
+                "glass.prismalDisplacementScale", "glass.prismalHeightTransitionWidth",
+                "glass.prismalSminSmoothing", "glass.prismalEdgeRefractionFalloff",
+                "glass.prismalFresnelReflect", "glass.prismalDispersionR",
+                "glass.prismalDispersionB", "glass.prismalVibrancy",
+                "glass.prismalPlainHighlight", "glass.prismalLightDirX",
+                "glass.prismalLightDirY", "glass.prismalShadowSoftness",
+                "glass.prismalTransmittance", "glass.prismalBackdropScaleX",
+                "glass.prismalBackdropScaleY", "glass.prismalParallaxScale"
+        };
+        for (String field : configFields) {
+            assertTrue("visible GUI field does not reach material: " + field,
+                    material.contains(field));
+        }
+        assertTrue(view.contains("glassConfig.captureBleedTopPx"));
+        assertTrue(view.contains("glassConfig.captureBleedBottomPx"));
+        assertTrue(view.contains("glassConfig.captureBleedLeftPx"));
+        assertTrue(view.contains("glassConfig.captureBleedRightPx"));
+        assertTrue(view.contains("Miuix307PrismalMaterial.blurSigma"));
+    }
+
     private static int occurrences(String text, String needle) {
         int count = 0;
         int start = 0;

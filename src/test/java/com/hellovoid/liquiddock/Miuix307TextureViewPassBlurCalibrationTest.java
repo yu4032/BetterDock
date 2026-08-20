@@ -89,7 +89,8 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
                 material.contains("glass.thickness * d")
                         && material.contains("glass.prismalHeightTransitionWidth * d")
                         && material.contains("glass.lensRefraction")
-                        && material.contains("p.normalStrength * 0.9f"));
+                        && material.contains("glass.depthEffect")
+                        && material.contains("p.lensDepthEffect"));
         assertFalse("legacy /12 lens conversion must not run every material update",
                 material.contains("glass.lensRefraction / 12f"));
         assertTrue("legacy lens values must be converted once by config migration",

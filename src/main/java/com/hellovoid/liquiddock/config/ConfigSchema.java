@@ -237,8 +237,10 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> DOME = integer(
                 "liquid_dome", 100, 100, 100, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LENS_REFRACTION = dp(
-                "liquid_lens_refraction", 12, 12, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);
-        public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
+        "liquid_lens_refraction", 12, 12, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);
+public static final ConfigKey<Integer> LEGACY_S_CURVE = integer(
+        "liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey.ExportMode.ALWAYS);
+public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
                 "liquid_capture_scale", 50, 50, 50, 10, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> DYNAMIC_APP_CAPTURE = bool(
                 "liquid_dynamic_app_capture", true, true, true, ConfigKey.ExportMode.ALWAYS);
@@ -320,7 +322,7 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> PRISMAL_SHADOW_ALPHA = integer(
                 "liquid_prismal_shadow_alpha", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_SOFTNESS = integer(
-                "liquid_prismal_shadow_softness", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+        "liquid_prismal_shadow_softness", 100, 100, 100, 0, 2000, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_TRANSMITTANCE = integer(
                 "liquid_prismal_transmittance", 100, 100, 100, 0, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_BACKDROP_SCALE_X = integer(
@@ -435,7 +437,7 @@ public final class ConfigSchema {
                 Glass.CAPTURE_BLEED_TOP, Glass.CAPTURE_BLEED_BOTTOM,
                 Glass.CAPTURE_BLEED_LEFT, Glass.CAPTURE_BLEED_RIGHT, Glass.THICKNESS,
                 Glass.IOR, Glass.NORMAL_STRENGTH, Glass.DOME, Glass.LENS_REFRACTION,
-                Glass.CAPTURE_SCALE, Glass.DYNAMIC_APP_CAPTURE, Glass.FULLSCREEN_CAPTURE,
+        Glass.LEGACY_S_CURVE, Glass.CAPTURE_SCALE, Glass.DYNAMIC_APP_CAPTURE, Glass.FULLSCREEN_CAPTURE,
                 Glass.DYNAMIC_APP_PROBE_FPS, Glass.DYNAMIC_MOTION_THRESHOLD,
                 Glass.DYNAMIC_BIT_THRESHOLD, Glass.DYNAMIC_HOLD_MS, Glass.BLACK_THRESHOLD,
                 Glass.HOME_SETTLE_DELAY_MS, Glass.HIGHLIGHT_WIDTH, Glass.TINT_RED,

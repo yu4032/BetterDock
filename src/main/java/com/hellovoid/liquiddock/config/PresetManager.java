@@ -168,7 +168,8 @@ public final class PresetManager {
         values.put("liquid_highlight_width", 100);
         values.put("liquid_highlight_alpha", 100);
         values.put("liquid_depth_effect", 8);
-        values.put("liquid_brightness", 108);
+values.put("liquid_legacy_s_curve", 0);
+values.put("liquid_brightness", 108);
         values.put("liquid_specular_sharp", 88);
         values.put("liquid_specular_strength", 152);
         values.put("liquid_rim_light", 122);

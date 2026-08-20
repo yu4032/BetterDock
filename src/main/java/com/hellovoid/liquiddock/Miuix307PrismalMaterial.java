@@ -22,7 +22,11 @@ final class Miuix307PrismalMaterial {
         final float liquidDome;
         final float fresnelReflect;
         final float lensRefractionScale;
-        final float chromaticAberration;
+final float lensDepthEffect;
+final float legacySCurveStrength;
+final float legacyLensRefractionPx;
+final float legacyThicknessPx;
+final float chromaticAberration;
         final float dispersionR;
         final float dispersionB;
         final float vibrancy;
@@ -63,7 +67,11 @@ final class Miuix307PrismalMaterial {
                 float liquidDome,
                 float fresnelReflect,
                 float lensRefractionScale,
-                float chromaticAberration,
+        float lensDepthEffect,
+        float legacySCurveStrength,
+        float legacyLensRefractionPx,
+        float legacyThicknessPx,
+        float chromaticAberration,
                 float dispersionR,
                 float dispersionB,
                 float vibrancy,
@@ -102,7 +110,11 @@ final class Miuix307PrismalMaterial {
             this.liquidDome = liquidDome;
             this.fresnelReflect = fresnelReflect;
             this.lensRefractionScale = lensRefractionScale;
-            this.chromaticAberration = chromaticAberration;
+    this.lensDepthEffect = lensDepthEffect;
+    this.legacySCurveStrength = legacySCurveStrength;
+    this.legacyLensRefractionPx = legacyLensRefractionPx;
+    this.legacyThicknessPx = legacyThicknessPx;
+    this.chromaticAberration = chromaticAberration;
             this.dispersionR = dispersionR;
             this.dispersionB = dispersionB;
             this.vibrancy = vibrancy;
@@ -154,8 +166,12 @@ final class Miuix307PrismalMaterial {
                 1.30f,
                 1.98f,
                 1.30f,
-                2f,
-                1f,
+        0.08f,
+        0f,
+        12f * d,
+        18f * d,
+        2f,
+        1f,
                 1f,
                 1.28f,
                 0.08f,
@@ -206,8 +222,12 @@ final class Miuix307PrismalMaterial {
                 Math.max(0.05f, glass.prismalEdgeRefractionFalloff),
                 glass.dome,
                 glass.prismalFresnelReflect,
-                lensScale,
-                Math.max(0f, glass.chromatic),
+        lensScale,
+        Math.max(0f, Math.min(1f, glass.depthEffect)),
+        Math.max(0f, Math.min(2f, glass.legacySCurveStrength)),
+        12f * d,
+        18f * d,
+        Math.max(0f, glass.chromatic),
                 glass.prismalDispersionR,
                 glass.prismalDispersionB,
                 glass.prismalVibrancy,
@@ -246,7 +266,9 @@ final class Miuix307PrismalMaterial {
                 && nearly(g.normalStrength, 1.15f)
                 && nearly(g.dome, 1f)
                 && nearly(g.lensRefraction, 12f)
-                && nearly(g.brightness, 1.08f)
+        && nearly(g.depthEffect, 0.08f)
+        && nearly(g.legacySCurveStrength, 0f)
+        && nearly(g.brightness, 1.08f)
                 && g.specularSharp == 88
                 && nearly(g.specularStrength, 1.05f)
                 && nearly(g.rimLight, 1f)
@@ -287,8 +309,7 @@ final class Miuix307PrismalMaterial {
         float refractionHeight = Math.max(
                 p.heightTransitionWidthPx * (1f + 0.55f * clamp(p.liquidDome, 0f, 2f)), 1f);
         float lensPx = refractionHeight * 2f * p.displacementScale * p.lensRefractionScale;
-        lensPx = clamp(lensPx, 4f, Math.max(4f, minGlassDim * 0.85f));
-        float lensDepth = Math.min(1f, Math.max(0f, p.normalStrength * 0.9f));
+lensPx = clamp(lensPx, 4f, Math.max(4f, minGlassDim * 0.85f));
 
         uniform2f(program, "u_resolution", width, height);
         uniform2f(program, "u_glassSize", width, height);
@@ -304,7 +325,10 @@ final class Miuix307PrismalMaterial {
         uniform1f(program, "u_displacementScale", p.displacementScale);
         uniform1f(program, "u_heightTransitionWidth", p.heightTransitionWidthPx);
         uniform1f(program, "u_lensRefractionPx", lensPx);
-        uniform1f(program, "u_lensDepthEffect", lensDepth);
+uniform1f(program, "u_lensDepthEffect", p.lensDepthEffect);
+uniform1f(program, "u_legacySCurveStrength", p.legacySCurveStrength);
+uniform1f(program, "u_legacyLensRefractionPx", p.legacyLensRefractionPx);
+uniform1f(program, "u_legacyThicknessPx", p.legacyThicknessPx);
 
         uniform1f(program, "u_chromaticAberration", p.chromaticAberration);
         uniform1f(program, "u_dispersionR", p.dispersionR);

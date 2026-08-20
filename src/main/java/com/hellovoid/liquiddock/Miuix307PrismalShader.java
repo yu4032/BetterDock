@@ -35,9 +35,12 @@ final class Miuix307PrismalShader {
             uniform float u_heightTransitionWidth;
 
             uniform float u_lensRefractionPx;
-            uniform float u_lensDepthEffect;
+    uniform float u_lensDepthEffect;
+    uniform float u_legacySCurveStrength;
+    uniform float u_legacyLensRefractionPx;
+    uniform float u_legacyThicknessPx;
 
-            uniform float u_chromaticAberration;
+    uniform float u_chromaticAberration;
             uniform float u_dispersionR;
             uniform float u_dispersionB;
 
@@ -247,7 +250,9 @@ final class Miuix307PrismalShader {
                 menBlend *= mix(1.0, 0.15, smallGlass);
                 N = normalize(mix(N, N_meniscus, menBlend));
 
-                float dropLens = pow(smoothstep(refractionHeight, 0.0, edgeDist), 0.82);
+                float dropLensBase = pow(smoothstep(refractionHeight, 0.0, edgeDist), 0.82);
+        float falloffPower = clamp(max(u_edgeRefractionFalloff, 0.05) * 0.205, 0.1, 4.0);
+        float dropLens = pow(max(dropLensBase, 0.0), falloffPower / 0.82);
 
                 if (u_showNormals == 1) {
                     gl_FragColor = vec4(N * 0.5 + 0.5, opacity);
@@ -257,7 +262,7 @@ final class Miuix307PrismalShader {
                 vec3 V = vec3(0.0, 0.0, 1.0);
                 float cosVN = clamp(dot(N, V), 0.0, 1.0);
                 float r0 = pow((1.0 - u_ior) / (1.0 + u_ior), 2.0);
-                float silW = clamp(minDim * 0.12, 2.5, 34.0);
+                float silW = clamp(minDim * 0.12 * clamp(u_highlightWidth, 0.2, 3.0), 2.5, 34.0);
                 float edgeSil = smoothstep(silW, 0.0, edgeDist) * smoothstep(-4.5, 0.0, distMask);
                 float tiltW = clamp(length(N.xy) * 2.4, 0.0, 1.0);
                 float grazingW = clamp(edgeSil * 0.94 + tiltW * 0.55, 0.0, 1.0);
@@ -300,8 +305,85 @@ final class Miuix307PrismalShader {
                 snellOff *= pxNorm * dropLens;
                 bulgeUv *= pxNorm;
 
-                vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv;
-                float pinchMix = 1.0 - smoothstep(0.0, 0.72, tDeep);
+                vec2 currentOffset = lensDeltaUv + snellOff + bulgeUv;
+        float legacyStrength = clamp(u_legacySCurveStrength, 0.0, 2.0);
+        vec2 baseOffset = currentOffset;
+        if (legacyStrength > 0.001) {
+            // LiquidDock v1.2.0 used a Dock-height-derived SDF lens instead of the
+            // current Prismal Quick Start dimensions. Keep its optical constants local
+            // so 100% reproduces that refraction geometry without rewriting current UI
+            // parameters; lighting/color remain on the modern Prismal path.
+            float legacyRefractionHeight = clamp(u_glassSize.y * 0.48, 1.0, 140.0);
+            float legacyTw = max(legacyRefractionHeight * 1.38, 1.0);
+            legacyTw = min(legacyTw, minDim * 0.98);
+            float legacyDistMask = sdRoundBox(pPx, halfSz, crMask, 0.0);
+            float legacyEdgeDist = -legacyDistMask;
+            float legacyHSig = getHeightFromDist(legacyDistMask, legacyTw);
+            vec2 legacyGradHSig = computeGradientHeight(pPx, halfSz, crMask, 0.0, legacyTw);
+
+            float legacyInnerReach = max(min(halfSz.x, halfSz.y) - crMask * 0.42, minDim * 0.22);
+            legacyInnerReach += legacyRefractionHeight * 1.25;
+            legacyInnerReach = min(legacyInnerReach, max(halfSz.x, halfSz.y) * 0.95);
+            float legacyTDeep = clamp(legacyEdgeDist / max(legacyInnerReach, 2.0), 0.0, 1.0);
+            float legacyTShell = 1.0 - legacyTDeep;
+            float legacyMeniscusBand = smoothstep(0.0, 0.12, legacyTShell);
+            float legacyHCap = pow(legacyTShell, 0.38);
+            float legacyEdgeBulge = 0.10 * pow(legacyTShell, 2.8);
+            float legacyHDome = (legacyHCap + legacyEdgeBulge) * legacyMeniscusBand;
+            float legacyCoreBlend = smoothstep(0.0, 0.38, legacyTDeep);
+            float legacyHSlab = mix(legacyHSig * (0.58 + 0.42 * legacyCoreBlend), legacyHSig, 0.4);
+            float legacyDomeW = 0.74 + 0.26 * smoothstep(0.12, 0.94, legacyTShell);
+            float legacyHeight = mix(legacyHSlab, legacyHDome, legacyDomeW);
+            float legacyEdgeRound = 1.0 - smoothstep(0.72, 1.0, legacyTShell);
+            legacyHeight = clamp(legacyHeight * (0.84 + 0.16 * legacyMeniscusBand + 0.08 * legacyEdgeRound), 0.0, 1.0);
+
+            float legacyShellCurv = smoothstep(0.0, 1.0, legacyTShell);
+            vec2 legacyGCap = outward * (-legacyShellCurv * (0.38 / max(minDim, 8.0)));
+            legacyGCap *= legacyMeniscusBand * legacyEdgeRound;
+            vec2 legacyGradH = mix(legacyGradHSig, legacyGCap, legacyDomeW);
+            vec3 legacyN = normalize(vec3(-legacyGradH.x * 1.15, -legacyGradH.y * 1.15, 1.0));
+
+            float legacyCosVN = clamp(dot(legacyN, V), 0.0, 1.0);
+            float legacyR0 = pow((1.0 - 1.55) / (1.0 + 1.55), 2.0);
+            float legacySilW = clamp(minDim * 0.12, 1.0, 90.0);
+            float legacyEdgeSil = smoothstep(legacySilW, 0.0, legacyEdgeDist) * smoothstep(-4.5, 0.0, legacyDistMask);
+            float legacyTiltW = clamp(length(legacyN.xy) * 2.4, 0.0, 1.0);
+            float legacyGrazingW = clamp(legacyEdgeSil * 0.94 + legacyTiltW * 0.55, 0.0, 1.0);
+            float legacyCosVNeff = mix(legacyCosVN, max(0.04, legacyCosVN * 0.22 + 0.07 * legacyTiltW), legacyGrazingW);
+            float legacyF = legacyR0 + (1.0 - legacyR0) * pow(1.0 - legacyCosVNeff, 5.0);
+
+            vec2 legacyLensDir = gradLens + 0.08 * normalize(cenSafe);
+            float legacyLensLen = length(legacyLensDir);
+            legacyLensDir = legacyLensLen > 1e-5 ? legacyLensDir / legacyLensLen : vec2(0.0);
+            float legacySdIn = min(sdKy, 0.0);
+            float legacyDLens = 0.0;
+            if ((-sdKy) < legacyRefractionHeight) {
+                legacyDLens = circleMapRealistic(1.0 - (-legacySdIn / legacyRefractionHeight)) * (-u_legacyLensRefractionPx);
+            }
+            vec2 legacyLensDeltaUv = (legacyDLens * legacyLensDir) / u_resolution;
+            float legacyParallaxK = 0.052 * 1.15;
+            vec2 legacyParallax = (gradLens * legacyHeight * (7.0 + 22.0 * legacyF)) / u_resolution * legacyParallaxK;
+            legacyLensDeltaUv += legacyParallax;
+            legacyLensDeltaUv *= mix(0.78, 1.12, (1.0 - legacyF) * (0.42 + 0.58 * legacyHeight));
+
+            float legacyRefrStr = legacyHeight * (0.5 + legacyF * 0.35);
+            vec3 legacyRefIn = refract(-V, legacyN, 1.0 / 1.55);
+            vec3 legacyRefOut = (dot(legacyRefIn, legacyRefIn) < 0.001) ? vec3(0.0) : refract(legacyRefIn, -legacyN, 1.55);
+            vec2 legacySnellOff = (legacyRefOut.xy * u_legacyThicknessPx * legacyRefrStr / u_resolution) * 1.15;
+            legacySnellOff *= mix(0.72, 1.18, (1.0 - legacyF) * (0.5 + 0.5 * legacyHeight));
+
+            vec2 legacyBDir = length(pPx) > 1e-3 ? -normalize(pPx) : vec2(0.0, -1.0);
+            float legacyBulge = smoothstep(0.05, 0.38, legacyTDeep) * (1.0 - smoothstep(0.52, 0.94, legacyTDeep));
+            legacyBulge = pow(max(legacyBulge, 0.0), 0.62) * legacyHeight * 0.024;
+            legacyBulge *= smoothstep(0.02, 0.36, legacyTDeep);
+            vec2 legacyBulgeUv = legacyBDir * legacyBulge * halfSz / u_resolution;
+
+            vec2 legacyOffset = legacyLensDeltaUv + legacySnellOff + legacyBulgeUv;
+            baseOffset = legacyStrength <= 1.0
+                    ? mix(currentOffset, legacyOffset, legacyStrength)
+                    : legacyOffset * legacyStrength;
+        }
+        float pinchMix = 1.0 - smoothstep(0.0, 0.72, tDeep);
                 vec2 uvCenter = backdropUv(v_screenTexCoord, baseOffset, pinchMix);
                 float avgDim = (u_glassSize.x + u_glassSize.y) * 0.5;
 
@@ -392,7 +474,7 @@ final class Miuix307PrismalShader {
 
                 float rimBandTight = mix(0.82, 0.52, smallGlass);
                 float bandFracR = mix(0.022, 0.042, smoothstep(62.0, 218.0, minDim));
-                float bandR = clamp(minDim * bandFracR * rimBandTight, mix(0.28, 0.65, 1.0 - smallGlass), min(12.0, minDim * 0.1));
+                float bandR = clamp(minDim * bandFracR * rimBandTight * clamp(u_highlightWidth, 0.2, 3.0), mix(0.28, 0.65, 1.0 - smallGlass), min(18.0, minDim * 0.16));
                 float shellRim = smoothstep(bandR, bandR * 0.06, edgeDist) * smoothstep(-2.2, 0.0, distMask);
                 float centerQuiet = smoothstep(minDim * 0.18, minDim * 0.62, edgeDist);
                 float depthFade = mix(1.0, 0.62, centerQuiet);
