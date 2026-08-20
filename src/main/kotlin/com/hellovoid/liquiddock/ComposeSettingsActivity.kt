@@ -141,7 +141,6 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_normal_strength" -> "Prismal 表面高度场对法线的影响"
     "liquid_dome" -> "控制玻璃穹顶/meniscus 的凸起程度"
     "liquid_lens_refraction" -> "Prismal 边缘透镜位移倍率；迁移后的常用值约 1.3×，过高会快速达到短边位移上限"
-    "liquid_legacy_s_curve" -> "旧版整片 SDF 折射几何：0=关闭，100=复现 v1.2.0，200=双倍"
     "liquid_chromatic" -> "Prismal RGB 色散总强度；v1.0.6 Quick Start 有效默认值为 26"
     "liquid_tint_alpha" -> "玻璃颜色乘色强度"
     "liquid_tint_r" -> "玻璃颜色 · 红"
@@ -264,7 +263,6 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, "法线强度", "%"),
     IntSpec(ConfigSchema.Glass.DOME, "穹顶凸起", "%"),
     IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射倍率", "×"),
-    IntSpec(ConfigSchema.Glass.LEGACY_S_CURVE, "v1.2 S形折射", "%"),
     IntSpec(ConfigSchema.Glass.DEPTH_EFFECT, "透镜中心偏转", "%"),
     IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", ""),
     IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外采样高度", "px"),

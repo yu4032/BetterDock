@@ -13,26 +13,6 @@ public class Miuix307GlassCustomizationContractTest {
     private static final Path CONFIG = MAIN.resolve("config/ConfigSchema.java");
     private static final Path UI = Path.of("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
 
-    @Test
-    public void legacy12SCurveIsExplicitOptInAndWiredEndToEnd() throws Exception {
-        String schema = Files.readString(CONFIG);
-        String config = Files.readString(MAIN.resolve("LiquidDockConfig.java"));
-        String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
-        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
-        String ui = Files.readString(UI);
-
-        assertTrue(schema.contains("LEGACY_S_CURVE"));
-        assertTrue(schema.contains("\"liquid_legacy_s_curve\", 0, 0, 0, 0, 200"));
-        assertTrue(config.contains("legacySCurveStrength"));
-        assertTrue(material.contains("legacySCurveStrength"));
-        assertTrue(material.contains("u_legacySCurveStrength"));
-        assertTrue(shader.contains("uniform float u_legacySCurveStrength"));
-        assertTrue(shader.contains("legacyRefractionHeight = clamp(u_glassSize.y * 0.48"));
-        assertTrue(shader.contains("legacyStrength <= 1.0"));
-        assertTrue(shader.contains("legacyOffset * legacyStrength"));
-        assertTrue(ui.contains("v1.2 S形折射"));
-        assertTrue(ui.contains("0=关闭，100=复现 v1.2.0，200=双倍"));
-    }
 
     @Test
     public void previouslyDeadVisibleControlsReachShaderMath() throws Exception {
@@ -89,7 +69,6 @@ public class Miuix307GlassCustomizationContractTest {
                 "u_refractionInset", "u_sminSmoothing", "u_edgeRefractionFalloff",
                 "u_ior", "u_glassThickness", "u_normalStrength", "u_displacementScale",
                 "u_heightTransitionWidth", "u_lensRefractionPx", "u_lensDepthEffect",
-                "u_legacySCurveStrength", "u_legacyLensRefractionPx", "u_legacyThicknessPx",
                 "u_chromaticAberration", "u_dispersionR", "u_dispersionB", "u_vibrancy",
                 "u_plainHighlight", "u_liquidDome", "u_fresnelReflect", "u_brightness",
                 "u_glassColor", "u_highlightWidth", "u_lightDir", "u_specular",
@@ -104,7 +83,7 @@ public class Miuix307GlassCustomizationContractTest {
         String[] configFields = new String[]{
                 "glass.blur", "glass.thickness", "glass.ior", "glass.normalStrength",
                 "glass.dome", "glass.lensRefraction", "glass.depthEffect",
-                "glass.legacySCurveStrength", "glass.chromatic", "glass.highlightWidth",
+                "glass.chromatic", "glass.highlightWidth",
                 "glass.brightness", "glass.specularStrength", "glass.specularSharp",
                 "glass.rimLight", "glass.caustics", "glass.prismalRefractionInset",
                 "glass.prismalDisplacementScale", "glass.prismalHeightTransitionWidth",
