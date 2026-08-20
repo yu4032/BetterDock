@@ -59,6 +59,8 @@ public class ConfirmedBugFixContractTest {
         assertTrue(host.contains("MiuixGlassHook.onHostDetached(this)"));
 
         assertFalse(main.contains("private static View shadowView, oldBg, nativeShadowTarget;"));
+        assertFalse(main.contains("private static View shadowView;"));
+        assertTrue(main.contains("WeakReference<View> shadowViewRef"));
         assertTrue(main.contains("WeakReference<View>"));
     }
 
