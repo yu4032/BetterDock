@@ -45,41 +45,20 @@ jobs:
           python3 /tmp/prismal-parity-v4.py
           python3 - <<'PY'
           from pathlib import Path
-
           def replace1(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one legacy-contract match, got {count}: {old!r}")
+              p = Path(path); text = p.read_text(); count = text.count(old)
+              if count != 1: raise SystemExit(f"{path}: expected one legacy-contract match, got {count}: {old!r}")
               p.write_text(text.replace(old, new, 1))
-
           chroma = 'src/test/java/com/hellovoid/liquiddock/Miuix307PrismalChromaticDefaultTest.java'
-          replace1(chroma,
-              'public void prismalMaterialDefaultChromaticStrengthIsTwo() {\n        assertEquals(2f, Miuix307PrismalMaterial.defaults(1f).chromaticAberration, 0.0001f);',
-              'public void prismalMaterialDefaultChromaticStrengthMatchesEffectiveQuickStart() {\n        assertEquals(26f, Miuix307PrismalMaterial.defaults(1f).chromaticAberration, 0.0001f);')
-          replace1(chroma,
-              'public void emptyProfileAlsoResolvesToChromaticStrengthTwo() {',
-              'public void emptyProfileAlsoResolvesToEffectiveQuickStartChromaticStrength() {')
-          replace1(chroma,
-              '        assertEquals(2f,\n                Miuix307PrismalMaterial.fromConfig(config.glass, 1f).chromaticAberration,',
-              '        assertEquals(26f,\n                Miuix307PrismalMaterial.fromConfig(config.glass, 1f).chromaticAberration,')
-
+          replace1(chroma, 'public void prismalMaterialDefaultChromaticStrengthIsTwo() {\n        assertEquals(2f, Miuix307PrismalMaterial.defaults(1f).chromaticAberration, 0.0001f);', 'public void prismalMaterialDefaultChromaticStrengthMatchesEffectiveQuickStart() {\n        assertEquals(26f, Miuix307PrismalMaterial.defaults(1f).chromaticAberration, 0.0001f);')
+          replace1(chroma, 'public void emptyProfileAlsoResolvesToChromaticStrengthTwo() {', 'public void emptyProfileAlsoResolvesToEffectiveQuickStartChromaticStrength() {')
+          replace1(chroma, '        assertEquals(2f,\n                Miuix307PrismalMaterial.fromConfig(config.glass, 1f).chromaticAberration,', '        assertEquals(26f,\n                Miuix307PrismalMaterial.fromConfig(config.glass, 1f).chromaticAberration,')
           repair = 'src/test/java/com/hellovoid/liquiddock/Miuix307PrismalParityRepairTest.java'
-          replace1(repair,
-              '        assertEquals(2f, p.chromaticAberration, EPS);',
-              '        assertEquals(26f, p.chromaticAberration, EPS);')
-
+          replace1(repair, '        assertEquals(2f, p.chromaticAberration, EPS);', '        assertEquals(26f, p.chromaticAberration, EPS);')
           v3 = 'src/test/java/com/hellovoid/liquiddock/PrismalOfficialParityV3Test.java'
-          replace1(v3,
-              '/** Locks Prismal parity except for LiquidDock\'s intentional chromatic-strength override. */',
-              '/** Locks effective Prismal v1.0.6 Quick Start parity while preserving V3 migration history. */')
-          replace1(v3,
-              '        assertEquals(2f, p.chromaticAberration, EPS);',
-              '        assertEquals(26f, p.chromaticAberration, EPS);')
-          replace1(v3,
-              '        assertEquals(2, p.get("liquid_chromatic"));',
-              '        assertEquals(26, p.get("liquid_chromatic"));')
+          replace1(v3, '/** Locks Prismal parity except for LiquidDock\'s intentional chromatic-strength override. */', '/** Locks effective Prismal v1.0.6 Quick Start parity while preserving V3 migration history. */')
+          replace1(v3, '        assertEquals(2f, p.chromaticAberration, EPS);', '        assertEquals(26f, p.chromaticAberration, EPS);')
+          replace1(v3, '        assertEquals(2, p.get("liquid_chromatic"));', '        assertEquals(26, p.get("liquid_chromatic"));')
           PY
           git diff --check
       - name: Verify unit suite
@@ -88,22 +67,17 @@ jobs:
           ./gradlew testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
-      - name: Commit verified source and restore normal CI
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git show HEAD^:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
-          rm -f PRISMAL_PARITY_PATCH_ERROR.txt
-          git rm -f .github/workflows/prismal-parity-v4-apply.yml \
-                    .github/workflows/prismal-parity-v4-apply2.yml \
-                    .github/workflows/prismal-parity-v4-one-shot.yml
-          git add src/main src/test .github/workflows/api101-build.yml
-          git diff --cached --check
-          git commit -m "fix: restore effective Prismal v1.0.6 defaults"
-          git push origin HEAD:fix/glass-controls-s-curve
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidDock-prismal-parity-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Commit verified source only
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/main src/test
+          git diff --cached --check
+          git commit -m "fix: restore effective Prismal v1.0.6 defaults"
+          git push origin HEAD:fix/glass-controls-s-curve
