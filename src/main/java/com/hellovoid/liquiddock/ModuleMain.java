@@ -30,14 +30,15 @@ public final class ModuleMain extends XposedModule {
                     GridProfileConfig.normalizeProfile(configReader.s(
                             GridProfileConfig.PROFILE_KEY,
                             GridProfileConfig.DEFAULT_PROFILE)));
+            boolean customGridEnabled = runtimeConfig.enabled && runtimeConfig.grid.enabled;
 
             new MainHook().install(classLoader);
             HomeGridProfileOverlayHook.install(classLoader,
-                    runtimeConfig.enabled && runtimeConfig.grid.enabled,
-                    selectedProfile);
-            WorkspaceDropRuleHook.install(classLoader,
-                    runtimeConfig.enabled && runtimeConfig.grid.enabled);
-            if (runtimeConfig.enabled && runtimeConfig.grid.enabled) {
+                    customGridEnabled, selectedProfile);
+            HomeGridRotationBridge.install(classLoader,
+                    customGridEnabled, selectedProfile);
+            WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
+            if (customGridEnabled) {
                 Api101Bridge.log("[DC] home grid profile=" + selectedProfile.persistedValue());
             }
         } catch (Throwable error) {
