@@ -1,0 +1,62 @@
+name: Prismal parity v4 apply2
+
+on:
+  push:
+    branches: [ fix/glass-controls-s-curve ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/glass-controls-s-curve
+          fetch-depth: 0
+      - name: Apply functional patch without brittle comment rewrite
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/prismal-parity-v4-one-shot.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = src.index(marker) + len(marker)
+          end = src.index("\n          PY\n", start)
+          lines = src[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          bad = "replace_once(material,\n    '// Mirror the public Prismal v1.0.6 Quick Start path: FrameLayout construction first,"
+          a = script.index(bad)
+          b = script.index("replace_once(material,\n    '                0.08f,", a)
+          script = script[:a] + script[b:]
+          Path('/tmp/prismal_patch.py').write_text(script)
+          PY
+          set +e
+          python3 /tmp/prismal_patch.py > /tmp/prismal_patch.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            cp /tmp/prismal_patch.log PRISMAL_PARITY_PATCH_ERROR.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add PRISMAL_PARITY_PATCH_ERROR.txt
+            git commit -m "debug: update Prismal parity patch failure"
+            git push origin HEAD:fix/glass-controls-s-curve
+            cat /tmp/prismal_patch.log
+            exit "$rc"
+          fi
+          cat /tmp/prismal_patch.log
+      - name: Commit applied fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/prismal-parity-v4-one-shot.yml .github/workflows/prismal-parity-v4-apply.yml .github/workflows/prismal-parity-v4-apply2.yml PRISMAL_PARITY_PATCH_ERROR.txt
+          git add src/main src/test
+          git commit -m "fix: restore effective Prismal v1.0.6 defaults"
+          git push origin HEAD:fix/glass-controls-s-curve
+      - name: Verify full suite
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
