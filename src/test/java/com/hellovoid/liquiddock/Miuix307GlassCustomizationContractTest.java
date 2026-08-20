@@ -99,10 +99,10 @@ public class Miuix307GlassCustomizationContractTest {
             assertTrue("visible GUI field does not reach material: " + field,
                     material.contains(field));
         }
-        assertTrue(view.contains("glassConfig.captureBleedTopPx"));
-        assertTrue(view.contains("glassConfig.captureBleedBottomPx"));
-        assertTrue(view.contains("glassConfig.captureBleedLeftPx"));
-        assertTrue(view.contains("glassConfig.captureBleedRightPx"));
+        assertTrue(view.contains("glassConfig.samplingExtraTopPx"));
+        assertTrue(view.contains("glassConfig.samplingExtraBottomPx"));
+        assertTrue(view.contains("glassConfig.samplingExtraLeftPx"));
+        assertTrue(view.contains("glassConfig.samplingExtraRightPx"));
         assertTrue(view.contains("portablePrismalParams")
                 && view.contains("prismalRenderer.render("));
     }

@@ -185,10 +185,10 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_capture_scale" -> "旧版 SurfaceFlinger 读回缩放；当前 zero-copy 后端不使用"
     "liquid_capture_stop_delay" -> "旧版屏幕捕获停止延迟；当前 zero-copy 后端不使用"
     "liquid_recents_prearm_distance" -> "从底部上滑达到此距离时，提前启动多任务实时捕获"
-    "liquid_capture_bleed_top" -> "在 Dock 上方扩展 zero-copy 折射背景的采样区域"
-    "liquid_capture_bleed_bottom" -> "在 Dock 下方扩展 zero-copy 折射背景的采样区域"
-    "liquid_capture_bleed_left" -> "在默认 32dp 左侧采样之外继续扩展的 zero-copy 区域"
-    "liquid_capture_bleed_right" -> "在默认 32dp 右侧采样之外继续扩展的 zero-copy 区域"
+    "liquid_sampling_extra_top" -> "最终上安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
+    "liquid_sampling_extra_bottom" -> "最终下安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
+    "liquid_sampling_extra_left" -> "最终左安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
+    "liquid_sampling_extra_right" -> "最终右安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
     "stroke_base_r" -> "描边基础颜色的红色通道"
     "stroke_base_g" -> "描边基础颜色的绿色通道"
     "stroke_base_b" -> "描边基础颜色的蓝色通道"
@@ -265,10 +265,10 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射倍率", "×"),
     IntSpec(ConfigSchema.Glass.DEPTH_EFFECT, "透镜中心偏转", "%"),
     IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", ""),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外采样高度", "px"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, "下额外采样高度", "px"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_LEFT, "左额外采样宽度", "px"),
-    IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_RIGHT, "右额外采样宽度", "px"),
+    IntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_TOP, "上安全区额外值", "px"),
+    IntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM, "下安全区额外值", "px"),
+    IntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_LEFT, "左安全区额外值", "px"),
+    IntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_RIGHT, "右安全区额外值", "px"),
     IntSpec(ConfigSchema.Glass.TINT_ALPHA, "玻璃底色透明度", ""),
     IntSpec(ConfigSchema.Glass.TINT_RED, "底色 · 红", ""),
     IntSpec(ConfigSchema.Glass.TINT_GREEN, "底色 · 绿", ""),

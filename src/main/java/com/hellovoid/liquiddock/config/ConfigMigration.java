@@ -26,9 +26,18 @@ public final class ConfigMigration {
     }
 
     private static void removeRetiredGlassPreferences(SharedPreferences sp) {
-        if (!sp.contains("liquid_legacy_s_curve")) return;
+        boolean hasRetired = sp.contains("liquid_legacy_s_curve")
+                || sp.contains("liquid_capture_bleed_top")
+                || sp.contains("liquid_capture_bleed_bottom")
+                || sp.contains("liquid_capture_bleed_left")
+                || sp.contains("liquid_capture_bleed_right");
+        if (!hasRetired) return;
         SharedPreferences.Editor e = sp.edit();
         e.remove("liquid_legacy_s_curve");
+        e.remove("liquid_capture_bleed_top");
+        e.remove("liquid_capture_bleed_bottom");
+        e.remove("liquid_capture_bleed_left");
+        e.remove("liquid_capture_bleed_right");
         e.commit();
     }
 
