@@ -167,12 +167,19 @@ final class Miuix307PrismalShader {
                 );
             }
 
+            // Upstream Prismal computes optical displacement in a texture basis whose Y
+            // axis is flipped in the vertex shader. Our normalized zero-copy FBO keeps local
+            // bottom-origin UV, so convert displacement vectors here without flipping the image.
+            vec2 upstreamOffsetToLocalTextureUv(vec2 offset) {
+                return vec2(offset.x, -offset.y);
+            }
+
             vec2 backdropUv(vec2 screenUv, vec2 offset, float pinchMix) {
                 float press = clamp(u_pressProgress, 0.0, 1.0);
                 float pinch = mix(1.0, max(u_backdropPinch, 0.01), press * pinchMix);
                 vec2 s = max(u_backdropSampleScale, vec2(0.01)) / vec2(pinch);
                 vec2 scaled = (screenUv - 0.5) / s + 0.5;
-                vec2 dockUv = scaled + offset;
+                vec2 dockUv = scaled + upstreamOffsetToLocalTextureUv(offset);
                 return mapDockUvToBackdrop(dockUv);
             }
 
@@ -426,8 +433,10 @@ final class Miuix307PrismalShader {
                 float edgeG = reflShell * pow(1.0 - cosVNrim, 1.35) * mix(0.07, 0.62, F);
                 edgeG *= mix(0.72, 0.38, smallGlass);
                 float reflW = min(0.9, edgeG * (0.1 + fresCtl * 0.46) * (0.28 + 0.72 * height));
-                vec2 reflDockUv = v_screenTexCoord + baseOffset
+                vec2 reflOffset = baseOffset
                     + gDir * (4.0 + 38.0 * pow(1.0 - cosVNrim, 1.25) + length(N.xy) * 14.0) / u_resolution * pxNorm;
+                vec2 reflDockUv = v_screenTexCoord
+                    + upstreamOffsetToLocalTextureUv(reflOffset);
                 vec2 reflUv = mapDockUvToBackdrop(reflDockUv);
                 vec3 reflSample;
                 if (u_useBlurredTexture == 1) {

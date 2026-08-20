@@ -13,44 +13,24 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/prismal-refraction-direction'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: fix/prismal-refraction-direction
-          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
-      - name: Apply optical basis fix
-        run: python3 tools/apply_prismal_refraction_direction_fix.py
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-refraction-direction-debug
+          name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      - name: Commit verified shader fix and restore standard CI
-        shell: bash
-        run: |
-          git fetch origin main --depth=1
-          git show origin/main:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
-          rm -f tools/apply_prismal_refraction_direction_fix.py
-          git config user.name 'yu4032'
-          git config user.email '4032542465@smail.lnu.edu.cn'
-          git add -A
-          git diff --cached --check
-          git commit -m 'fix: restore Prismal refraction direction'
-          git push origin HEAD:fix/prismal-refraction-direction
+      # Keep the same Gradle verification gates on main and active API101 development branches.
