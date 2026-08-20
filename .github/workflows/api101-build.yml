@@ -39,8 +39,7 @@ jobs:
           start = next(i for i, line in enumerate(source) if "python3 - <<'PY'" in line) + 1
           end = next(i for i in range(start, len(source)) if source[i].strip() == 'PY')
           body = source[start:end]
-          indent = min(len(line) - len(line.lstrip()) for line in body if line.strip())
-          script = '\n'.join(line[indent:] if len(line) >= indent else line for line in body) + '\n'
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in body) + '\n'
           Path('/tmp/prismal-parity-v4.py').write_text(script)
           PY
           python3 /tmp/prismal-parity-v4.py
