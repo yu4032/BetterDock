@@ -12,6 +12,9 @@ public class GridProfileRuntimeWiringTest {
         String source = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/ModuleMain.java"));
         assertTrue(source.contains("GridProfileConfig.PROFILE_KEY"));
+        assertTrue(source.contains("configReader.has(GridProfileConfig.PROFILE_KEY)"));
+        assertTrue(source.contains("? configReader.s(GridProfileConfig.PROFILE_KEY"));
+        assertTrue(source.contains(": \"10x6\""));
         assertTrue(source.contains("HomeGridProfile.fromPersisted"));
         assertTrue(source.contains("new MainHook().install(classLoader);"));
         assertTrue(source.contains("HomeGridProfileOverlayHook.install"));
