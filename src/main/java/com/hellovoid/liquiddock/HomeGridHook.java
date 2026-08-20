@@ -2,6 +2,8 @@ package com.hellovoid.liquiddock;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Insets;
+import android.view.WindowInsets;
 import io.github.libxposed.api.XposedInterface;
 
 import java.lang.reflect.Constructor;
@@ -493,6 +495,35 @@ final class HomeGridHook {
             boolean workstation = workstationAllApps
                     || workstationMode || MainHook.isWorkstationMode();
 
+            if (!workstation) {
+                int dockBarHeight = 0;
+                try {
+                    dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
+                            config, "getDockBarHeight"));
+                } catch (Throwable ignored) {}
+                int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
+                int edgeOffset = Math.max(0,
+                        portrait ? portraitLeft : landscapeLeft);
+                int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
+                int screenWidth = width;
+                android.view.View root = layout.getRootView();
+                if (root != null && root.getWidth() > 0) screenWidth = root.getWidth();
+                int margin = configuredMargin > 0
+                        ? configuredMargin
+                        : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
+                HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
+                        width, height, countX, countY,
+                        safe[0], safe[1], safe[2], safe[3],
+                        edgeOffset, margin);
+                HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
+                HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
+                HookUtil.setIntField(cellLayout, "mCellWidth", geometry.cellWidth);
+                HookUtil.setIntField(cellLayout, "mCellHeight", geometry.cellHeight);
+                HookUtil.setIntField(cellLayout, "mWidthGap", geometry.widthGap);
+                HookUtil.setIntField(cellLayout, "mHeightGap", geometry.heightGap);
+                return;
+            }
+
             // Laptop All Apps has its own GridType/GridConfig. Preserve that dedicated
             // geometry instead of replacing it with the normal Workspace centering formula.
             // Detection is version-tolerant and no longer depends on one private method.
@@ -597,6 +628,44 @@ final class HomeGridHook {
         } catch (Throwable e) {
             MainHook.log("[DC] CellLayout offset apply failed: " + e);
         }
+    }
+
+    private static int[] normalWorkspaceSafeInsets(
+            android.view.View layout, int dockBarHeight) {
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = Math.max(0, dockBarHeight);
+        try {
+            WindowInsets windowInsets = layout.getRootWindowInsets();
+            android.view.View root = layout.getRootView();
+            if (windowInsets == null || root == null) {
+                return new int[]{left, top, right, bottom};
+            }
+            Insets statusBars = windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.statusBars());
+            Insets systemBars = windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.systemBars());
+            int[] layoutScreen = new int[2];
+            int[] rootScreen = new int[2];
+            layout.getLocationOnScreen(layoutScreen);
+            root.getLocationOnScreen(rootScreen);
+
+            left = Math.max(0,
+                    rootScreen[0] + systemBars.left - layoutScreen[0]);
+            right = Math.max(0,
+                    layoutScreen[0] + layout.getWidth()
+                            - (rootScreen[0] + root.getWidth() - systemBars.right));
+            top = Math.max(0,
+                    rootScreen[1] + statusBars.top - layoutScreen[1]);
+            int systemBottom = Math.max(0,
+                    layoutScreen[1] + layout.getHeight()
+                            - (rootScreen[1] + root.getHeight() - systemBars.bottom));
+            bottom = Math.max(bottom, systemBottom);
+        } catch (Throwable e) {
+            MainHook.log("[DC] workspace system inset resolve failed: " + e);
+        }
+        return new int[]{left, top, right, bottom};
     }
 
     private static boolean isLaptopAllApps(Object cellLayout) {

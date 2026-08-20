@@ -94,14 +94,14 @@ private data class IntSpec(
 }
 
 private fun optionSummary(key: String): String = when (key) {
-    "grid_landscape_horizontal_distance" -> "同时调整横屏布局左右两侧的水平距离"
-    "grid_landscape_top_distance" -> "相对扣除 Dock 后的可用区域调整横屏顶部距离"
-    "grid_landscape_bottom_distance" -> "相对扣除 Dock 后的可用区域调整横屏底部距离"
-    "grid_portrait_horizontal_distance" -> "同时调整竖屏布局左右两侧的水平距离"
-    "grid_portrait_top_distance" -> "相对扣除 Dock 后的可用区域调整竖屏顶部距离"
-    "grid_portrait_bottom_distance" -> "相对扣除 Dock 后的可用区域调整竖屏底部距离"
-    "grid_landscape_row_gap" -> "增减横屏图标行之间的垂直距离"
-    "grid_portrait_row_gap" -> "增减竖屏图标行之间的垂直距离"
+    "grid_landscape_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"
+    "grid_landscape_top_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
+    "grid_landscape_bottom_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
+    "grid_portrait_horizontal_distance" -> "Edge Offset 只调整左右边缘，不改变纵向位置"
+    "grid_portrait_top_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
+    "grid_portrait_bottom_distance" -> "兼容旧配置；当前普通桌面纵向区域由状态栏与 Dock 自动计算"
+    "grid_landscape_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"
+    "grid_portrait_row_gap" -> "Margin 是图标单元实际间距；0 表示自动使用屏幕宽度的 0.9%"
     "indicator_landscape_y" -> "调整横屏页面指示器的垂直位置"
     "indicator_portrait_y" -> "调整竖屏页面指示器的垂直位置"
     "blur_radius" -> "仅用于原生模糊模式；液态玻璃使用独立模糊参数"
@@ -201,14 +201,10 @@ private fun optionSummary(key: String): String = when (key) {
 }
 
 private val gridSpecs = listOf(
-    IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏水平距离偏移"),
-    IntSpec(ConfigSchema.Grid.LANDSCAPE_TOP_DISTANCE, "横屏顶部距离偏移"),
-    IntSpec(ConfigSchema.Grid.LANDSCAPE_BOTTOM_DISTANCE, "横屏底部距离偏移"),
-    IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏水平距离偏移"),
-    IntSpec(ConfigSchema.Grid.PORTRAIT_TOP_DISTANCE, "竖屏顶部距离偏移"),
-    IntSpec(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE, "竖屏底部距离偏移"),
-    IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏图标纵向间距偏移"),
-    IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏图标纵向间距偏移"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, "横屏 Edge Offset"),
+    IntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, "横屏 Margin"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, "竖屏 Edge Offset"),
+    IntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, "竖屏 Margin"),
     IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
     IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
 )

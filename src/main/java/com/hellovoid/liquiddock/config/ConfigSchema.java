@@ -28,12 +28,12 @@ public final class ConfigSchema {
         public static final ConfigKey<Boolean> WIDGET_ADAPTATION = bool(
                 "grid_widget_adaptation", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> MARGINS_DP = bool(
-                "grid_margins_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
+                "grid_margins_dp", true, true, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> MARGINS_OFFSET = bool(
-                "grid_margins_offset", true, false, true, ConfigKey.ExportMode.ALWAYS);
+                "grid_margins_offset", true, true, true, ConfigKey.ExportMode.ALWAYS);
 
         public static final ConfigKey<Integer> LANDSCAPE_HORIZONTAL_DISTANCE = dp(
-                "grid_landscape_horizontal_distance", 0, 0, 0, -600, 600,
+                "grid_landscape_horizontal_distance", 0, 0, 0, 0, 600,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LANDSCAPE_TOP_DISTANCE = dp(
                 "grid_landscape_top_distance", 0, 0, 0, -600, 600,
@@ -42,7 +42,7 @@ public final class ConfigSchema {
                 "grid_landscape_bottom_distance", 0, 0, 0, -600, 600,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PORTRAIT_HORIZONTAL_DISTANCE = dp(
-                "grid_portrait_horizontal_distance", 0, 0, 0, -600, 600,
+                "grid_portrait_horizontal_distance", 0, 0, 0, 0, 600,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PORTRAIT_TOP_DISTANCE = dp(
                 "grid_portrait_top_distance", 0, 0, 0, -600, 600,
@@ -77,12 +77,12 @@ public final class ConfigSchema {
                 "grid_portrait_margin_bottom", 0, 0, 0, -2000, 2000,
                 ConfigKey.ExportMode.ALWAYS);
 
-        // Runtime defaults for row gaps are compatibility-dependent and stay in LiquidDockConfig.
+        // Row-gap keys now represent actual inter-cell Margin; zero selects automatic spacing.
         public static final ConfigKey<Integer> LANDSCAPE_ROW_GAP = dp(
-                "grid_landscape_row_gap", 0, null, 0, -200, 400,
+                "grid_landscape_row_gap", 0, 0, 0, 0, 400,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PORTRAIT_ROW_GAP = dp(
-                "grid_portrait_row_gap", 0, null, 0, -200, 400,
+                "grid_portrait_row_gap", 0, 0, 0, 0, 400,
                 ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LANDSCAPE_INDICATOR_Y = dp(
                 "indicator_landscape_y", 0, 0, 0, -160, 160,

@@ -75,8 +75,10 @@ final class LiquidDockConfig {
             portraitBottom = c.f(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE.name(),
                     c.f(ConfigSchema.Grid.PORTRAIT_MARGIN_BOTTOM.name(),
                             ConfigSchema.Grid.PORTRAIT_MARGIN_BOTTOM.runtimeFallback()));
-            landscapeRowGap = c.f("grid_landscape_row_gap", offsets ? 0 : (dp ? 1 : 3));
-            portraitRowGap = c.f("grid_portrait_row_gap", offsets ? 0 : (dp ? 1 : 3));
+            landscapeRowGap = c.f(ConfigSchema.Grid.LANDSCAPE_ROW_GAP.name(),
+                    ConfigSchema.Grid.LANDSCAPE_ROW_GAP.runtimeFallback());
+            portraitRowGap = c.f(ConfigSchema.Grid.PORTRAIT_ROW_GAP.name(),
+                    ConfigSchema.Grid.PORTRAIT_ROW_GAP.runtimeFallback());
             landscapeIndicatorY = c.f(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y.name(),
                     ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y.runtimeFallback());
             portraitIndicatorY = c.f(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y.name(),
