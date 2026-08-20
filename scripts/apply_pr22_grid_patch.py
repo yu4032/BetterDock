@@ -9,6 +9,14 @@ def file(path):
     return ROOT / path
 
 
+def replace_once(path, old, new, label):
+    p = file(path)
+    text = p.read_text()
+    if text.count(old) != 1:
+        raise SystemExit(f"{path}: {label} matched {text.count(old)} times")
+    p.write_text(text.replace(old, new, 1))
+
+
 def sub_once(path, pattern, replacement, flags=0, label=None):
     p = file(path)
     text = p.read_text()
@@ -25,43 +33,64 @@ def main():
         return
 
     schema = "src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java"
-    sub_once(schema,
-        r'("grid_margins_dp",\s*true,\s*)false(,\s*true,\s*ConfigKey\.ExportMode\.ALWAYS)',
-        r'\1true\2', label="MARGINS_DP runtime fallback")
-    sub_once(schema,
-        r'("grid_margins_offset",\s*true,\s*)false(,\s*true,\s*ConfigKey\.ExportMode\.ALWAYS)',
-        r'\1true\2', label="MARGINS_OFFSET runtime fallback")
-    sub_once(schema,
-        r'("grid_landscape_horizontal_distance",\s*0,\s*0,\s*0,\s*)-600(,\s*600)',
-        r'\g<1>0\2', label="landscape Edge Offset range")
-    sub_once(schema,
-        r'("grid_portrait_horizontal_distance",\s*0,\s*0,\s*0,\s*)-600(,\s*600)',
-        r'\g<1>0\2', label="portrait Edge Offset range")
-    sub_once(schema,
-        r'("grid_landscape_row_gap",\s*0,\s*null,\s*0,\s*)-200(,\s*400)',
-        r'\g<1>0\2', label="landscape Margin range")
-    sub_once(schema,
-        r'("grid_portrait_row_gap",\s*0,\s*null,\s*0,\s*)-200(,\s*400)',
-        r'\g<1>0\2', label="portrait Margin range")
-    p = file(schema)
-    text = p.read_text()
-    old_comment = "// Runtime defaults for row gaps are compatibility-dependent and stay in LiquidDockConfig."
-    if old_comment not in text:
-        raise SystemExit(f"{schema}: row-gap comment anchor missing")
-    p.write_text(text.replace(old_comment,
-        "// Row-gap keys now represent actual inter-cell Margin; zero selects automatic spacing.", 1))
+    replace_once(
+        schema,
+        '"grid_margins_dp", true, false, true, ConfigKey.ExportMode.ALWAYS)',
+        '"grid_margins_dp", true, true, true, ConfigKey.ExportMode.ALWAYS)',
+        "MARGINS_DP runtime fallback",
+    )
+    replace_once(
+        schema,
+        '"grid_margins_offset", true, false, true, ConfigKey.ExportMode.ALWAYS)',
+        '"grid_margins_offset", true, true, true, ConfigKey.ExportMode.ALWAYS)',
+        "MARGINS_OFFSET runtime fallback",
+    )
+    replace_once(
+        schema,
+        '"grid_landscape_horizontal_distance", 0, 0, 0, -600, 600,',
+        '"grid_landscape_horizontal_distance", 0, 0, 0, 0, 600,',
+        "landscape Edge Offset range",
+    )
+    replace_once(
+        schema,
+        '"grid_portrait_horizontal_distance", 0, 0, 0, -600, 600,',
+        '"grid_portrait_horizontal_distance", 0, 0, 0, 0, 600,',
+        "portrait Edge Offset range",
+    )
+    replace_once(
+        schema,
+        '"grid_landscape_row_gap", 0, null, 0, -200, 400,',
+        '"grid_landscape_row_gap", 0, 0, 0, 0, 400,',
+        "landscape Margin fallback/range",
+    )
+    replace_once(
+        schema,
+        '"grid_portrait_row_gap", 0, null, 0, -200, 400,',
+        '"grid_portrait_row_gap", 0, 0, 0, 0, 400,',
+        "portrait Margin fallback/range",
+    )
+    replace_once(
+        schema,
+        "// Runtime defaults for row gaps are compatibility-dependent and stay in LiquidDockConfig.",
+        "// Row-gap keys now represent actual inter-cell Margin; zero selects automatic spacing.",
+        "row-gap semantics comment",
+    )
 
     config = "src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java"
-    sub_once(config,
+    sub_once(
+        config,
         r'landscapeRowGap = c\.f\("grid_landscape_row_gap",\s*offsets \? 0 : \(dp \? 1 : 3\)\);',
         'landscapeRowGap = c.f(ConfigSchema.Grid.LANDSCAPE_ROW_GAP.name(),\n'
         '                    ConfigSchema.Grid.LANDSCAPE_ROW_GAP.runtimeFallback());',
-        label="landscape Margin fallback")
-    sub_once(config,
+        label="landscape Margin fallback",
+    )
+    sub_once(
+        config,
         r'portraitRowGap = c\.f\("grid_portrait_row_gap",\s*offsets \? 0 : \(dp \? 1 : 3\)\);',
         'portraitRowGap = c.f(ConfigSchema.Grid.PORTRAIT_ROW_GAP.name(),\n'
         '                    ConfigSchema.Grid.PORTRAIT_ROW_GAP.runtimeFallback());',
-        label="portrait Margin fallback")
+        label="portrait Margin fallback",
+    )
 
     main_replacement = '''        LiquidDockConfig.Grid grid = config.grid;
         boolean customGridEnabled = grid.enabled, dp = grid.dp;
@@ -82,18 +111,24 @@ def main():
     sub_once(
         "src/main/java/com/hellovoid/liquiddock/MainHook.java",
         r'        LiquidDockConfig\.Grid grid = config\.grid;\n.*?Math\.round\(grid\.portraitIndicatorY \* gridScale\)\);',
-        main_replacement, flags=re.S, label="MainHook normal grid setup")
+        main_replacement,
+        flags=re.S,
+        label="MainHook normal grid setup",
+    )
 
-    sub_once(home_path,
+    sub_once(
+        home_path,
         r'import android\.content\.res\.Configuration;\n',
         'import android.content.res.Configuration;\nimport android.graphics.Insets;\nimport android.view.WindowInsets;\n',
-        label="HomeGrid imports")
+        label="HomeGrid imports",
+    )
 
     p = file(home_path)
     text = p.read_text()
     workstation_pattern = re.compile(
         r'(\s*boolean workstation = workstationAllApps\s*\n'
-        r'\s*\|\| workstationMode \|\| MainHook\.isWorkstationMode\(\);)')
+        r'\s*\|\| workstationMode \|\| MainHook\.isWorkstationMode\(\);)'
+    )
     matches = list(workstation_pattern.finditer(text))
     if len(matches) != 1:
         raise SystemExit(f"{home_path}: workstation anchor matched {len(matches)} times")
@@ -168,9 +203,12 @@ def main():
     }
 
     private static boolean isLaptopAllApps(Object cellLayout) {'''
-    sub_once(home_path,
+    sub_once(
+        home_path,
         r'    private static boolean isLaptopAllApps\(Object cellLayout\) \{',
-        helper, label="normal Workspace safe-inset helper")
+        helper,
+        label="normal Workspace safe-inset helper",
+    )
 
     compose_path = "src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt"
     p = file(compose_path)
@@ -187,7 +225,9 @@ def main():
     }
     for key, value in summaries.items():
         pattern = re.compile(rf'(^\s*"{re.escape(key)}"\s*->\s*)"[^"]*"', re.M)
-        text, count = pattern.subn(lambda m, value=value: m.group(1) + '"' + value + '"', text, count=1)
+        text, count = pattern.subn(
+            lambda m, value=value: m.group(1) + '"' + value + '"', text, count=1
+        )
         if count != 1:
             raise SystemExit(f"{compose_path}: summary {key} matched {count} times")
     p.write_text(text)
@@ -201,11 +241,50 @@ def main():
     IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
 )
 private val dockSpecs'''
-    sub_once(compose_path,
+    sub_once(
+        compose_path,
         r'private val gridSpecs = listOf\(.*?\n\)\nprivate val dockSpecs',
-        grid_specs, flags=re.S, label="Compose gridSpecs")
+        grid_specs,
+        flags=re.S,
+        label="Compose gridSpecs",
+    )
 
-    print("PR22 grid spacing source patch applied")
+    # Update pre-existing schema tests to the approved non-negative slider domains.
+    schema_test = "src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java"
+    replace_once(
+        schema_test,
+        'assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, 0, -600, 600);',
+        'assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, 0, 0, 600);',
+        "landscape Edge Offset test range",
+    )
+    replace_once(
+        schema_test,
+        'assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, 0, -600, 600);',
+        'assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, 0, 0, 600);',
+        "portrait Edge Offset test range",
+    )
+    replace_once(
+        schema_test,
+        'assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, 0, -200, 400);',
+        'assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, 0, 0, 400);',
+        "landscape Margin test range",
+    )
+    replace_once(
+        schema_test,
+        'assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, 0, -200, 400);',
+        'assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, 0, 0, 400);',
+        "portrait Margin test range",
+    )
+
+    semantics_test = "src/test/java/com/hellovoid/liquiddock/GridSpacingSemanticsContractTest.java"
+    replace_once(
+        semantics_test,
+        '''        assertTrue(ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());\n    }''',
+        '''        assertTrue(ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());\n        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.LANDSCAPE_ROW_GAP.runtimeFallback());\n        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.PORTRAIT_ROW_GAP.runtimeFallback());\n    }''',
+        "Margin runtime fallback regression assertions",
+    )
+
+    print("PR22 grid spacing source + contract patch applied")
 
 
 if __name__ == "__main__":
