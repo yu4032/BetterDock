@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.junit.Test;
@@ -12,8 +13,11 @@ import org.junit.Test;
 /** Locks the complete retirement of LiquidDock v1.2's legacy S-curve refraction path. */
 public class LegacySCurveRetirementContractTest {
     private static final Path MAIN = Path.of("src/main");
+    private static final Path PRISMAL_MAIN = Path.of("prismal/src/main");
     private static final Path MIGRATION = MAIN.resolve(
             "java/com/hellovoid/liquiddock/config/ConfigMigration.java");
+    private static final Set<String> TEXT_EXTENSIONS = Set.of(
+            ".java", ".kt", ".glsl", ".xml", ".properties", ".json", ".txt");
 
     private static String read(String path) throws Exception {
         return Files.readString(Path.of(path));
@@ -60,9 +64,24 @@ public class LegacySCurveRetirementContractTest {
                 "u_legacyThicknessPx",
                 "v1.2 S形折射"
         };
-        try (Stream<Path> files = Files.walk(MAIN)) {
+        scanTextSources(MAIN, forbidden);
+        scanTextSources(PRISMAL_MAIN, forbidden);
+    }
+
+    @Test
+    public void migrationExplicitlyPurgesRetiredPreference() throws Exception {
+        String migration = Files.readString(MIGRATION);
+        assertTrue(migration.contains("removeRetiredGlassPreferences(preferences)"));
+        assertTrue(migration.indexOf("removeRetiredGlassPreferences(preferences)")
+                < migration.indexOf("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertTrue(migration.contains("e.remove(\"liquid_legacy_s_curve\")"));
+    }
+
+    private static void scanTextSources(Path root, String[] forbidden) throws Exception {
+        if (!Files.exists(root)) return;
+        try (Stream<Path> files = Files.walk(root)) {
             for (Path file : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
-                if (file.equals(MIGRATION)) continue;
+                if (file.equals(MIGRATION) || !isTextSource(file)) continue;
                 String source = Files.readString(file);
                 for (String token : forbidden) {
                     assertFalse(file + " still contains retired token " + token,
@@ -72,10 +91,11 @@ public class LegacySCurveRetirementContractTest {
         }
     }
 
-    @Test
-    public void migrationExplicitlyPurgesRetiredPreference() throws Exception {
-        String migration = Files.readString(MIGRATION);
-        assertTrue(migration.contains("removeRetiredGlassPreferences(preferences)"));
-        assertTrue(migration.contains("e.remove(\"liquid_legacy_s_curve\")"));
+    private static boolean isTextSource(Path file) {
+        String name = file.getFileName().toString();
+        for (String extension : TEXT_EXTENSIONS) {
+            if (name.endsWith(extension)) return true;
+        }
+        return false;
     }
 }
