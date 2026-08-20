@@ -35,6 +35,7 @@ jobs:
         run: |
           python tools/fix_prismal_patch_script.py
           python tools/apply_prismal_module_refactor.py
+          python tools/update_prismal_module_contracts.py
           git diff --check
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
@@ -51,7 +52,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git fetch origin main --depth=1
           git show origin/main:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
-          rm -f tools/apply_prismal_module_refactor.py tools/fix_prismal_patch_script.py
+          rm -f tools/apply_prismal_module_refactor.py tools/fix_prismal_patch_script.py tools/update_prismal_module_contracts.py
           git add -A
           git diff --cached --check
           if git diff --cached --quiet; then
