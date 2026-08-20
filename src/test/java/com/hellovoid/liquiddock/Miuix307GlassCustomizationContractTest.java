@@ -55,6 +55,19 @@ public class Miuix307GlassCustomizationContractTest {
     }
 
     @Test
+    public void liquidResetButtonUsesCurrentPresetAndDecimalStorageContract() throws Exception {
+        String schema = Files.readString(CONFIG);
+        String ui = Files.readString(UI);
+
+        assertTrue(ui.contains("PresetManager.defaultValues()"));
+        assertTrue(ui.contains("config.storageMode() == ConfigKey.StorageMode.DP_TENTHS"));
+        assertTrue(ui.contains("resetValue"));
+        assertTrue("official Prismal shadow softness must remain reachable from the GUI",
+                schema.contains("\"liquid_prismal_shadow_softness\", 100, 100, 100, 0, 2000"));
+        assertTrue(ui.contains("透镜折射倍率"));
+    }
+
+    @Test
     public void currentGuiDescriptionsMatchZeroCopyPrismalSemantics() throws Exception {
         String ui = Files.readString(UI);
 
