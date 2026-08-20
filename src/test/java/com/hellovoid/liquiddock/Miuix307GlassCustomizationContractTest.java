@@ -63,7 +63,7 @@ public class Miuix307GlassCustomizationContractTest {
         assertTrue(ui.contains("config.storageMode() == ConfigKey.StorageMode.DP_TENTHS"));
         assertTrue(ui.contains("resetValue"));
         assertTrue("official Prismal shadow softness must remain reachable from the GUI",
-                schema.contains("\"liquid_prismal_shadow_softness\", 100, 100, 100, 0, 2000"));
+                schema.contains("\"liquid_prismal_shadow_softness\", 1000, 1000, 100, 0, 2000"));
         assertTrue(ui.contains("透镜折射倍率"));
     }
 

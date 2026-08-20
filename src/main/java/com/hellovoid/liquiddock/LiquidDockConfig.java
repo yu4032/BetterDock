@@ -231,8 +231,7 @@ final class LiquidDockConfig {
             normalStrength = c.i(ConfigSchema.Glass.NORMAL_STRENGTH.name(),
                     ConfigSchema.Glass.NORMAL_STRENGTH.runtimeFallback()) / 100f;
             dome = c.i(ConfigSchema.Glass.DOME.name(), ConfigSchema.Glass.DOME.runtimeFallback()) / 100f;
-            lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(),
-            ConfigSchema.Glass.LENS_REFRACTION.runtimeFallback());
+            lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(), 1.3f);
     depthEffect = c.i(ConfigSchema.Glass.DEPTH_EFFECT.name(),
             ConfigSchema.Glass.DEPTH_EFFECT.runtimeFallback()) / 100f;
     legacySCurveStrength = c.i(ConfigSchema.Glass.LEGACY_S_CURVE.name(),
@@ -262,8 +261,7 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE.runtimeFallback()) / 100f;
             prismalHeightTransitionWidth = c.f(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.name(),
                     ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.runtimeFallback());
-            prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(),
-                    ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.runtimeFallback());
+            prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(), 1.8f);
             prismalEdgeRefractionFalloff = c.i(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.name(),
                     ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.runtimeFallback()) / 100f;
             prismalFresnelReflect = c.i(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT.name(),

@@ -211,11 +211,11 @@ public final class ConfigSchema {
         public static final ConfigKey<Boolean> MIUIX_307_PIPELINE = bool(
                 "liquid_miuix_307_pipeline", false, false, false, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BLUR = dp(
-                "liquid_blur", 6, 6, 6, 0, 60, ConfigKey.ExportMode.ALWAYS);
+                "liquid_blur", 2, 2, 6, 0, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CHROMATIC = integer(
-                "liquid_chromatic", 2, 2, 2, 0, 40, ConfigKey.ExportMode.ALWAYS);
+                "liquid_chromatic", 26, 26, 2, 0, 40, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> TINT_ALPHA = integer(
-                "liquid_tint_alpha", 38, 38, 38, 0, 160, ConfigKey.ExportMode.ALWAYS);
+                "liquid_tint_alpha", 35, 35, 38, 0, 160, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_FPS = integer(
                 "liquid_capture_power_limit_fps", 20, 20, 20, 5, 60, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_STOP_DELAY = integer(
@@ -235,12 +235,12 @@ public final class ConfigSchema {
         public static final ConfigKey<Integer> NORMAL_STRENGTH = integer(
                 "liquid_normal_strength", 115, 115, 115, 0, 300, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> DOME = integer(
-                "liquid_dome", 100, 100, 100, 0, 200, ConfigKey.ExportMode.ALWAYS);
+                "liquid_dome", 130, 130, 100, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LENS_REFRACTION = dp(
-        "liquid_lens_refraction", 12, 12, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);
-public static final ConfigKey<Integer> LEGACY_S_CURVE = integer(
-        "liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey.ExportMode.ALWAYS);
-public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
+                "liquid_lens_refraction", 1, 1, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> LEGACY_S_CURVE = integer(
+                "liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
                 "liquid_capture_scale", 50, 50, 50, 10, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> DYNAMIC_APP_CAPTURE = bool(
                 "liquid_dynamic_app_capture", true, true, true, ConfigKey.ExportMode.ALWAYS);
@@ -263,21 +263,21 @@ public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
         public static final ConfigKey<Integer> HIGHLIGHT_WIDTH = integer(
                 "liquid_highlight_width", 100, 100, 100, 20, 300, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> TINT_RED = integer(
-                "liquid_tint_r", 238, 238, 238, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_tint_r", 0, 0, 238, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> TINT_GREEN = integer(
-                "liquid_tint_g", 244, 244, 244, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_tint_g", 0, 0, 244, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> TINT_BLUE = integer(
                 "liquid_tint_b", 255, 255, 255, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> DEPTH_EFFECT = integer(
-                "liquid_depth_effect", 8, 8, 8, 0, 50, ConfigKey.ExportMode.ALWAYS);
+                "liquid_depth_effect", 0, 0, 8, 0, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> BRIGHTNESS = integer(
                 "liquid_brightness", 108, 108, 108, 50, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SPECULAR_SHARPNESS = integer(
                 "liquid_specular_sharp", 88, 88, 88, 1, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> SPECULAR_STRENGTH = integer(
-                "liquid_specular_strength", 105, 105, 105, 0, 300, ConfigKey.ExportMode.ALWAYS);
+                "liquid_specular_strength", 152, 152, 105, 0, 300, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> RIM_LIGHT = integer(
-                "liquid_rim_light", 100, 100, 100, 0, 300, ConfigKey.ExportMode.ALWAYS);
+                "liquid_rim_light", 122, 122, 100, 0, 300, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAUSTICS = integer(
                 "liquid_caustics", 28, 28, 28, 0, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> EDGE_BAND = integer(
@@ -290,17 +290,17 @@ public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
         // Current Prismal upstream controls. Percent-like values use x100 storage;
         // distance-valued controls use the existing DP_TENTHS representation.
         public static final ConfigKey<Integer> PRISMAL_REFRACTION_INSET = dp(
-                "liquid_prismal_refraction_inset", 5, 5, 5, 0, 80, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_refraction_inset", 20, 20, 5, 0, 80, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_DISPLACEMENT_SCALE = integer(
-                "liquid_prismal_displacement_scale", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_displacement_scale", 115, 115, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_HEIGHT_TRANSITION_WIDTH = dp(
-                "liquid_prismal_height_transition_width", 15, 15, 15, 1, 120, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_height_transition_width", 19, 19, 15, 1, 120, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SMIN_SMOOTHING = dp(
                 "liquid_prismal_smin_smoothing", 2, 2, 2, 0, 24, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_EDGE_REFRACTION_FALLOFF = integer(
-                "liquid_prismal_edge_refraction_falloff", 200, 200, 200, 0, 2000, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_edge_refraction_falloff", 400, 400, 200, 0, 2000, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_FRESNEL_REFLECT = integer(
-                "liquid_prismal_fresnel_reflect", 79, 79, 79, 0, 500, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_fresnel_reflect", 198, 198, 79, 0, 500, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_DISPERSION_R = integer(
                 "liquid_prismal_dispersion_r", 100, 100, 100, 0, 400, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_DISPERSION_B = integer(
@@ -310,19 +310,19 @@ public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
         public static final ConfigKey<Integer> PRISMAL_PLAIN_HIGHLIGHT = integer(
                 "liquid_prismal_plain_highlight", 8, 8, 8, 0, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_LIGHT_DIR_X = integer(
-                "liquid_prismal_light_dir_x", 100, 100, 100, -200, 200, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_light_dir_x", -50, -50, 100, -200, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_LIGHT_DIR_Y = integer(
-                "liquid_prismal_light_dir_y", 62, 62, 62, -200, 200, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_light_dir_y", -80, -80, 62, -200, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_RED = integer(
-                "liquid_prismal_shadow_r", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_shadow_r", 255, 255, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_GREEN = integer(
-                "liquid_prismal_shadow_g", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_shadow_g", 255, 255, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_BLUE = integer(
-                "liquid_prismal_shadow_b", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_shadow_b", 255, 255, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_ALPHA = integer(
-                "liquid_prismal_shadow_alpha", 0, 0, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_shadow_alpha", 35, 35, 0, 0, 255, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_SHADOW_SOFTNESS = integer(
-        "liquid_prismal_shadow_softness", 100, 100, 100, 0, 2000, ConfigKey.ExportMode.ALWAYS);
+                "liquid_prismal_shadow_softness", 1000, 1000, 100, 0, 2000, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_TRANSMITTANCE = integer(
                 "liquid_prismal_transmittance", 100, 100, 100, 0, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> PRISMAL_BACKDROP_SCALE_X = integer(

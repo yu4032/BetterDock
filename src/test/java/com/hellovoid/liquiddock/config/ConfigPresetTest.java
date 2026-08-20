@@ -69,14 +69,14 @@ public class ConfigPresetTest {
         expected.put("liquid_ior", 155);
         expected.put("liquid_normal_strength", 115);
         expected.put("liquid_dome", 130);
-        expected.put("liquid_chromatic", 2);
+        expected.put("liquid_chromatic", 26);
         expected.put("liquid_tint_alpha", 35);
         expected.put("liquid_tint_r", 0);
         expected.put("liquid_tint_g", 0);
         expected.put("liquid_tint_b", 255);
         expected.put("liquid_highlight_width", 100);
         expected.put("liquid_highlight_alpha", 100);
-        expected.put("liquid_depth_effect", 8);
+        expected.put("liquid_depth_effect", 0);
         expected.put("liquid_brightness", 108);
         expected.put("liquid_specular_sharp", 88);
         expected.put("liquid_specular_strength", 152);

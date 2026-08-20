@@ -152,24 +152,24 @@ public final class PresetManager {
         values.put("dock_divider_enabled", false);
         values.put("blur_radius", 100);
 
-        // Prismal Quick Start optics with LiquidDock's intentional chromatic-strength override.
-        // Keep this preset synchronized with the zero-copy material defaults.
+        // Effective Prismal v1.0.6 Quick Start optics: PrismalFrameLayout defaults followed
+        // by PrismalLiquidGlass.applyBase(). Keep synchronized with runtime fallbacks.
         values.put("liquid_glass", true);
         values.put("liquid_dimensions_dp", true);
         values.put("liquid_blur_mode", "shader");
         values.put("liquid_ior", 155);
         values.put("liquid_normal_strength", 115);
         values.put("liquid_dome", 130);
-        values.put("liquid_chromatic", 2);
+        values.put("liquid_chromatic", 26);
         values.put("liquid_tint_alpha", 35);
         values.put("liquid_tint_r", 0);
         values.put("liquid_tint_g", 0);
         values.put("liquid_tint_b", 255);
         values.put("liquid_highlight_width", 100);
         values.put("liquid_highlight_alpha", 100);
-        values.put("liquid_depth_effect", 8);
-values.put("liquid_legacy_s_curve", 0);
-values.put("liquid_brightness", 108);
+        values.put("liquid_depth_effect", 0);
+        values.put("liquid_legacy_s_curve", 0);
+        values.put("liquid_brightness", 108);
         values.put("liquid_specular_sharp", 88);
         values.put("liquid_specular_strength", 152);
         values.put("liquid_rim_light", 122);

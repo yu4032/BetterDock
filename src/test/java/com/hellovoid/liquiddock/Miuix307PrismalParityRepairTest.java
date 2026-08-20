@@ -34,7 +34,7 @@ public class Miuix307PrismalParityRepairTest {
         assertEquals(1.8f, p.sminSmoothingPx, EPS);
         assertEquals(20f, p.refractionInsetPx, EPS);
         assertEquals(4f, p.edgeRefractionFalloff, EPS);
-        assertEquals(2f, p.chromaticAberration, EPS);
+        assertEquals(26f, p.chromaticAberration, EPS);
         assertEquals(1.08f, p.brightness, EPS);
         assertEquals(1.22f, p.rimLight, EPS);
         assertEquals(1.52f, p.specularStrength, EPS);

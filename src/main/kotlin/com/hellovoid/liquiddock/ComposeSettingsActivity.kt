@@ -135,21 +135,21 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
-    "liquid_blur" -> "液态玻璃对实时 OES 背景的模糊范围"
+    "liquid_blur" -> "Prismal 模糊半径；zero-copy 后端在半分辨率双通道 FBO 中使用，默认 2"
     "liquid_thickness" -> "影响 Snell 折射路径的虚拟玻璃厚度"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
     "liquid_normal_strength" -> "Prismal 表面高度场对法线的影响"
     "liquid_dome" -> "控制玻璃穹顶/meniscus 的凸起程度"
     "liquid_lens_refraction" -> "Prismal 边缘透镜位移倍率；迁移后的常用值约 1.3×，过高会快速达到短边位移上限"
     "liquid_legacy_s_curve" -> "旧版整片 SDF 折射几何：0=关闭，100=复现 v1.2.0，200=双倍"
-    "liquid_chromatic" -> "Prismal 色散总强度"
+    "liquid_chromatic" -> "Prismal RGB 色散总强度；v1.0.6 Quick Start 有效默认值为 26"
     "liquid_tint_alpha" -> "玻璃颜色乘色强度"
     "liquid_tint_r" -> "玻璃颜色 · 红"
     "liquid_tint_g" -> "玻璃颜色 · 绿"
     "liquid_tint_b" -> "玻璃颜色 · 蓝"
     "liquid_highlight_width" -> "同时调整 Fresnel 轮廓与边缘高光带宽"
     "liquid_highlight_alpha" -> "LiquidDock 对 Prismal 高光总强度的兼容倍率"
-    "liquid_depth_effect" -> "控制透镜方向向中心偏转的混合强度；数值越高越偏向径向折射"
+    "liquid_depth_effect" -> "控制透镜方向向中心偏转：0=Prismal 自动（normalStrength×0.9，最高 1.0）；1–100=手动覆盖"
     "liquid_brightness" -> "Prismal 整体输出亮度"
     "liquid_specular_sharp" -> "Prismal 镜面高光锐度"
     "liquid_specular_strength" -> "Prismal 双镜面高光强度"
@@ -172,7 +172,7 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_prismal_shadow_g" -> "Prismal 内阴影 · 绿"
     "liquid_prismal_shadow_b" -> "Prismal 内阴影 · 蓝"
     "liquid_prismal_shadow_alpha" -> "Prismal 内阴影透明度"
-    "liquid_prismal_shadow_softness" -> "Prismal 内阴影扩散柔和度"
+    "liquid_prismal_shadow_softness" -> "Prismal 内阴影柔和度；界面值按 ×100 存储，1000 对应 shader 10.0"
     "liquid_prismal_transmittance" -> "Prismal 玻璃最终透射/Alpha"
     "liquid_prismal_backdrop_scale_x" -> "Prismal 背景取样水平缩放"
     "liquid_prismal_backdrop_scale_y" -> "Prismal 背景取样垂直缩放"
@@ -258,7 +258,7 @@ private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台 Dock 图标下间距"),
 )
 private val liquidSpecs = listOf(
-    IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊"),
+    IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),
     IntSpec(ConfigSchema.Glass.THICKNESS, "玻璃厚度"),
     IntSpec(ConfigSchema.Glass.IOR, "折射率 IOR", "%"),
     IntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, "法线强度", "%"),
@@ -297,7 +297,7 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, "Prismal · 内阴影绿", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, "Prismal · 内阴影蓝", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, "Prismal · 内阴影透明度", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, "Prismal · 透射率", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "Prismal · 背景缩放 X", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
