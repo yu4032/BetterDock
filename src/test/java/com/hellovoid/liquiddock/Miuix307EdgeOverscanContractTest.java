@@ -1,9 +1,11 @@
 package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import com.hellovoid.prismal.PrismalParams;
+import com.hellovoid.prismal.PrismalSampling;
 
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -14,24 +16,30 @@ import org.junit.Test;
 /** Contracts that keep Prismal refraction continuous as scene content approaches the Dock edge. */
 public class Miuix307EdgeOverscanContractTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
+    private static final Path PRISMAL = Path.of("prismal/src/main/java/com/hellovoid/prismal");
 
     @Test
     public void zeroCopyBackdropKeepsRealPixelsBeyondTheVisibleDock() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
-        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String renderer = Files.readString(PRISMAL.resolve("PrismalRenderer.java"));
+        String fragment = Files.readString(Path.of("prismal/src/main/res/raw/prismal_fragment.glsl"));
 
         assertTrue("normalization FBO must keep the 32dp base and asymmetric resolved insets",
                 view.contains("EDGE_OVERSCAN_DP")
                         && view.contains("horizontalOverscanPx()")
                         && view.contains("SamplingInsets")
                         && view.contains("insets.left")
-                        && view.contains("insets.right")
-                        && view.contains("uDockUvRect"));
-        assertTrue("Prismal must map Dock-local UV into the larger overscan texture",
-                shader.contains("uniform vec4  u_dockUvRect")
-                        && shader.contains("u_dockUvRect.xy + dockUv * u_dockUvRect.zw"));
-        assertFalse("Dock-local UV must not be clamped before it can enter the overscan ring",
-                shader.contains("return clamp(scaled + offset, vec2(0.0), vec2(1.0));"));
+                        && view.contains("insets.right"));
+        assertTrue("Dock adapter must place the visible glass inside the larger Prismal framebuffer",
+                view.contains("createPrismalGeometry()")
+                        && view.contains("dockUvLeft")
+                        && view.contains("dockUvBottom")
+                        && view.contains("dockUvWidth * fboWidth")
+                        && view.contains("dockUvHeight * fboHeight"));
+        assertTrue("portable Prismal must own a full-frame source and output target",
+                renderer.contains("sourceFramebuffer") && renderer.contains("outputFramebuffer"));
+        assertTrue("official Prismal backdrop sampling stays in framebuffer UV",
+                fragment.contains("return clamp(scaled + offset, vec2(0.0), vec2(1.0));"));
     }
 
     @Test
@@ -42,27 +50,18 @@ public class Miuix307EdgeOverscanContractTest {
         assertTrue(view.contains("validDockLeft") && view.contains("validDockTop"));
         assertTrue("normalization mirror guard must use overscan-sample validity",
                 view.contains("validSampleLeft, validSampleBottom, validSampleRight, validSampleTop"));
-        assertTrue("material coverage/scissor must remain tied to the visible Dock",
+        assertTrue("final coverage/scissor must remain tied to the visible Dock",
                 view.contains("producerCoverage = dock.coverage")
                         && view.contains("validDockLeft * outputWidth")
                         && view.contains("validDockBottom * outputHeight"));
     }
 
     @Test
-    public void opticalSamplingGuardCoversCurrentPrismalDisplacementBudget() throws Exception {
-        Method method;
-        try {
-            method = Miuix307PrismalMaterial.class.getDeclaredMethod(
-                    "requiredSampleGuardPx",
-                    Miuix307PrismalMaterial.Params.class, int.class, int.class, boolean.class);
-        } catch (NoSuchMethodException missing) {
-            fail("Miuix307PrismalMaterial.requiredSampleGuardPx must size overscan from optics");
-            return;
-        }
-        method.setAccessible(true);
-        Miuix307PrismalMaterial.Params defaults = Miuix307PrismalMaterial.defaults(1f);
-        int horizontal = (Integer) method.invoke(null, defaults, 2302, 233, true);
-        int vertical = (Integer) method.invoke(null, defaults, 2302, 233, false);
+    public void opticalSamplingGuardCoversOfficialPrismalDisplacementBudget() {
+        PrismalParams defaults = Miuix307PrismalAdapter.toPortable(
+                Miuix307PrismalMaterial.defaults(1f));
+        int horizontal = PrismalSampling.requiredGuardPx(defaults, 2302, 233, true);
+        int vertical = PrismalSampling.requiredGuardPx(defaults, 2302, 233, false);
 
         assertTrue("default horizontal optics need substantially more than the old fixed 32dp ring",
                 horizontal >= 256);
@@ -73,25 +72,20 @@ public class Miuix307EdgeOverscanContractTest {
     }
 
     @Test
-    public void halfResolutionGaussianBlurAddsItsOwnFullResolutionHalo() throws Exception {
-        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
-        assertTrue(view.contains("private static final int BLUR_KERNEL_RADIUS_TEXELS = 15;"));
-        assertTrue(view.contains("private int blurSamplingGuardPx()"));
-        assertTrue(view.contains(
-                "BLUR_KERNEL_RADIUS_TEXELS / Math.max(BLUR_FBO_SCALE, 0.0001f)"));
-        assertTrue("blur halo must be added after the material optical reach is known",
-                view.contains("int opticalX = Miuix307PrismalMaterial.requiredSampleGuardPx(")
-                        && view.contains("int opticalY = Miuix307PrismalMaterial.requiredSampleGuardPx(")
-                        && view.contains("int blurGuard = blurSamplingGuardPx();")
-                        && view.contains("opticalX += blurGuard;")
-                        && view.contains("opticalY += blurGuard;"));
+    public void halfResolutionGaussianBlurHaloIsOwnedByPortablePrismalSampling() throws Exception {
+        String sampling = Files.readString(PRISMAL.resolve("PrismalSampling.java"));
+        assertTrue(sampling.contains("BLUR_FBO_SCALE = 0.5f"));
+        assertTrue(sampling.contains("BLUR_KERNEL_RADIUS = 15"));
+        assertTrue(sampling.contains("BLUR_KERNEL_RADIUS / BLUR_FBO_SCALE"));
+        assertTrue("blur halo must be part of the portable model sampling budget",
+                sampling.contains("+ chromatic + reflection + blur + 2f"));
     }
 
     @Test
-    public void resolvedSamplingInsetsUseOpticalGuardAsAMinimumWithoutDiscardingGuiExtras() throws Exception {
+    public void resolvedSamplingInsetsUsePortableOpticalGuardWithoutDiscardingGuiExtras() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("private SamplingInsets resolveSamplingInsets(int width, int height)"));
-        assertTrue(view.contains("Miuix307PrismalMaterial.requiredSampleGuardPx("));
+        assertTrue(view.contains("PrismalSampling.requiredGuardPx("));
         assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, leftExtraOverscanPx), opticalX)"));
         assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX)"));
         assertTrue(view.contains("Math.max(Math.max(0, topOverscanPx), opticalY)"));
