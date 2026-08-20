@@ -26,6 +26,8 @@ jobs:
         run: python3 scripts/apply_pr22_grid_patch.py
       - name: Align grid contract tests
         run: python3 scripts/apply_pr22_grid_contract_tests.py
+      - name: Apply device geometry repair
+        run: python3 scripts/apply_pr22_grid_device_fix.py
       - run: chmod +x ./gradlew
       - name: Verify unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -34,7 +36,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-4-slider-debug
+          name: LiquidDock-grid-device-fix-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
@@ -52,8 +54,9 @@ jobs:
                   src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
                   src/main/java/com/hellovoid/liquiddock/MainHook.java \
                   src/main/java/com/hellovoid/liquiddock/HomeGridHook.java \
+                  src/main/java/com/hellovoid/liquiddock/HomeGridGeometryPolicy.java \
                   src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt \
                   src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java \
                   src/test/java/com/hellovoid/liquiddock/GridSpacingSemanticsContractTest.java
-          git commit -m "fix: separate home grid edge offset and margin [grid-spacing-applied]"
+          git commit -m "fix: restore launcher grid geometry contract [device-geometry-fix]"
           git push origin HEAD:feat/port-grid-10x6-v2
