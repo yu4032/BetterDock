@@ -11,15 +11,18 @@ import org.junit.Test;
 public class WorkstationDockBackgroundRecoveryContractTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
-    @Test public void hierarchyDetachInvalidatesTheZeroCopyBindingBeforeRebind() throws Exception {
-        String pipeline = Files.readString(MAIN.resolve("Miuix307MaterialPipeline.java"));
+    @Test public void hierarchyDetachClearsTheZeroCopyBindingWithoutRestoringStrongViewState() throws Exception {
+        String host = Files.readString(MAIN.resolve("DockLiquidGlassHostView.java"));
         String glass = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
 
-        assertTrue(pipeline.contains("MiuixGlassHook.invalidateBinding(watchedBackground);"));
-        assertTrue(glass.contains("static void invalidateBinding(View dockBg)"));
-        assertTrue(glass.contains("bindingInvalidated = true;"));
-        assertTrue(glass.contains("if (bindingInvalidated) return false;"));
+        assertTrue(host.contains("MiuixGlassHook.onHostDetached(this);"));
+        assertTrue(glass.contains("static void onHostDetached(DockLiquidGlassHostView detachedHost)"));
         assertTrue(glass.contains("Miuix307ZeroCopyRenderer.clear();"));
+        assertTrue(glass.contains("clearTrackedViews();"));
+        assertTrue(glass.contains("WeakReference<DockLiquidGlassHostView> hostRef"));
+        assertTrue(glass.contains("WeakReference<View> backgroundRef"));
+        assertFalse(glass.contains("private static View backgroundRef;"));
+        assertFalse(glass.contains("private static DockLiquidGlassHostView hostRef;"));
     }
 
     @Test public void hotSeatsAttachRecoversWhicheverMaterialThemeIsCurrent() throws Exception {
@@ -31,6 +34,7 @@ public class WorkstationDockBackgroundRecoveryContractTest {
         assertTrue(pipeline.contains("View background = resolveBackground(hotSeats);"));
         assertTrue(pipeline.contains("ensureGlassBound(background, config, classLoader);"));
 
+        // Avoid the old inherited View/FrameLayout hook; recover at the concrete HotSeats boundary.
         assertFalse(pipeline.contains("installBackgroundAttachRecovery(backgroundClass"));
     }
 }
