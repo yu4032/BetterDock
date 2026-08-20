@@ -66,6 +66,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":prismal"))
+
     // API 101 is provided by the Xposed framework inside hooked processes.
     compileOnly("io.github.libxposed:api:101.0.1")
     // The module app uses the companion service binder to read/write Remote Preferences.
