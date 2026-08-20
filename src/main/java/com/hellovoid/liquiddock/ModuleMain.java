@@ -26,6 +26,12 @@ public final class ModuleMain extends XposedModule {
             LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
 
             new MainHook().install(classLoader);
+            if (runtimeConfig.enabled) {
+                FolderWidgetGlassProbe.install(classLoader);
+                if (runtimeConfig.glass.enabled) {
+                    LargeFolderNativeBlurPrototype.install(classLoader);
+                }
+            }
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
         } catch (Throwable error) {
