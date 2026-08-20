@@ -36,6 +36,33 @@ jobs:
             exit 1
           fi
           git diff --check
+      - name: Android compile compatibility follow-up
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          settings = Path('src/main/java/com/hellovoid/liquiddock/SettingsActivity.java')
+          text = settings.read_text()
+          old = 'ProcessBuilder.Redirect.DISCARD'
+          new = 'ProcessBuilder.Redirect.to(new java.io.File("/dev/null"))'
+          count = text.count(old)
+          if count == 2:
+              settings.write_text(text.replace(old, new))
+          elif count != 0 or text.count(new) != 2:
+              raise SystemExit(f'SettingsActivity: unexpected redirect state: old={count}, new={text.count(new)}')
+
+          codec = Path('src/main/java/com/hellovoid/liquiddock/config/ConfigCodec.java')
+          text = codec.read_text()
+          old = 'private static void importDp(ConfigKey<Integer> key, Object value, Map<String, Object> out)'
+          new = 'private static void importDp(ConfigKey<?> key, Object value, Map<String, Object> out)'
+          count = text.count(old)
+          if count == 1:
+              codec.write_text(text.replace(old, new, 1))
+          elif count != 0 or text.count(new) != 1:
+              raise SystemExit(f'ConfigCodec: unexpected importDp state: old={count}, new={text.count(new)}')
+          PY
+          git diff --check
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -66,6 +93,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m 'fix: repair confirmed lifecycle and config bugs'
+          git pull --rebase origin fix/glass-controls-s-curve
           git push origin HEAD:fix/glass-controls-s-curve
       - name: Lint audit without crashing Bidi detector
         continue-on-error: true
