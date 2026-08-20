@@ -709,6 +709,30 @@ final class Miuix307PassBlurTextureView extends TextureView
         postOnAnimation(() -> bindProducerWhenReady(attempt + 1));
     }
 
+    private void rebindProducerForRootChange(ProducerGeometry geometry) {
+        Miuix307PassBlurBridge.Binding staleBinding = binding;
+        if (shuttingDown || staleBinding == null) return;
+
+        binding = null;
+        gpuBackdropActive = false;
+        activationExhausted = false;
+        hasConsumedFrame = false;
+        frameAvailable.set(false);
+        firstFrameLogged = false;
+        firstDrawLogged = false;
+        firstMatrixLogged = false;
+        stageBDiagnosticsLogged = false;
+        resetBoundGeometry();
+        Miuix307PassBlurBridge.unbind(staleBinding);
+
+        MainHook.log(TAG + " producer root changed; rebinding PassBlur"
+                + " oldRoot=" + staleBinding.rootName
+                + " nextSurface=" + geometry.surfaceWidth + "x" + geometry.surfaceHeight
+                + " nextBuffer=" + geometry.bufferWidth + "x" + geometry.bufferHeight
+                + " nextConfigRot=" + geometry.configRotation);
+        bindProducerWhenReady(0);
+    }
+
     private void installGeometryObserver() {
         removeGeometryObserver();
         View root = getRootView();
@@ -743,7 +767,10 @@ final class Miuix307PassBlurTextureView extends TextureView
 
         ProducerGeometry geometry = readSurfaceGeometry(materialHost);
         if (geometry == null || geometry.rootSurface == null || !geometry.rootSurface.isValid()) return;
-        if (!isSameSurface(binding.rootSurface, geometry.rootSurface)) return;
+        if (!isSameSurface(binding.rootSurface, geometry.rootSurface)) {
+            rebindProducerForRootChange(geometry);
+            return;
+        }
         if (geometry.surfaceWidth == boundSurfaceWidth
                 && geometry.surfaceHeight == boundSurfaceHeight
                 && geometry.bufferWidth == boundBufferWidth
