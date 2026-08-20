@@ -20,7 +20,7 @@
 1. `FolderWidgetGlassProbe`：只读记录大文件夹以及 `LauncherAppWidgetHostView` / `MaMlHostView` 的 class、parent、attach/detach、尺寸、screen rect 和可解析的圆角信息，不改变视觉状态。
 2. `LargeFolderNativeBlurPrototype`：对已识别的大文件夹在 stock plate 下方插入 `BackgroundBlurDrawable` 原型层；编辑模式、打开文件夹、detach 或 hidden-API 失败时恢复 stock plate。该 prototype 不创建新的 PassBlur producer。
 
-步骤 1/2 目前仅完成代码与 CI 构建验证，尚未完成目标设备行为验证。
+步骤 1/2 目前仅完成代码与 CI 构建验证，尚未完成目标设备行为验证。拖拽态目前由 probe 观察 attach/detach 与几何变化，尚未单独给 `DragView` 建原生 blur；是否需要专门的 drag-preview fallback 由本轮设备日志决定。
 
 ## 1. 大文件夹
 
@@ -169,7 +169,7 @@ Launcher root
 ## 6. 推荐实现顺序
 
 1. **Probe-only commit**：只 hook/记录大文件夹和两类 widget host 的 class、parent、size、radius、attach/detach、screen rect，不改视觉。 **已实现，待设备验证。**
-2. **大文件夹 native-blur prototype**：仅一个背景 target，验证编辑/打开/拖拽生命周期。 **已实现基础 prototype，待设备验证。**
+2. **大文件夹 native-blur prototype**：仅一个背景 target，验证编辑/打开/拖拽生命周期。 **已实现基础 prototype，编辑/打开/失败 fallback 已编码；拖拽行为待设备验证。**
 3. **widget native-blur prototype**：同时覆盖 `LauncherAppWidgetHostView` 和 `MaMlHostView`，默认 glass-behind-content。
 4. **Shared backdrop source prototype**：先只注册一个 folder + 一个 widget target，验证一 source 多 target 的 geometry/OES mapping。
 5. **Dock source migration**：把 Dock 改成同一 shared source 的 target；这一步完成后才允许 full Prismal folder/widget 与 Dock 同时启用。
