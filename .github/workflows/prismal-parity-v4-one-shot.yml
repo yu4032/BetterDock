@@ -22,40 +22,47 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
-      - name: Apply Prismal v1.0.6 parity fixes
+      - name: Apply verify and commit Prismal parity repair
         shell: bash
         run: |
-          python3 - <<'PY'
+          set -o pipefail
+          LOG=/tmp/prismal-parity-v4.log
+          : > "$LOG"
+          set +e
+          python3 - <<'PY' 2>&1 | tee -a "$LOG"
           from pathlib import Path
           import re
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one match, got {count}: {old[:100]!r}')
-              p.write_text(text.replace(old, new, 1))
+          def text(path):
+              return Path(path).read_text()
 
-          def regex_once(path, pattern, repl, flags=0):
-              p = Path(path)
-              text = p.read_text()
-              new, count = re.subn(pattern, repl, text, count=1, flags=flags)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one regex match, got {count}: {pattern!r}')
-              p.write_text(new)
+          def write(path, value):
+              Path(path).write_text(value)
 
-          # 1) Persisted current preset: match effective PrismalFrameLayout + applyBase state.
+          def replace1(path, old, new):
+              value = text(path)
+              count = value.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: replace expected 1 match, got {count}: {old[:120]!r}")
+              write(path, value.replace(old, new, 1))
+
+          def sub1(path, pattern, repl, flags=0):
+              value = text(path)
+              value2, count = re.subn(pattern, repl, value, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f"{path}: regex expected 1 match, got {count}: {pattern!r}")
+              write(path, value2)
+
           preset = 'src/main/java/com/hellovoid/liquiddock/config/PresetManager.java'
-          replace_once(preset,
-              '// Prismal Quick Start optics with LiquidDock\'s intentional chromatic-strength override.\n        // Keep this preset synchronized with the zero-copy material defaults.',
-              '// Effective Prismal v1.0.6 Quick Start optics: PrismalFrameLayout defaults followed\n        // by PrismalLiquidGlass.applyBase(). Keep this synchronized with runtime fallbacks.')
-          replace_once(preset, 'values.put("liquid_chromatic", 2);',
-                               'values.put("liquid_chromatic", 26);')
-          replace_once(preset, 'values.put("liquid_depth_effect", 8);',
-                               'values.put("liquid_depth_effect", 0);')
+          replace1(preset,
+              "        // Prismal Quick Start optics with LiquidDock's intentional chromatic-strength override.\n        // Keep this preset synchronized with the zero-copy material defaults.",
+              "        // Effective Prismal v1.0.6 Quick Start optics: PrismalFrameLayout defaults followed\n        // by PrismalLiquidGlass.applyBase(). Keep synchronized with runtime fallbacks.")
+          replace1(preset, 'values.put("liquid_chromatic", 2);', 'values.put("liquid_chromatic", 26);')
+          replace1(preset, 'values.put("liquid_depth_effect", 8);', 'values.put("liquid_depth_effect", 0);')
+          sub1(preset,
+              r'(?m)^values\.put\("liquid_legacy_s_curve", 0\);\nvalues\.put\("liquid_brightness", 108\);$',
+              '        values.put("liquid_legacy_s_curve", 0);\n        values.put("liquid_brightness", 108);')
 
-          # 2) Schema UI/runtime defaults: current values, while preserving historical export defaults.
           schema = 'src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java'
           pairs = [
               ('"liquid_blur", 6, 6, 6, 0, 60', '"liquid_blur", 2, 2, 6, 0, 60'),
@@ -82,53 +89,69 @@ jobs:
               ('"liquid_prismal_shadow_softness", 100, 100, 100, 0, 2000', '"liquid_prismal_shadow_softness", 1000, 1000, 100, 0, 2000'),
           ]
           for old, new in pairs:
-              replace_once(schema, old, new)
+              replace1(schema, old, new)
+          sub1(schema,
+              r'(?ms)        public static final ConfigKey<Integer> LENS_REFRACTION = dp\(\n\s*"liquid_lens_refraction", 1, 1, 12, 0, 60, ConfigKey\.ExportMode\.ALWAYS\);\n\s*public static final ConfigKey<Integer> LEGACY_S_CURVE = integer\(\n\s*"liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey\.ExportMode\.ALWAYS\);\n\s*public static final ConfigKey<Integer> CAPTURE_SCALE = integer\(',
+              '        public static final ConfigKey<Integer> LENS_REFRACTION = dp(\n                "liquid_lens_refraction", 1, 1, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);\n        public static final ConfigKey<Integer> LEGACY_S_CURVE = integer(\n                "liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey.ExportMode.ALWAYS);\n        public static final ConfigKey<Integer> CAPTURE_SCALE = integer(')
+          sub1(schema,
+              r'(?m)^\s*"liquid_prismal_shadow_softness", 1000, 1000, 100, 0, 2000, ConfigKey\.ExportMode\.ALWAYS\);$',
+              '                "liquid_prismal_shadow_softness", 1000, 1000, 100, 0, 2000, ConfigKey.ExportMode.ALWAYS);')
 
-          # 3) Runtime missing-key fallback: exact decimal Quick Start values where ConfigKey<Integer>
-          # cannot encode tenths by itself.
           config = 'src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java'
-          replace_once(config,
-              'lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(),\n            ConfigSchema.Glass.LENS_REFRACTION.runtimeFallback());',
+          sub1(config,
+              r'lensRefraction = c\.f\(ConfigSchema\.Glass\.LENS_REFRACTION\.name\(\),\s*ConfigSchema\.Glass\.LENS_REFRACTION\.runtimeFallback\(\)\);',
               'lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(), 1.3f);')
-          replace_once(config,
-              'prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(),\n                    ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.runtimeFallback());',
+          sub1(config,
+              r'prismalSminSmoothing = c\.f\(ConfigSchema\.Glass\.PRISMAL_SMIN_SMOOTHING\.name\(\),\s*ConfigSchema\.Glass\.PRISMAL_SMIN_SMOOTHING\.runtimeFallback\(\)\);',
               'prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(), 1.8f);')
 
-          # 4) Material: 0 means upstream automatic lens depth; positive values are explicit overrides.
           material = 'src/main/java/com/hellovoid/liquiddock/Miuix307PrismalMaterial.java'
-          replace_once(material,
-              '// Mirror the public Prismal v1.0.6 Quick Start path: FrameLayout construction first,\n        // then PrismalLiquidGlass.applyBase().  Values intentionally left by applyBase therefore\n        // come from PrismalFrameLayout rather than PrismalGlassRenderer\'s private initializers.\n        // LiquidDock intentionally keeps chromatic at 2 instead of Prismal\'s much stronger 26.',
-              '// Effective Prismal v1.0.6 Quick Start path: FrameLayout construction first, then\n        // PrismalLiquidGlass.applyBase(). Values not overwritten by applyBase remain FrameLayout\n        // defaults (not PrismalGlassRenderer private field initializers).')
-          replace_once(material,
-              '                0.08f,\n                0f,\n                12f * d,\n                18f * d,\n                2f,',
-              '                1f,\n                0f,\n                12f * d,\n                18f * d,\n                26f,')
-          replace_once(material,
-              '        if (glass == null || isUntouchedLegacyProfile(glass)) {\n            return defaults(density);\n        }',
-              '        if (glass == null) {\n            return defaults(density);\n        }')
-          replace_once(material,
-              '                Math.max(0f, Math.min(1f, glass.depthEffect)),',
-              '                resolveLensDepth(glass.normalStrength, glass.depthEffect),')
-          regex_once(material,
-              r'\n    private static boolean isUntouchedLegacyProfile\(LiquidDockConfig\.Glass g\) \{.*?\n    \}\n\n    private static boolean nearly\(float actual, float expected\) \{.*?\n    \}\n',
+          sub1(material,
+              r'/\*\*\n     \* Prismal Quick Start state adapted for LiquidDock\..*?\n     \*/\n    static Params defaults',
+              '/**\n     * Effective Prismal v1.0.6 Quick Start state: FrameLayout defaults followed by applyBase().\n     */\n    static Params defaults', flags=re.S)
+          sub1(material,
+              r'(?m)^\s*0\.08f,\n\s*0f,\n\s*12f \* d,\n\s*18f \* d,\n\s*2f,\n\s*1f,\n\s*1f,',
+              '                1f,\n                0f,\n                12f * d,\n                18f * d,\n                26f,\n                1f,\n                1f,')
+          replace1(material,
+              '        if (glass == null || isUntouchedLegacyProfile(glass)) return defaults(density);',
+              '        if (glass == null) return defaults(density);')
+          sub1(material,
+              r'(?m)^\s*lensScale,\n\s*Math\.max\(0f, Math\.min\(1f, glass\.depthEffect\)\),\n\s*Math\.max\(0f, Math\.min\(2f, glass\.legacySCurveStrength\)\),',
+              '                lensScale,\n                resolveLensDepth(glass.normalStrength, glass.depthEffect),\n                Math.max(0f, Math.min(2f, glass.legacySCurveStrength)),')
+          sub1(material,
+              r'\n    private static boolean isUntouchedLegacyProfile\(LiquidDockConfig\.Glass g\) \{.*?\n    \}\n',
               '\n', flags=re.S)
-          replace_once(material,
-              '    static float blurSigma(Params params) {',
-              '    static float resolveLensDepth(float normalStrength, float manualDepth) {\n        if (manualDepth > 0f) return clamp(manualDepth, 0f, 1f);\n        return clamp(normalStrength * 0.9f, 0f, 1f);\n    }\n\n    static float blurSigma(Params params) {')
+          sub1(material,
+              r'\n    private static boolean nearly\(float first, float second\) \{.*?\n    \}\n',
+              '\n', flags=re.S)
+          replace1(material,
+              '    static float blurSigma(Params p) {',
+              '    static float resolveLensDepth(float normalStrength, float manualDepth) {\n        if (manualDepth > 0f) return clamp(manualDepth, 0f, 1f);\n        return clamp(normalStrength * 0.9f, 0f, 1f);\n    }\n\n    static float blurSigma(Params p) {')
+          sub1(material,
+              r'(?m)^lensPx = clamp\(',
+              '        lensPx = clamp(')
+          sub1(material,
+              r'(?m)^uniform1f\(program, "u_lensDepthEffect"',
+              '        uniform1f(program, "u_lensDepthEffect"')
+          sub1(material,
+              r'(?m)^uniform1f\(program, "u_legacySCurveStrength"',
+              '        uniform1f(program, "u_legacySCurveStrength"')
+          sub1(material,
+              r'(?m)^uniform1f\(program, "u_legacyLensRefractionPx"',
+              '        uniform1f(program, "u_legacyLensRefractionPx"')
+          sub1(material,
+              r'(?m)^uniform1f\(program, "u_legacyThicknessPx"',
+              '        uniform1f(program, "u_legacyThicknessPx"')
 
-          # 5) One-time migration for installs carrying the two incorrect V3 defaults.
           migration = 'src/main/java/com/hellovoid/liquiddock/config/ConfigMigration.java'
-          replace_once(migration,
+          replace1(migration,
               '    private static final String PRISMAL_OFFICIAL_PARITY_V3 =\n            "liquid_prismal_official_parity_v3";\n    private static final String CAPTURE_BLEED_PIXELS_V4 =',
               '    private static final String PRISMAL_OFFICIAL_PARITY_V3 =\n            "liquid_prismal_official_parity_v3";\n    private static final String PRISMAL_OFFICIAL_PARITY_V4 =\n            "liquid_prismal_official_parity_v4";\n    private static final String CAPTURE_BLEED_PIXELS_V4 =')
-          replace_once(migration,
+          replace1(migration,
               '        migratePrismalOfficialParityV3(preferences);\n    }',
               '        migratePrismalOfficialParityV3(preferences);\n        migratePrismalOfficialParityV4(preferences);\n    }')
-          marker = '''    private static void migrateLegacyLensScale(
-            SharedPreferences sp, SharedPreferences.Editor e) {'''
-          method = '''    /**
-     * V4 restores the actual v1.0.6 Quick Start values that V3 intentionally diverged from.
-     * The old depth control was ineffective, so its old default 8 safely becomes auto (0).
-     */
+          marker = '    private static void migrateLegacyLensScale(\n            SharedPreferences sp, SharedPreferences.Editor e) {'
+          method = '''    /** Migrate only the two V3 values proven to differ from effective v1.0.6. */
     private static void migratePrismalOfficialParityV4(SharedPreferences sp) {
         if (sp.getBoolean(PRISMAL_OFFICIAL_PARITY_V4, false)) return;
         SharedPreferences.Editor e = sp.edit();
@@ -138,38 +161,36 @@ jobs:
     }
 
 '''
-          replace_once(migration, marker, method + marker)
+          replace1(migration, marker, method + marker)
 
-          # 6) GUI descriptions/units now state the actual renderer semantics.
           ui = 'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt'
-          replace_once(ui,
+          replace1(ui,
               '"liquid_blur" -> "液态玻璃对实时 OES 背景的模糊范围"',
-              '"liquid_blur" -> "Prismal 模糊半径；zero-copy 后端在半分辨率双通道 FBO 中复现，默认 2"')
-          replace_once(ui,
+              '"liquid_blur" -> "Prismal 模糊半径；zero-copy 后端在半分辨率双通道 FBO 中使用，默认 2"')
+          replace1(ui,
               '"liquid_depth_effect" -> "控制透镜方向向中心偏转的混合强度；数值越高越偏向径向折射"',
-              '"liquid_depth_effect" -> "0=Prismal 自动（normalStrength×0.9，最高 1.0）；1–100=手动中心偏转强度"')
-          replace_once(ui,
+              '"liquid_depth_effect" -> "控制透镜方向向中心偏转：0=Prismal 自动（normalStrength×0.9，最高 1.0）；1–100=手动覆盖"')
+          replace1(ui,
               '"liquid_chromatic" -> "Prismal 色散总强度"',
               '"liquid_chromatic" -> "Prismal RGB 色散总强度；v1.0.6 Quick Start 有效默认值为 26"')
-          replace_once(ui,
+          replace1(ui,
               '"liquid_prismal_shadow_softness" -> "Prismal 内阴影扩散柔和度"',
-              '"liquid_prismal_shadow_softness" -> "Prismal 内阴影柔和度，界面值按 ×100 存储；1000 对应 shader 值 10.0"')
-          replace_once(ui,
+              '"liquid_prismal_shadow_softness" -> "Prismal 内阴影柔和度；界面值按 ×100 存储，1000 对应 shader 10.0"')
+          replace1(ui,
               'IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊"),',
               'IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),')
-          replace_once(ui,
+          replace1(ui,
               'IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", "%"),',
               'IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", ""),')
 
-          # 7) Update old tests that deliberately asserted the now-proven wrong defaults.
           chroma_test = 'src/test/java/com/hellovoid/liquiddock/config/ChromaticDefaultsContractTest.java'
-          replace_once(chroma_test,
+          replace1(chroma_test,
               'public void chromaticDefaultAndPresetAreTwo() {\n        assertEquals(Integer.valueOf(2), ConfigSchema.Glass.CHROMATIC.uiDefault());\n        assertEquals(Integer.valueOf(2), ConfigSchema.Glass.CHROMATIC.runtimeFallback());\n        assertEquals(Integer.valueOf(2), ConfigSchema.Glass.CHROMATIC.exportDefault());\n        assertEquals(Integer.valueOf(2), PresetManager.defaultValues().get("liquid_chromatic"));',
               'public void currentChromaticDefaultMatchesPrismalWhileHistoricalExportStaysTwo() {\n        assertEquals(Integer.valueOf(26), ConfigSchema.Glass.CHROMATIC.uiDefault());\n        assertEquals(Integer.valueOf(26), ConfigSchema.Glass.CHROMATIC.runtimeFallback());\n        assertEquals(Integer.valueOf(2), ConfigSchema.Glass.CHROMATIC.exportDefault());\n        assertEquals(Integer.valueOf(26), PresetManager.defaultValues().get("liquid_chromatic"));')
 
           preset_test = 'src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java'
-          replace_once(preset_test, 'expected.put("liquid_chromatic", 2);', 'expected.put("liquid_chromatic", 26);')
-          replace_once(preset_test, 'expected.put("liquid_depth_effect", 8);', 'expected.put("liquid_depth_effect", 0);')
+          replace1(preset_test, 'expected.put("liquid_chromatic", 2);', 'expected.put("liquid_chromatic", 26);')
+          replace1(preset_test, 'expected.put("liquid_depth_effect", 8);', 'expected.put("liquid_depth_effect", 0);')
 
           schema_test = 'src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java'
           test_pairs = [
@@ -197,24 +218,37 @@ jobs:
               ('ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, 100, 0, 2000', 'ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, 1000, 0, 2000'),
           ]
           for old, new in test_pairs:
-              replace_once(schema_test, old, new)
+              replace1(schema_test, old, new)
 
           contract = 'src/test/java/com/hellovoid/liquiddock/Miuix307GlassCustomizationContractTest.java'
-          replace_once(contract,
+          replace1(contract,
               'schema.contains("\\\"liquid_prismal_shadow_softness\\\", 100, 100, 100, 0, 2000")',
               'schema.contains("\\\"liquid_prismal_shadow_softness\\\", 1000, 1000, 100, 0, 2000")')
 
-          print('Prismal parity v4 patch applied')
+          print('Prismal parity v4 production/test patch applied')
           PY
-      - name: Verify parity tests and full debug build
-        run: |
-          chmod +x ./gradlew
-          ./gradlew testDebugUnitTest assembleDebug --stacktrace
-      - name: Commit green implementation and remove one-shot workflow
-        run: |
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -eq 0 ]; then
+            chmod +x ./gradlew
+            ./gradlew testDebugUnitTest assembleDebug --stacktrace 2>&1 | tee -a "$LOG"
+            STATUS=${PIPESTATUS[0]}
+          fi
+          if [ "$STATUS" -ne 0 ]; then
+            git reset --hard HEAD
+            tail -n 160 "$LOG" > PRISMAL_PARITY_PATCH_ERROR.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add PRISMAL_PARITY_PATCH_ERROR.txt
+            git commit -m "debug: record final Prismal parity failure" || true
+            git push origin HEAD:fix/glass-controls-s-curve || true
+            exit "$STATUS"
+          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm .github/workflows/prismal-parity-v4-one-shot.yml
+          rm -f PRISMAL_PARITY_PATCH_ERROR.txt
+          git rm -f .github/workflows/prismal-parity-v4-one-shot.yml \
+                    .github/workflows/prismal-parity-v4-apply.yml \
+                    .github/workflows/prismal-parity-v4-apply2.yml
           git add src/main src/test
           git commit -m "fix: restore effective Prismal v1.0.6 defaults"
           git push origin HEAD:fix/glass-controls-s-curve
