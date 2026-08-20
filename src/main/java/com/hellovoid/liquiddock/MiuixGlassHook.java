@@ -13,9 +13,11 @@ import java.lang.reflect.Field;
 /**
  * MiuiX-specific zero-copy glass installer for HyperOS 3.0.307+ docks.
  *
- * The vendor background remains the authoritative Dock geometry shell. Its own material body and
- * parent compositor blur are suppressed while LiquidDock renders PassBlur -> OES -> Prismal in a
- * child TextureView. There is deliberately no screen-capture fallback.
+ * The vendor background remains the authoritative Dock geometry shell. Parent compositor blur is
+ * suppressed for both supported HotSeats owners. The themed BlurBackground2 material body is made
+ * transparent because Prismal fully replaces it; the default MiuiX material body remains visible
+ * as failure protection while LiquidDock renders PassBlur -> OES -> Prismal in a child TextureView.
+ * There is deliberately no screen-capture fallback.
  */
 final class MiuixGlassHook {
     private static final String TAG = "[DC][MG]";
@@ -150,7 +152,7 @@ final class MiuixGlassHook {
         if (zeroCopyCandidate) {
             scheduleZeroCopyValidation(dockBg, host, 0);
         } else {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; glass remains transparent");
+            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; vendor shell remains visible");
         }
 
         DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);
@@ -176,7 +178,7 @@ final class MiuixGlassHook {
 
         if (Miuix307ZeroCopyRenderer.isActivationExhausted()
                 || frame >= ZERO_COPY_VALIDATION_FRAMES) {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy inactive; glass remains transparent reason="
+            MainHook.log(ZERO_COPY_TAG + " zero-copy inactive; vendor shell protection remains reason="
                     + (Miuix307ZeroCopyRenderer.isActivationExhausted()
                     ? "activation-exhausted" : "validation-timeout"));
             return;
@@ -218,6 +220,11 @@ final class MiuixGlassHook {
         if (dockBg == null) return false;
         String name = dockBg.getClass().getName();
         return NATIVE_BACKGROUND_CLASS.equals(name) || COMPAT_BACKGROUND_CLASS.equals(name);
+    }
+
+    private static boolean shouldSuppressVendorMaterialBody(View dockBg) {
+        return dockBg != null
+                && COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName());
     }
 
     static void suppressVendorGpuBlur(View dockBg) {
@@ -272,7 +279,7 @@ final class MiuixGlassHook {
     }
 
     private static void suppressVendorMaterialBody(View dockBg, float nativeRadius) {
-        if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
+        if (!shouldSuppressVendorMaterialBody(dockBg)) return;
         float radius = Math.max(0f, nativeRadius);
         if (transparentMaterialOwner.get() != dockBg || transparentMaterialBody == null) {
             transparentMaterialOwner = new WeakReference<>(dockBg);
@@ -288,7 +295,7 @@ final class MiuixGlassHook {
         if (dockBg.getBackground() != transparentMaterialBody) dockBg.setBackground(transparentMaterialBody);
         if (materialBodyLoggedFor.get() != dockBg) {
             materialBodyLoggedFor = new WeakReference<>(dockBg);
-            MainHook.log(TAG + " vendor material body transparent; native optics radius="
+            MainHook.log(TAG + " themed vendor material body transparent; native optics radius="
                     + radius + " class=" + dockBg.getClass().getSimpleName());
         }
     }
