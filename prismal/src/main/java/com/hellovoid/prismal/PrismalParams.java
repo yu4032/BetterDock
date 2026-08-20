@@ -1,0 +1,150 @@
+package com.hellovoid.prismal;
+
+/** Immutable set of uniforms accepted by the upstream Prismal model. All distances are pixels. */
+public final class PrismalParams {
+    public final float ior;
+    public final float glassThicknessPx;
+    public final float normalStrength;
+    public final float displacementScale;
+    public final float heightTransitionWidthPx;
+    public final float sminSmoothingPx;
+    public final float refractionInsetPx;
+    public final float edgeRefractionFalloff;
+    public final float liquidDome;
+    public final float fresnelReflect;
+    public final float lensRefractionScale;
+    public final float lensDepthEffect;
+    public final float chromaticAberration;
+    public final float dispersionR;
+    public final float dispersionB;
+    public final float vibrancy;
+    public final float plainHighlight;
+    public final float brightness;
+    public final float highlightWidth;
+    public final float lightDirX;
+    public final float lightDirY;
+    public final float specular;
+    public final float shininess;
+    public final float rimStrength;
+    public final float causticIntensity;
+    public final float shadowSoftness;
+    public final float transmittance;
+    public final float backdropScaleX;
+    public final float backdropScaleY;
+    public final float parallaxScale;
+    public final float blurRadiusPx;
+    public final float tintR;
+    public final float tintG;
+    public final float tintB;
+    public final float tintA;
+    public final float shadowR;
+    public final float shadowG;
+    public final float shadowB;
+    public final float shadowA;
+    public final float pressProgress;
+    public final float backdropPinch;
+    public final float glowCenterX;
+    public final float glowCenterY;
+    public final float glowStrength;
+    public final boolean showNormals;
+
+    private PrismalParams(Builder b) {
+        ior = b.ior;
+        glassThicknessPx = b.glassThicknessPx;
+        normalStrength = b.normalStrength;
+        displacementScale = b.displacementScale;
+        heightTransitionWidthPx = b.heightTransitionWidthPx;
+        sminSmoothingPx = b.sminSmoothingPx;
+        refractionInsetPx = b.refractionInsetPx;
+        edgeRefractionFalloff = b.edgeRefractionFalloff;
+        liquidDome = b.liquidDome;
+        fresnelReflect = b.fresnelReflect;
+        lensRefractionScale = b.lensRefractionScale;
+        lensDepthEffect = b.lensDepthEffect;
+        chromaticAberration = b.chromaticAberration;
+        dispersionR = b.dispersionR;
+        dispersionB = b.dispersionB;
+        vibrancy = b.vibrancy;
+        plainHighlight = b.plainHighlight;
+        brightness = b.brightness;
+        highlightWidth = b.highlightWidth;
+        lightDirX = b.lightDirX;
+        lightDirY = b.lightDirY;
+        specular = b.specular;
+        shininess = b.shininess;
+        rimStrength = b.rimStrength;
+        causticIntensity = b.causticIntensity;
+        shadowSoftness = b.shadowSoftness;
+        transmittance = b.transmittance;
+        backdropScaleX = b.backdropScaleX;
+        backdropScaleY = b.backdropScaleY;
+        parallaxScale = b.parallaxScale;
+        blurRadiusPx = b.blurRadiusPx;
+        tintR = b.tintR;
+        tintG = b.tintG;
+        tintB = b.tintB;
+        tintA = b.tintA;
+        shadowR = b.shadowR;
+        shadowG = b.shadowG;
+        shadowB = b.shadowB;
+        shadowA = b.shadowA;
+        pressProgress = b.pressProgress;
+        backdropPinch = b.backdropPinch;
+        glowCenterX = b.glowCenterX;
+        glowCenterY = b.glowCenterY;
+        glowStrength = b.glowStrength;
+        showNormals = b.showNormals;
+    }
+
+    public static Builder builder() { return new Builder(); }
+
+    public static final class Builder {
+        public float ior = 1.5f;
+        public float glassThicknessPx = 15f;
+        public float normalStrength = 1.2f;
+        public float displacementScale = 1f;
+        public float heightTransitionWidthPx = 8f;
+        public float sminSmoothingPx = 1f;
+        public float refractionInsetPx = 20f;
+        public float edgeRefractionFalloff = 4f;
+        public float liquidDome = 0.78f;
+        public float fresnelReflect = 1f;
+        public float lensRefractionScale = 1f;
+        public float lensDepthEffect = 1f;
+        public float chromaticAberration = 0f;
+        public float dispersionR = 1f;
+        public float dispersionB = 1f;
+        public float vibrancy = 1f;
+        public float plainHighlight = 0f;
+        public float brightness = 1.15f;
+        public float highlightWidth = 4f;
+        public float lightDirX = -0.5f;
+        public float lightDirY = -0.8f;
+        public float specular = 0.8f;
+        public float shininess = 48f;
+        public float rimStrength = 0.6f;
+        public float causticIntensity = 0.15f;
+        public float shadowSoftness = 0.2f;
+        public float transmittance = 1f;
+        public float backdropScaleX = 1f;
+        public float backdropScaleY = 1f;
+        public float parallaxScale = 1f;
+        public float blurRadiusPx = 2.5f;
+        public float tintR = 1f;
+        public float tintG = 1f;
+        public float tintB = 1f;
+        public float tintA = 0f;
+        public float shadowR = 0f;
+        public float shadowG = 0f;
+        public float shadowB = 0f;
+        public float shadowA = 0.3f;
+        public float pressProgress = 0f;
+        public float backdropPinch = 1f;
+        public float glowCenterX = 0.5f;
+        public float glowCenterY = 0.5f;
+        public float glowStrength = 1f;
+        public boolean showNormals;
+
+        public PrismalParams build() { return new PrismalParams(this); }
+    }
+}

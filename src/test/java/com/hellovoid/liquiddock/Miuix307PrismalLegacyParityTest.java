@@ -104,7 +104,9 @@ public class Miuix307PrismalLegacyParityTest {
         assertTrue(adapter.contains("samplerExternalOES uTexture"));
         assertTrue(adapter.contains("uBackdropRect"));
         assertTrue(adapter.contains("uConfigRot"));
-        assertTrue(adapter.contains("textureScaleX") && adapter.contains("textureOffsetX"));
+        assertTrue(adapter.contains("compensateSurfaceTextureCropPreservingOrientation")
+                && adapter.contains("orientationBias")
+                && adapter.contains("float determinant"));
         assertTrue(adapter.contains("uTexMatrix"));
         assertFalse(shader.contains("samplerExternalOES"));
         assertFalse(shader.contains("uBackdropRect"));

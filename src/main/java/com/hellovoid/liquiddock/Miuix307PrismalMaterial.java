@@ -266,16 +266,81 @@ final float chromaticAberration;
         return Math.max(value.blurRadiusPx * 0.5f, 0.5f);
     }
 
-    static void applyUniforms(
-            int program, Params p0, float cornerRadiusPx, int widthPx, int heightPx) {
-        Params p = p0 != null ? p0 : defaults(1f);
+    private static float lensRefractionPx(Params p, int widthPx, int heightPx) {
         float width = Math.max(1, widthPx);
         float height = Math.max(1, heightPx);
         float minGlassDim = Math.min(width, height);
         float refractionHeight = Math.max(
                 p.heightTransitionWidthPx * (1f + 0.55f * clamp(p.liquidDome, 0f, 2f)), 1f);
-        float lensPx = refractionHeight * 2f * p.displacementScale * p.lensRefractionScale;
-        lensPx = clamp(lensPx, 4f, Math.max(4f, minGlassDim * 0.85f));
+        float lensPx = refractionHeight * 2f
+                * Math.abs(p.displacementScale) * Math.abs(p.lensRefractionScale);
+        return clamp(lensPx, 4f, Math.max(4f, minGlassDim * 0.85f));
+    }
+
+    private static float smoothstep(float edge0, float edge1, float x) {
+        if (edge0 == edge1) return x < edge0 ? 0f : 1f;
+        float t = clamp((x - edge0) / (edge1 - edge0), 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
+
+    private static float prismalPxNorm(int widthPx, int heightPx) {
+        float halfMin = Math.min(Math.max(1, widthPx), Math.max(1, heightPx)) * 0.5f;
+        return clamp(halfMin / 108f, 0.36f, 1f)
+                + smoothstep(88f, 220f, halfMin) * 0.45f;
+    }
+
+    /**
+     * Conservative full-resolution pixel reach of every Prismal backdrop sample. This mirrors
+     * the shader's lens, Snell, bulge, chromatic and reflection terms so the zero-copy texture
+     * owns enough real scene pixels before any final texture-edge clamp is reached.
+     */
+    static int requiredSampleGuardPx(
+            Params p0, int widthPx, int heightPx, boolean horizontal) {
+        Params p = p0 != null ? p0 : defaults(1f);
+        float width = Math.max(1, widthPx);
+        float height = Math.max(1, heightPx);
+        float axis = horizontal ? width : height;
+        float pxNorm = prismalPxNorm(widthPx, heightPx);
+
+        float sampleScale = Math.max(0.01f,
+                horizontal ? Math.abs(p.backdropScaleX) : Math.abs(p.backdropScaleY));
+        float scaleExpansion = Math.max(0f, 1f / sampleScale - 1f) * axis * 0.5f;
+
+        float lens = lensRefractionPx(p, widthPx, heightPx) * 1.45f * 1.12f;
+        float parallax = 29f * 0.052f * Math.abs(p.displacementScale)
+                * Math.abs(p.parallaxScale) * 1.12f;
+        float snell = Math.abs(p.thicknessPx) * 0.85f * Math.abs(p.displacementScale)
+                * 1.18f * pxNorm;
+        float modernBulge = axis * (0.014f + 0.01f * clamp(p.liquidDome, 0f, 2f)) * pxNorm;
+        float modernBase = lens + parallax + snell + modernBulge;
+
+        float legacyLens = Math.abs(p.legacyLensRefractionPx) * 1.12f;
+        float legacyParallax = 29f * 0.052f * 1.15f * 1.12f;
+        float legacySnell = Math.abs(p.legacyThicknessPx) * 0.85f * 1.15f * 1.18f * pxNorm;
+        float legacyBulge = axis * 0.012f;
+        float legacyBase = legacyLens + legacyParallax + legacySnell + legacyBulge;
+        float legacyStrength = clamp(p.legacySCurveStrength, 0f, 2f);
+        float baseReach = modernBase;
+        if (legacyStrength > 0f && legacyStrength <= 1f) {
+            baseReach = Math.max(modernBase, legacyBase);
+        } else if (legacyStrength > 1f) {
+            baseReach = legacyBase * legacyStrength;
+        }
+
+        float dispersion = Math.max(Math.abs(p.dispersionR), Math.abs(p.dispersionB));
+        float chromatic = Math.abs(p.chromaticAberration) * 0.0018f
+                * dispersion * pxNorm * axis;
+        float reflection = 56f * pxNorm;
+        return Math.max(0, (int) Math.ceil(
+                scaleExpansion + baseReach + chromatic + reflection + 2f));
+    }
+
+    static void applyUniforms(
+            int program, Params p0, float cornerRadiusPx, int widthPx, int heightPx) {
+        Params p = p0 != null ? p0 : defaults(1f);
+        float width = Math.max(1, widthPx);
+        float height = Math.max(1, heightPx);
+        float lensPx = lensRefractionPx(p, widthPx, heightPx);
 
         uniform2f(program, "u_resolution", width, height);
         uniform2f(program, "u_glassSize", width, height);

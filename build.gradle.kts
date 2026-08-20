@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application") version "9.3.0"
+    id("com.android.library") version "9.3.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
 }
 
@@ -66,6 +67,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":prismal"))
+
     // API 101 is provided by the Xposed framework inside hooked processes.
     compileOnly("io.github.libxposed:api:101.0.1")
     // The module app uses the companion service binder to read/write Remote Preferences.

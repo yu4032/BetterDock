@@ -40,26 +40,25 @@ public class Miuix307VerticalOverscanGuiContractTest {
         assertTrue(view.contains("horizontalOverscanPx")
                 && view.contains("topOverscanPx")
                 && view.contains("bottomOverscanPx"));
-        assertTrue(view.contains("height + topOverscanPx + bottomOverscanPx"));
-        assertTrue(view.contains("bottomOverscanPx / (float) sampleHeight"));
+        assertTrue(view.contains("height + insets.top + insets.bottom"));
+        assertTrue(view.contains(
+                "Math.max(Math.max(0, topOverscanPx), opticalY)"));
+        assertTrue(view.contains(
+                "Math.max(Math.max(0, bottomOverscanPx), opticalY)"));
+        assertTrue(view.contains("insets.bottom / (float) sampleHeight"));
         assertFalse("fixed symmetric vertical overscan must no longer control FBO height",
                 view.contains("height + overscanPx * 2"));
     }
 
     @Test
-    public void migrationRestoresPixelSemanticsBeforeLiquidDpMigration() throws Exception {
+    public void unsupportedGlassGenerationDropsBleedInsteadOfConvertingIt() throws Exception {
         String migration = Files.readString(
                 MAIN.resolve("java/com/hellovoid/liquiddock/config/ConfigMigration.java"));
 
-        String pixelMigration = "migrateCaptureBleedToPixels(context, preferences);";
-        String dpMigration = "migrateLiquidDimensionsToDp(context, preferences);";
-        assertTrue(migration.contains("CAPTURE_BLEED_PIXELS_V4"));
-        assertTrue(migration.contains(pixelMigration) && migration.contains(dpMigration));
-        assertTrue("pixel restoration must run before liquid dp conversion",
-                migration.indexOf(pixelMigration) < migration.indexOf(dpMigration));
-        assertTrue("stale decimal-dp sidecars must be removed",
-                migration.contains("remove(key + \"_tenths\")"));
-        assertFalse("liquid dp migration must stop density-converting bleed values",
-                migration.contains("Math.round(sp.getInt(\"liquid_capture_bleed_top\", 48) / density)"));
+        assertTrue(migration.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertTrue(migration.contains("key.startsWith(\"liquid_\")"));
+        assertFalse(migration.contains("migrateCaptureBleedToPixels")
+                || migration.contains("CAPTURE_BLEED_PIXELS_V4")
+                || migration.contains("migrateLiquidDimensionsToDp"));
     }
 }

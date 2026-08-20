@@ -71,13 +71,16 @@ public class Miuix307TextureViewStrongRefractionTest {
     }
 
     @Test
-    public void drawUploadsTextureViewSizeAndUpstreamUniformsForPixelStableOptics() throws Exception {
+    public void portableRendererKeepsFramebufferAndGlassDomainsSeparateForPixelStableOptics() throws Exception {
         String source = view();
-        String params = material();
-        assertTrue(source.contains("Miuix307PrismalMaterial.applyUniforms(")
-                && source.contains("outputWidth")
-                && source.contains("outputHeight"));
-        assertTrue(params.contains("uniform2f(program, \"u_resolution\", width, height)"));
-        assertTrue(params.contains("uniform2f(program, \"u_glassSize\", width, height)"));
+        String renderer = Files.readString(Path.of(
+                "prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java"));
+        assertTrue(source.contains("PrismalGeometry prismalGeometry = createPrismalGeometry(mapping)")
+                && source.contains("prismalRenderer.render("));
+        assertTrue(source.contains("mapping.dockUvWidth * mapping.sampleWidth")
+                && source.contains("mapping.dockUvHeight * mapping.sampleHeight"));
+        assertTrue(renderer.contains("uniform2f(\"u_resolution\", width, height)"));
+        assertTrue(renderer.contains("uniform2f(\"u_mousePos\", g.centerX, height - g.centerY)"));
+        assertTrue(renderer.contains("uniform2f(\"u_glassSize\", g.glassWidth, g.glassHeight)"));
     }
 }

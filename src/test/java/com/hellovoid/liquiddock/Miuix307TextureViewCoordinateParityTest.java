@@ -42,16 +42,28 @@ public class Miuix307TextureViewCoordinateParityTest {
 
         assertTrue("mapping must read ViewRootImpl mWinFrameInScreen",
                 region.contains("mWinFrameInScreen"));
-        assertTrue("host screen coordinates must feed the pure window-frame mapping helper",
-                region.contains("materialHost.getLocationOnScreen(hostScreen)")
+        assertTrue("TextureView screen coordinates must feed the pure window-frame mapping helper",
+                region.contains("getLocationOnScreen(viewScreen)")
                         && region.contains("Miuix307BackdropMapping.compute"));
+        assertFalse("material parent geometry must not be mixed into the TextureView/FBO UV domain",
+                region.contains("materialHost.getLocationOnScreen")
+                        || region.contains("materialHost.getWidth()")
+                        || region.contains("materialHost.getHeight()"));
         assertTrue("mapping helper must receive window-frame content geometry",
                 region.contains("winFrame.left")
                         && region.contains("winFrame.top")
                         && region.contains("winFrame.width()")
                         && region.contains("winFrame.height()"));
-        assertFalse("mSurfaceSize is producer allocation geometry, not backdrop content geometry",
-                region.contains("boundSurfaceWidth") || region.contains("boundSurfaceHeight"));
+        assertTrue("snapshot may carry producer allocation only as generation metadata",
+                region.contains("boundSurfaceWidth, boundSurfaceHeight")
+                        && region.contains("boundBufferWidth, boundBufferHeight"));
+        assertTrue("sample mapping must be anchored to TextureView position plus resolved insets",
+                region.contains("Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(")
+                        && region.contains("viewScreen[0] - insets.left")
+                        && region.contains("viewScreen[1] - insets.top"));
+        assertTrue("visible Dock mapping must be anchored to TextureView position",
+                region.contains("Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(")
+                        && region.contains("viewScreen[0], viewScreen[1], visibleWidth, visibleHeight"));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.hellovoid.liquiddock.config.PresetManager;
@@ -11,7 +12,7 @@ import java.util.Map;
 
 import org.junit.Test;
 
-/** Locks effective Prismal v1.0.6 Quick Start parity while preserving V3 migration history. */
+/** Locks effective Prismal v1.0.6 Quick Start parity without legacy value migration. */
 public class PrismalOfficialParityV3Test {
     private static final float EPS = 0.0001f;
 
@@ -28,9 +29,6 @@ public class PrismalOfficialParityV3Test {
         assertEquals(20f, p.refractionInsetPx, EPS);
         assertEquals(4f, p.edgeRefractionFalloff, EPS);
 
-        // PrismalFrameLayout constructor values survive applyBase() because applyBase does not
-        // overwrite these controls. These are the effective Quick Start values, not renderer
-        // field initializers.
         assertEquals(1.30f, p.liquidDome, EPS);
         assertEquals(1.98f, p.fresnelReflect, EPS);
         assertEquals(1.30f, p.lensRefractionScale, EPS);
@@ -87,16 +85,16 @@ public class PrismalOfficialParityV3Test {
     }
 
     @Test
-    public void migrationV3CorrectsOnlyTheMistakenV2ParityDefaults() throws Exception {
+    public void currentSchemaDefaultsReplaceUnsupportedHistoricalGlassProfiles() throws Exception {
         String migration = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/config/ConfigMigration.java"));
 
-        assertTrue(migration.contains("PRISMAL_OFFICIAL_PARITY_V3"));
-        assertTrue(migration.contains("migratePrismalOfficialParityV3(preferences)"));
-        assertTrue(migration.contains("\"liquid_dome\", 78, 130"));
-        assertTrue(migration.contains("\"liquid_prismal_fresnel_reflect\", 100, 198"));
-        assertTrue(migration.contains("\"liquid_chromatic\", 0, 2"));
-        assertTrue(migration.contains("\"liquid_blur\", 2.5f, 2f"));
-        assertTrue(migration.contains("\"liquid_lens_refraction\", 1f, 1.3f"));
+        assertTrue(migration.contains("GLASS_CONFIG_GENERATION"));
+        assertTrue(migration.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertFalse(migration.contains("PRISMAL_OFFICIAL_PARITY_V3")
+                || migration.contains("PRISMAL_OFFICIAL_PARITY_V4")
+                || migration.contains("migratePrismalParityV2")
+                || migration.contains("migratePrismalOfficialParityV3")
+                || migration.contains("migratePrismalOfficialParityV4"));
     }
 }

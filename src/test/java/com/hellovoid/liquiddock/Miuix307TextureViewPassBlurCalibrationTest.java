@@ -36,15 +36,16 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     public void fullUpstreamPrismalOpticsRunAfterOesNormalizationWithoutLeavingGpuPath() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String adapter = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
-        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String shader = Files.readString(Path.of("prismal/src/main/res/raw/prismal_fragment.glsl"));
 
         assertTrue(view.contains("Miuix307PassBlurShaders.OES_NORMALIZE_FRAGMENT"));
-        assertTrue(view.contains("Miuix307PrismalShader.FRAGMENT_SHADER"));
+        assertTrue(view.contains("prismalRenderer.render("));
         assertTrue(adapter.contains("samplerExternalOES uTexture")
                 && adapter.contains("uBackdropRect")
                 && adapter.contains("uConfigRot")
                 && adapter.contains("uTexMatrix"));
-        assertTrue(adapter.contains("textureInputUv.x = (orientedUv.x - textureOffsetX) / textureScaleX")
+        assertTrue(adapter.contains("compensateSurfaceTextureCropPreservingOrientation")
+                && adapter.contains("orientationBias")
                 && adapter.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
 
         assertTrue(shader.contains("getHeightFromDist")
@@ -85,17 +86,19 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
         String migration = Files.readString(MAIN.resolve("config/ConfigMigration.java"));
 
         assertTrue(material.contains("static Params fromConfig(LiquidDockConfig.Glass glass, float density)"));
-        assertTrue("upstream parameter semantics must be direct after one-time migration",
+        assertTrue("current parameter semantics must be direct",
                 material.contains("glass.thickness * d")
                         && material.contains("glass.prismalHeightTransitionWidth * d")
                         && material.contains("glass.lensRefraction")
                         && material.contains("glass.depthEffect")
                         && material.contains("p.lensDepthEffect"));
-        assertFalse("legacy /12 lens conversion must not run every material update",
+        assertFalse("legacy /12 lens conversion must not run in material updates",
                 material.contains("glass.lensRefraction / 12f"));
-        assertTrue("legacy lens values must be converted once by config migration",
+        assertFalse("historical lens values must no longer be numerically migrated",
                 migration.contains("prismalLensScale")
-                        && migration.contains("legacyValue / 12f"));
+                        || migration.contains("legacyValue / 12f"));
+        assertTrue("unsupported glass generations must reset to current schema defaults",
+                migration.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
         assertFalse("old depthEffect compatibility multiplier must not alter upstream lens depth",
                 material.contains("glass.depthEffect / 0.08f"));
         assertTrue(material.contains("glass.ior")
