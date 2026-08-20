@@ -13,12 +13,14 @@ public class GlassConfigGenerationContractTest {
             "src/main/java/com/hellovoid/liquiddock/config/ConfigMigration.java");
 
     @Test
-    public void glassConfigUsesGenerationResetInsteadOfHistoricalValueConversions() throws Exception {
+    public void glassConfigUsesCurrentPresetGenerationInsteadOfHistoricalValueConversions() throws Exception {
         String source = Files.readString(SOURCE);
 
         assertTrue(source.contains("GLASS_CONFIG_GENERATION"));
         assertTrue(source.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertTrue(source.contains("PresetManager.defaultValues()"));
         assertTrue(source.contains("key.startsWith(\"liquid_\")"));
+        assertTrue(source.contains("putCurrentGlassDefault"));
         assertTrue(source.contains("\"liquid_glass\".equals(key)"));
         assertTrue(source.contains("\"liquid_miuix_307_pipeline\".equals(key)"));
 
