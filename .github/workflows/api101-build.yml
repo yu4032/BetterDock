@@ -30,7 +30,9 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - name: Apply mapping production patch
-        run: python3 tools/apply_passblur_mapping_audit.py
+        run: |
+          python3 tools/apply_passblur_mapping_audit.py
+          python3 tools/update_mapping_contracts.py
       - run: chmod +x ./gradlew
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -48,7 +50,7 @@ jobs:
         run: |
           git fetch origin main --depth=1
           git show origin/main:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
-          rm -f tools/apply_passblur_mapping_audit.py
+          rm -f tools/apply_passblur_mapping_audit.py tools/update_mapping_contracts.py
           git config user.name 'yu4032'
           git config user.email '4032542465@smail.lnu.edu.cn'
           git add -A
