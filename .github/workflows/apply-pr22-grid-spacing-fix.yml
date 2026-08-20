@@ -24,6 +24,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Apply source patch
         run: python3 scripts/apply_pr22_grid_patch.py
+      - name: Align grid contract tests
+        run: python3 scripts/apply_pr22_grid_contract_tests.py
       - run: chmod +x ./gradlew
       - name: Verify unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -43,6 +45,8 @@ jobs:
                   src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
                   src/main/java/com/hellovoid/liquiddock/MainHook.java \
                   src/main/java/com/hellovoid/liquiddock/HomeGridHook.java \
-                  src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+                  src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt \
+                  src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java \
+                  src/test/java/com/hellovoid/liquiddock/GridSpacingSemanticsContractTest.java
           git commit -m "fix: separate home grid edge offset and margin [grid-spacing-applied]"
           git push origin HEAD:feat/port-grid-10x6-v2
