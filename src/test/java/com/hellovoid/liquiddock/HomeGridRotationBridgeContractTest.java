@@ -53,12 +53,12 @@ public class HomeGridRotationBridgeContractTest {
         assertTrue(source.contains("if (id < 0 || screenId < 0"));
     }
 
-    @Test public void bridgeTracesNativeOccupancyArgumentsWithoutChangingThem() throws Exception {
+    @Test public void bridgeTracesTerminalOccupancyArgumentsWithoutChangingThem() throws Exception {
         String source = Files.readString(SOURCE);
         assertTrue(source.contains("installNativeCallTracing(classLoader)"));
         assertTrue(source.contains("[DC][GRID10][CALL] update4"));
-        assertTrue(source.contains("[DC][GRID10][CALL] update3"));
-        assertTrue(source.contains("[DC][GRID10][CALL] update2"));
+        assertFalse(source.contains("[DC][GRID10][CALL] update3"));
+        assertFalse(source.contains("[DC][GRID10][CALL] update2"));
         assertTrue(source.contains("[DC][GRID10][CALL] setupItem"));
         assertTrue(source.contains("[DC][GRID10][CALL] relayout"));
         assertTrue(source.contains("return chain.proceed(args);"));
