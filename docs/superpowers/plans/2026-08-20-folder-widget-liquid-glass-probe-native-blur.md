@@ -51,4 +51,8 @@
 - [x] Write a failing source-contract test requiring `mIconImageView`, an index-0 background layer, `createBackgroundBlurDrawable`, blur/corner radius setup, and edit/open/close lifecycle hooks.
 - [x] Verify RED through CI.
 - [x] Implement the minimal prototype, preserving the stock image as fallback.
-- [x] Verify all tests and `assembleDebug` pass for the implementation checkpoint; final branch-head CI is still the delivery gate after documentation updates.
+- [x] Verify all tests and `assembleDebug` pass for the implementation checkpoint.
+
+## Delivery Status
+
+Code implementation and CI verification are complete for steps 1/2. Target-device validation is still required before treating the prototype as stable. In particular, drag-preview behavior and the exact runtime large-folder class set should be confirmed from `[DC][FWGLASS]` logs.
