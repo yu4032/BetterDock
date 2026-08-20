@@ -51,19 +51,14 @@ public class Miuix307VerticalOverscanGuiContractTest {
     }
 
     @Test
-    public void migrationRestoresPixelSemanticsBeforeLiquidDpMigration() throws Exception {
+    public void unsupportedGlassGenerationDropsBleedInsteadOfConvertingIt() throws Exception {
         String migration = Files.readString(
                 MAIN.resolve("java/com/hellovoid/liquiddock/config/ConfigMigration.java"));
 
-        String pixelMigration = "migrateCaptureBleedToPixels(context, preferences);";
-        String dpMigration = "migrateLiquidDimensionsToDp(context, preferences);";
-        assertTrue(migration.contains("CAPTURE_BLEED_PIXELS_V4"));
-        assertTrue(migration.contains(pixelMigration) && migration.contains(dpMigration));
-        assertTrue("pixel restoration must run before liquid dp conversion",
-                migration.indexOf(pixelMigration) < migration.indexOf(dpMigration));
-        assertTrue("stale decimal-dp sidecars must be removed",
-                migration.contains("remove(key + \"_tenths\")"));
-        assertFalse("liquid dp migration must stop density-converting bleed values",
-                migration.contains("Math.round(sp.getInt(\"liquid_capture_bleed_top\", 48) / density)"));
+        assertTrue(migration.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertTrue(migration.contains("key.startsWith(\"liquid_\")"));
+        assertFalse(migration.contains("migrateCaptureBleedToPixels")
+                || migration.contains("CAPTURE_BLEED_PIXELS_V4")
+                || migration.contains("migrateLiquidDimensionsToDp"));
     }
 }
