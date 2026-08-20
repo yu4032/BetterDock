@@ -25,17 +25,12 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Apply context-free Prismal fix
-        run: |
-          if [ -f tools/apply_prismal_runtime_resource_fix.py ]; then
-            python tools/apply_prismal_runtime_resource_fix.py
-            git diff --check
-          fi
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-prismal-context-free-debug
+          name: LiquidDock-api101-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 7
+      # Keep the same Gradle verification gates on main and active API101 development branches.
