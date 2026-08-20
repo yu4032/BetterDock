@@ -5,11 +5,16 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import org.junit.Test;
 
 /** Locks the complete retirement of LiquidDock v1.2's legacy S-curve refraction path. */
 public class LegacySCurveRetirementContractTest {
+    private static final Path MAIN = Path.of("src/main");
+    private static final Path MIGRATION = MAIN.resolve(
+            "java/com/hellovoid/liquiddock/config/ConfigMigration.java");
+
     private static String read(String path) throws Exception {
         return Files.readString(Path.of(path));
     }
@@ -18,11 +23,13 @@ public class LegacySCurveRetirementContractTest {
     public void currentConfigAndUiNoLongerExposeLegacySCurve() throws Exception {
         String schema = read("src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java");
         String config = read("src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java");
+        String presets = read("src/main/java/com/hellovoid/liquiddock/config/PresetManager.java");
         String ui = read("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
 
         assertFalse(schema.contains("LEGACY_S_CURVE"));
         assertFalse(schema.contains("liquid_legacy_s_curve"));
         assertFalse(config.contains("legacySCurveStrength"));
+        assertFalse(presets.contains("liquid_legacy_s_curve"));
         assertFalse(ui.contains("v1.2 S形折射"));
         assertFalse(ui.contains("LEGACY_S_CURVE"));
     }
@@ -42,8 +49,32 @@ public class LegacySCurveRetirementContractTest {
     }
 
     @Test
+    public void noProductionSourceRetainsLegacySymbolsOutsideOneWayPreferencePurge() throws Exception {
+        String[] forbidden = {
+                "LEGACY_S_CURVE",
+                "legacySCurveStrength",
+                "legacyLensRefractionPx",
+                "legacyThicknessPx",
+                "u_legacySCurveStrength",
+                "u_legacyLensRefractionPx",
+                "u_legacyThicknessPx",
+                "v1.2 S形折射"
+        };
+        try (Stream<Path> files = Files.walk(MAIN)) {
+            for (Path file : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+                if (file.equals(MIGRATION)) continue;
+                String source = Files.readString(file);
+                for (String token : forbidden) {
+                    assertFalse(file + " still contains retired token " + token,
+                            source.contains(token));
+                }
+            }
+        }
+    }
+
+    @Test
     public void migrationExplicitlyPurgesRetiredPreference() throws Exception {
-        String migration = read("src/main/java/com/hellovoid/liquiddock/config/ConfigMigration.java");
+        String migration = Files.readString(MIGRATION);
         assertTrue(migration.contains("removeRetiredGlassPreferences(preferences)"));
         assertTrue(migration.contains("e.remove(\"liquid_legacy_s_curve\")"));
     }
