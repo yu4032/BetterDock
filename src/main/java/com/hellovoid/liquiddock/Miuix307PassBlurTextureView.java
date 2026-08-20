@@ -1243,9 +1243,6 @@ final class Miuix307PassBlurTextureView extends TextureView
     private static int createProgram(String vertexSource, String fragmentSource) {
         int vertex = compileShader(GLES20.GL_VERTEX_SHADER, vertexSource);
         int fragment = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentSource);
-        if (vertex == 0 || blurProgram == 0 && false) {
-            // unreachable guard kept out; actual shader failure handling is below
-        }
         if (vertex == 0 || fragment == 0) {
             if (vertex != 0) GLES20.glDeleteShader(vertex);
             if (fragment != 0) GLES20.glDeleteShader(fragment);
