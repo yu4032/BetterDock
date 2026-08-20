@@ -1,0 +1,107 @@
+name: Apply workstation producer recovery
+
+on:
+  push:
+    branches: [ fix/workstation-passblur-producer-recovery-v2 ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/workstation-passblur-producer-recovery-v2
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore device-validated zero-copy recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('src/main/java/com/hellovoid/liquiddock')
+
+          def replace_once(path, old, new):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:100]!r}')
+              path.write_text(text.replace(old, new, 1))
+
+          # 1) Restore workstation lifecycle boundaries without reviving the retired Bitmap backend.
+          pipeline = root / 'Miuix307MaterialPipeline.java'
+          replace_once(
+              pipeline,
+              '''            installCompatBackgroundBlurSuppression(classLoader);\n            installDockCustomizationCompatibility(classLoader, config);\n\n            HookUtil.hookMethod(classLoader,''',
+              '''            installCompatBackgroundBlurSuppression(classLoader);\n            installDockCustomizationCompatibility(classLoader, config);\n            installHotSeatsAttachRecovery(classLoader, config);\n            installWorkstationResumeProducerRecovery(classLoader);\n\n            HookUtil.hookMethod(classLoader,''')
+
+          marker = '''    private static Class<?> loadOptionalClass(ClassLoader classLoader, String name) {\n'''
+          methods = '''    /**\n     * HotSeats is the stable lifecycle owner across both default MiuiX and themed material\n     * implementations. Recover the active material at the concrete HotSeats attach boundary.\n     */\n    private static void installHotSeatsAttachRecovery(\n            ClassLoader classLoader, LiquidDockConfig config) {\n        try {\n            Class<?> hotSeatsClass = Class.forName(\n                    "com.miui.home.launcher.hotseats.HotSeats", false, classLoader);\n            Method attach = hotSeatsClass.getDeclaredMethod("onAttachedToWindow");\n            HookUtil.hook(attach, chain -> {\n                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));\n                if (MainHook.isWorkstationMode()) return result;\n                Object hotSeats = chain.getThisObject();\n                hotSeatsRef = new WeakReference<>(hotSeats);\n                View background = resolveBackground(hotSeats);\n                if (background == null) {\n                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery: background not ready");\n                    return result;\n                }\n                if (!ensureGlassBound(background, config, classLoader)) {\n                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery deferred");\n                    return result;\n                }\n                MiuixGlassHook.syncSize(background);\n                MiuixGlassHook.syncGeometry(background, config);\n                MainHook.log("[DC] MiuiX 307 HotSeats attach recovery complete class="\n                        + background.getClass().getSimpleName());\n                return result;\n            });\n            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery installed");\n        } catch (Throwable error) {\n            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery unavailable: " + error);\n        }\n    }\n\n    /**\n     * A fullscreen workstation app can disconnect SurfaceFlinger's PassBlur producer while the\n     * Java TextureView hierarchy remains attached. Launcher.onResume is the device-verified\n     * recovery boundary: replace only the producer, preserving the current glass hierarchy.\n     */\n    private static void installWorkstationResumeProducerRecovery(ClassLoader classLoader) {\n        try {\n            Class<?> launcherClass = Class.forName(\n                    "com.miui.home.launcher.Launcher", false, classLoader);\n            Method resume = launcherClass.getDeclaredMethod("onResume");\n            HookUtil.hook(resume, chain -> {\n                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));\n                if (MainHook.isWorkstationMode()) {\n                    Miuix307ZeroCopyRenderer.rebindProducer("workstation-launcher-resume");\n                }\n                return result;\n            });\n            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery installed");\n        } catch (Throwable error) {\n            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery unavailable: "\n                    + error);\n        }\n    }\n\n'''
+          replace_once(pipeline, marker, methods + marker)
+
+          # 2) Give the renderer a producer-only recovery entry point.
+          renderer = root / 'Miuix307ZeroCopyRenderer.java'
+          replace_once(
+              renderer,
+              '''    static void clear() {\n''',
+              '''    static void rebindProducer(String reason) {\n        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();\n        if (gpuBackdrop != null) gpuBackdrop.rebindProducer(reason);\n    }\n\n    static void clear() {\n''')
+
+          # 3) Replace the stale PassBlur BufferQueue producer with a fresh one on recovery.
+          view = root / 'Miuix307PassBlurTextureView.java'
+          replace_once(
+              view,
+              '''    private volatile boolean hasConsumedFrame;\n    private volatile int configRotation;\n''',
+              '''    private volatile boolean hasConsumedFrame;\n    private volatile boolean producerRebindPending;\n    private volatile int configRotation;\n''')
+
+          replace_once(
+              view,
+              '''    void shutdown() {\n        if (shuttingDown) return;\n        shuttingDown = true;\n        gpuBackdropActive = false;\n''',
+              '''    /**\n     * Reconnect SurfaceFlinger's PassBlur producer without rebuilding the attached TextureView.\n     * The framework Binding can remain stale-true after its BufferQueue has disconnected.\n     */\n    void rebindProducer(String reason) {\n        if (shuttingDown) return;\n        if (producerRebindPending) return;\n        producerRebindPending = true;\n        Miuix307PassBlurBridge.Binding stale = binding;\n        binding = null;\n        Miuix307PassBlurBridge.unbind(stale);\n        gpuBackdropActive = false;\n        activationExhausted = false;\n        hasConsumedFrame = false;\n        frameAvailable.set(false);\n        firstFrameLogged = false;\n        firstDrawLogged = false;\n        firstMatrixLogged = false;\n        stageBDiagnosticsLogged = false;\n        resetBoundGeometry();\n        MainHook.log(TAG + " producer rebind requested reason=" + reason);\n        renderHandler.post(() -> recreateInputProducer(reason));\n    }\n\n    /**\n     * SetPassBlurSurface marks the producer Binder before parceling it to SurfaceFlinger. A\n     * producer that already crossed that boundary must not be reused; create a new BufferQueue.\n     */\n    private void recreateInputProducer(String reason) {\n        Surface staleProducer = inputProducerSurface;\n        SurfaceTexture staleInput = inputSurfaceTexture;\n        try {\n            makeCurrent();\n            inputProducerSurface = null;\n            inputSurfaceTexture = null;\n\n            if (staleProducer != null) staleProducer.release();\n            if (staleInput != null) {\n                try { staleInput.setOnFrameAvailableListener(null); } catch (Throwable ignored) {}\n                staleInput.release();\n            }\n            if (oesTexture != 0) {\n                GLES20.glDeleteTextures(1, new int[]{oesTexture}, 0);\n                oesTexture = 0;\n            }\n\n            createInputProducer();\n            if (inputProducerSurface == staleProducer || inputSurfaceTexture == staleInput) {\n                throw new IllegalStateException("PassBlur input producer was not replaced");\n            }\n            MainHook.log(TAG + " input producer recreated reason=" + reason);\n            post(() -> bindProducerWhenReady(0));\n        } catch (Throwable error) {\n            producerRebindPending = false;\n            fail("producer recreate", error);\n        }\n    }\n\n    void shutdown() {\n        if (shuttingDown) return;\n        shuttingDown = true;\n        producerRebindPending = false;\n        gpuBackdropActive = false;\n''')
+
+          old_input = '''        int[] textures = new int[1];\n        GLES20.glGenTextures(1, textures, 0);\n        oesTexture = textures[0];\n        if (oesTexture == 0) throw new IllegalStateException("OES texture=0");\n        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexture);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);\n\n        SurfaceTexture input = new SurfaceTexture(oesTexture);\n        Surface producer = new Surface(input);\n        inputSurfaceTexture = input;\n        inputProducerSurface = producer;\n        input.setOnFrameAvailableListener(texture -> {\n            if (shuttingDown || texture != inputSurfaceTexture) return;\n            frameAvailable.set(true);\n            drawLatestFrame(true);\n        }, renderHandler);\n        post(() -> bindProducerWhenReady(0));\n    }\n'''
+          new_input = '''        createInputProducer();\n        post(() -> bindProducerWhenReady(0));\n    }\n\n    private void createInputProducer() {\n        int[] textures = new int[1];\n        GLES20.glGenTextures(1, textures, 0);\n        oesTexture = textures[0];\n        if (oesTexture == 0) throw new IllegalStateException("OES texture=0");\n        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexture);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);\n        GLES20.glTexParameteri(\n                GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);\n\n        SurfaceTexture input = new SurfaceTexture(oesTexture);\n        Surface producer = new Surface(input);\n        inputSurfaceTexture = input;\n        inputProducerSurface = producer;\n        input.setOnFrameAvailableListener(texture -> {\n            if (shuttingDown || texture != inputSurfaceTexture) return;\n            frameAvailable.set(true);\n            drawLatestFrame(true);\n        }, renderHandler);\n    }\n'''
+          replace_once(view, old_input, new_input)
+
+          replace_once(
+              view,
+              '''        binding = next;\n        configRotation = current.configRotation;\n''',
+              '''        binding = next;\n        producerRebindPending = false;\n        configRotation = current.configRotation;\n''')
+          replace_once(
+              view,
+              '''        if (attempt >= MAX_BIND_RETRY_FRAMES) {\n            activationExhausted = true;\n            MainHook.log(TAG + " PassBlur TextureView activation exhausted reason=" + reason);\n''',
+              '''        if (attempt >= MAX_BIND_RETRY_FRAMES) {\n            activationExhausted = true;\n            producerRebindPending = false;\n            MainHook.log(TAG + " PassBlur TextureView activation exhausted reason=" + reason);\n''')
+          replace_once(
+              view,
+              '''        if (geometry == null || geometry.rootSurface == null || !geometry.rootSurface.isValid()) return;\n        if (!isSameSurface(binding.rootSurface, geometry.rootSurface)) return;\n''',
+              '''        if (geometry == null || geometry.rootSurface == null || !geometry.rootSurface.isValid()) return;\n        if (!binding.rootSurface.isValid()\n                || !isSameSurface(binding.rootSurface, geometry.rootSurface)) {\n            rebindProducer("producer-root-changed");\n            return;\n        }\n''')
+
+          # Ensure the production patch did not resurrect the retired capture backend.
+          all_java = '\n'.join(p.read_text(errors='ignore') for p in root.glob('*.java'))
+          forbidden = ['captureScreenAsync(', 'class DockLiquidGlassView', 'class LiveScreenCapture']
+          for token in forbidden:
+              if token in all_java:
+                  raise SystemExit(f'retired capture backend token restored: {token}')
+          PY
+      - run: chmod +x ./gradlew
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Build APK
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Remove staging workflow and commit verified fix
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-workstation-producer-recovery.yml
+          git config user.name 'yu4032'
+          git config user.email '4032542465@smail.lnu.edu.cn'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: restore workstation PassBlur producer recovery'
+          git push origin HEAD:fix/workstation-passblur-producer-recovery-v2
