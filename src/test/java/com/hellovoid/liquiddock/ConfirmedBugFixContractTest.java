@@ -83,7 +83,7 @@ public class ConfirmedBugFixContractTest {
         assertFalse(settings.contains("SYSTEM_UI_FLAG_LIGHT_STATUS_BAR"));
         assertTrue(settings.contains("waitFor("));
         assertTrue(settings.contains("TimeUnit.SECONDS"));
-        assertTrue(settings.contains("Redirect.DISCARD"));
+        assertTrue(settings.contains("/dev/null"));
         assertTrue(settings.contains("destroyForcibly"));
     }
 
