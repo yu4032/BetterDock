@@ -10,22 +10,23 @@ import java.util.Collections;
 
 import org.junit.Test;
 
+/** Numerical and zero-copy adaptation checks for the pinned Prismal v1.0.6 baseline. */
 public class Miuix307PrismalParityRepairTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
     private static final float EPS = 0.0001f;
 
     @Test
-    public void calibratedBaseMatchesCurrentUpstreamPrismalRecipe() {
-        assertUpstreamBase(Miuix307PrismalMaterial.defaults(2f));
+    public void calibratedBaseMatchesPinnedPrismalV106Recipe() {
+        assertPrismalV106Base(Miuix307PrismalMaterial.defaults(2f));
     }
 
     @Test
-    public void legacyFallbackProfileMigratesToCurrentUpstreamBase() {
+    public void legacyFallbackProfileMigratesToPinnedPrismalV106Base() {
         LiquidDockConfig config = LiquidDockConfig.from(new ConfigReader(Collections.emptyMap()));
-        assertUpstreamBase(Miuix307PrismalMaterial.fromConfig(config.glass, 2f));
+        assertPrismalV106Base(Miuix307PrismalMaterial.fromConfig(config.glass, 2f));
     }
 
-    private static void assertUpstreamBase(Miuix307PrismalMaterial.Params p) {
+    private static void assertPrismalV106Base(Miuix307PrismalMaterial.Params p) {
         assertEquals(1.55f, p.ior, EPS);
         assertEquals(36f, p.thicknessPx, EPS);
         assertEquals(1.15f, p.normalStrength, EPS);
@@ -54,7 +55,7 @@ public class Miuix307PrismalParityRepairTest {
     }
 
     @Test
-    public void glassShaderIsPureTwoDimensionalUpstreamPrismalDomain() throws Exception {
+    public void glassShaderIsPureTwoDimensionalPrismalV106Domain() throws Exception {
         String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
 
         assertTrue(shader.contains("uniform sampler2D u_backgroundTexture"));
@@ -121,7 +122,7 @@ public class Miuix307PrismalParityRepairTest {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
 
         assertTrue(shaders.contains("mirrorDockUv(vUv)"));
-        assertFalse("Prismal optical equations should stay producer-geometry agnostic",
+        assertFalse("Prismal v1.0.6 optical equations should stay producer-geometry agnostic",
                 shader.contains("u_validBackdropRect"));
         assertTrue("visible partial coverage is still clipped to the real Dock/window intersection",
                 view.contains("producerCoverage == Miuix307BackdropMapping.Coverage.PARTIAL"));
