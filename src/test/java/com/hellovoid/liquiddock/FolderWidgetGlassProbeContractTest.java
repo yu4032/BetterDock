@@ -49,8 +49,11 @@ public class FolderWidgetGlassProbeContractTest {
         assertFalse(source.contains("SetPassBlurSurface"));
     }
 
-    @Test public void mainInstallsProbeAfterMasterSwitchGate() throws Exception {
-        String main = Files.readString(MAIN.resolve("MainHook.java"));
-        assertTrue(main.contains("FolderWidgetGlassProbe.install(classLoader)"));
+    @Test public void moduleInstallsProbeOnlyAfterMasterSwitchGate() throws Exception {
+        String module = Files.readString(MAIN.resolve("ModuleMain.java"));
+        int masterGate = module.indexOf("if (runtimeConfig.enabled)");
+        int install = module.indexOf("FolderWidgetGlassProbe.install(classLoader)");
+        assertTrue("probe must be installed", install >= 0);
+        assertTrue("probe must be gated by master switch", masterGate >= 0 && install > masterGate);
     }
 }
