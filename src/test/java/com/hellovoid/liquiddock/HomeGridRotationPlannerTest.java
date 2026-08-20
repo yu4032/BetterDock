@@ -24,6 +24,42 @@ public class HomeGridRotationPlannerTest {
         assertFalse(plan.isUnresolved(10L));
     }
 
+    @Test public void nativeFallbackMatchesObservedMiuiRowMajorRemap() {
+        HomeGridRotationPlanner.Item a = new HomeGridRotationPlanner.Item(
+                101L, 0, 6, 0, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Item b = new HomeGridRotationPlanner.Item(
+                102L, 0, 0, 1, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Item c = new HomeGridRotationPlanner.Item(
+                103L, 0, 2, 1, 1, 1, 1, 1);
+
+        HomeGridRotationPlanner.Plan portrait = HomeGridRotationPlanner.plan(
+                10, 6, 6, 10, Arrays.asList(a, b, c), new HashMap<>());
+
+        assertEquals(new HomeGridRotationPlanner.Position(0, 0, 1, 1, 1),
+                portrait.position(101L));
+        assertEquals(new HomeGridRotationPlanner.Position(0, 4, 1, 1, 1),
+                portrait.position(102L));
+        assertEquals(new HomeGridRotationPlanner.Position(0, 0, 2, 1, 1),
+                portrait.position(103L));
+    }
+
+    @Test public void rowMajorFallbackRoundTripsOneByOneIcons() {
+        HomeGridRotationPlanner.Item landscape = new HomeGridRotationPlanner.Item(
+                104L, 0, 7, 0, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Plan portrait = HomeGridRotationPlanner.plan(
+                10, 6, 6, 10, Arrays.asList(landscape), new HashMap<>());
+        HomeGridRotationPlanner.Position p = portrait.position(104L);
+        assertEquals(1, p.x);
+        assertEquals(1, p.y);
+
+        HomeGridRotationPlanner.Item portraitItem = new HomeGridRotationPlanner.Item(
+                104L, 0, p.x, p.y, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Plan back = HomeGridRotationPlanner.plan(
+                6, 10, 10, 6, Arrays.asList(portraitItem), new HashMap<>());
+        assertEquals(7, back.position(104L).x);
+        assertEquals(0, back.position(104L).y);
+    }
+
     @Test public void rememberedOrientationPositionWinsAndEnablesRoundTrip() {
         HomeGridRotationPlanner.Item widget = new HomeGridRotationPlanner.Item(
                 11L, 0, 1, 5, 4, 2, 4, 2);
