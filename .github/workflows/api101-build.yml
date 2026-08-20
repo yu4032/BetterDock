@@ -37,7 +37,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'cleanup/remove-v12-s-curve'
         run: |
           python tools/remove_v12_s_curve.py
-          sed -i '/assertComposeIntSpec(ConfigSchema.Glass.LEGACY_S_CURVE, 0, 0, 200);/d' src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java
+          python tools/retire_v12_scurve_tests.py
           git diff --check
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
@@ -53,6 +53,7 @@ jobs:
           git show origin/main:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
           rm -f .github/workflows/retire-v12-scurve.yml
           rm -f tools/remove_v12_s_curve.py
+          rm -f tools/retire_v12_scurve_tests.py
           git add -A
           git diff --cached --check
           git config user.name github-actions[bot]
