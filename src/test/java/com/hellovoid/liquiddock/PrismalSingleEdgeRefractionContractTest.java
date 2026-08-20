@@ -1,6 +1,5 @@
 package com.hellovoid.liquiddock;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -8,39 +7,38 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Regression contracts for a single, direction-consistent transmitted refraction field. */
+/** Regression contract for the explicit runtime fork from upstream Prismal transmission. */
 public class PrismalSingleEdgeRefractionContractTest {
-    private static final Path SHADER =
-            Path.of("prismal/src/main/res/raw/prismal_fragment.glsl");
+    private static final Path PRISMAL = Path.of("prismal/src/main");
 
     @Test
-    public void transmittedBackdropUsesOneEdgeRefractionInsteadOfThreeOffsetBands() throws Exception {
-        String shader = Files.readString(SHADER);
+    public void upstreamShaderRemainsVendoredWhileRendererCompilesCorrectedTransmission() throws Exception {
+        String upstream = Files.readString(PRISMAL.resolve("res/raw/prismal_fragment.glsl"));
+        String patch = Files.readString(PRISMAL.resolve(
+                "java/com/hellovoid/prismal/PrismalSingleEdgeShader.java"));
+        String renderer = Files.readString(PRISMAL.resolve(
+                "java/com/hellovoid/prismal/PrismalRenderer.java"));
 
-        assertTrue("transmitted background must have one named edge-refraction vector",
-                shader.contains("vec2 edgeRefractionUv = (dLens * lensDir) / u_resolution;"));
-        assertTrue("the backdrop sample must consume only that edge-refraction vector",
-                shader.contains("vec2 baseOffset = edgeRefractionUv;"));
-
-        assertFalse("parallax must not create a second transmitted displacement band",
-                shader.contains("lensDeltaUv += parallax"));
-        assertFalse("Snell displacement must not create a separate outer-edge step",
-                shader.contains("vec2 snellOff ="));
-        assertFalse("mid-band bulge must not create a third refraction step",
-                shader.contains("vec2 bulgeUv ="));
-        assertFalse("the old three-term transmitted offset must never return",
-                shader.contains("lensDeltaUv + snellOff + bulgeUv"));
+        assertTrue("vendored upstream remains available for provenance",
+                upstream.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv;"));
+        assertTrue("runtime correction must collapse transmission to one edge vector",
+                patch.contains("vec2 edgeRefractionUv = (dLens * lensDir) / u_resolution;")
+                        && patch.contains("vec2 baseOffset = edgeRefractionUv;"));
+        assertTrue("runtime correction must remove the two extra spatial bands",
+                patch.contains("UPSTREAM_TRANSMITTED_BLOCK")
+                        && patch.contains("SINGLE_EDGE_TRANSMITTED_BLOCK"));
+        assertTrue("renderer must compile the corrected fragment, not the raw vendored fragment",
+                renderer.contains(
+                        "PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT)"));
     }
 
     @Test
-    public void textureSpaceRadialDirectionsUseTheYDownBasis() throws Exception {
-        String shader = Files.readString(SHADER);
-
-        assertTrue("Prismal's sampled backdrop UV is Y-down after the vertex flip",
-                shader.contains("vec2 cKy = vec2(pPx.x, -pPx.y);"));
-        assertTrue("chromatic direction must use the same Y-down radial basis",
-                shader.contains("vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);"));
-        assertFalse("raw Y-up shape coordinates must not directly drive a sampled UV direction",
-                shader.contains("vec2 dispDir = length(pPx) > 1e-3 ? normalize(pPx)"));
+    public void correctionUsesTheYDownTextureBasisForChromaticSampling() throws Exception {
+        String patch = Files.readString(PRISMAL.resolve(
+                "java/com/hellovoid/prismal/PrismalSingleEdgeShader.java"));
+        assertTrue(patch.contains(
+                "vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);"));
+        assertTrue(patch.contains("UPSTREAM_CHROMA_DIRECTION")
+                && patch.contains("TEXTURE_CHROMA_DIRECTION"));
     }
 }
