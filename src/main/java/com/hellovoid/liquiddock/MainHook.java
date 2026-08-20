@@ -10,12 +10,22 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import java.lang.ref.WeakReference;
 
 
 /** Core Launcher hooks for LiquidDock — zero-copy glass, stroke, dock geometry, workstation. */
 public class MainHook {
 
-    private static View shadowView, oldBg, nativeShadowTarget;
+    private static View shadowView;
+    private static WeakReference<View> oldBgRef = new WeakReference<>(null);
+    private static WeakReference<View> nativeShadowTargetRef = new WeakReference<>(null);
+
+    private static View oldBg() { return oldBgRef.get(); }
+    private static void setOldBg(View view) { oldBgRef = new WeakReference<>(view); }
+    private static View nativeShadowTarget() { return nativeShadowTargetRef.get(); }
+    private static void setNativeShadowTarget(View view) {
+        nativeShadowTargetRef = new WeakReference<>(view);
+    }
     private static int lastShadowW;
     private static int bgW, bgH, shadowPad;
     private static float bgR = 30f;
@@ -234,7 +244,7 @@ public class MainHook {
                     "com.miui.home.launcher.hotseats.HotSeats", "getMingouStaticDockBlurShadowTarget",
                     chain -> {
                         Object r = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (r instanceof View) nativeShadowTarget = (View) r;
+                        if (r instanceof View) setNativeShadowTarget((View) r);
                         return r;
                     });
                 Class<?> ms = Class.forName("com.miui.home.launcher.common.MiShadowUtils", false, cl);
@@ -243,7 +253,7 @@ public class MainHook {
                         chain -> {
                             Object[] args = chain.getArgs().toArray(new Object[0]);
                             if (workstationMode) return chain.proceed(args);
-                            if (args[0] != nativeShadowTarget) return chain.proceed(args);
+                            if (args[0] != nativeShadowTarget()) return chain.proceed(args);
                             args[1] = Color.TRANSPARENT;
                             args[2] = 0f;
                             args[3] = 0f;
@@ -264,12 +274,14 @@ public class MainHook {
                             if (!workstationMode) try {
                                 Object target = HookUtil.invoke(hs, "getMingouStaticDockBlurShadowTarget");
                                 if (target instanceof View) {
-                                    nativeShadowTarget = (View) target;
+                                    View nativeTarget = (View) target;
+                                    setNativeShadowTarget(nativeTarget);
                                     HookUtil.invokeStatic("com.miui.home.launcher.common.MiShadowUtils",
-                                            "applyViewShadow", nativeShadowTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
+                                            "applyViewShadow", nativeTarget, Color.TRANSPARENT, 0f, 0f, 0f, 1f);
                                 }
                             } catch (Throwable e) { log("[DC] native Dock shadow clear failed: " + e); }
-                            oldBg = (View) HookUtil.getField(hs, "mBlurBackground2");
+                            View oldBg = (View) HookUtil.getField(hs, "mBlurBackground2");
+                            setOldBg(oldBg);
                             if (oldBg == null) return r;
                             ViewGroup parent = (ViewGroup) oldBg.getParent();
                             if (parent == null) return r;
@@ -289,7 +301,7 @@ public class MainHook {
                                 return r;
                             }
                             if (dockShadow) {
-                                shadowView = makeDockShadow(c2.squircle, sqOff, sqCp, dsR, dsS, dsA, dsY);
+                                shadowView = makeDockShadow(oldBg, c2.squircle, sqOff, sqCp, dsR, dsS, dsA, dsY);
                                 shadowView.setId(View.generateViewId());
                                 int bgIdx = parent.indexOfChild(oldBg);
                                 parent.addView(shadowView, Math.max(0, bgIdx), new FrameLayout.LayoutParams(1, 1));
@@ -485,31 +497,34 @@ public class MainHook {
         HomeGridHook.setWorkstationMode(enabled);
         WorkstationDockGeometryHook.onWorkstationModeChanged(enabled);
         log("[DC] Mingou workstation mode changed=" + enabled);
+        View dockBg = oldBg();
         if (!enabled) {
-            if (oldBg != null) oldBg.post(() -> {
-                oldBg.setAlpha(1f);
+            if (dockBg != null) dockBg.post(() -> {
+                dockBg.setAlpha(1f);
                 if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
-                syncAll(oldBg);
+                syncAll(dockBg);
             });
             return;
         }
-        if (oldBg != null) oldBg.post(() -> {
+        if (dockBg != null) dockBg.post(() -> {
             // The workstation Dock background is rendered by its independent laptop
             // DockContainerView. Suppress every normal-mode background layer here.
-            oldBg.setAlpha(0f);
+            dockBg.setAlpha(0f);
             if (shadowView != null) shadowView.setVisibility(View.GONE);
         });
     }
 
     private static void backupNormalHomeLayout() {
         normalLayoutBackup.clear();
-        View root = oldBg == null ? null : oldBg.getRootView();
+        View dockBg = oldBg();
+        View root = dockBg == null ? null : dockBg.getRootView();
         if (root != null) collectHomeItemPositions(root, false);
         log("[DC] normal 8x4 layout backup items=" + normalLayoutBackup.size());
     }
 
     private static void scheduleNormalLayoutRestore() {
-        View root = oldBg == null ? null : oldBg.getRootView();
+        View dockBg = oldBg();
+        View root = dockBg == null ? null : dockBg.getRootView();
         if (root == null || normalLayoutBackup.isEmpty()) return;
         root.post(() -> restoreNormalHomeLayout(root));
         root.postDelayed(() -> restoreNormalHomeLayout(root), 250L);
@@ -566,13 +581,13 @@ public class MainHook {
         p.cubicTo(l + a - c, b, l, b - a + c, l, b - a); p.close(); return p;
     }
 
-    private static View makeDockShadow(boolean sq, int sqOff, float sqCp,
+    private static View makeDockShadow(View dockBg, boolean sq, int sqOff, float sqCp,
                                        int radius, int size, int alpha, int offsetY) {
         final int maxDistance = Math.max(1, size);
         final int blurRadius = Math.min(Math.max(1, radius), maxDistance);
         final int spread = Math.max(0, maxDistance - blurRadius);
         shadowPad = Math.max(4, maxDistance + Math.abs(offsetY) + 4);
-        View view = new View(oldBg.getContext()) {
+        View view = new View(dockBg.getContext()) {
             @Override protected void onDraw(Canvas canvas) {
                 if (bgW <= 0 || bgH <= 0) return;
                 float left = shadowPad, top = shadowPad;
@@ -603,7 +618,7 @@ public class MainHook {
     }
 
     private static void syncShadowGeometry() {
-        View shadow = shadowView, dockBg = oldBg;
+        View shadow = shadowView, dockBg = oldBg();
         if (shadow == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
         ViewGroup.LayoutParams lp = shadow.getLayoutParams();
         if (lp != null) {

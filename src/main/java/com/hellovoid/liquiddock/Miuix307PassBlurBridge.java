@@ -67,7 +67,6 @@ final class Miuix307PassBlurBridge {
                 return null;
             }
 
-            SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
             Class<?> transactionClass = SurfaceControl.Transaction.class;
             Method setPassBlurSurface = transactionClass.getMethod(
                     "SetPassBlurSurface", SurfaceControl.class, Surface.class);
@@ -88,11 +87,13 @@ final class Miuix307PassBlurBridge {
             // Keep the calibration producer at full resolution. TextureView output is composited
             // into the already-excluded Floating Dock root, so no child-layer exclusion is required.
             float scale = DEMO_SCALE;
-            setMiBlurWinExc.invoke(transaction, rootSurface, (Object) exclusions);
-            setPassBlurSurface.invoke(transaction, rootSurface, producerSurface);
-            setUpdateTextureFlag.invoke(
-                    transaction, rootSurface, Boolean.TRUE, Float.valueOf(scale));
-            transaction.apply();
+            try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+                setMiBlurWinExc.invoke(transaction, rootSurface, (Object) exclusions);
+                setPassBlurSurface.invoke(transaction, rootSurface, producerSurface);
+                setUpdateTextureFlag.invoke(
+                        transaction, rootSurface, Boolean.TRUE, Float.valueOf(scale));
+                transaction.apply();
+            }
 
             MainHook.log(TAG + " PassBlur producer bound scale=" + scale
                     + " requestedScale=" + requestedScale
@@ -123,15 +124,17 @@ final class Miuix307PassBlurBridge {
         binding.bound = false;
         try {
             if (!binding.rootSurface.isValid()) return;
-            SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
-            binding.setPassBlurSurface.invoke(transaction, binding.rootSurface, null);
-            binding.setUpdateTextureFlag.invoke(
-                    transaction,
-                    binding.rootSurface,
-                    Boolean.FALSE,
-                    Float.valueOf(binding.scale));
-            binding.setMiBlurWinExc.invoke(transaction, binding.rootSurface, (Object) new String[0]);
-            transaction.apply();
+            try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+                binding.setPassBlurSurface.invoke(transaction, binding.rootSurface, null);
+                binding.setUpdateTextureFlag.invoke(
+                        transaction,
+                        binding.rootSurface,
+                        Boolean.FALSE,
+                        Float.valueOf(binding.scale));
+                binding.setMiBlurWinExc.invoke(
+                        transaction, binding.rootSurface, (Object) new String[0]);
+                transaction.apply();
+            }
             MainHook.log(TAG + " PassBlur producer unbound root=" + binding.rootName);
         } catch (Throwable error) {
             MainHook.log(TAG + " PassBlur unbind failed: " + error);

@@ -28,17 +28,17 @@ final class Miuix307MaterialPipeline {
     private static Handler MAIN_HANDLER;
 
     private static boolean installed;
-    private static View workspaceRef;
+    private static WeakReference<View> workspaceRef = new WeakReference<>(null);
     private static WeakReference<Object> launcherRef = new WeakReference<>(null);
     private static WeakReference<Object> hotSeatsRef = new WeakReference<>(null);
-    private static View observedBackground;
-    private static View observedHost;
+    private static WeakReference<View> observedBackgroundRef = new WeakReference<>(null);
+    private static WeakReference<View> observedHostRef = new WeakReference<>(null);
     private static View.OnAttachStateChangeListener hierarchyListener;
     private static boolean hierarchyRebindPosted;
-    private static ViewTreeObserver hierarchyRecoveryObserver;
+    private static WeakReference<ViewTreeObserver> hierarchyRecoveryObserverRef = new WeakReference<>(null);
     private static ViewTreeObserver.OnGlobalLayoutListener hierarchyRecoveryListener;
     // Log only once while one vendor instance is still in its startup placeholder geometry.
-    private static View geometryDeferredLoggedFor;
+    private static WeakReference<View> geometryDeferredLoggedFor = new WeakReference<>(null);
 
     private Miuix307MaterialPipeline() {}
 
@@ -80,7 +80,7 @@ final class Miuix307MaterialPipeline {
                                 Object value = HookUtil.getField(launcher, "mWorkspace");
                                 if (value instanceof View) workspace = (View) value;
                             } catch (Throwable ignored) {}
-                            if (workspace != null) workspaceRef = workspace;
+                            if (workspace != null) workspaceRef = new WeakReference<>(workspace);
 
                             if (!ensureGlassBound(background, config, classLoader)) {
                                 MainHook.log("[DC] MiuiX 307 real glass handoff pending");
@@ -347,7 +347,7 @@ final class Miuix307MaterialPipeline {
             View background, LiquidDockConfig config, ClassLoader classLoader) {
         if (background == null || !isSupportedBackground(background)) return false;
         if (MiuixGlassHook.isBoundTo(background)) {
-            geometryDeferredLoggedFor = null;
+            geometryDeferredLoggedFor = new WeakReference<>(null);
             observeBoundHierarchy(background, config, classLoader);
             return true;
         }
@@ -357,8 +357,8 @@ final class Miuix307MaterialPipeline {
         // setBackgroundRadius/triggerMeasure callbacks naturally retry this method once geometry
         // is valid, so no fixed-delay polling is needed.
         if (!MiuixGlassHook.hasReadyNativeGeometry(background)) {
-            if (geometryDeferredLoggedFor != background) {
-                geometryDeferredLoggedFor = background;
+            if (geometryDeferredLoggedFor.get() != background) {
+                geometryDeferredLoggedFor = new WeakReference<>(background);
                 MainHook.log("[DC] MiuiX 307 Prismal handoff deferred; native geometry not ready"
                         + " class=" + background.getClass().getSimpleName()
                         + " size=" + background.getWidth() + "x" + background.getHeight()
@@ -366,11 +366,11 @@ final class Miuix307MaterialPipeline {
             }
             return false;
         }
-        if (geometryDeferredLoggedFor == background) {
+        if (geometryDeferredLoggedFor.get() == background) {
             MainHook.log("[DC] MiuiX 307 native geometry ready; committing Prismal handoff"
                     + " size=" + background.getWidth() + "x" + background.getHeight()
                     + " radius=" + MiuixGlassHook.readNativeOpticsRadius(background));
-            geometryDeferredLoggedFor = null;
+            geometryDeferredLoggedFor = new WeakReference<>(null);
         }
 
         // Remove observers before MiuixGlassHook replaces an old host so our own controlled
@@ -401,37 +401,41 @@ final class Miuix307MaterialPipeline {
             MainHook.log("[DC] MiuiX 307 bound host not found for hierarchy observation");
             return;
         }
-        if (observedBackground == background && observedHost == host
+        if (observedBackgroundRef.get() == background && observedHostRef.get() == host
                 && hierarchyListener != null) {
             return;
         }
 
         clearHierarchyObservation();
-        final View watchedBackground = background;
-        final View watchedHost = host;
+        final WeakReference<View> watchedBackgroundRef = new WeakReference<>(background);
+        final WeakReference<View> watchedHostRef = new WeakReference<>(host);
         View.OnAttachStateChangeListener listener = new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View v) {}
 
             @Override public void onViewDetachedFromWindow(View v) {
+                View watchedBackground = watchedBackgroundRef.get();
+                View watchedHost = watchedHostRef.get();
                 if (v != watchedBackground && v != watchedHost) return;
                 MainHook.log("[DC] MiuiX 307 hierarchy invalidated; rebind scheduled source="
                         + (v == watchedHost ? "host" : "background"));
+                clearHierarchyObservation();
+                clearHierarchyLayoutRecovery();
                 scheduleHierarchyRebind(config, classLoader);
             }
         };
         background.addOnAttachStateChangeListener(listener);
         host.addOnAttachStateChangeListener(listener);
-        observedBackground = background;
-        observedHost = host;
+        observedBackgroundRef = new WeakReference<>(background);
+        observedHostRef = new WeakReference<>(host);
         hierarchyListener = listener;
     }
 
     private static void clearHierarchyObservation() {
-        View background = observedBackground;
-        View host = observedHost;
+        View background = observedBackgroundRef.get();
+        View host = observedHostRef.get();
         View.OnAttachStateChangeListener listener = hierarchyListener;
-        observedBackground = null;
-        observedHost = null;
+        observedBackgroundRef = new WeakReference<>(null);
+        observedHostRef = new WeakReference<>(null);
         hierarchyListener = null;
         if (listener == null) return;
         try {
@@ -494,13 +498,14 @@ final class Miuix307MaterialPipeline {
     private static void armHierarchyLayoutRecovery(
             LiquidDockConfig config, ClassLoader classLoader) {
         Object hotSeats = resolveCurrentHotSeats();
-        View owner = workspaceRef != null && workspaceRef.isAttachedToWindow()
-                ? workspaceRef : hotSeats instanceof View ? (View) hotSeats : null;
+        View workspace = workspaceRef.get();
+        View owner = workspace != null && workspace.isAttachedToWindow()
+                ? workspace : hotSeats instanceof View ? (View) hotSeats : null;
         if (owner == null) return;
         View root = owner.getRootView();
         ViewTreeObserver observer = (root != null ? root : owner).getViewTreeObserver();
         if (observer == null || !observer.isAlive()) return;
-        if (hierarchyRecoveryObserver == observer && hierarchyRecoveryListener != null) return;
+        if (hierarchyRecoveryObserverRef.get() == observer && hierarchyRecoveryListener != null) return;
 
         clearHierarchyLayoutRecovery();
         ViewTreeObserver.OnGlobalLayoutListener listener = () -> {
@@ -509,15 +514,15 @@ final class Miuix307MaterialPipeline {
             }
         };
         observer.addOnGlobalLayoutListener(listener);
-        hierarchyRecoveryObserver = observer;
+        hierarchyRecoveryObserverRef = new WeakReference<>(observer);
         hierarchyRecoveryListener = listener;
         MainHook.log("[DC] MiuiX 307 hierarchy recovery armed for next real layout");
     }
 
     private static void clearHierarchyLayoutRecovery() {
-        ViewTreeObserver observer = hierarchyRecoveryObserver;
+        ViewTreeObserver observer = hierarchyRecoveryObserverRef.get();
         ViewTreeObserver.OnGlobalLayoutListener listener = hierarchyRecoveryListener;
-        hierarchyRecoveryObserver = null;
+        hierarchyRecoveryObserverRef = new WeakReference<>(null);
         hierarchyRecoveryListener = null;
         if (observer == null || listener == null) return;
         try {

@@ -7,6 +7,7 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 
 /**
@@ -26,29 +27,51 @@ final class MiuixGlassHook {
     private static final String COMPAT_BACKGROUND_CLASS =
             "com.miui.home.launcher.hotseats.HotSeatsListContentBlurBackground2";
 
-    private static DockLiquidGlassHostView hostRef;
-    private static View backgroundRef;
-    private static ViewTreeObserver vendorBlurObserver;
+    private static WeakReference<DockLiquidGlassHostView> hostRef = new WeakReference<>(null);
+    private static WeakReference<View> backgroundRef = new WeakReference<>(null);
+    private static WeakReference<ViewTreeObserver> vendorBlurObserver = new WeakReference<>(null);
     private static ViewTreeObserver.OnPreDrawListener vendorBlurSuppressor;
-    private static View vendorGpuBlurLoggedFor;
-    private static View compatBackgroundBlurLoggedFor;
-    private static View transparentMaterialOwner;
+    private static WeakReference<View> vendorGpuBlurLoggedFor = new WeakReference<>(null);
+    private static WeakReference<View> compatBackgroundBlurLoggedFor = new WeakReference<>(null);
+    private static WeakReference<View> transparentMaterialOwner = new WeakReference<>(null);
     private static GradientDrawable transparentMaterialBody;
     private static float transparentMaterialRadius = Float.NaN;
-    private static View materialBodyLoggedFor;
-    private static View zeroCopyActiveLoggedFor;
+    private static WeakReference<View> materialBodyLoggedFor = new WeakReference<>(null);
+    private static WeakReference<View> zeroCopyActiveLoggedFor = new WeakReference<>(null);
 
     private MiuixGlassHook() {}
 
+    private static DockLiquidGlassHostView currentHost() { return hostRef.get(); }
+    private static View currentBackground() { return backgroundRef.get(); }
+
+    private static void clearTrackedViews() {
+        hostRef = new WeakReference<>(null);
+        backgroundRef = new WeakReference<>(null);
+        vendorGpuBlurLoggedFor = new WeakReference<>(null);
+        compatBackgroundBlurLoggedFor = new WeakReference<>(null);
+        transparentMaterialOwner = new WeakReference<>(null);
+        transparentMaterialBody = null;
+        transparentMaterialRadius = Float.NaN;
+        materialBodyLoggedFor = new WeakReference<>(null);
+        zeroCopyActiveLoggedFor = new WeakReference<>(null);
+    }
+
+    static void onHostDetached(DockLiquidGlassHostView detachedHost) {
+        if (detachedHost == null || detachedHost != currentHost()) return;
+        removeVendorGpuBlurSuppressor();
+        Miuix307ZeroCopyRenderer.clear();
+        clearTrackedViews();
+    }
+
     static boolean isBoundTo(View dockBg) {
-        if (dockBg == null || dockBg != backgroundRef) return false;
-        DockLiquidGlassHostView host = hostRef;
+        if (dockBg == null || dockBg != currentBackground()) return false;
+        DockLiquidGlassHostView host = currentHost();
         return host != null && host.getParent() == dockBg;
     }
 
     static boolean isZeroCopyActive() {
-        DockLiquidGlassHostView host = hostRef;
-        return host != null && host.getParent() == backgroundRef
+        DockLiquidGlassHostView host = currentHost();
+        return host != null && host.getParent() == currentBackground()
                 && Miuix307ZeroCopyRenderer.isActive();
     }
 
@@ -67,8 +90,8 @@ final class MiuixGlassHook {
     static int suppressCompatBackgroundBlurRadius(View dockBg, int requestedRadius) {
         if (dockBg == null || requestedRadius <= 0) return requestedRadius;
         if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;
-        if (compatBackgroundBlurLoggedFor != dockBg) {
-            compatBackgroundBlurLoggedFor = dockBg;
+        if (compatBackgroundBlurLoggedFor.get() != dockBg) {
+            compatBackgroundBlurLoggedFor = new WeakReference<>(dockBg);
             MainHook.log(TAG + " compat BlurBackground2 parent GPU blur suppressed "
                     + requestedRadius + " -> 0");
         }
@@ -80,7 +103,9 @@ final class MiuixGlassHook {
         ViewGroup materialHost = (ViewGroup) dockBg;
         boolean nativeVisualOwner = isNativeVisualOwner(dockBg);
 
-        if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == materialHost) {
+        DockLiquidGlassHostView existingHost = currentHost();
+        if (currentBackground() == dockBg && existingHost != null
+                && existingHost.getParent() == materialHost) {
             syncSize(dockBg);
             syncGeometry(dockBg, config);
             return true;
@@ -89,18 +114,11 @@ final class MiuixGlassHook {
 
         removeVendorGpuBlurSuppressor();
         Miuix307ZeroCopyRenderer.clear();
-        if (hostRef != null && hostRef.getParent() instanceof ViewGroup) {
-            ((ViewGroup) hostRef.getParent()).removeView(hostRef);
+        DockLiquidGlassHostView previousHost = currentHost();
+        if (previousHost != null && previousHost.getParent() instanceof ViewGroup) {
+            ((ViewGroup) previousHost.getParent()).removeView(previousHost);
         }
-        hostRef = null;
-        backgroundRef = null;
-        vendorGpuBlurLoggedFor = null;
-        compatBackgroundBlurLoggedFor = null;
-        transparentMaterialOwner = null;
-        transparentMaterialBody = null;
-        transparentMaterialRadius = Float.NaN;
-        materialBodyLoggedFor = null;
-        zeroCopyActiveLoggedFor = null;
+        clearTrackedViews();
 
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
 
@@ -123,8 +141,8 @@ final class MiuixGlassHook {
         materialHost.addView(host, materialHost.getChildCount(), hostLp);
         host.bringToFront();
 
-        backgroundRef = dockBg;
-        hostRef = host;
+        backgroundRef = new WeakReference<>(dockBg);
+        hostRef = new WeakReference<>(host);
 
         if (nativeVisualOwner) suppressVendorGpuBlur(dockBg);
         installVendorGpuBlurSuppressor(dockBg);
@@ -144,11 +162,11 @@ final class MiuixGlassHook {
 
     private static void scheduleZeroCopyValidation(
             View dockBg, DockLiquidGlassHostView host, int frame) {
-        if (dockBg != backgroundRef || host != hostRef) return;
+        if (dockBg != currentBackground() || host != currentHost()) return;
 
         if (Miuix307ZeroCopyRenderer.isActive()) {
-            if (zeroCopyActiveLoggedFor != dockBg) {
-                zeroCopyActiveLoggedFor = dockBg;
+            if (zeroCopyActiveLoggedFor.get() != dockBg) {
+                zeroCopyActiveLoggedFor = new WeakReference<>(dockBg);
                 MainHook.log(ZERO_COPY_TAG + " zero-copy active backend=passblur-gles"
                         + " size=" + Miuix307ZeroCopyRenderer.activeWidth()
                         + "x" + Miuix307ZeroCopyRenderer.activeHeight());
@@ -168,8 +186,8 @@ final class MiuixGlassHook {
     }
 
     static void syncSize(View dockBg) {
-        if (dockBg == null || dockBg != backgroundRef) return;
-        DockLiquidGlassHostView host = hostRef;
+        if (dockBg == null || dockBg != currentBackground()) return;
+        DockLiquidGlassHostView host = currentHost();
         if (host == null || host.getParent() != dockBg) return;
         if (isNativeVisualOwner(dockBg)) {
             suppressVendorGpuBlur(dockBg);
@@ -181,8 +199,8 @@ final class MiuixGlassHook {
     }
 
     static void syncGeometry(View dockBg, LiquidDockConfig config) {
-        if (dockBg == null || config == null || dockBg != backgroundRef) return;
-        DockLiquidGlassHostView host = hostRef;
+        if (dockBg == null || config == null || dockBg != currentBackground()) return;
+        DockLiquidGlassHostView host = currentHost();
         if (host == null || host.getParent() != dockBg) return;
 
         if (isNativeVisualOwner(dockBg)) suppressVendorGpuBlur(dockBg);
@@ -206,8 +224,8 @@ final class MiuixGlassHook {
         if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
         MiBlurBridge.setPassWindowBlurRadius(dockBg, 0);
         MiBlurBridge.clearPassWindowBlur(dockBg);
-        if (vendorGpuBlurLoggedFor != dockBg) {
-            vendorGpuBlurLoggedFor = dockBg;
+        if (vendorGpuBlurLoggedFor.get() != dockBg) {
+            vendorGpuBlurLoggedFor = new WeakReference<>(dockBg);
             MainHook.log(TAG + " vendor parent GPU blur disabled class="
                     + dockBg.getClass().getSimpleName());
         }
@@ -219,29 +237,33 @@ final class MiuixGlassHook {
         ViewTreeObserver observer = root != null ? root.getViewTreeObserver() : null;
         if (observer == null || !observer.isAlive()) return;
 
+        WeakReference<View> watchedBackground = new WeakReference<>(dockBg);
         ViewTreeObserver.OnPreDrawListener listener = () -> {
-            if (backgroundRef == dockBg) {
-                suppressVendorGpuBlur(dockBg);
-                suppressVendorMaterialBody(dockBg, readRadius(dockBg));
+            View background = watchedBackground.get();
+            if (background != null && currentBackground() == background) {
+                suppressVendorGpuBlur(background);
+                suppressVendorMaterialBody(background, readRadius(background));
             }
             return true;
         };
         observer.addOnPreDrawListener(listener);
-        vendorBlurObserver = observer;
+        vendorBlurObserver = new WeakReference<>(observer);
         vendorBlurSuppressor = listener;
 
+        WeakReference<View> postedBackground = new WeakReference<>(dockBg);
         dockBg.post(() -> {
-            if (backgroundRef == dockBg) {
-                suppressVendorGpuBlur(dockBg);
-                suppressVendorMaterialBody(dockBg, readRadius(dockBg));
+            View background = postedBackground.get();
+            if (background != null && currentBackground() == background) {
+                suppressVendorGpuBlur(background);
+                suppressVendorMaterialBody(background, readRadius(background));
             }
         });
     }
 
     private static void removeVendorGpuBlurSuppressor() {
-        ViewTreeObserver observer = vendorBlurObserver;
+        ViewTreeObserver observer = vendorBlurObserver.get();
         ViewTreeObserver.OnPreDrawListener listener = vendorBlurSuppressor;
-        vendorBlurObserver = null;
+        vendorBlurObserver = new WeakReference<>(null);
         vendorBlurSuppressor = null;
         if (observer == null || listener == null) return;
         try {
@@ -252,8 +274,8 @@ final class MiuixGlassHook {
     private static void suppressVendorMaterialBody(View dockBg, float nativeRadius) {
         if (dockBg == null || !isNativeVisualOwner(dockBg)) return;
         float radius = Math.max(0f, nativeRadius);
-        if (transparentMaterialOwner != dockBg || transparentMaterialBody == null) {
-            transparentMaterialOwner = dockBg;
+        if (transparentMaterialOwner.get() != dockBg || transparentMaterialBody == null) {
+            transparentMaterialOwner = new WeakReference<>(dockBg);
             transparentMaterialBody = new GradientDrawable();
             transparentMaterialBody.setShape(GradientDrawable.RECTANGLE);
             transparentMaterialBody.setColor(android.graphics.Color.TRANSPARENT);
@@ -264,8 +286,8 @@ final class MiuixGlassHook {
             transparentMaterialBody.setCornerRadius(radius);
         }
         if (dockBg.getBackground() != transparentMaterialBody) dockBg.setBackground(transparentMaterialBody);
-        if (materialBodyLoggedFor != dockBg) {
-            materialBodyLoggedFor = dockBg;
+        if (materialBodyLoggedFor.get() != dockBg) {
+            materialBodyLoggedFor = new WeakReference<>(dockBg);
             MainHook.log(TAG + " vendor material body transparent; native optics radius="
                     + radius + " class=" + dockBg.getClass().getSimpleName());
         }

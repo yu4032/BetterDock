@@ -2,11 +2,10 @@ package com.hellovoid.liquiddock;
 
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.net.Uri;
-import android.view.View;
 import android.view.Window;
+import android.view.WindowInsetsController;
 import android.widget.Toast;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
@@ -25,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import com.hellovoid.liquiddock.config.ConfigCodec;
 import com.hellovoid.liquiddock.config.ConfigMigration;
 import com.hellovoid.liquiddock.config.PresetManager;
@@ -46,17 +46,15 @@ public class SettingsActivity extends AppCompatActivity {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         Window w = getWindow();
-        // Status bar must follow the system night mode (and Miuix Monet theme): a hardcoded
-        // color breaks HyperOS 3 — light mode shows dark icons on a dark bar, dark mode
-        // shows white icons on a light bar.  Adapt bar color + icon appearance together.
+        // targetSdk 35+ is edge-to-edge: the system/theme owns the status-bar background.
+        // Only request icon contrast through the modern insets controller.
         int uiMode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         boolean night = uiMode == Configuration.UI_MODE_NIGHT_YES;
-        if (night) {
-            w.setStatusBarColor(Color.parseColor("#1A1A1E"));
-            w.getDecorView().setSystemUiVisibility(0); // white icons on dark bar
-        } else {
-            w.setStatusBarColor(Color.parseColor("#F2F2F7"));
-            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        WindowInsetsController insetsController = w.getInsetsController();
+        if (insetsController != null) {
+            insetsController.setSystemBarsAppearance(
+                    night ? 0 : WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
         }
         if (useLegacyPreferenceUi()) {
             getSupportFragmentManager().beginTransaction()
@@ -177,14 +175,26 @@ public class SettingsActivity extends AppCompatActivity {
         LiquidDockApp.syncToRemote(PreferenceManager.getDefaultSharedPreferences(this));
         new Thread(() -> {
             try {
-                Process p = new ProcessBuilder("su").redirectErrorStream(true).start();
+                Process p = new ProcessBuilder("su")
+                        .redirectOutput(ProcessBuilder.Redirect.to(new java.io.File("/dev/null")))
+                        .redirectError(ProcessBuilder.Redirect.to(new java.io.File("/dev/null")))
+                        .start();
                 try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
                     os.writeBytes("am force-stop com.miui.home && sleep 1 && "
                         + "am start -n com.miui.home/.launcher.Launcher\nexit\n");
                     os.flush();
                 }
-                int exitCode = p.waitFor();
+                if (!p.waitFor(8, TimeUnit.SECONDS)) {
+                    p.destroy();
+                    if (!p.waitFor(1, TimeUnit.SECONDS)) p.destroyForcibly();
+                    throw new IOException("su timed out while restarting MIUI Home");
+                }
+                int exitCode = p.exitValue();
                 if (exitCode != 0) throw new IOException("su failed with exit code " + exitCode);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                runOnUiThread(() -> Toast.makeText(this,
+                        "Launcher restart interrupted", Toast.LENGTH_SHORT).show());
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(this, "Error: "+e.getMessage(), Toast.LENGTH_SHORT).show());
             }

@@ -56,6 +56,14 @@ final class DockLiquidGlassHostView extends FrameLayout {
         shapeDirty = false;
     }
 
+    @Override protected void onDetachedFromWindow() {
+        try {
+            MiuixGlassHook.onHostDetached(this);
+        } finally {
+            super.onDetachedFromWindow();
+        }
+    }
+
     @Override protected void dispatchDraw(Canvas canvas) {
         ensureClipPath();
         if (clipPath.isEmpty()) return;

@@ -4,14 +4,17 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.WeakHashMap;
 
 /**
  * Applies workstation-only geometry to the visible laptop Dock container.
  *
  * The normal HotSeats blur background is deliberately hidden in workstation mode, so changing
- * HotSeatsListContentBlurBackground2 cannot affect the capsule the user actually sees.  The
+ * HotSeatsListContentBlurBackground2 cannot affect the capsule the user actually sees. The
  * divider holder is a stable runtime anchor inside that visible Dock; walking its parent chain
  * lets us bind the real DockContainer without depending on a concrete vendor subclass name.
  */
@@ -19,7 +22,9 @@ final class WorkstationDockGeometryHook {
     private static final String LINE_HOLDER =
             "com.miui.home.launcher.hotseats.HotSeatsListContentAdapter$LineViewHolder";
 
-    private static final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
+    // Weak key alone is insufficient if the value strongly owns the key. Keep both sides weak;
+    // the View itself owns the listeners for exactly as long as it is attached.
+    private static final WeakHashMap<View, WeakReference<Binding>> bindings = new WeakHashMap<>();
     private static int widthOffsetPx;
     private static boolean unresolvedChainLogged;
 
@@ -46,13 +51,21 @@ final class WorkstationDockGeometryHook {
     }
 
     static void onWorkstationModeChanged(boolean enabled) {
-        ArrayList<Binding> snapshot;
+        ArrayList<Binding> snapshot = new ArrayList<>();
         synchronized (bindings) {
-            snapshot = new ArrayList<>(bindings.values());
+            Iterator<Map.Entry<View, WeakReference<Binding>>> iterator = bindings.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<View, WeakReference<Binding>> entry = iterator.next();
+                Binding binding = entry.getValue() != null ? entry.getValue().get() : null;
+                View container = entry.getKey();
+                if (binding == null || container == null) {
+                    iterator.remove();
+                } else {
+                    snapshot.add(binding);
+                }
+            }
         }
-        for (Binding binding : snapshot) {
-            if (binding != null) binding.apply(enabled);
-        }
+        for (Binding binding : snapshot) binding.apply(enabled);
     }
 
     private static void bindFromAnchor(View anchor) {
@@ -64,11 +77,13 @@ final class WorkstationDockGeometryHook {
 
         Binding binding;
         synchronized (bindings) {
-            binding = bindings.get(container);
+            WeakReference<Binding> bindingRef = bindings.get(container);
+            binding = bindingRef != null ? bindingRef.get() : null;
             if (binding == null) {
                 binding = new Binding(container);
-                bindings.put(container, binding);
+                bindings.put(container, new WeakReference<>(binding));
                 container.addOnLayoutChangeListener(binding);
+                container.addOnAttachStateChangeListener(binding);
                 MainHook.log("[DC] workstation Dock container resolved class="
                         + container.getClass().getName());
             }
@@ -102,12 +117,13 @@ final class WorkstationDockGeometryHook {
         MainHook.log("[DC] workstation DockContainer not found from divider chain: " + chain);
     }
 
-    private static final class Binding implements View.OnLayoutChangeListener {
-        private final View container;
+    private static final class Binding implements View.OnLayoutChangeListener,
+            View.OnAttachStateChangeListener {
+        private final WeakReference<View> containerRef;
         private final WorkstationDockWidthState widthState = new WorkstationDockWidthState();
 
         Binding(View container) {
-            this.container = container;
+            containerRef = new WeakReference<>(container);
         }
 
         @Override
@@ -116,7 +132,23 @@ final class WorkstationDockGeometryHook {
             apply(MainHook.isWorkstationMode());
         }
 
+        @Override
+        public void onViewAttachedToWindow(View v) {}
+
+        @Override
+        public void onViewDetachedFromWindow(View v) {
+            try { v.removeOnLayoutChangeListener(this); } catch (Throwable ignored) {}
+            try { v.removeOnAttachStateChangeListener(this); } catch (Throwable ignored) {}
+            synchronized (bindings) {
+                WeakReference<Binding> current = bindings.get(v);
+                if (current != null && current.get() == this) bindings.remove(v);
+            }
+            containerRef.clear();
+        }
+
         void apply(boolean workstation) {
+            View container = containerRef.get();
+            if (container == null) return;
             int observedWidth = container.getWidth();
             if (observedWidth <= 0) return;
 
