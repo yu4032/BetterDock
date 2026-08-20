@@ -53,6 +53,11 @@ public class PrismalModuleBoundaryContractTest {
         assertFalse(renderer.contains("android.content.res.Resources"));
         assertFalse(renderer.contains("openRawResource"));
         assertTrue(renderer.contains("PrismalShaderSources.FRAGMENT"));
+        assertTrue(renderer.contains("glassUniformLocations"));
+        assertTrue(renderer.contains("GLES20.glGetUniformLocation(glassProgram, name)"));
+        assertTrue(renderer.contains("GLES20.glUniform1f(glassUniformLocation(name), value)"));
+        assertFalse(renderer.contains("GLES20.glUniform1f(requireUniform(glassProgram, name), value)"));
+        assertFalse(renderer.contains("requireUniform(glassProgram, \"u_backgroundTexture\")"));
     }
 
     @Test

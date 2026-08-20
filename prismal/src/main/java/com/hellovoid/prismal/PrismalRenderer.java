@@ -5,6 +5,8 @@ import android.opengl.GLES20;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Reusable OpenGL ES 2.0 Prismal renderer.
@@ -64,6 +66,10 @@ public final class PrismalRenderer implements AutoCloseable {
     private final FloatBuffer fullQuad;
     private final FloatBuffer glassQuad;
     private final FloatBuffer blurQuad;
+    // Match upstream Prismal's renderer semantics: resolve each glass-program uniform after
+    // link, retain its location (including -1 for linker-inactive declarations), and pass
+    // that location directly to glUniform*. OpenGL deliberately ignores location -1.
+    private final Map<String, Integer> glassUniformLocations = new HashMap<>();
 
     private int sourceProgram;
     private int blurHProgram;
@@ -133,6 +139,7 @@ public final class PrismalRenderer implements AutoCloseable {
         blurHProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_H);
         blurVProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_V);
         glassProgram = createProgram(PrismalShaderSources.VERTEX, PrismalShaderSources.FRAGMENT);
+        glassUniformLocations.clear();
         if (sourceProgram == 0 || blurHProgram == 0 || blurVProgram == 0 || glassProgram == 0) {
             throw new IllegalStateException("Prismal shader program creation failed");
         }
@@ -262,11 +269,11 @@ public final class PrismalRenderer implements AutoCloseable {
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sourceTexture);
-        GLES20.glUniform1i(requireUniform(glassProgram, "u_backgroundTexture"), 0);
+        GLES20.glUniform1i(glassUniformLocation("u_backgroundTexture"), 0);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE1);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, blurTextureV);
-        GLES20.glUniform1i(requireUniform(glassProgram, "u_blurredTexture"), 1);
-        GLES20.glUniform1i(requireUniform(glassProgram, "u_useBlurredTexture"), 1);
+        GLES20.glUniform1i(glassUniformLocation("u_blurredTexture"), 1);
+        GLES20.glUniform1i(glassUniformLocation("u_useBlurredTexture"), 1);
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
         GLES20.glDisableVertexAttribArray(position);
@@ -353,17 +360,25 @@ public final class PrismalRenderer implements AutoCloseable {
     }
 
 
+    private int glassUniformLocation(String name) {
+        Integer cached = glassUniformLocations.get(name);
+        if (cached != null) return cached;
+        int location = GLES20.glGetUniformLocation(glassProgram, name);
+        glassUniformLocations.put(name, location);
+        return location;
+    }
+
     private void uniform1f(String name, float value) {
-        GLES20.glUniform1f(requireUniform(glassProgram, name), value);
+        GLES20.glUniform1f(glassUniformLocation(name), value);
     }
     private void uniform1i(String name, int value) {
-        GLES20.glUniform1i(requireUniform(glassProgram, name), value);
+        GLES20.glUniform1i(glassUniformLocation(name), value);
     }
     private void uniform2f(String name, float x, float y) {
-        GLES20.glUniform2f(requireUniform(glassProgram, name), x, y);
+        GLES20.glUniform2f(glassUniformLocation(name), x, y);
     }
     private void uniform4f(String name, float x, float y, float z, float w) {
-        GLES20.glUniform4f(requireUniform(glassProgram, name), x, y, z, w);
+        GLES20.glUniform4f(glassUniformLocation(name), x, y, z, w);
     }
 
     private static int requireUniform(int program, String name) {
@@ -408,5 +423,6 @@ public final class PrismalRenderer implements AutoCloseable {
         if (blurVProgram != 0) GLES20.glDeleteProgram(blurVProgram);
         if (glassProgram != 0) GLES20.glDeleteProgram(glassProgram);
         sourceProgram = blurHProgram = blurVProgram = glassProgram = 0;
+        glassUniformLocations.clear();
     }
 }
