@@ -15,8 +15,8 @@ import java.util.Map;
  *
  * The bridge intentionally does not mutate ItemInfo or Launcher persistence yet. It records the
  * stable source-orientation layout, compares MIUI's native target result with the pure planner,
- * and inventories the target device's CellLayout occupancy APIs. A later experiment can enable
- * write-back only after those private signatures are confirmed on-device.
+ * and inventories/traces the target device's CellLayout occupancy APIs. A later experiment can
+ * enable write-back only after those private call semantics are confirmed on-device.
  */
 final class HomeGridRotationBridge {
     static final boolean OBSERVE_ONLY = true;
@@ -41,6 +41,8 @@ final class HomeGridRotationBridge {
         profile = selectedProfile;
 
         try {
+            installNativeCallTracing(classLoader);
+
             Class<?> launcher = Class.forName(
                     "com.miui.home.launcher.Launcher", false, classLoader);
             HookUtil.hookMethod(launcher, "onConfigurationChanged",
@@ -87,6 +89,84 @@ final class HomeGridRotationBridge {
             installed = false;
             MainHook.log("[DC][GRID10] rotation bridge unavailable: " + error);
         }
+    }
+
+    /**
+     * Observe MIUI's own occupancy calls with the exact signatures discovered on the target
+     * device. Every interceptor forwards the original argument array unchanged.
+     */
+    private static void installNativeCallTracing(ClassLoader classLoader) {
+        try {
+            Class<?> cellLayout = Class.forName(
+                    "com.miui.home.launcher.CellLayout", false, classLoader);
+            Class<?> itemInfo = Class.forName(
+                    "com.miui.home.launcher.ItemInfo", false, classLoader);
+            Class<?> layoutParams = Class.forName(
+                    "com.miui.home.launcher.CellLayout$LayoutParams", false, classLoader);
+
+            HookUtil.hookMethod(cellLayout, "updateCellOccupiedMarks",
+                    new Class[]{android.view.View.class, itemInfo,
+                            boolean.class, boolean.class}, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        ItemSnapshot snapshot = args.length > 1 ? snapshot(args[1]) : null;
+                        if (snapshot != null) {
+                            MainHook.log("[DC][GRID10][CALL] update4 item=" + snapshot.compact()
+                                    + " b1=" + args[2] + " b2=" + args[3]);
+                        }
+                        return chain.proceed(args);
+                    });
+
+            HookUtil.hookMethod(cellLayout, "updateCellOccupiedMarks",
+                    new Class[]{android.view.View.class, boolean.class, boolean.class}, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        ItemSnapshot snapshot = snapshotFromViewArg(args);
+                        if (snapshot != null) {
+                            MainHook.log("[DC][GRID10][CALL] update3 item=" + snapshot.compact()
+                                    + " b1=" + args[1] + " b2=" + args[2]);
+                        }
+                        return chain.proceed(args);
+                    });
+
+            HookUtil.hookMethod(cellLayout, "updateCellOccupiedMarks",
+                    new Class[]{android.view.View.class, boolean.class}, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        ItemSnapshot snapshot = snapshotFromViewArg(args);
+                        if (snapshot != null) {
+                            MainHook.log("[DC][GRID10][CALL] update2 item=" + snapshot.compact()
+                                    + " b1=" + args[1]);
+                        }
+                        return chain.proceed(args);
+                    });
+
+            HookUtil.hookMethod(cellLayout, "setupLayoutParam",
+                    new Class[]{int.class, int.class, itemInfo, layoutParams}, chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        ItemSnapshot snapshot = args.length > 2 ? snapshot(args[2]) : null;
+                        if (snapshot != null) {
+                            MainHook.log("[DC][GRID10][CALL] setupItem x=" + args[0]
+                                    + " y=" + args[1] + " item=" + snapshot.compact());
+                        }
+                        return chain.proceed(args);
+                    });
+
+            HookUtil.hookMethod(cellLayout, "relayoutByOccupiedCells",
+                    new Class<?>[0], chain -> {
+                        Object[] args = chain.getArgs().toArray(new Object[0]);
+                        MainHook.log("[DC][GRID10][CALL] relayout");
+                        return chain.proceed(args);
+                    });
+
+            MainHook.log("[DC][GRID10][CALL] native occupancy tracing installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC][GRID10][CALL] tracing unavailable: " + error);
+        }
+    }
+
+    private static ItemSnapshot snapshotFromViewArg(Object[] args) {
+        if (args == null || args.length == 0 || !(args[0] instanceof android.view.View)) {
+            return null;
+        }
+        return snapshot(((android.view.View) args[0]).getTag());
     }
 
     private static android.view.View workspaceFromLauncher(Object launcher) {
@@ -331,7 +411,7 @@ final class HomeGridRotationBridge {
         int y = readInt(item, "cellY", Integer.MIN_VALUE);
         int spanX = readInt(item, "spanX", Integer.MIN_VALUE);
         int spanY = readInt(item, "spanY", Integer.MIN_VALUE);
-        if (id == Long.MIN_VALUE || screenId == Long.MIN_VALUE
+        if (id < 0 || screenId < 0
                 || x == Integer.MIN_VALUE || y == Integer.MIN_VALUE
                 || spanX <= 0 || spanY <= 0) {
             return null;
