@@ -1,0 +1,22 @@
+name: Repository scan export
+
+on:
+  push:
+    branches:
+      - fix/glass-controls-s-curve
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack repository snapshot
+        run: |
+          tar --exclude=.git --exclude=build --exclude=.gradle -czf /tmp/LiquidDock-scan-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-scan-source
+          path: /tmp/LiquidDock-scan-source.tar.gz
+          if-no-files-found: error
+          retention-days: 3
