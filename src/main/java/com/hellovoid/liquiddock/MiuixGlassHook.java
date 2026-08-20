@@ -152,7 +152,7 @@ final class MiuixGlassHook {
         if (zeroCopyCandidate) {
             scheduleZeroCopyValidation(dockBg, host, 0);
         } else {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; vendor shell remains visible");
+            MainHook.log(ZERO_COPY_TAG + " zero-copy unavailable; " + inactiveVisualState(dockBg));
         }
 
         DockStrokeRenderer.configureReplacingForeground(dockBg, config.dock, nativeRadius);
@@ -178,13 +178,20 @@ final class MiuixGlassHook {
 
         if (Miuix307ZeroCopyRenderer.isActivationExhausted()
                 || frame >= ZERO_COPY_VALIDATION_FRAMES) {
-            MainHook.log(ZERO_COPY_TAG + " zero-copy inactive; vendor shell protection remains reason="
+            MainHook.log(ZERO_COPY_TAG + " zero-copy inactive; " + inactiveVisualState(dockBg)
+                    + " reason="
                     + (Miuix307ZeroCopyRenderer.isActivationExhausted()
                     ? "activation-exhausted" : "validation-timeout"));
             return;
         }
 
         host.postOnAnimation(() -> scheduleZeroCopyValidation(dockBg, host, frame + 1));
+    }
+
+    private static String inactiveVisualState(View dockBg) {
+        return shouldSuppressVendorMaterialBody(dockBg)
+                ? "glass remains transparent"
+                : "default vendor shell remains visible";
     }
 
     static void syncSize(View dockBg) {
