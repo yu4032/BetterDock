@@ -8,10 +8,25 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Historical filename; the contract is now upstream-Prismal-first. */
+/**
+ * Frozen parity contract against styropyr0/Prismal View/OpenGL release v1.0.6.
+ *
+ * Upstream provenance verified on 2026-08-20:
+ * - tag v1.0.6 -> commit bf3c6b4dd020e39675cd6226b868f95cfb8e7b66
+ * - PrismalLiquidGlass.kt blob e22577b274c53cd2823df9070b567aa05d876b18
+ * - fragment_shader.glsl blob 0ddc74b2ee3293fb5d6de31bf8fb39b07891ca2f
+ * - v1.0.6..master changes only README; rendering sources are unchanged.
+ *
+ * LiquidDock therefore treats v1.0.6 as the legacy iOS-26-era optical baseline, not as an
+ * iOS-27 material model. "iOS-26-era" is a LiquidDock provenance classification, not an
+ * upstream Prismal release label. A future iOS-27-style migration must update this pinned
+ * provenance and the numerical/model contracts deliberately.
+ */
 public class Miuix307PrismalLegacyParityTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
     private static final Path KOTLIN = Path.of("src/main/kotlin/com/hellovoid/liquiddock");
+    private static final String PRISMAL_BASELINE =
+            "Prismal v1.0.6 @ bf3c6b4dd020e39675cd6226b868f95cfb8e7b66";
 
     private static String material() throws Exception {
         return Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
@@ -22,7 +37,7 @@ public class Miuix307PrismalLegacyParityTest {
     }
 
     @Test
-    public void zeroCopyShaderCarriesCurrentUpstreamPrismalGeometryAndOptics() throws Exception {
+    public void zeroCopyShaderCarriesPrismalV106GeometryAndOptics() throws Exception {
         String source = shader();
         String[] required = new String[]{
                 "smin_poly", "smax_poly", "sdRoundBox", "pxNorm", "smallGlass", "edgePunch",
@@ -31,13 +46,13 @@ public class Miuix307PrismalLegacyParityTest {
                 "u_fresnelReflect", "refract(-V", "refract(refIn", "u_parallaxScale"
         };
         for (String marker : required) {
-            assertTrue("missing upstream Prismal geometry/optics marker: " + marker,
+            assertTrue("missing " + PRISMAL_BASELINE + " geometry/optics marker: " + marker,
                     source.contains(marker));
         }
     }
 
     @Test
-    public void zeroCopyShaderCarriesCurrentUpstreamPrismalColorReflectionAndLighting() throws Exception {
+    public void zeroCopyShaderCarriesPrismalV106ColorReflectionAndLighting() throws Exception {
         String source = shader();
         String[] required = new String[]{
                 "applyVibrancy", "u_vibrancy", "u_plainHighlight", "u_dispersionR", "u_dispersionB",
@@ -47,7 +62,7 @@ public class Miuix307PrismalLegacyParityTest {
                 "u_pressProgress", "u_backdropPinch", "u_glowCenter", "u_glowStrength"
         };
         for (String marker : required) {
-            assertTrue("missing upstream Prismal lighting/color marker: " + marker,
+            assertTrue("missing " + PRISMAL_BASELINE + " lighting/color marker: " + marker,
                     source.contains(marker));
         }
         assertFalse(source.contains("displacementPx = 14.0"));
@@ -56,7 +71,8 @@ public class Miuix307PrismalLegacyParityTest {
     }
 
     @Test
-    public void upstreamStaticOpticalParametersRemainExposedThroughLiquidDockGuiAndRuntimeConfig() throws Exception {
+    public void prismalV106StaticOpticalParametersRemainExposedThroughLiquidDockGuiAndRuntimeConfig()
+            throws Exception {
         String schema = Files.readString(MAIN.resolve("config/ConfigSchema.java"));
         String config = Files.readString(MAIN.resolve("LiquidDockConfig.java"));
         String compose = Files.readString(KOTLIN.resolve("ComposeSettingsActivity.kt"));
@@ -74,9 +90,12 @@ public class Miuix307PrismalLegacyParityTest {
                 "PRISMAL_BACKDROP_SCALE_Y", "PRISMAL_PARALLAX_SCALE"
         };
         for (String key : keys) {
-            assertTrue("missing ConfigSchema key: " + key, schema.contains(key));
-            assertTrue("missing runtime config mapping: " + key, config.contains(key));
-            assertTrue("missing Compose GUI control: " + key, compose.contains(key));
+            assertTrue("missing ConfigSchema key for " + PRISMAL_BASELINE + ": " + key,
+                    schema.contains(key));
+            assertTrue("missing runtime config mapping for " + PRISMAL_BASELINE + ": " + key,
+                    config.contains(key));
+            assertTrue("missing Compose GUI control for " + PRISMAL_BASELINE + ": " + key,
+                    compose.contains(key));
         }
 
         String[] fields = new String[]{
@@ -89,12 +108,13 @@ public class Miuix307PrismalLegacyParityTest {
                 "glass.prismalBackdropScaleY", "glass.prismalParallaxScale", "glass.blur"
         };
         for (String field : fields) {
-            assertTrue("missing GUI-to-Prismal mapping: " + field, material.contains(field));
+            assertTrue("missing GUI-to-" + PRISMAL_BASELINE + " mapping: " + field,
+                    material.contains(field));
         }
     }
 
     @Test
-    public void upstreamModelUsesSeparateZeroCopyOesAdapterAndLiveGuiSync() throws Exception {
+    public void prismalV106ModelUsesSeparateZeroCopyOesAdapterAndLiveGuiSync() throws Exception {
         String material = material();
         String shader = shader();
         String adapter = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
