@@ -3,6 +3,8 @@ package com.hellovoid.liquiddock;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.hellovoid.liquiddock.config.PresetManager;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -36,6 +38,11 @@ public class LegacySCurveRetirementContractTest {
         assertFalse(presets.contains("liquid_legacy_s_curve"));
         assertFalse(ui.contains("v1.2 S形折射"));
         assertFalse(ui.contains("LEGACY_S_CURVE"));
+    }
+
+    @Test
+    public void currentPresetDoesNotRecreateRetiredPreference() {
+        assertFalse(PresetManager.defaultValues().containsKey("liquid_legacy_s_curve"));
     }
 
     @Test
