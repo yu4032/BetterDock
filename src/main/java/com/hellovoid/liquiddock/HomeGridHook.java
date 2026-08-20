@@ -496,12 +496,20 @@ final class HomeGridHook {
                     || workstationMode || MainHook.isWorkstationMode();
 
             if (!workstation) {
-                int dockBarHeight = 0;
-                try {
-                    dockBarHeight = Math.max(0, (Integer) HookUtil.invoke(
-                            config, "getDockBarHeight"));
-                } catch (Throwable ignored) {}
-                int[] safe = normalWorkspaceSafeInsets(layout, dockBarHeight);
+                // Launcher GridConfig owns the normal Workspace vertical reserve. On the
+                // target HyperOS 3 Pad, land_grid is top=92, indicator=81, bottom=45,
+                // dock=230; omitting indicator/bottom lets cells invade the indicator/Dock
+                // band. System insets remain a safety floor for launcher variants.
+                int launcherTop = gridMetric(config, "getTop", baseTop);
+                int indicatorBarHeight = gridMetric(config, "getIndicatorBarHeight", 0);
+                int launcherBottom = gridMetric(config, "getBottom", 0);
+                int dockBarHeight = gridMetric(config, "getDockBarHeight", 0);
+                int launcherBottomReserve = safeAdd(
+                        indicatorBarHeight, launcherBottom, dockBarHeight);
+                int[] systemSafe = normalWorkspaceSystemInsets(layout);
+                int safeTop = Math.max(systemSafe[1], launcherTop);
+                int safeBottom = Math.max(systemSafe[3], launcherBottomReserve);
+
                 int edgeOffset = Math.max(0,
                         portrait ? portraitLeft : landscapeLeft);
                 int configuredMargin = portrait ? portraitRowGap : landscapeRowGap;
@@ -513,7 +521,7 @@ final class HomeGridHook {
                         : HomeGridGeometryPolicy.resolveMarginPx(screenWidth, 0);
                 HomeGridGeometryPolicy.Result geometry = HomeGridGeometryPolicy.compute(
                         width, height, countX, countY,
-                        safe[0], safe[1], safe[2], safe[3],
+                        systemSafe[0], safeTop, systemSafe[2], safeBottom,
                         edgeOffset, margin);
                 HookUtil.setIntField(cellLayout, "mCellPaddingLeft", geometry.left);
                 HookUtil.setIntField(cellLayout, "mCellPaddingTop", geometry.top);
@@ -630,12 +638,25 @@ final class HomeGridHook {
         }
     }
 
-    private static int[] normalWorkspaceSafeInsets(
-            android.view.View layout, int dockBarHeight) {
+    private static int gridMetric(Object config, String methodName, int fallback) {
+        try {
+            Object value = HookUtil.invoke(config, methodName);
+            if (value instanceof Integer) return Math.max(0, (Integer) value);
+        } catch (Throwable ignored) {}
+        return Math.max(0, fallback);
+    }
+
+    private static int safeAdd(int... values) {
+        long total = 0L;
+        for (int value : values) total += Math.max(0, value);
+        return (int) Math.min(Integer.MAX_VALUE, total);
+    }
+
+    private static int[] normalWorkspaceSystemInsets(android.view.View layout) {
         int left = 0;
         int top = 0;
         int right = 0;
-        int bottom = Math.max(0, dockBarHeight);
+        int bottom = 0;
         try {
             WindowInsets windowInsets = layout.getRootWindowInsets();
             android.view.View root = layout.getRootView();
@@ -658,10 +679,9 @@ final class HomeGridHook {
                             - (rootScreen[0] + root.getWidth() - systemBars.right));
             top = Math.max(0,
                     rootScreen[1] + statusBars.top - layoutScreen[1]);
-            int systemBottom = Math.max(0,
+            bottom = Math.max(0,
                     layoutScreen[1] + layout.getHeight()
                             - (rootScreen[1] + root.getHeight() - systemBars.bottom));
-            bottom = Math.max(bottom, systemBottom);
         } catch (Throwable e) {
             MainHook.log("[DC] workspace system inset resolve failed: " + e);
         }
@@ -810,12 +830,16 @@ final class HomeGridHook {
     static void scheduleAllPageRefresh() {
         android.view.View workspace = workspaceRef.get();
         if (workspace == null) return;
-        workspace.post(() -> refreshWorkspaceGrid(workspace));
-        workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 180L);
-        workspace.postDelayed(() -> refreshWorkspaceGrid(workspace), 500L);
+        workspace.post(() -> refreshWorkspaceGridIfReady(workspace));
+        workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 180L);
+        workspace.postDelayed(() -> refreshWorkspaceGridIfReady(workspace), 500L);
     }
 
     private static void refreshWorkspaceGrid(android.view.View workspace) {
+        int workspaceWidth = workspace.getWidth();
+        int workspaceHeight = workspace.getHeight();
+        if (workspaceWidth <= 0 || workspaceHeight <= 0
+                || !sizeMatchesOrientation(workspace, workspaceWidth, workspaceHeight)) return;
         try {
             java.util.ArrayList<android.view.View> pages = new java.util.ArrayList<>();
             collectWorkspaceCellLayouts(workspace, pages);
@@ -824,7 +848,10 @@ final class HomeGridHook {
                 return;
             }
             for (android.view.View page : pages) {
-                if (!sizeMatchesOrientation(page, page.getWidth(), page.getHeight())) continue;
+                int pageWidth = page.getWidth();
+                int pageHeight = page.getHeight();
+                if (pageWidth <= 0 || pageHeight <= 0
+                        || !sizeMatchesOrientation(page, pageWidth, pageHeight)) continue;
                 HookUtil.invoke(page, "calculateXsAndYs");
                 page.forceLayout();
                 page.requestLayout();

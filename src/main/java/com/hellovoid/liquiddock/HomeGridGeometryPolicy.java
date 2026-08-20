@@ -3,9 +3,11 @@ package com.hellovoid.liquiddock;
 /**
  * Pure normal-Workspace geometry policy shared by the 8x4 and 10x6 profiles.
  *
- * Edge offset belongs only to the horizontal axis. Margin is the actual gap between
- * adjacent cells on both axes. A zero/non-positive margin selects the device-derived
- * default of 0.9% of the current screen width.
+ * Edge offset belongs to the horizontal budget. Margin is the actual gap between
+ * adjacent cells on both axes. A zero/non-positive margin selects 0.9% of the
+ * current screen width. Launcher Workspace cells stay square because MIUI exposes
+ * one GridConfig cellSize and its icon/widget measurement chain relies on that
+ * single-cell contract.
  */
 final class HomeGridGeometryPolicy {
     private static final float AUTO_MARGIN_WIDTH_FRACTION = 0.009f;
@@ -33,13 +35,18 @@ final class HomeGridGeometryPolicy {
         int horizontalBudget = Math.max(countX,
                 width - leftInset - rightInset - Math.min(width, edge * 2));
         int verticalBudget = Math.max(countY, height - topInset - bottomInset);
-        int requestedMargin = resolveMarginPx(width, configuredMarginPx);
+        int requestedGap = resolveMarginPx(width, configuredMarginPx);
+        int gap = resolveSharedGap(horizontalBudget, verticalBudget,
+                countX, countY, requestedGap);
 
-        Axis horizontal = solveAxis(horizontalBudget, countX, requestedMargin);
-        Axis vertical = solveAxis(verticalBudget, countY, requestedMargin);
+        int horizontalCell = cellForBudget(horizontalBudget, countX, gap);
+        int verticalCell = cellForBudget(verticalBudget, countY, gap);
+        int cell = Math.max(1, Math.min(horizontalCell, verticalCell));
 
-        int horizontalRemainder = Math.max(0, horizontalBudget - horizontal.used);
-        int verticalRemainder = Math.max(0, verticalBudget - vertical.used);
+        int horizontalUsed = cell * countX + gap * Math.max(0, countX - 1);
+        int verticalUsed = cell * countY + gap * Math.max(0, countY - 1);
+        int horizontalRemainder = Math.max(0, horizontalBudget - horizontalUsed);
+        int verticalRemainder = Math.max(0, verticalBudget - verticalUsed);
         int extraLeft = horizontalRemainder / 2;
         int extraRight = horizontalRemainder - extraLeft;
         int extraTop = verticalRemainder / 2;
@@ -50,38 +57,40 @@ final class HomeGridGeometryPolicy {
                 topInset + extraTop,
                 rightInset + edge + extraRight,
                 bottomInset + extraBottom,
-                horizontal.cell,
-                vertical.cell,
-                horizontal.gap,
-                vertical.gap);
+                cell,
+                cell,
+                countX > 1 ? gap : 0,
+                countY > 1 ? gap : 0);
+    }
+
+    private static int resolveSharedGap(int horizontalBudget, int verticalBudget,
+                                        int countX, int countY, int requestedGap) {
+        int maxHorizontal = maxGap(horizontalBudget, countX);
+        int maxVertical = maxGap(verticalBudget, countY);
+        int maxShared;
+        if (countX <= 1) {
+            maxShared = maxVertical;
+        } else if (countY <= 1) {
+            maxShared = maxHorizontal;
+        } else {
+            maxShared = Math.min(maxHorizontal, maxVertical);
+        }
+        return Math.max(0, Math.min(requestedGap, maxShared));
+    }
+
+    private static int maxGap(int budget, int count) {
+        if (count <= 1) return Integer.MAX_VALUE;
+        return Math.max(0, (budget - count) / (count - 1));
+    }
+
+    private static int cellForBudget(int budget, int count, int gap) {
+        if (count <= 0) return 1;
+        int gapBudget = gap * Math.max(0, count - 1);
+        return Math.max(1, Math.max(count, budget - gapBudget) / count);
     }
 
     private static int clampInset(int value, int max) {
         return Math.max(0, Math.min(Math.max(0, max), value));
-    }
-
-    private static Axis solveAxis(int budget, int count, int requestedGap) {
-        if (count <= 1) {
-            return new Axis(Math.max(1, budget), 0, Math.max(1, budget));
-        }
-        int maxGap = Math.max(0, (budget - count) / (count - 1));
-        int gap = Math.max(0, Math.min(requestedGap, maxGap));
-        int cellsBudget = Math.max(count, budget - gap * (count - 1));
-        int cell = Math.max(1, cellsBudget / count);
-        int used = cell * count + gap * (count - 1);
-        return new Axis(cell, gap, used);
-    }
-
-    private static final class Axis {
-        final int cell;
-        final int gap;
-        final int used;
-
-        Axis(int cell, int gap, int used) {
-            this.cell = cell;
-            this.gap = gap;
-            this.used = used;
-        }
     }
 
     static final class Result {
