@@ -1,0 +1,48 @@
+name: Prismal mapping snapshot fix
+
+on:
+  push:
+    branches:
+      - refactor/prismal-official-model
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+      - name: Apply atomic mapping snapshot
+        run: |
+          python tools/apply_prismal_mapping_snapshot_fix.py
+          git diff --check
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-prismal-mapping-snapshot-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
+      - name: Commit verified production fix
+        run: |
+          rm -f tools/apply_prismal_mapping_snapshot_fix.py
+          rm -f .github/workflows/prismal-mapping-snapshot-fix.yml
+          git add -A
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix: make Prismal mapping frame-atomic'
+          git push origin HEAD:refactor/prismal-official-model
