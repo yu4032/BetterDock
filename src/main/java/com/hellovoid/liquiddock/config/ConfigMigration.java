@@ -27,22 +27,48 @@ public final class ConfigMigration {
     /**
      * Glass/Prismal values from development builds used several incompatible unit systems and
      * one-shot migration flags. Do not reinterpret those values again. An unsupported glass
-     * generation is discarded wholesale so current ConfigSchema defaults become authoritative.
-     * Keep only the feature/pipeline enable switches so upgrading does not silently disable glass.
+     * generation is discarded wholesale and rebuilt from the current preset, including _tenths
+     * sidecars for fractional controls. Keep only the feature/pipeline enable switches so an
+     * upgrade does not silently disable glass.
      */
     private static void resetUnsupportedGlassConfigGeneration(SharedPreferences sp) {
         if (sp.getInt(GLASS_CONFIG_GENERATION_KEY, 0) == GLASS_CONFIG_GENERATION) return;
 
+        Map<String, Object> defaults = PresetManager.defaultValues();
+        boolean glassEnabled = sp.contains("liquid_glass")
+                ? sp.getBoolean("liquid_glass", true)
+                : Boolean.TRUE.equals(defaults.get("liquid_glass"));
+        boolean pipelineEnabled = sp.getBoolean("liquid_miuix_307_pipeline", false);
+
         SharedPreferences.Editor e = sp.edit();
         for (String key : sp.getAll().keySet()) {
+            if (key.startsWith("liquid_")) e.remove(key);
+        }
+        for (Map.Entry<String, Object> entry : defaults.entrySet()) {
+            String key = entry.getKey();
             if (!key.startsWith("liquid_")) continue;
             if ("liquid_glass".equals(key)
                     || "liquid_miuix_307_pipeline".equals(key)) {
                 continue;
             }
-            e.remove(key);
+            putCurrentGlassDefault(e, key, entry.getValue());
         }
+        e.putBoolean("liquid_glass", glassEnabled);
+        e.putBoolean("liquid_miuix_307_pipeline", pipelineEnabled);
         e.putInt(GLASS_CONFIG_GENERATION_KEY, GLASS_CONFIG_GENERATION).commit();
+    }
+
+    private static void putCurrentGlassDefault(
+            SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) value);
+        } else if (value instanceof Integer) {
+            editor.putInt(key, (Integer) value);
+        } else if (value instanceof String) {
+            editor.putString(key, (String) value);
+        } else {
+            throw new IllegalArgumentException("Unsupported current glass default " + key);
+        }
     }
 
     private static void migrateAxisDistances(SharedPreferences sp) {
