@@ -14,6 +14,7 @@ public final class ConfigMigration {
     private ConfigMigration() { }
 
     public static void migrate(Context context, SharedPreferences preferences) {
+        removeRetiredGlassPreferences(preferences);
         resetUnsupportedGlassConfigGeneration(preferences);
         migrateMergedHorizontal(preferences);
         migrateLegacyGridKeys(preferences);
@@ -22,6 +23,13 @@ public final class ConfigMigration {
         migrateCornersToDp(context, preferences);
         migrateDockDimensionsToDp(context, preferences);
         migrateAxisDistances(preferences);
+    }
+
+    private static void removeRetiredGlassPreferences(SharedPreferences sp) {
+        if (!sp.contains("liquid_legacy_s_curve")) return;
+        SharedPreferences.Editor e = sp.edit();
+        e.remove("liquid_legacy_s_curve");
+        e.commit();
     }
 
     /**

@@ -60,8 +60,7 @@ public class Miuix307TextureViewBackdropMappingTest {
     @Test
     public void prismalOpticsStayDockLocalAfterNormalization() throws Exception {
         String source = prismal();
-        assertTrue(source.contains("vec2 currentOffset = lensDeltaUv + snellOff + bulgeUv")
-                && source.contains("vec2 baseOffset = currentOffset"));
+        assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));
         assertTrue(source.contains("vec2 uvCenter = backdropUv(v_screenTexCoord, baseOffset, pinchMix)"));
         assertTrue(source.contains("texture2D(u_blurredTexture, uvCenter)"));
         assertFalse(source.contains("uBackdropRect"));

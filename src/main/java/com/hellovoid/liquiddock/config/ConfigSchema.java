@@ -238,8 +238,6 @@ public final class ConfigSchema {
                 "liquid_dome", 130, 130, 100, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> LENS_REFRACTION = dp(
                 "liquid_lens_refraction", 1, 1, 12, 0, 60, ConfigKey.ExportMode.ALWAYS);
-        public static final ConfigKey<Integer> LEGACY_S_CURVE = integer(
-                "liquid_legacy_s_curve", 0, 0, 0, 0, 200, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Integer> CAPTURE_SCALE = integer(
                 "liquid_capture_scale", 50, 50, 50, 10, 100, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> DYNAMIC_APP_CAPTURE = bool(
@@ -437,7 +435,7 @@ public final class ConfigSchema {
                 Glass.CAPTURE_BLEED_TOP, Glass.CAPTURE_BLEED_BOTTOM,
                 Glass.CAPTURE_BLEED_LEFT, Glass.CAPTURE_BLEED_RIGHT, Glass.THICKNESS,
                 Glass.IOR, Glass.NORMAL_STRENGTH, Glass.DOME, Glass.LENS_REFRACTION,
-        Glass.LEGACY_S_CURVE, Glass.CAPTURE_SCALE, Glass.DYNAMIC_APP_CAPTURE, Glass.FULLSCREEN_CAPTURE,
+                Glass.CAPTURE_SCALE, Glass.DYNAMIC_APP_CAPTURE, Glass.FULLSCREEN_CAPTURE,
                 Glass.DYNAMIC_APP_PROBE_FPS, Glass.DYNAMIC_MOTION_THRESHOLD,
                 Glass.DYNAMIC_BIT_THRESHOLD, Glass.DYNAMIC_HOLD_MS, Glass.BLACK_THRESHOLD,
                 Glass.HOME_SETTLE_DELAY_MS, Glass.HIGHLIGHT_WIDTH, Glass.TINT_RED,

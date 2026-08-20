@@ -23,9 +23,6 @@ final class Miuix307PrismalMaterial {
         final float fresnelReflect;
         final float lensRefractionScale;
 final float lensDepthEffect;
-final float legacySCurveStrength;
-final float legacyLensRefractionPx;
-final float legacyThicknessPx;
 final float chromaticAberration;
         final float dispersionR;
         final float dispersionB;
@@ -68,9 +65,6 @@ final float chromaticAberration;
                 float fresnelReflect,
                 float lensRefractionScale,
         float lensDepthEffect,
-        float legacySCurveStrength,
-        float legacyLensRefractionPx,
-        float legacyThicknessPx,
         float chromaticAberration,
                 float dispersionR,
                 float dispersionB,
@@ -111,9 +105,6 @@ final float chromaticAberration;
             this.fresnelReflect = fresnelReflect;
             this.lensRefractionScale = lensRefractionScale;
     this.lensDepthEffect = lensDepthEffect;
-    this.legacySCurveStrength = legacySCurveStrength;
-    this.legacyLensRefractionPx = legacyLensRefractionPx;
-    this.legacyThicknessPx = legacyThicknessPx;
     this.chromaticAberration = chromaticAberration;
             this.dispersionR = dispersionR;
             this.dispersionB = dispersionB;
@@ -165,9 +156,6 @@ final float chromaticAberration;
                 1.98f,
                 1.30f,
                 1f,
-                0f,
-                12f * d,
-                18f * d,
                 26f,
                 1f,
                 1f,
@@ -222,9 +210,6 @@ final float chromaticAberration;
                 glass.prismalFresnelReflect,
                 lensScale,
                 resolveLensDepth(glass.normalStrength, glass.depthEffect),
-                Math.max(0f, Math.min(2f, glass.legacySCurveStrength)),
-        12f * d,
-        18f * d,
         Math.max(0f, glass.chromatic),
                 glass.prismalDispersionR,
                 glass.prismalDispersionB,
@@ -314,18 +299,7 @@ final float chromaticAberration;
         float modernBulge = axis * (0.014f + 0.01f * clamp(p.liquidDome, 0f, 2f)) * pxNorm;
         float modernBase = lens + parallax + snell + modernBulge;
 
-        float legacyLens = Math.abs(p.legacyLensRefractionPx) * 1.12f;
-        float legacyParallax = 29f * 0.052f * 1.15f * 1.12f;
-        float legacySnell = Math.abs(p.legacyThicknessPx) * 0.85f * 1.15f * 1.18f * pxNorm;
-        float legacyBulge = axis * 0.012f;
-        float legacyBase = legacyLens + legacyParallax + legacySnell + legacyBulge;
-        float legacyStrength = clamp(p.legacySCurveStrength, 0f, 2f);
         float baseReach = modernBase;
-        if (legacyStrength > 0f && legacyStrength <= 1f) {
-            baseReach = Math.max(modernBase, legacyBase);
-        } else if (legacyStrength > 1f) {
-            baseReach = legacyBase * legacyStrength;
-        }
 
         float dispersion = Math.max(Math.abs(p.dispersionR), Math.abs(p.dispersionB));
         float chromatic = Math.abs(p.chromaticAberration) * 0.0018f
@@ -357,9 +331,6 @@ final float chromaticAberration;
         uniform1f(program, "u_heightTransitionWidth", p.heightTransitionWidthPx);
         uniform1f(program, "u_lensRefractionPx", lensPx);
         uniform1f(program, "u_lensDepthEffect", p.lensDepthEffect);
-        uniform1f(program, "u_legacySCurveStrength", p.legacySCurveStrength);
-        uniform1f(program, "u_legacyLensRefractionPx", p.legacyLensRefractionPx);
-        uniform1f(program, "u_legacyThicknessPx", p.legacyThicknessPx);
 
         uniform1f(program, "u_chromaticAberration", p.chromaticAberration);
         uniform1f(program, "u_dispersionR", p.dispersionR);
