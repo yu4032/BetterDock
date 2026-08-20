@@ -81,4 +81,25 @@ public class HomeGridGeometryPolicyTest {
         assertTrue(result.cellWidth > 0);
         assertTrue(result.cellHeight > 0);
     }
+
+    @Test
+    public void launcherGridCellsRemainSquareWhenAxisBudgetsDiffer() {
+        // HyperOS 3 Pad device evidence: 3008x1880 landscape GridConfig reserves
+        // top=92, indicatorBarHeight=81, bottom=45 and dockBarHeight=230.
+        // The lower reserved band is therefore 356px. Edge Offset was 152px and
+        // automatic Margin resolves to 27px on this screen.
+        HomeGridGeometryPolicy.Result result = HomeGridGeometryPolicy.compute(
+                3008, 1880, 8, 4,
+                0, 92, 0, 81 + 45 + 230,
+                152, 27);
+
+        assertEquals(result.cellWidth, result.cellHeight);
+        assertEquals(27, result.widthGap);
+        assertEquals(27, result.heightGap);
+        assertTrue(result.top >= 92);
+        int occupiedBottom = result.top
+                + result.cellHeight * 4
+                + result.heightGap * 3;
+        assertTrue(occupiedBottom <= 1880 - (81 + 45 + 230));
+    }
 }
