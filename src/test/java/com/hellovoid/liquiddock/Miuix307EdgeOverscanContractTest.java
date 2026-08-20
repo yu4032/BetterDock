@@ -2,7 +2,9 @@ package com.hellovoid.liquiddock;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -42,5 +44,40 @@ public class Miuix307EdgeOverscanContractTest {
                 view.contains("producerCoverage = dock.coverage")
                         && view.contains("validDockLeft * outputWidth")
                         && view.contains("validDockBottom * outputHeight"));
+    }
+
+    @Test
+    public void opticalSamplingGuardCoversCurrentPrismalDisplacementBudget() throws Exception {
+        Method method;
+        try {
+            method = Miuix307PrismalMaterial.class.getDeclaredMethod(
+                    "requiredSampleGuardPx",
+                    Miuix307PrismalMaterial.Params.class, int.class, int.class, boolean.class);
+        } catch (NoSuchMethodException missing) {
+            fail("Miuix307PrismalMaterial.requiredSampleGuardPx must size overscan from optics");
+            return;
+        }
+        method.setAccessible(true);
+        Miuix307PrismalMaterial.Params defaults = Miuix307PrismalMaterial.defaults(1f);
+        int horizontal = (Integer) method.invoke(null, defaults, 2302, 233, true);
+        int vertical = (Integer) method.invoke(null, defaults, 2302, 233, false);
+
+        assertTrue("default horizontal optics need substantially more than the old fixed 32dp ring",
+                horizontal >= 256);
+        assertTrue("default vertical optics must exceed the historical 16px bottom guard",
+                vertical >= 128);
+        assertTrue("wide Dock chromatic/bulge reach should require more horizontal guard",
+                horizontal > vertical);
+    }
+
+    @Test
+    public void resolvedSamplingInsetsUseOpticalGuardAsAMinimumWithoutDiscardingGuiExtras() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(view.contains("private SamplingInsets resolveSamplingInsets(int width, int height)"));
+        assertTrue(view.contains("Miuix307PrismalMaterial.requiredSampleGuardPx("));
+        assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, leftExtraOverscanPx), opticalX)"));
+        assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX)"));
+        assertTrue(view.contains("Math.max(Math.max(0, topOverscanPx), opticalY)"));
+        assertTrue(view.contains("Math.max(Math.max(0, bottomOverscanPx), opticalY)"));
     }
 }
