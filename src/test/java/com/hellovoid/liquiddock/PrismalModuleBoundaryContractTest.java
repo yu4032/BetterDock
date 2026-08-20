@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import org.junit.Test;
 
 /** Architectural boundary: Prismal is reusable GL, LiquidDock owns platform adaptation only. */
-// CI sync probe; reverted by the next commit so the verified production tree is unchanged.
 public class PrismalModuleBoundaryContractTest {
     private static final Path MODULE = Path.of("prismal/src/main");
     private static final Path APP = Path.of("src/main/java/com/hellovoid/liquiddock");
