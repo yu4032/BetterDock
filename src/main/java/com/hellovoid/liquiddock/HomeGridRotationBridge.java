@@ -92,8 +92,10 @@ final class HomeGridRotationBridge {
     }
 
     /**
-     * Observe MIUI's own occupancy calls with the exact signatures discovered on the target
-     * device. Every interceptor forwards the original argument array unchanged.
+     * Observe MIUI's terminal ItemInfo-aware occupancy mutation with the exact signature
+     * discovered on the target device. The shorter overloads delegate into this one, so tracing
+     * only this method preserves b1/b2 semantics without tripling synchronous main-thread logs.
+     * Every interceptor forwards the original argument array unchanged.
      */
     private static void installNativeCallTracing(ClassLoader classLoader) {
         try {
@@ -112,28 +114,6 @@ final class HomeGridRotationBridge {
                         if (snapshot != null) {
                             MainHook.log("[DC][GRID10][CALL] update4 item=" + snapshot.compact()
                                     + " b1=" + args[2] + " b2=" + args[3]);
-                        }
-                        return chain.proceed(args);
-                    });
-
-            HookUtil.hookMethod(cellLayout, "updateCellOccupiedMarks",
-                    new Class[]{android.view.View.class, boolean.class, boolean.class}, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        ItemSnapshot snapshot = snapshotFromViewArg(args);
-                        if (snapshot != null) {
-                            MainHook.log("[DC][GRID10][CALL] update3 item=" + snapshot.compact()
-                                    + " b1=" + args[1] + " b2=" + args[2]);
-                        }
-                        return chain.proceed(args);
-                    });
-
-            HookUtil.hookMethod(cellLayout, "updateCellOccupiedMarks",
-                    new Class[]{android.view.View.class, boolean.class}, chain -> {
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        ItemSnapshot snapshot = snapshotFromViewArg(args);
-                        if (snapshot != null) {
-                            MainHook.log("[DC][GRID10][CALL] update2 item=" + snapshot.compact()
-                                    + " b1=" + args[1]);
                         }
                         return chain.proceed(args);
                     });
@@ -160,13 +140,6 @@ final class HomeGridRotationBridge {
         } catch (Throwable error) {
             MainHook.log("[DC][GRID10][CALL] tracing unavailable: " + error);
         }
-    }
-
-    private static ItemSnapshot snapshotFromViewArg(Object[] args) {
-        if (args == null || args.length == 0 || !(args[0] instanceof android.view.View)) {
-            return null;
-        }
-        return snapshot(((android.view.View) args[0]).getTag());
     }
 
     private static android.view.View workspaceFromLauncher(Object launcher) {
