@@ -37,6 +37,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'cleanup/remove-v12-s-curve'
         run: |
           python tools/remove_v12_s_curve.py
+          sed -i '/assertComposeIntSpec(ConfigSchema.Glass.LEGACY_S_CURVE, 0, 0, 200);/d' src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java
           git diff --check
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
