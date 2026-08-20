@@ -112,8 +112,7 @@ final class HomeGridRotationPlanner {
                 chosen = cached;
             }
 
-            Position derived = deriveCandidate(item, sourceColumns, sourceRows,
-                    targetColumns, targetRows);
+            Position derived = deriveCandidate(item, sourceColumns, targetColumns);
             if (chosen == null && canPlace(derived, targetColumns, targetRows, occupied)) {
                 chosen = derived;
             }
@@ -131,25 +130,24 @@ final class HomeGridRotationPlanner {
         return new Plan(result, unresolved);
     }
 
+    /**
+     * MIUI Home remaps workspace anchors by preserving their row-major cell index when the
+     * active grid changes. Device logs for 10x6 -> 6x10 show, for example, (6,0)->(0,1)
+     * and (0,1)->(4,1). Remembered target-orientation positions still take precedence;
+     * this is only the deterministic fallback when no valid target cache exists.
+     */
     private static Position deriveCandidate(Item item,
-                                            int sourceColumns, int sourceRows,
-                                            int targetColumns, int targetRows) {
-        int targetX = mapAnchor(item.y, sourceRows, item.spanY,
-                targetColumns, item.targetSpanX);
-        int targetY = mapAnchor(item.x, sourceColumns, item.spanX,
-                targetRows, item.targetSpanY);
+                                            int sourceColumns,
+                                            int targetColumns) {
+        int safeSourceColumns = Math.max(1, sourceColumns);
+        int safeTargetColumns = Math.max(1, targetColumns);
+        int sourceX = Math.max(0, item.x);
+        int sourceY = Math.max(0, item.y);
+        long index = (long) sourceY * safeSourceColumns + sourceX;
+        int targetX = (int) (index % safeTargetColumns);
+        int targetY = (int) (index / safeTargetColumns);
         return new Position(item.screenId, targetX, targetY,
                 item.targetSpanX, item.targetSpanY);
-    }
-
-    private static int mapAnchor(int sourceAnchor, int sourceExtent, int sourceSpan,
-                                 int targetExtent, int targetSpan) {
-        int sourceRange = Math.max(0, sourceExtent - Math.max(1, sourceSpan));
-        int targetRange = Math.max(0, targetExtent - Math.max(1, targetSpan));
-        if (sourceRange == 0 || targetRange == 0) return 0;
-        int clamped = Math.max(0, Math.min(sourceRange, sourceAnchor));
-        return Math.max(0, Math.min(targetRange,
-                Math.round(clamped * (targetRange / (float) sourceRange))));
     }
 
     private static Position findNearestVacancy(Position origin,
