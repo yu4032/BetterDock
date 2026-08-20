@@ -58,6 +58,8 @@ final class Miuix307MaterialPipeline {
         try {
             installCompatBackgroundBlurSuppression(classLoader);
             installDockCustomizationCompatibility(classLoader, config);
+            installHotSeatsAttachRecovery(classLoader, config);
+            installWorkstationResumeProducerRecovery(classLoader);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -104,6 +106,66 @@ final class Miuix307MaterialPipeline {
         } catch (Throwable error) {
             MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
+        }
+    }
+
+    /**
+     * HotSeats is the stable lifecycle owner across both default MiuiX and themed material
+     * implementations. Recover the active material at the concrete HotSeats attach boundary.
+     */
+    private static void installHotSeatsAttachRecovery(
+            ClassLoader classLoader, LiquidDockConfig config) {
+        try {
+            Class<?> hotSeatsClass = Class.forName(
+                    "com.miui.home.launcher.hotseats.HotSeats", false, classLoader);
+            Method attach = hotSeatsClass.getDeclaredMethod("onAttachedToWindow");
+            HookUtil.hook(attach, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                if (MainHook.isWorkstationMode()) return result;
+                Object hotSeats = chain.getThisObject();
+                hotSeatsRef = new WeakReference<>(hotSeats);
+                View background = resolveBackground(hotSeats);
+                if (background == null) {
+                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery: background not ready");
+                    return result;
+                }
+                if (!ensureGlassBound(background, config, classLoader)) {
+                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery deferred");
+                    return result;
+                }
+                MiuixGlassHook.syncSize(background);
+                MiuixGlassHook.syncGeometry(background, config);
+                MainHook.log("[DC] MiuiX 307 HotSeats attach recovery complete class="
+                        + background.getClass().getSimpleName());
+                return result;
+            });
+            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery unavailable: " + error);
+        }
+    }
+
+    /**
+     * A fullscreen workstation app can disconnect SurfaceFlinger's PassBlur producer while the
+     * Java TextureView hierarchy remains attached. Launcher.onResume is the device-verified
+     * recovery boundary: replace only the producer, preserving the current glass hierarchy.
+     */
+    private static void installWorkstationResumeProducerRecovery(ClassLoader classLoader) {
+        try {
+            Class<?> launcherClass = Class.forName(
+                    "com.miui.home.launcher.Launcher", false, classLoader);
+            Method resume = launcherClass.getDeclaredMethod("onResume");
+            HookUtil.hook(resume, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                if (MainHook.isWorkstationMode()) {
+                    Miuix307ZeroCopyRenderer.rebindProducer("workstation-launcher-resume");
+                }
+                return result;
+            });
+            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery unavailable: "
+                    + error);
         }
     }
 

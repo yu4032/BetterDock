@@ -86,6 +86,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private volatile boolean gpuBackdropActive;
     private volatile boolean activationExhausted;
     private volatile boolean hasConsumedFrame;
+    private volatile boolean producerRebindPending;
     private volatile int configRotation;
     private volatile SurfaceTexture inputSurfaceTexture;
     private volatile Surface inputProducerSurface;
@@ -198,9 +199,68 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (hasConsumedFrame) renderHandler.post(() -> drawLatestFrame(false));
     }
 
+    /**
+     * Reconnect SurfaceFlinger's PassBlur producer without rebuilding the attached TextureView.
+     * The framework Binding can remain stale-true after its BufferQueue has disconnected.
+     */
+    void rebindProducer(String reason) {
+        if (shuttingDown) return;
+        if (producerRebindPending) return;
+        producerRebindPending = true;
+        Miuix307PassBlurBridge.Binding stale = binding;
+        binding = null;
+        Miuix307PassBlurBridge.unbind(stale);
+        gpuBackdropActive = false;
+        activationExhausted = false;
+        hasConsumedFrame = false;
+        frameAvailable.set(false);
+        firstFrameLogged = false;
+        firstDrawLogged = false;
+        firstMatrixLogged = false;
+        stageBDiagnosticsLogged = false;
+        resetBoundGeometry();
+        MainHook.log(TAG + " producer rebind requested reason=" + reason);
+        renderHandler.post(() -> recreateInputProducer(reason));
+    }
+
+    /**
+     * SetPassBlurSurface marks the producer Binder before parceling it to SurfaceFlinger. A
+     * producer that already crossed that boundary must not be reused; create a new BufferQueue.
+     */
+    private void recreateInputProducer(String reason) {
+        Surface staleProducer = inputProducerSurface;
+        SurfaceTexture staleInput = inputSurfaceTexture;
+        try {
+            makeCurrent();
+            inputProducerSurface = null;
+            inputSurfaceTexture = null;
+
+            if (staleProducer != null) staleProducer.release();
+            if (staleInput != null) {
+                try { staleInput.setOnFrameAvailableListener(null); } catch (Throwable ignored) {}
+                staleInput.release();
+            }
+            if (oesTexture != 0) {
+                GLES20.glDeleteTextures(1, new int[]{oesTexture}, 0);
+                oesTexture = 0;
+            }
+
+            createInputProducer();
+            if (inputProducerSurface == staleProducer || inputSurfaceTexture == staleInput) {
+                throw new IllegalStateException("PassBlur input producer was not replaced");
+            }
+            MainHook.log(TAG + " input producer recreated reason=" + reason);
+            post(() -> bindProducerWhenReady(0));
+        } catch (Throwable error) {
+            producerRebindPending = false;
+            fail("producer recreate", error);
+        }
+    }
+
     void shutdown() {
         if (shuttingDown) return;
         shuttingDown = true;
+        producerRebindPending = false;
         gpuBackdropActive = false;
         removeGeometryObserver();
 
@@ -372,6 +432,11 @@ final class Miuix307PassBlurTextureView extends TextureView
             throw new IllegalStateException("one or more Prismal pipeline programs failed");
         }
 
+        createInputProducer();
+        post(() -> bindProducerWhenReady(0));
+    }
+
+    private void createInputProducer() {
         int[] textures = new int[1];
         GLES20.glGenTextures(1, textures, 0);
         oesTexture = textures[0];
@@ -395,7 +460,6 @@ final class Miuix307PassBlurTextureView extends TextureView
             frameAvailable.set(true);
             drawLatestFrame(true);
         }, renderHandler);
-        post(() -> bindProducerWhenReady(0));
     }
 
     private void ensureFboSize(int width, int height) {
@@ -683,6 +747,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         }
 
         binding = next;
+        producerRebindPending = false;
         configRotation = current.configRotation;
         boundSurfaceWidth = current.surfaceWidth;
         boundSurfaceHeight = current.surfaceHeight;
@@ -703,6 +768,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (shuttingDown || binding != null) return;
         if (attempt >= MAX_BIND_RETRY_FRAMES) {
             activationExhausted = true;
+            producerRebindPending = false;
             MainHook.log(TAG + " PassBlur TextureView activation exhausted reason=" + reason);
             return;
         }
@@ -743,7 +809,11 @@ final class Miuix307PassBlurTextureView extends TextureView
 
         ProducerGeometry geometry = readSurfaceGeometry(materialHost);
         if (geometry == null || geometry.rootSurface == null || !geometry.rootSurface.isValid()) return;
-        if (!isSameSurface(binding.rootSurface, geometry.rootSurface)) return;
+        if (!binding.rootSurface.isValid()
+                || !isSameSurface(binding.rootSurface, geometry.rootSurface)) {
+            rebindProducer("producer-root-changed");
+            return;
+        }
         if (geometry.surfaceWidth == boundSurfaceWidth
                 && geometry.surfaceHeight == boundSurfaceHeight
                 && geometry.bufferWidth == boundBufferWidth
