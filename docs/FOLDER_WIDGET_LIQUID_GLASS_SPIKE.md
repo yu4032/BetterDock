@@ -2,7 +2,7 @@
 
 分支：`explore/folder-widget-liquid-glass`
 
-本文件只记录可行性与架构结论，不包含实现。该探索基于当前 `main`，与 workstation Dock 恢复 PR 独立。
+该探索基于当前 `main`，与 workstation Dock 恢复 PR 独立。
 
 ## 目标
 
@@ -12,6 +12,15 @@
 - 小组件 Liquid Glass
 
 目标效果若定义为“完整 LiquidDock Prismal”则包含实时 backdrop、Gaussian blur、折射、色散、Fresnel / specular / tint 等；若仅使用系统 `BackgroundBlurDrawable`，只能得到原生模糊/着色，不能等价于完整 Prismal 折射。
+
+## 当前进度（2026-08-20）
+
+已实现探索顺序中的步骤 1 和 2：
+
+1. `FolderWidgetGlassProbe`：只读记录大文件夹以及 `LauncherAppWidgetHostView` / `MaMlHostView` 的 class、parent、attach/detach、尺寸、screen rect 和可解析的圆角信息，不改变视觉状态。
+2. `LargeFolderNativeBlurPrototype`：对已识别的大文件夹在 stock plate 下方插入 `BackgroundBlurDrawable` 原型层；编辑模式、打开文件夹、detach 或 hidden-API 失败时恢复 stock plate。该 prototype 不创建新的 PassBlur producer。
+
+步骤 1/2 目前仅完成代码与 CI 构建验证，尚未完成目标设备行为验证。
 
 ## 1. 大文件夹
 
@@ -159,8 +168,8 @@ Launcher root
 
 ## 6. 推荐实现顺序
 
-1. **Probe-only commit**：只 hook/记录大文件夹和两类 widget host 的 class、parent、size、radius、attach/detach、screen rect，不改视觉。
-2. **大文件夹 native-blur prototype**：仅一个背景 target，验证编辑/打开/拖拽生命周期。
+1. **Probe-only commit**：只 hook/记录大文件夹和两类 widget host 的 class、parent、size、radius、attach/detach、screen rect，不改视觉。 **已实现，待设备验证。**
+2. **大文件夹 native-blur prototype**：仅一个背景 target，验证编辑/打开/拖拽生命周期。 **已实现基础 prototype，待设备验证。**
 3. **widget native-blur prototype**：同时覆盖 `LauncherAppWidgetHostView` 和 `MaMlHostView`，默认 glass-behind-content。
 4. **Shared backdrop source prototype**：先只注册一个 folder + 一个 widget target，验证一 source 多 target 的 geometry/OES mapping。
 5. **Dock source migration**：把 Dock 改成同一 shared source 的 target；这一步完成后才允许 full Prismal folder/widget 与 Dock 同时启用。
