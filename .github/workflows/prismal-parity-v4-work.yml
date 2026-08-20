@@ -1,0 +1,104 @@
+name: Prismal parity v4 isolated work
+
+on:
+  push:
+    branches: [ fix/prismal-parity-v4-work ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/prismal-parity-v4-work
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply reviewed parity patch with whitespace-tolerant matching
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          src = Path('.github/workflows/prismal-parity-v4-one-shot.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = src.index(marker) + len(marker)
+          end = src.index("\n          PY\n", start)
+          lines = src[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          a = script.index("replace_once(material,\n    '// Mirror the public Prismal v1.0.6 Quick Start path")
+          b = script.index("replace_once(material,\n    '                0.08f,", a)
+          script = script[:a] + script[b:]
+          a = script.index("replace_once(material,\n    '        if (glass == null || isUntouchedLegacyProfile(glass)) {")
+          b = script.index("replace_once(material,\n    '                Math.max(0f, Math.min(1f, glass.depthEffect)),", a)
+          script = script[:a] + script[b:]
+          old_helper = '''def replace_once(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'{path}: expected one match, got {count}: {old[:100]!r}')
+    p.write_text(text.replace(old, new, 1))
+'''
+          new_helper = '''def replace_once(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    count = text.count(old)
+    if count == 1:
+        p.write_text(text.replace(old, new, 1))
+        return
+    parts = old.splitlines()
+    pattern = re.escape(parts[0].lstrip())
+    for line in parts[1:]:
+        pattern += r"\\n[ \\t]*" + re.escape(line.lstrip())
+    matches = list(re.finditer(pattern, text))
+    if len(matches) != 1:
+        raise SystemExit(f'{path}: expected one fuzzy match, got {len(matches)}: {old[:100]!r}')
+    m = matches[0]
+    p.write_text(text[:m.start()] + new + text[m.end():])
+'''
+          if old_helper not in script:
+              raise SystemExit('replace_once helper not found')
+          script = script.replace(old_helper, new_helper, 1)
+          Path('/tmp/prismal_patch.py').write_text(script)
+          PY
+          python3 /tmp/prismal_patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('src/main/java/com/hellovoid/liquiddock/Miuix307PrismalMaterial.java')
+          text = p.read_text()
+          old = '        if (glass == null || isUntouchedLegacyProfile(glass)) return defaults(density);'
+          if old not in text:
+              raise SystemExit('material legacy-profile early return not found')
+          text = text.replace(old, '        if (glass == null) return defaults(density);', 1)
+          text = re.sub(
+              r'/\*\*\n     \* Prismal Quick Start state adapted for LiquidDock\..*?\n     \*/\n    static Params defaults',
+              '/**\n     * Effective Prismal v1.0.6 Quick Start state: FrameLayout defaults followed by applyBase().\n     */\n    static Params defaults',
+              text, count=1, flags=re.S)
+          text = re.sub(
+              r'\n    private static boolean isUntouchedLegacyProfile\(LiquidDockConfig\.Glass g\) \{.*?\n    \}\n\n    private static boolean nearly\(float actual, float expected\) \{.*?\n    \}\n',
+              '\n', text, count=1, flags=re.S)
+          p.write_text(text)
+          PY
+      - name: Commit isolated fix and remove temporary workflow debris
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f PRISMAL_PARITY_PATCH_ERROR.txt
+          git rm -f .github/workflows/prismal-parity-v4-one-shot.yml .github/workflows/prismal-parity-v4-apply.yml .github/workflows/prismal-parity-v4-apply2.yml .github/workflows/prismal-parity-v4-work.yml
+          git add -A
+          git commit -m "fix: restore effective Prismal v1.0.6 defaults"
+          git push origin HEAD:fix/prismal-parity-v4-work
+      - name: Verify unit suite and debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
