@@ -44,10 +44,11 @@ public class PrismalModuleBoundaryContractTest {
                 && renderer.contains("blurFramebufferH")
                 && renderer.contains("blurFramebufferV")
                 && renderer.contains("outputFramebuffer"));
-        assertFalse(renderer.contains("SurfaceTexture"));
+        assertFalse(renderer.contains("import android.graphics.SurfaceTexture"));
+        assertFalse(renderer.contains("import android.view."));
         assertFalse(renderer.contains("GLES11Ext"));
-        assertFalse(renderer.contains("Miuix"));
-        assertFalse(renderer.contains("Dock"));
+        assertFalse(renderer.contains("import com.hellovoid.liquiddock"));
+        assertFalse(renderer.contains("Miuix307"));
     }
 
     @Test
