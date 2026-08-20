@@ -31,7 +31,9 @@
 - `com.miui.home.launcher.FolderIcon`
 - `com.miui.home.launcher.folder.FolderIcon2x2`
 - Pad 变体包括 `FolderIcon4x4_16`、`FolderIcon3x3_9`
-- 其他变体还包括 `FolderIcon2x2_4` / `FolderIcon1x2` 等
+- 其他变体还包括 `FolderIcon2x2_4` / `FolderIcon2x2_9` / `FolderIcon1x2` 等
+
+当前 steps 1/2 的 probe/prototype 实际尝试覆盖 `FolderIcon4x4_16`、`FolderIcon3x3_9`、`FolderIcon2x2_4`、`FolderIcon2x2_9` 和 `FolderIcon2x2`；缺失类按 fail-open 方式仅记录 unavailable，不影响 Launcher 启动。
 
 在 `onFinishInflate()` 后可取得 `mIconImageView`，其 parent 是可插入背景层的 `FrameLayout`。现成做法会隐藏 stock `mIconImageView`，并在 parent index 0 插入自定义 background view。因此“大文件夹背景层”本身是高可行性的明确 hook 点。
 
