@@ -58,6 +58,8 @@ final class Miuix307MaterialPipeline {
         try {
             installCompatBackgroundBlurSuppression(classLoader);
             installDockCustomizationCompatibility(classLoader, config);
+            installHotSeatsAttachRecovery(classLoader, config);
+            installWorkstationResumeProducerRecovery(classLoader);
 
             HookUtil.hookMethod(classLoader,
                     "com.miui.home.launcher.Launcher", "setupViews",
@@ -104,6 +106,72 @@ final class Miuix307MaterialPipeline {
         } catch (Throwable error) {
             MainHook.log("[DC] MiuiX 307 material hook install failed: " + error);
             return false;
+        }
+    }
+
+    /**
+     * HotSeats is the stable lifecycle owner across both default MiuiX and themed
+     * BlurBackground2 material implementations. HyperOS can create the material before it has a
+     * parent/ViewRoot, then attach HotSeats later. Re-resolve the active background at that exact
+     * attach boundary instead of hooking an inherited FrameLayout/View method on the default
+     * material class.
+     */
+    private static void installHotSeatsAttachRecovery(
+            ClassLoader classLoader, LiquidDockConfig config) {
+        try {
+            Class<?> hotSeatsClass = Class.forName(
+                    "com.miui.home.launcher.hotseats.HotSeats", false, classLoader);
+            // Deliberately require a declaration on HotSeats itself. HookUtil.findMethodExact()
+            // walks superclasses, which would make a missing override dangerously broad here.
+            Method attach = hotSeatsClass.getDeclaredMethod("onAttachedToWindow");
+            HookUtil.hook(attach, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                if (MainHook.isWorkstationMode()) return result;
+                Object hotSeats = chain.getThisObject();
+                hotSeatsRef = new WeakReference<>(hotSeats);
+                View background = resolveBackground(hotSeats);
+                if (background == null) {
+                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery: background not ready");
+                    return result;
+                }
+                if (!ensureGlassBound(background, config, classLoader)) {
+                    MainHook.log("[DC] MiuiX 307 HotSeats attach recovery deferred");
+                    return result;
+                }
+                MiuixGlassHook.syncSize(background);
+                MiuixGlassHook.syncGeometry(background, config);
+                MainHook.log("[DC] MiuiX 307 HotSeats attach recovery complete class="
+                        + background.getClass().getSimpleName());
+                return result;
+            });
+            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 HotSeats attach recovery unavailable: " + error);
+        }
+    }
+
+    /**
+     * In workstation mode a fullscreen app can hide the Dock without detaching HotSeats. HyperOS
+     * destroys the Launcher's PassBlur producer while the Java material/TextureView hierarchy
+     * stays attached, so the normal attach recovery never runs. Rebind only the GPU producer when
+     * Launcher becomes foreground again; keep the existing material hierarchy and EGL view.
+     */
+    private static void installWorkstationResumeProducerRecovery(ClassLoader classLoader) {
+        try {
+            Class<?> launcherClass = Class.forName(
+                    "com.miui.home.launcher.Launcher", false, classLoader);
+            Method resume = launcherClass.getDeclaredMethod("onResume");
+            HookUtil.hook(resume, chain -> {
+                Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                if (MainHook.isWorkstationMode()) {
+                    Miuix307ZeroCopyRenderer.rebindProducer("workstation-launcher-resume");
+                }
+                return result;
+            });
+            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery installed");
+        } catch (Throwable error) {
+            MainHook.log("[DC] MiuiX 307 workstation resume producer recovery unavailable: "
+                    + error);
         }
     }
 
@@ -414,6 +482,9 @@ final class Miuix307MaterialPipeline {
 
             @Override public void onViewDetachedFromWindow(View v) {
                 if (v != watchedBackground && v != watchedHost) return;
+                // TextureView releases its SurfaceTexture on this boundary. The Java material and
+                // host may later be re-attached unchanged, but that renderer is no longer valid.
+                MiuixGlassHook.invalidateBinding(watchedBackground);
                 MainHook.log("[DC] MiuiX 307 hierarchy invalidated; rebind scheduled source="
                         + (v == watchedHost ? "host" : "background"));
                 scheduleHierarchyRebind(config, classLoader);

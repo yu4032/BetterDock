@@ -28,6 +28,7 @@ final class MiuixGlassHook {
 
     private static DockLiquidGlassHostView hostRef;
     private static View backgroundRef;
+    private static boolean bindingInvalidated;
     private static ViewTreeObserver vendorBlurObserver;
     private static ViewTreeObserver.OnPreDrawListener vendorBlurSuppressor;
     private static View vendorGpuBlurLoggedFor;
@@ -41,15 +42,26 @@ final class MiuixGlassHook {
     private MiuixGlassHook() {}
 
     static boolean isBoundTo(View dockBg) {
+        if (bindingInvalidated) return false;
         if (dockBg == null || dockBg != backgroundRef) return false;
         DockLiquidGlassHostView host = hostRef;
         return host != null && host.getParent() == dockBg;
     }
 
     static boolean isZeroCopyActive() {
+        if (bindingInvalidated) return false;
         DockLiquidGlassHostView host = hostRef;
         return host != null && host.getParent() == backgroundRef
                 && Miuix307ZeroCopyRenderer.isActive();
+    }
+
+    /** Mark a detached material/TextureView pair unusable until install() rebuilds it. */
+    static void invalidateBinding(View dockBg) {
+        if (dockBg == null || dockBg != backgroundRef) return;
+        bindingInvalidated = true;
+        removeVendorGpuBlurSuppressor();
+        Miuix307ZeroCopyRenderer.clear();
+        MainHook.log(TAG + " binding invalidated after material hierarchy detach");
     }
 
     static boolean hasReadyNativeGeometry(View dockBg) {
@@ -80,7 +92,8 @@ final class MiuixGlassHook {
         ViewGroup materialHost = (ViewGroup) dockBg;
         boolean nativeVisualOwner = isNativeVisualOwner(dockBg);
 
-        if (backgroundRef == dockBg && hostRef != null && hostRef.getParent() == materialHost) {
+        if (!bindingInvalidated && backgroundRef == dockBg
+                && hostRef != null && hostRef.getParent() == materialHost) {
             syncSize(dockBg);
             syncGeometry(dockBg, config);
             return true;
@@ -94,6 +107,7 @@ final class MiuixGlassHook {
         }
         hostRef = null;
         backgroundRef = null;
+        bindingInvalidated = false;
         vendorGpuBlurLoggedFor = null;
         compatBackgroundBlurLoggedFor = null;
         transparentMaterialOwner = null;
