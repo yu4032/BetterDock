@@ -16,7 +16,7 @@ import java.lang.ref.WeakReference;
 /** Core Launcher hooks for LiquidDock — zero-copy glass, stroke, dock geometry, workstation. */
 public class MainHook {
 
-    private static View shadowView;
+    private static WeakReference<View> shadowViewRef = new WeakReference<>(null);
     private static WeakReference<View> oldBgRef = new WeakReference<>(null);
     private static WeakReference<View> nativeShadowTargetRef = new WeakReference<>(null);
 
@@ -301,7 +301,8 @@ public class MainHook {
                                 return r;
                             }
                             if (dockShadow) {
-                                shadowView = makeDockShadow(oldBg, c2.squircle, sqOff, sqCp, dsR, dsS, dsA, dsY);
+                                View shadowView = makeDockShadow(oldBg, c2.squircle, sqOff, sqCp, dsR, dsS, dsA, dsY);
+                                shadowViewRef = new WeakReference<>(shadowView);
                                 shadowView.setId(View.generateViewId());
                                 int bgIdx = parent.indexOfChild(oldBg);
                                 parent.addView(shadowView, Math.max(0, bgIdx), new FrameLayout.LayoutParams(1, 1));
@@ -501,7 +502,8 @@ public class MainHook {
         if (!enabled) {
             if (dockBg != null) dockBg.post(() -> {
                 dockBg.setAlpha(1f);
-                if (shadowView != null) shadowView.setVisibility(View.VISIBLE);
+                View currentShadow = shadowViewRef.get();
+                if (currentShadow != null) currentShadow.setVisibility(View.VISIBLE);
                 syncAll(dockBg);
             });
             return;
@@ -510,7 +512,8 @@ public class MainHook {
             // The workstation Dock background is rendered by its independent laptop
             // DockContainerView. Suppress every normal-mode background layer here.
             dockBg.setAlpha(0f);
-            if (shadowView != null) shadowView.setVisibility(View.GONE);
+            View currentShadow = shadowViewRef.get();
+            if (currentShadow != null) currentShadow.setVisibility(View.GONE);
         });
     }
 
@@ -609,7 +612,7 @@ public class MainHook {
                 canvas.drawPath(shape, paint);
             }
             @Override protected void onDetachedFromWindow() {
-                if (shadowView == this) shadowView = null;
+                if (shadowViewRef.get() == this) shadowViewRef = new WeakReference<>(null);
                 super.onDetachedFromWindow();
             }
         };
@@ -618,7 +621,7 @@ public class MainHook {
     }
 
     private static void syncShadowGeometry() {
-        View shadow = shadowView, dockBg = oldBg();
+        View shadow = shadowViewRef.get(), dockBg = oldBg();
         if (shadow == null || dockBg == null || bgW <= 0 || bgH <= 0) return;
         ViewGroup.LayoutParams lp = shadow.getLayoutParams();
         if (lp != null) {
@@ -631,6 +634,7 @@ public class MainHook {
     }
 
     private static void syncAll(View bg) {
+        View shadowView = shadowViewRef.get();
         if (bg == null || shadowView == null) return;
         boolean anim = animating(bg);
         try {
