@@ -39,11 +39,11 @@ public class HomeGridRotationPlannerTest {
                 11L, 0, 2, 6, 4, 2, 4, 2);
         Map<Long, HomeGridRotationPlanner.Position> rememberedLandscape = new HashMap<>();
         rememberedLandscape.put(11L,
-                new HomeGridRotationPlanner.Position(0, 1, 5, 4, 2));
+                new HomeGridRotationPlanner.Position(0, 1, 4, 4, 2));
         HomeGridRotationPlanner.Plan landscape = HomeGridRotationPlanner.plan(
                 6, 10, 10, 6, Arrays.asList(portraitItem), rememberedLandscape);
         assertEquals(1, landscape.position(11L).x);
-        assertEquals(5, landscape.position(11L).y);
+        assertEquals(4, landscape.position(11L).y);
     }
 
     @Test public void conflictingRememberedPositionsFallBackWithoutOverlapDeterministically() {
@@ -79,5 +79,18 @@ public class HomeGridRotationPlannerTest {
         HomeGridRotationPlanner.Plan plan = HomeGridRotationPlanner.plan(
                 10, 6, 6, 10, Arrays.asList(widget, icon), remembered);
         assertFalse(plan.position(20L).overlaps(plan.position(21L)));
+    }
+
+    @Test public void screenIdsRemainLongAndNeverAliasAcrossPages() {
+        long largeScreen = ((long) Integer.MAX_VALUE) + 42L;
+        HomeGridRotationPlanner.Item first = new HomeGridRotationPlanner.Item(
+                30L, largeScreen, 0, 0, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Item second = new HomeGridRotationPlanner.Item(
+                31L, 0L, 0, 0, 1, 1, 1, 1);
+        HomeGridRotationPlanner.Plan plan = HomeGridRotationPlanner.plan(
+                10, 6, 6, 10, Arrays.asList(first, second), new HashMap<>());
+        assertEquals(largeScreen, plan.position(30L).screenId);
+        assertEquals(0L, plan.position(31L).screenId);
+        assertFalse(plan.position(30L).overlaps(plan.position(31L)));
     }
 }
