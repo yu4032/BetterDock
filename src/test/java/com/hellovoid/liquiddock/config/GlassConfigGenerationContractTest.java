@@ -18,6 +18,7 @@ public class GlassConfigGenerationContractTest {
 
         assertTrue(source.contains("GLASS_CONFIG_GENERATION"));
         assertTrue(source.contains("resetUnsupportedGlassConfigGeneration(preferences)"));
+        assertTrue(source.contains("hasPersistedGlassConfig"));
         assertTrue(source.contains("PresetManager.defaultValues()"));
         assertTrue(source.contains("key.startsWith(\"liquid_\")"));
         assertTrue(source.contains("putCurrentGlassDefault"));
