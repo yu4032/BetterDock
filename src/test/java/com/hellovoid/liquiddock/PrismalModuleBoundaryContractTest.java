@@ -66,9 +66,14 @@ public class PrismalModuleBoundaryContractTest {
         String composite = Files.readString(APP.resolve("Miuix307PrismalCompositeShaders.java"));
         assertTrue(view.contains("Miuix307PassBlurShaders.OES_NORMALIZE_FRAGMENT"));
         assertTrue(view.contains("prismalRenderer.render("));
-        assertTrue(view.contains("createPrismalGeometry()"));
+        assertTrue(view.contains("createPrismalGeometry(mapping)"));
+        assertTrue(view.contains("private volatile BackdropSnapshot backdropSnapshot"));
+        assertTrue(view.contains("BackdropSnapshot mapping = backdropSnapshot"));
+        assertTrue(view.contains("ensureFboSizeExact(mapping.sampleWidth, mapping.sampleHeight)"));
+        assertTrue(view.contains("renderNormalizationPass(mapping)"));
         assertTrue(view.contains("[DC][PRISMAL-MAP]"));
-        assertTrue(view.contains("renderCompositePass(prismalTexture)"));
+        assertTrue(view.contains("renderCompositePass(prismalTexture, mapping)"));
+        assertTrue(view.contains("if (backdropSnapshot != mapping"));
         assertTrue(composite.contains("uCropRect.xy + vUv * uCropRect.zw"));
     }
 }

@@ -124,7 +124,7 @@ public class Miuix307PrismalParityRepairTest {
         assertFalse("Prismal optical equations should stay producer-geometry agnostic",
                 shader.contains("u_validBackdropRect"));
         assertTrue("visible partial coverage is still clipped to the real Dock/window intersection",
-                view.contains("producerCoverage == Miuix307BackdropMapping.Coverage.PARTIAL"));
+                view.contains("mapping.coverage == Miuix307BackdropMapping.Coverage.PARTIAL"));
         assertTrue(view.contains("GLES20.glScissor"));
     }
 

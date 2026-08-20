@@ -31,11 +31,11 @@ public class Miuix307EdgeOverscanContractTest {
                         && view.contains("insets.left")
                         && view.contains("insets.right"));
         assertTrue("Dock adapter must place the visible glass inside the larger Prismal framebuffer",
-                view.contains("createPrismalGeometry()")
-                        && view.contains("dockUvLeft")
-                        && view.contains("dockUvBottom")
-                        && view.contains("dockUvWidth * fboWidth")
-                        && view.contains("dockUvHeight * fboHeight"));
+                view.contains("createPrismalGeometry(mapping)")
+                        && view.contains("mapping.dockUvLeft")
+                        && view.contains("mapping.dockUvBottom")
+                        && view.contains("mapping.dockUvWidth * mapping.sampleWidth")
+                        && view.contains("mapping.dockUvHeight * mapping.sampleHeight"));
         assertTrue("portable Prismal must own a full-frame source and output target",
                 renderer.contains("sourceFramebuffer") && renderer.contains("outputFramebuffer"));
         assertTrue("official Prismal backdrop sampling stays in framebuffer UV",
@@ -49,11 +49,12 @@ public class Miuix307EdgeOverscanContractTest {
         assertTrue(view.contains("validSampleLeft") && view.contains("validSampleTop"));
         assertTrue(view.contains("validDockLeft") && view.contains("validDockTop"));
         assertTrue("normalization mirror guard must use overscan-sample validity",
-                view.contains("validSampleLeft, validSampleBottom, validSampleRight, validSampleTop"));
+                view.contains("mapping.validSampleLeft, mapping.validSampleBottom")
+                        && view.contains("mapping.validSampleRight, mapping.validSampleTop"));
         assertTrue("final coverage/scissor must remain tied to the visible Dock",
                 view.contains("producerCoverage = dock.coverage")
-                        && view.contains("validDockLeft * outputWidth")
-                        && view.contains("validDockBottom * outputHeight"));
+                        && view.contains("mapping.validDockLeft * mapping.visibleWidth")
+                        && view.contains("mapping.validDockBottom * mapping.visibleHeight"));
     }
 
     @Test

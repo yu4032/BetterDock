@@ -54,8 +54,16 @@ public class Miuix307TextureViewCoordinateParityTest {
                         && region.contains("winFrame.top")
                         && region.contains("winFrame.width()")
                         && region.contains("winFrame.height()"));
-        assertFalse("mSurfaceSize is producer allocation geometry, not backdrop content geometry",
-                region.contains("boundSurfaceWidth") || region.contains("boundSurfaceHeight"));
+        assertTrue("snapshot may carry producer allocation only as generation metadata",
+                region.contains("boundSurfaceWidth, boundSurfaceHeight")
+                        && region.contains("boundBufferWidth, boundBufferHeight"));
+        assertTrue("sample mapping must be anchored to TextureView position plus resolved insets",
+                region.contains("Miuix307BackdropMapping.Result sample = Miuix307BackdropMapping.compute(")
+                        && region.contains("viewScreen[0] - insets.left")
+                        && region.contains("viewScreen[1] - insets.top"));
+        assertTrue("visible Dock mapping must be anchored to TextureView position",
+                region.contains("Miuix307BackdropMapping.Result dock = Miuix307BackdropMapping.compute(")
+                        && region.contains("viewScreen[0], viewScreen[1], visibleWidth, visibleHeight"));
     }
 
     @Test

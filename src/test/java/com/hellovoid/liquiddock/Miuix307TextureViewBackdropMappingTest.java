@@ -172,7 +172,12 @@ public class Miuix307TextureViewBackdropMappingTest {
         String fbo = source.substring(fboStart, fboEnd);
         String mapping = source.substring(mapStart, mapEnd);
         assertTrue(fbo.contains("SamplingInsets insets = resolveSamplingInsets(width, height);"));
-        assertTrue(mapping.contains("SamplingInsets insets = resolveSamplingInsets(visibleWidth, visibleHeight);"));
+        assertTrue(mapping.contains(
+                "SamplingInsets insets = resolveSamplingInsets(visibleWidth, visibleHeight, frameParams);"));
+        assertTrue(source.contains("ensureFboSizeExact(mapping.sampleWidth, mapping.sampleHeight)"));
+        assertTrue(source.contains("renderNormalizationPass(mapping)"));
+        assertTrue(source.contains("createPrismalGeometry(mapping)"));
+        assertTrue(source.contains("renderCompositePass(prismalTexture, mapping)"));
     }
 
     @Test
