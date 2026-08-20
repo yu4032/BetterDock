@@ -1,16 +1,10 @@
 package com.hellovoid.prismal;
 
-import android.content.Context;
-import android.content.res.Resources;
 import android.opengl.GLES20;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Reusable OpenGL ES 2.0 Prismal renderer.
@@ -19,7 +13,7 @@ import java.nio.charset.StandardCharsets;
  * texture in GL-native bottom-left orientation. This class standardizes that texture into the
  * orientation used by upstream Prismal, executes Prismal's original 0.5x blur passes and original
  * glass vertex/fragment shaders, and returns a transparent full-frame texture containing only the
- * rendered glass. It has no dependency on View, SurfaceTexture, OES, Dock, Xposed, or HyperOS.</p>
+ * rendered glass. It has no dependency on View, SurfaceTexture, OES, Dock, Xposed, HyperOS, Context, or Resources.</p>
  */
 public final class PrismalRenderer implements AutoCloseable {
     private static final float BLUR_FBO_SCALE = 0.5f;
@@ -67,7 +61,6 @@ public final class PrismalRenderer implements AutoCloseable {
             }
             """;
 
-    private final Resources resources;
     private final FloatBuffer fullQuad;
     private final FloatBuffer glassQuad;
     private final FloatBuffer blurQuad;
@@ -90,9 +83,7 @@ public final class PrismalRenderer implements AutoCloseable {
     private int blurWidth;
     private int blurHeight;
 
-    public PrismalRenderer(Context context) {
-        if (context == null) throw new IllegalArgumentException("context == null");
-        resources = context.getResources();
+    public PrismalRenderer() {
         fullQuad = floatBuffer(FULL_QUAD);
         glassQuad = floatBuffer(GLASS_QUAD);
         blurQuad = floatBuffer(BLUR_QUAD);
@@ -138,11 +129,10 @@ public final class PrismalRenderer implements AutoCloseable {
         if (sourceProgram != 0 && blurHProgram != 0 && blurVProgram != 0 && glassProgram != 0) {
             return;
         }
-        String blurVertex = readRaw(R.raw.prismal_blur_vertex);
         sourceProgram = createProgram(SOURCE_VERTEX, SOURCE_FRAGMENT);
-        blurHProgram = createProgram(blurVertex, readRaw(R.raw.prismal_blur_h));
-        blurVProgram = createProgram(blurVertex, readRaw(R.raw.prismal_blur_v));
-        glassProgram = createProgram(readRaw(R.raw.prismal_vertex), readRaw(R.raw.prismal_fragment));
+        blurHProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_H);
+        blurVProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_V);
+        glassProgram = createProgram(PrismalShaderSources.VERTEX, PrismalShaderSources.FRAGMENT);
         if (sourceProgram == 0 || blurHProgram == 0 || blurVProgram == 0 || glassProgram == 0) {
             throw new IllegalStateException("Prismal shader program creation failed");
         }
@@ -362,17 +352,6 @@ public final class PrismalRenderer implements AutoCloseable {
         return shader;
     }
 
-    private String readRaw(int id) {
-        try (InputStream input = resources.openRawResource(id);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
-            return output.toString(StandardCharsets.UTF_8);
-        } catch (IOException error) {
-            throw new IllegalStateException("Unable to read Prismal shader", error);
-        }
-    }
 
     private void uniform1f(String name, float value) {
         GLES20.glUniform1f(requireUniform(glassProgram, name), value);

@@ -477,7 +477,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         if (normalizeProgram == 0 || compositeProgram == 0) {
             throw new IllegalStateException("Prismal adapter program creation failed");
         }
-        if (prismalRenderer == null) prismalRenderer = new PrismalRenderer(getContext());
+        if (prismalRenderer == null) prismalRenderer = new PrismalRenderer();
 
         createInputProducer();
         post(() -> bindProducerWhenReady(0));

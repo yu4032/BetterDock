@@ -49,6 +49,10 @@ public class PrismalModuleBoundaryContractTest {
         assertFalse(renderer.contains("GLES11Ext"));
         assertFalse(renderer.contains("import com.hellovoid.liquiddock"));
         assertFalse(renderer.contains("Miuix307"));
+        assertFalse(renderer.contains("android.content.Context"));
+        assertFalse(renderer.contains("android.content.res.Resources"));
+        assertFalse(renderer.contains("openRawResource"));
+        assertTrue(renderer.contains("PrismalShaderSources.FRAGMENT"));
     }
 
     @Test
