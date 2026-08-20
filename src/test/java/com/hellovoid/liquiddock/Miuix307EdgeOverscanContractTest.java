@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -94,5 +95,46 @@ public class Miuix307EdgeOverscanContractTest {
         assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX)"));
         assertTrue(view.contains("Math.max(Math.max(0, topOverscanPx), opticalY)"));
         assertTrue(view.contains("Math.max(Math.max(0, bottomOverscanPx), opticalY)"));
+    }
+
+    @Test
+    public void oversizedSamplingInsetsFitInsideTheGpuTextureLimitWithoutLosingAsymmetry() throws Exception {
+        Method method;
+        try {
+            method = Miuix307PassBlurTextureView.class.getDeclaredMethod(
+                    "fitInsetPairToTextureLimit",
+                    int.class, int.class, int.class, int.class);
+        } catch (NoSuchMethodException missing) {
+            fail("fitInsetPairToTextureLimit must constrain overscan before FBO allocation");
+            return;
+        }
+        method.setAccessible(true);
+
+        int[] symmetric = (int[]) method.invoke(null, 2302, 3500, 3500, 8192);
+        assertEquals(5890, symmetric[0] + symmetric[1]);
+        assertTrue(Math.abs(symmetric[0] - symmetric[1]) <= 1);
+
+        int[] asymmetric = (int[]) method.invoke(null, 2302, 4000, 2000, 8192);
+        assertEquals(5890, asymmetric[0] + asymmetric[1]);
+        assertTrue("hardware limiting should preserve the requested left/right proportion",
+                Math.abs(asymmetric[0] - asymmetric[1] * 2) <= 2);
+
+        int[] alreadyFits = (int[]) method.invoke(null, 2302, 300, 150, 8192);
+        assertEquals(300, alreadyFits[0]);
+        assertEquals(150, alreadyFits[1]);
+    }
+
+    @Test
+    public void textureLimitIsQueriedBeforeFirstFboAllocationAndSharedByMapping() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(view.contains("private volatile int maxTextureSize;"));
+        assertTrue(view.contains("GLES20.GL_MAX_TEXTURE_SIZE"));
+        assertTrue(view.contains("private void queryMaxTextureSize()"));
+        assertTrue(view.contains("fitInsetPairToTextureLimit(width, left, right, maxTextureSize)"));
+        assertTrue(view.contains("fitInsetPairToTextureLimit(height, top, bottom, maxTextureSize)"));
+        assertTrue("first FBO allocation must wait until the queried limit is reflected in mapping",
+                view.contains("queryMaxTextureSize();")
+                        && view.contains("updateBackdropMapping();")
+                        && view.contains("finishOutputAttach"));
     }
 }
