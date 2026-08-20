@@ -71,6 +71,21 @@ public class Miuix307EdgeOverscanContractTest {
     }
 
     @Test
+    public void halfResolutionGaussianBlurAddsItsOwnFullResolutionHalo() throws Exception {
+        String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+        assertTrue(view.contains("private static final int BLUR_KERNEL_RADIUS_TEXELS = 15;"));
+        assertTrue(view.contains("private int blurSamplingGuardPx()"));
+        assertTrue(view.contains(
+                "Math.ceil(BLUR_KERNEL_RADIUS_TEXELS / Math.max(BLUR_FBO_SCALE, 0.0001f))"));
+        assertTrue("blur halo must be added after the material optical reach is known",
+                view.contains("int opticalX = Miuix307PrismalMaterial.requiredSampleGuardPx(")
+                        && view.contains("int opticalY = Miuix307PrismalMaterial.requiredSampleGuardPx(")
+                        && view.contains("int blurGuard = blurSamplingGuardPx();")
+                        && view.contains("opticalX += blurGuard;")
+                        && view.contains("opticalY += blurGuard;"));
+    }
+
+    @Test
     public void resolvedSamplingInsetsUseOpticalGuardAsAMinimumWithoutDiscardingGuiExtras() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("private SamplingInsets resolveSamplingInsets(int width, int height)"));
