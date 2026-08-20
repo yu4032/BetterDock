@@ -66,6 +66,109 @@ jobs:
           Path('/tmp/apply_glass_controls.py').write_text(script)
           PY
           python3 /tmp/apply_glass_controls.py
+      - name: Align intentional contract changes and audit all visible controls
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, got {count}: {old!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          shader = 'src/main/java/com/hellovoid/liquiddock/Miuix307PrismalShader.java'
+          one(shader,
+              'vec2 legacyBulgeUv = legacyBDir * legacyBulge * u_glassSize / u_resolution;',
+              'vec2 legacyBulgeUv = legacyBDir * legacyBulge * halfSz / u_resolution;')
+
+          one('src/test/java/com/hellovoid/liquiddock/Miuix307TextureViewBackdropMappingTest.java',
+              'assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));',
+              'assertTrue(source.contains("vec2 currentOffset = lensDeltaUv + snellOff + bulgeUv")\n                && source.contains("vec2 baseOffset = currentOffset"));')
+          one('src/test/java/com/hellovoid/liquiddock/Miuix307TextureViewStrongRefractionTest.java',
+              'assertTrue(source.contains("vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv"));',
+              'assertTrue(source.contains("vec2 currentOffset = lensDeltaUv + snellOff + bulgeUv")\n                && source.contains("vec2 baseOffset = currentOffset"));')
+          one('src/test/java/com/hellovoid/liquiddock/Miuix307TextureViewPassBlurCalibrationTest.java',
+              '&& material.contains("p.normalStrength * 0.9f"));',
+              '&& material.contains("glass.depthEffect")\n                        && material.contains("p.lensDepthEffect"));')
+
+          one('src/test/java/com/hellovoid/liquiddock/config/ConfigCodecTest.java',
+              'assertEquals(128, exported.size());',
+              'assertEquals(129, exported.size());')
+          one('src/test/java/com/hellovoid/liquiddock/config/ConfigCodecTest.java',
+              'assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));',
+              'assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));\n        assertEquals(0, exported.get("liquid_legacy_s_curve"));')
+
+          one('src/test/java/com/hellovoid/liquiddock/config/ConfigPresetTest.java',
+              'expected.put("liquid_lens_refraction_tenths", 13);',
+              'expected.put("liquid_lens_refraction_tenths", 13);\n        expected.put("liquid_legacy_s_curve", 0);')
+
+          one('src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java',
+              'assertComposeIntSpec(ConfigSchema.Glass.LENS_REFRACTION, 12, 0, 60);',
+              'assertComposeIntSpec(ConfigSchema.Glass.LENS_REFRACTION, 12, 0, 60);\n        assertComposeIntSpec(ConfigSchema.Glass.LEGACY_S_CURVE, 0, 0, 200);\n        assertComposeIntSpec(ConfigSchema.Glass.DEPTH_EFFECT, 8, 0, 50);')
+          one('src/test/java/com/hellovoid/liquiddock/config/ConfigSchemaTest.java',
+              'assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, 100, 0, 400);',
+              'assertComposeIntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, 100, 0, 2000);')
+
+          test = Path('src/test/java/com/hellovoid/liquiddock/Miuix307GlassCustomizationContractTest.java')
+          text = test.read_text()
+          needle = '''    private static int occurrences(String text, String needle) {'''
+          audit = '''    @Test
+              public void everyVisibleZeroCopyOpticalUniformIsActuallyConsumed() throws Exception {
+                  String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+                  String material = Files.readString(MAIN.resolve("Miuix307PrismalMaterial.java"));
+                  String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
+
+                  String[] uniforms = new String[]{
+                          "u_refractionInset", "u_sminSmoothing", "u_edgeRefractionFalloff",
+                          "u_ior", "u_glassThickness", "u_normalStrength", "u_displacementScale",
+                          "u_heightTransitionWidth", "u_lensRefractionPx", "u_lensDepthEffect",
+                          "u_legacySCurveStrength", "u_legacyLensRefractionPx", "u_legacyThicknessPx",
+                          "u_chromaticAberration", "u_dispersionR", "u_dispersionB", "u_vibrancy",
+                          "u_plainHighlight", "u_liquidDome", "u_fresnelReflect", "u_brightness",
+                          "u_glassColor", "u_highlightWidth", "u_lightDir", "u_specular",
+                          "u_shininess", "u_rimStrength", "u_shadowColor", "u_shadowSoftness",
+                          "u_causticIntensity", "u_transmittance", "u_backdropSampleScale",
+                          "u_parallaxScale", "u_showNormals"
+                  };
+                  for (String uniform : uniforms) {
+                      assertTrue("visible optical uniform declared but not consumed: " + uniform,
+                              occurrences(shader, uniform) >= 2);
+                  }
+                  String[] configFields = new String[]{
+                          "glass.blur", "glass.thickness", "glass.ior", "glass.normalStrength",
+                          "glass.dome", "glass.lensRefraction", "glass.depthEffect",
+                          "glass.legacySCurveStrength", "glass.chromatic", "glass.highlightWidth",
+                          "glass.brightness", "glass.specularStrength", "glass.specularSharp",
+                          "glass.rimLight", "glass.caustics", "glass.prismalRefractionInset",
+                          "glass.prismalDisplacementScale", "glass.prismalHeightTransitionWidth",
+                          "glass.prismalSminSmoothing", "glass.prismalEdgeRefractionFalloff",
+                          "glass.prismalFresnelReflect", "glass.prismalDispersionR",
+                          "glass.prismalDispersionB", "glass.prismalVibrancy",
+                          "glass.prismalPlainHighlight", "glass.prismalLightDirX",
+                          "glass.prismalLightDirY", "glass.prismalShadowSoftness",
+                          "glass.prismalTransmittance", "glass.prismalBackdropScaleX",
+                          "glass.prismalBackdropScaleY", "glass.prismalParallaxScale"
+                  };
+                  for (String field : configFields) {
+                      assertTrue("visible GUI field does not reach material: " + field,
+                              material.contains(field));
+                  }
+                  assertTrue(view.contains("glassConfig.captureBleedTopPx"));
+                  assertTrue(view.contains("glassConfig.captureBleedBottomPx"));
+                  assertTrue(view.contains("glassConfig.captureBleedLeftPx"));
+                  assertTrue(view.contains("glassConfig.captureBleedRightPx"));
+                  assertTrue(view.contains("Miuix307PrismalMaterial.blurSigma"));
+              }
+
+          '''
+          if needle not in text:
+              raise SystemExit('audit insertion point missing')
+          test.write_text(text.replace(needle, audit + needle, 1))
+          PY
       - name: Verify tests and debug build
         run: |
           chmod +x ./gradlew
