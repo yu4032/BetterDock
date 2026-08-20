@@ -13,24 +13,60 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/glass-controls-s-curve
+          fetch-depth: 2
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
-      - run: chmod +x ./gradlew
-      - run: ./gradlew testDebugUnitTest --stacktrace
-      - run: ./gradlew assembleDebug --stacktrace
+      - name: Apply reviewed Prismal parity patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/prismal-parity-v4-one-shot.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(source) if "python3 - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(source)) if source[i].strip() == 'PY')
+          body = source[start:end]
+          indent = min(len(line) - len(line.lstrip()) for line in body if line.strip())
+          script = '\n'.join(line[indent:] if len(line) >= indent else line for line in body) + '\n'
+          Path('/tmp/prismal-parity-v4.py').write_text(script)
+          PY
+          python3 /tmp/prismal-parity-v4.py
+          git diff --check
+      - name: Verify unit suite
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --stacktrace
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Commit verified source and restore normal CI
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git show HEAD^:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
+          rm -f PRISMAL_PARITY_PATCH_ERROR.txt
+          git rm -f .github/workflows/prismal-parity-v4-apply.yml \
+                    .github/workflows/prismal-parity-v4-apply2.yml \
+                    .github/workflows/prismal-parity-v4-one-shot.yml
+          git add src/main src/test .github/workflows/api101-build.yml
+          git diff --cached --check
+          git commit -m "fix: restore effective Prismal v1.0.6 defaults"
+          git push origin HEAD:fix/glass-controls-s-curve
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-api101-debug
+          name: LiquidDock-prismal-parity-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-      # Keep the same Gradle verification gates on main and active API101 development branches.
