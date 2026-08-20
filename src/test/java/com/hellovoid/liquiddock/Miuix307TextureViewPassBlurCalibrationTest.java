@@ -36,10 +36,10 @@ public class Miuix307TextureViewPassBlurCalibrationTest {
     public void fullUpstreamPrismalOpticsRunAfterOesNormalizationWithoutLeavingGpuPath() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String adapter = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
-        String shader = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String shader = Files.readString(Path.of("prismal/src/main/res/raw/prismal_fragment.glsl"));
 
         assertTrue(view.contains("Miuix307PassBlurShaders.OES_NORMALIZE_FRAGMENT"));
-        assertTrue(view.contains("Miuix307PrismalShader.FRAGMENT_SHADER"));
+        assertTrue(view.contains("prismalRenderer.render("));
         assertTrue(adapter.contains("samplerExternalOES uTexture")
                 && adapter.contains("uBackdropRect")
                 && adapter.contains("uConfigRot")

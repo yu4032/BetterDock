@@ -96,22 +96,22 @@ public class Miuix307PrismalParityRepairTest {
     }
 
     @Test
-    public void textureViewUsesHalfResolutionTwoPassGaussianAndClearsTargets() throws Exception {
+    public void portablePrismalOwnsHalfResolutionTwoPassGaussianAndClearsTargets() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
-        String shaders = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
+        String renderer = Files.readString(Path.of(
+                "prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java"));
+        String blurH = Files.readString(Path.of("prismal/src/main/res/raw/prismal_blur_h.glsl"));
+        String blurV = Files.readString(Path.of("prismal/src/main/res/raw/prismal_blur_v.glsl"));
 
-        assertTrue(view.contains("BLUR_FBO_SCALE = 0.5f"));
-        assertTrue(view.contains("rawFramebuffer"));
-        assertTrue(view.contains("blurFramebufferH"));
-        assertTrue(view.contains("blurFramebufferV"));
-        assertTrue(view.contains("renderNormalizationPass"));
-        assertTrue(view.contains("renderBlurPasses"));
-        assertTrue(view.contains("renderMaterialPass"));
-        assertTrue(view.contains("glClearColor(0f, 0f, 0f, 0f)"));
-        assertTrue(view.contains("GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)"));
-        assertTrue(shaders.contains("GAUSSIAN_BLUR_FRAGMENT"));
-        assertTrue(shaders.contains("uDirection"));
-        assertTrue(shaders.contains("uSigma"));
+        assertTrue(view.contains("rawFramebuffer") && view.contains("renderNormalizationPass"));
+        assertTrue(view.contains("prismalRenderer.render("));
+        assertTrue(renderer.contains("BLUR_FBO_SCALE = 0.5f"));
+        assertTrue(renderer.contains("blurFramebufferH") && renderer.contains("blurFramebufferV"));
+        assertTrue(renderer.contains("sourceFramebuffer") && renderer.contains("outputFramebuffer"));
+        assertTrue(renderer.contains("glClearColor(0f, 0f, 0f, 0f)"));
+        assertTrue(renderer.contains("GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)"));
+        assertTrue(blurH.contains("for (float i = -15.0; i <= 15.0; i += 1.0)"));
+        assertTrue(blurV.contains("for (float i = -15.0; i <= 15.0; i += 1.0)"));
     }
 
     @Test

@@ -124,7 +124,8 @@ public class Miuix307GlassCustomizationContractTest {
         assertTrue(view.contains("glassConfig.captureBleedBottomPx"));
         assertTrue(view.contains("glassConfig.captureBleedLeftPx"));
         assertTrue(view.contains("glassConfig.captureBleedRightPx"));
-        assertTrue(view.contains("Miuix307PrismalMaterial.blurSigma"));
+        assertTrue(view.contains("portablePrismalParams")
+                && view.contains("prismalRenderer.render("));
     }
 
     private static int occurrences(String text, String needle) {

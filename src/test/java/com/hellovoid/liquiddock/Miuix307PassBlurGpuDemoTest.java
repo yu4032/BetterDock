@@ -31,8 +31,8 @@ public class Miuix307PassBlurGpuDemoTest {
         assertTrue(view.contains("EGL14.eglCreateWindowSurface"));
         assertTrue(view.contains("GLES11Ext.GL_TEXTURE_EXTERNAL_OES"));
         assertTrue(view.contains("renderNormalizationPass"));
-        assertTrue(view.contains("renderBlurPasses"));
-        assertTrue(view.contains("renderMaterialPass"));
+        assertTrue(view.contains("prismalRenderer.render("));
+        assertTrue(view.contains("renderCompositePass"));
     }
 
     @Test
@@ -92,7 +92,7 @@ public class Miuix307PassBlurGpuDemoTest {
     public void stageBIsolatedBeforeUpstreamPrismalMaterial() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         String adapter = Files.readString(MAIN.resolve("Miuix307PassBlurShaders.java"));
-        String prismal = Files.readString(MAIN.resolve("Miuix307PrismalShader.java"));
+        String prismal = Files.readString(Path.of("prismal/src/main/res/raw/prismal_fragment.glsl"));
 
         assertTrue(adapter.contains("uniform int uConfigRot")
                 && adapter.contains("vec2(1.0 - rootUv.y, rootUv.x)")
@@ -102,7 +102,7 @@ public class Miuix307PassBlurGpuDemoTest {
                 && adapter.contains("float determinant")
                 && adapter.contains("uTexMatrix * vec4(textureInputUv, 0.0, 1.0)"));
         assertTrue(view.contains("Miuix307PassBlurShaders.OES_NORMALIZE_FRAGMENT"));
-        assertTrue(view.contains("Miuix307PrismalShader.FRAGMENT_SHADER"));
+        assertTrue(view.contains("prismalRenderer.render("));
         assertFalse(prismal.contains("uTexMatrix"));
         assertFalse(prismal.contains("uBackdropRect"));
         assertFalse(prismal.contains("samplerExternalOES"));
