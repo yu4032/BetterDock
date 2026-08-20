@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import androidx.annotation.NonNull;
 
+import com.hellovoid.liquiddock.config.GridProfileConfig;
 import com.hellovoid.liquiddock.config.LegacyConfigMigration;
 
 import io.github.libxposed.api.XposedModule;
@@ -23,11 +24,22 @@ public final class ModuleMain extends XposedModule {
         try {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
-            LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
+            ConfigReader configReader = ConfigReader.load();
+            LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
+            HomeGridProfile selectedProfile = HomeGridProfile.fromPersisted(
+                    GridProfileConfig.normalizeProfile(configReader.s(
+                            GridProfileConfig.PROFILE_KEY,
+                            GridProfileConfig.DEFAULT_PROFILE)));
 
             new MainHook().install(classLoader);
+            HomeGridProfileOverlayHook.install(classLoader,
+                    runtimeConfig.enabled && runtimeConfig.grid.enabled,
+                    selectedProfile);
             WorkspaceDropRuleHook.install(classLoader,
                     runtimeConfig.enabled && runtimeConfig.grid.enabled);
+            if (runtimeConfig.enabled && runtimeConfig.grid.enabled) {
+                Api101Bridge.log("[DC] home grid profile=" + selectedProfile.persistedValue());
+            }
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
