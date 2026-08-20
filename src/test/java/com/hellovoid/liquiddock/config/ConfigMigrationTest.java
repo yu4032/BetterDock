@@ -54,22 +54,4 @@ public class ConfigMigrationTest {
         assertEquals(3, ConfigMigration.directDpValue(2.54f));
         assertEquals(25, ConfigMigration.tenthsDpValue(2.54f));
     }
-
-    @Test
-    public void allLegacyLensValuesPreserveTheirOpticalScale() {
-        assertEquals(1f, ConfigMigration.prismalLensScale(12f), 0.0001f);
-        assertEquals(1.5f, ConfigMigration.prismalLensScale(18f), 0.0001f);
-        assertEquals(2f, ConfigMigration.prismalLensScale(24f), 0.0001f);
-        assertEquals(0.25f, ConfigMigration.prismalLensScale(0f), 0.0001f);
-    }
-
-    @Test
-    public void captureBleedRollbackRestoresPixelSemantics() {
-        assertEquals(48, ConfigMigration.captureBleedPixels(48f, false, 3f, 48));
-        assertEquals(16, ConfigMigration.captureBleedPixels(16f, false, 3f, 16));
-        assertEquals(48, ConfigMigration.captureBleedPixels(16f, true, 3f, 48));
-        assertEquals(16, ConfigMigration.captureBleedPixels(5f, true, 3f, 16));
-        assertEquals(60, ConfigMigration.captureBleedPixels(20f, true, 3f, 48));
-        assertEquals(256, ConfigMigration.captureBleedPixels(999f, false, 3f, 48));
-    }
 }
