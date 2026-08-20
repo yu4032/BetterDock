@@ -22,19 +22,10 @@ final class Miuix307ZeroCopyRenderer {
                            LiquidDockConfig.Glass glassConfig, int blurRadiusPx) {
         if (materialHost == null || host == null || glassConfig == null) return false;
 
-        if (!Miuix307CompositorOpticsBridge.usesExactBackgroundBlur(materialHost)) {
-            // The old response here was false, which made MiuixGlassHook instantiate the
-            // retired Bitmap/screen-capture renderer. release/1.3.0 is zero-copy-only: keep the
-            // host transparent and let activation validation fail closed instead of falling back.
-            MainHook.log(TAG + " PassBlur TextureView material unsupported source="
-                    + materialHost.getClass().getSimpleName()
-                    + "; legacy capture retired");
-            gpuBackdropRef = new WeakReference<>(null);
-            hostRef = new WeakReference<>(host);
-            materialHostRef = new WeakReference<>(materialHost);
-            return true;
-        }
-
+        // The current zero-copy backend binds SurfaceFlinger's PassBlur producer directly to the
+        // Floating Dock root through SetPassBlurSurface. It does not depend on the themed
+        // BlurBackground2#setBackgroundBlur path, so both supported HotSeats material owners must
+        // reach the same TextureView renderer.
         Miuix307PassBlurTextureView gpuBackdrop = new Miuix307PassBlurTextureView(
                 materialHost.getContext(), materialHost);
         gpuBackdrop.setGlassConfig(glassConfig);
@@ -51,7 +42,8 @@ final class Miuix307ZeroCopyRenderer {
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
         MainHook.log(TAG + " PassBlur TextureView EGL Prismal material installed; awaiting first GPU frame"
-                + " requestedBlur=" + blurRadiusPx);
+                + " requestedBlur=" + blurRadiusPx
+                + " source=" + materialHost.getClass().getSimpleName());
         return true;
     }
 
