@@ -1,0 +1,127 @@
+name: Glass controls final implementation
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/glass-controls-s-curve
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Extract and apply production recipe
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/glass-controls-one-shot.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = text.index(marker) + len(marker)
+          end = text.index("\n          PY\n", start)
+          lines = text[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          old = '''def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, got {count}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+          '''
+          new = '''import re
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) == 1:
+                  p.write_text(text.replace(old, new, 1))
+                  return
+              parts = old.splitlines()
+              pattern = re.escape(parts[0])
+              for line in parts[1:]:
+                  pattern += r"\\n[ \\t]*" + re.escape(line.lstrip())
+              matches = list(re.finditer(pattern, text))
+              if len(matches) != 1:
+                  raise SystemExit(f"{path}: expected one fuzzy match, got {len(matches)}: {old[:80]!r}")
+              match = matches[0]
+              p.write_text(text[:match.start()] + new + text[match.end():])
+          '''
+          if old not in script:
+              raise SystemExit('production helper not found')
+          Path('/tmp/apply_glass_controls.py').write_text(script.replace(old, new, 1))
+          PY
+          python3 /tmp/apply_glass_controls.py
+      - name: Extract and apply intentional contract updates
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/glass-controls-pr-kick.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          starts = []
+          at = 0
+          while True:
+              pos = text.find(marker, at)
+              if pos < 0: break
+              starts.append(pos + len(marker))
+              at = pos + len(marker)
+          if len(starts) < 2:
+              raise SystemExit('alignment recipe not found')
+          start = starts[1]
+          end = text.index("\n          PY\n", start)
+          lines = text[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          old = '''def one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, got {count}: {old!r}')
+              p.write_text(text.replace(old, new, 1))
+          '''
+          new = '''def one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if (path.endswith("ConfigCodecTest.java")
+                      and old == 'assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));'
+                      and count == 2):
+                  first = text.index(old)
+                  second = text.index(old, first + len(old))
+                  p.write_text(text[:second] + new + text[second + len(old):])
+                  return
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, got {count}: {old!r}')
+              p.write_text(text.replace(old, new, 1))
+          '''
+          if old not in script:
+              raise SystemExit('alignment helper not found')
+          Path('/tmp/align_glass_contracts.py').write_text(script.replace(old, new, 1))
+          PY
+          python3 /tmp/align_glass_contracts.py
+      - name: Verify tests and debug build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
+      - name: Commit implementation and remove temporary workflows
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/glass-controls-one-shot.yml \
+                 .github/workflows/glass-controls-pr-kick.yml \
+                 .github/workflows/glass-controls-pr-final.yml
+          git add src/main src/test
+          git commit -m "fix: wire glass controls and optional v1.2 S refraction"
+          git push origin HEAD:fix/glass-controls-s-curve
