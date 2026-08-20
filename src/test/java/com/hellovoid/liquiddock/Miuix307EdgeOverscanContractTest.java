@@ -83,14 +83,34 @@ public class Miuix307EdgeOverscanContractTest {
     }
 
     @Test
-    public void resolvedSamplingInsetsUsePortableOpticalGuardWithoutDiscardingGuiExtras() throws Exception {
+    public void resolvedSamplingInsetsAreAutomaticGuardPlusSignedUserExtra() throws Exception {
         String view = Files.readString(MAIN.resolve("Miuix307PassBlurTextureView.java"));
         assertTrue(view.contains("private SamplingInsets resolveSamplingInsets(int width, int height)"));
         assertTrue(view.contains("PrismalSampling.requiredGuardPx("));
-        assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, leftExtraOverscanPx), opticalX)"));
-        assertTrue(view.contains("Math.max(horizontalOverscanPx() + Math.max(0, rightExtraOverscanPx), opticalX)"));
-        assertTrue(view.contains("Math.max(Math.max(0, topOverscanPx), opticalY)"));
-        assertTrue(view.contains("Math.max(Math.max(0, bottomOverscanPx), opticalY)"));
+        assertTrue(view.contains("combineAutoGuardAndUserExtra"));
+        assertTrue(view.contains("Math.max(horizontalOverscanPx(), opticalX)"));
+        assertTrue(view.contains("combineAutoGuardAndUserExtra(autoHorizontal, leftSamplingExtraPx)"));
+        assertTrue(view.contains("combineAutoGuardAndUserExtra(autoHorizontal, rightSamplingExtraPx)"));
+        assertTrue(view.contains("combineAutoGuardAndUserExtra(opticalY, topSamplingExtraPx)"));
+        assertTrue(view.contains("combineAutoGuardAndUserExtra(opticalY, bottomSamplingExtraPx)"));
+    }
+
+    @Test
+    public void signedSamplingExtraCanExpandOrShrinkAutomaticGuardButNeverBelowZero() throws Exception {
+        Method method;
+        try {
+            method = Miuix307PassBlurTextureView.class.getDeclaredMethod(
+                    "combineAutoGuardAndUserExtra", int.class, int.class);
+        } catch (NoSuchMethodException missing) {
+            fail("combineAutoGuardAndUserExtra must implement automatic guard + signed user extra");
+            return;
+        }
+        method.setAccessible(true);
+
+        assertEquals(340, method.invoke(null, 300, 40));
+        assertEquals(220, method.invoke(null, 300, -80));
+        assertEquals(0, method.invoke(null, 100, -200));
+        assertEquals(300, method.invoke(null, 300, 0));
     }
 
     @Test
