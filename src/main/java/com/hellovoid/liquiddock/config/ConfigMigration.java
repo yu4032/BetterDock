@@ -29,10 +29,23 @@ public final class ConfigMigration {
      * one-shot migration flags. Do not reinterpret those values again. An unsupported glass
      * generation is discarded wholesale and rebuilt from the current preset, including _tenths
      * sidecars for fractional controls. Keep only the feature/pipeline enable switches so an
-     * upgrade does not silently disable glass.
+     * upgrade does not silently disable glass. A truly empty/new store is not legacy config: only
+     * stamp the generation there and leave runtime defaults untouched.
      */
     private static void resetUnsupportedGlassConfigGeneration(SharedPreferences sp) {
         if (sp.getInt(GLASS_CONFIG_GENERATION_KEY, 0) == GLASS_CONFIG_GENERATION) return;
+
+        boolean hasPersistedGlassConfig = false;
+        for (String key : sp.getAll().keySet()) {
+            if (key.startsWith("liquid_") && !GLASS_CONFIG_GENERATION_KEY.equals(key)) {
+                hasPersistedGlassConfig = true;
+                break;
+            }
+        }
+        if (!hasPersistedGlassConfig) {
+            sp.edit().putInt(GLASS_CONFIG_GENERATION_KEY, GLASS_CONFIG_GENERATION).commit();
+            return;
+        }
 
         Map<String, Object> defaults = PresetManager.defaultValues();
         boolean glassEnabled = sp.contains("liquid_glass")
