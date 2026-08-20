@@ -71,14 +71,14 @@ public class ConfigSchemaTest {
 
     @Test
     public void composeGridSpecsKeepTheirCurrentDefaultsAndBounds() {
-        assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, 0, -600, 600);
+        assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_HORIZONTAL_DISTANCE, 0, 0, 600);
         assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_TOP_DISTANCE, 0, -600, 600);
         assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_BOTTOM_DISTANCE, 0, -600, 600);
-        assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, 0, -600, 600);
+        assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_HORIZONTAL_DISTANCE, 0, 0, 600);
         assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_TOP_DISTANCE, 0, -600, 600);
         assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_BOTTOM_DISTANCE, 0, -600, 600);
-        assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, 0, -200, 400);
-        assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, 0, -200, 400);
+        assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_ROW_GAP, 0, 0, 400);
+        assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_ROW_GAP, 0, 0, 400);
         assertComposeIntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, 0, -160, 160);
         assertComposeIntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, 0, -160, 160);
     }

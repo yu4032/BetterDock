@@ -42,6 +42,8 @@ public class GridSpacingSemanticsContractTest {
     public void absentLegacyUnitFlagsUseCurrentDpAndOffsetSemantics() {
         assertTrue(ConfigSchema.Grid.MARGINS_DP.runtimeFallback());
         assertTrue(ConfigSchema.Grid.MARGINS_OFFSET.runtimeFallback());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.LANDSCAPE_ROW_GAP.runtimeFallback());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Grid.PORTRAIT_ROW_GAP.runtimeFallback());
     }
 
     @Test
