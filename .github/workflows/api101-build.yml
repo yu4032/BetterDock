@@ -32,6 +32,7 @@ jobs:
       - name: Apply mapping production patch
         run: |
           python3 tools/apply_passblur_mapping_audit.py
+          python3 tools/apply_texture_limit_guard.py
           python3 tools/update_mapping_contracts.py
       - run: chmod +x ./gradlew
       - name: Unit tests
@@ -50,7 +51,7 @@ jobs:
         run: |
           git fetch origin main --depth=1
           git show origin/main:.github/workflows/api101-build.yml > .github/workflows/api101-build.yml
-          rm -f tools/apply_passblur_mapping_audit.py tools/update_mapping_contracts.py
+          rm -f tools/apply_passblur_mapping_audit.py tools/apply_texture_limit_guard.py tools/update_mapping_contracts.py
           git config user.name 'yu4032'
           git config user.email '4032542465@smail.lnu.edu.cn'
           git add -A
