@@ -59,7 +59,7 @@ public final class ConfigCodec {
 
     private static void importValue(ConfigKey<?> key, Object value, Map<String, Object> out) {
         if (key.storageMode() == ConfigKey.StorageMode.DP_TENTHS) {
-            importDp(key.name(), value, out);
+            importDp(key, value, out);
         } else if (key.type() == ConfigKey.Type.BOOLEAN) {
             out.put(key.name(), booleanValue(value));
         } else if (key.type() == ConfigKey.Type.INT && value instanceof Number) {
@@ -120,14 +120,17 @@ public final class ConfigCodec {
 
     private static void importLegacyDp(Map<String, ?> jsonValues, Map<String, Object> out,
                                        ConfigKey<Integer> key) {
-        if (jsonValues.containsKey(key.name())) importDp(key.name(), jsonValues.get(key.name()), out);
+        if (jsonValues.containsKey(key.name())) importDp(key, jsonValues.get(key.name()), out);
     }
 
-    private static void importDp(String key, Object value, Map<String, Object> out) {
+    private static void importDp(ConfigKey<?> key, Object value, Map<String, Object> out) {
         if (!(value instanceof Number)) return;
         double dp = ((Number) value).doubleValue();
-        out.put(key, (int) Math.round(dp));
-        out.put(key + "_tenths", (int) Math.round(dp * 10.0d));
+        if (!Double.isFinite(dp)) return;
+        if (key.minInt() != null) dp = Math.max(key.minInt(), dp);
+        if (key.maxInt() != null) dp = Math.min(key.maxInt(), dp);
+        out.put(key.name(), (int) Math.round(dp));
+        out.put(key.name() + "_tenths", (int) Math.round(dp * 10.0d));
     }
 
     private static int clamp(int value, Integer min, Integer max) {

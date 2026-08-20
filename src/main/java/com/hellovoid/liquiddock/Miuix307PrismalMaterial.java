@@ -22,7 +22,11 @@ final class Miuix307PrismalMaterial {
         final float liquidDome;
         final float fresnelReflect;
         final float lensRefractionScale;
-        final float chromaticAberration;
+final float lensDepthEffect;
+final float legacySCurveStrength;
+final float legacyLensRefractionPx;
+final float legacyThicknessPx;
+final float chromaticAberration;
         final float dispersionR;
         final float dispersionB;
         final float vibrancy;
@@ -63,7 +67,11 @@ final class Miuix307PrismalMaterial {
                 float liquidDome,
                 float fresnelReflect,
                 float lensRefractionScale,
-                float chromaticAberration,
+        float lensDepthEffect,
+        float legacySCurveStrength,
+        float legacyLensRefractionPx,
+        float legacyThicknessPx,
+        float chromaticAberration,
                 float dispersionR,
                 float dispersionB,
                 float vibrancy,
@@ -102,7 +110,11 @@ final class Miuix307PrismalMaterial {
             this.liquidDome = liquidDome;
             this.fresnelReflect = fresnelReflect;
             this.lensRefractionScale = lensRefractionScale;
-            this.chromaticAberration = chromaticAberration;
+    this.lensDepthEffect = lensDepthEffect;
+    this.legacySCurveStrength = legacySCurveStrength;
+    this.legacyLensRefractionPx = legacyLensRefractionPx;
+    this.legacyThicknessPx = legacyThicknessPx;
+    this.chromaticAberration = chromaticAberration;
             this.dispersionR = dispersionR;
             this.dispersionB = dispersionB;
             this.vibrancy = vibrancy;
@@ -136,9 +148,7 @@ final class Miuix307PrismalMaterial {
     private Miuix307PrismalMaterial() {}
 
     /**
-     * Prismal Quick Start state adapted for LiquidDock. Geometry and lighting retain the
-     * effective PrismalFrameLayout + applyBase() values, while chromatic strength intentionally
-     * defaults to 2 for LiquidDock.
+     * Effective Prismal v1.0.6 Quick Start state: FrameLayout defaults followed by applyBase().
      */
     static Params defaults(float density) {
         float d = Math.max(0.1f, density);
@@ -154,7 +164,11 @@ final class Miuix307PrismalMaterial {
                 1.30f,
                 1.98f,
                 1.30f,
-                2f,
+                1f,
+                0f,
+                12f * d,
+                18f * d,
+                26f,
                 1f,
                 1f,
                 1.28f,
@@ -191,7 +205,7 @@ final class Miuix307PrismalMaterial {
      * deliberately forbidden so later user-chosen values remain literal Prismal controls.
      */
     static Params fromConfig(LiquidDockConfig.Glass glass, float density) {
-        if (glass == null || isUntouchedLegacyProfile(glass)) return defaults(density);
+        if (glass == null) return defaults(density);
         float d = Math.max(0.1f, density);
         float lensScale = Math.max(0.25f, glass.lensRefraction);
 
@@ -207,7 +221,11 @@ final class Miuix307PrismalMaterial {
                 glass.dome,
                 glass.prismalFresnelReflect,
                 lensScale,
-                Math.max(0f, glass.chromatic),
+                resolveLensDepth(glass.normalStrength, glass.depthEffect),
+                Math.max(0f, Math.min(2f, glass.legacySCurveStrength)),
+        12f * d,
+        18f * d,
+        Math.max(0f, glass.chromatic),
                 glass.prismalDispersionR,
                 glass.prismalDispersionB,
                 glass.prismalVibrancy,
@@ -237,40 +255,10 @@ final class Miuix307PrismalMaterial {
                 glass.prismalShowNormals);
     }
 
-    private static boolean isUntouchedLegacyProfile(LiquidDockConfig.Glass g) {
-        return nearly(g.blur, 6f)
-                && (nearly(g.chromatic, 8f) || nearly(g.chromatic, 2f))
-                && g.tintR == 238 && g.tintG == 244 && g.tintB == 255 && g.tintAlpha == 38
-                && nearly(g.thickness, 18f)
-                && nearly(g.ior, 1.55f)
-                && nearly(g.normalStrength, 1.15f)
-                && nearly(g.dome, 1f)
-                && nearly(g.lensRefraction, 12f)
-                && nearly(g.brightness, 1.08f)
-                && g.specularSharp == 88
-                && nearly(g.specularStrength, 1.05f)
-                && nearly(g.rimLight, 1f)
-                && nearly(g.caustics, 0.28f)
-                && nearly(g.prismalRefractionInset, 5f)
-                && nearly(g.prismalDisplacementScale, 1f)
-                && nearly(g.prismalHeightTransitionWidth, 15f)
-                && nearly(g.prismalSminSmoothing, 2f)
-                && nearly(g.prismalEdgeRefractionFalloff, 2f)
-                && nearly(g.prismalFresnelReflect, 0.79f)
-                && nearly(g.prismalDispersionR, 1f)
-                && nearly(g.prismalDispersionB, 1f)
-                && nearly(g.prismalVibrancy, 1.28f)
-                && nearly(g.prismalPlainHighlight, 0.08f)
-                && nearly(g.prismalLightDirX, 1f)
-                && nearly(g.prismalLightDirY, 0.62f)
-                && g.prismalShadowR == 0 && g.prismalShadowG == 0
-                && g.prismalShadowB == 0 && g.prismalShadowAlpha == 0
-                && nearly(g.prismalShadowSoftness, 1f)
-                && nearly(g.prismalTransmittance, 1f)
-                && nearly(g.prismalBackdropScaleX, 1f)
-                && nearly(g.prismalBackdropScaleY, 1f)
-                && nearly(g.prismalParallaxScale, 1f)
-                && !g.prismalShowNormals;
+
+    static float resolveLensDepth(float normalStrength, float manualDepth) {
+        if (manualDepth > 0f) return clamp(manualDepth, 0f, 1f);
+        return clamp(normalStrength * 0.9f, 0f, 1f);
     }
 
     static float blurSigma(Params p) {
@@ -288,7 +276,6 @@ final class Miuix307PrismalMaterial {
                 p.heightTransitionWidthPx * (1f + 0.55f * clamp(p.liquidDome, 0f, 2f)), 1f);
         float lensPx = refractionHeight * 2f * p.displacementScale * p.lensRefractionScale;
         lensPx = clamp(lensPx, 4f, Math.max(4f, minGlassDim * 0.85f));
-        float lensDepth = Math.min(1f, Math.max(0f, p.normalStrength * 0.9f));
 
         uniform2f(program, "u_resolution", width, height);
         uniform2f(program, "u_glassSize", width, height);
@@ -304,7 +291,10 @@ final class Miuix307PrismalMaterial {
         uniform1f(program, "u_displacementScale", p.displacementScale);
         uniform1f(program, "u_heightTransitionWidth", p.heightTransitionWidthPx);
         uniform1f(program, "u_lensRefractionPx", lensPx);
-        uniform1f(program, "u_lensDepthEffect", lensDepth);
+        uniform1f(program, "u_lensDepthEffect", p.lensDepthEffect);
+        uniform1f(program, "u_legacySCurveStrength", p.legacySCurveStrength);
+        uniform1f(program, "u_legacyLensRefractionPx", p.legacyLensRefractionPx);
+        uniform1f(program, "u_legacyThicknessPx", p.legacyThicknessPx);
 
         uniform1f(program, "u_chromaticAberration", p.chromaticAberration);
         uniform1f(program, "u_dispersionR", p.dispersionR);
@@ -335,9 +325,6 @@ final class Miuix307PrismalMaterial {
         uniform1i(program, "u_showNormals", p.showNormals ? 1 : 0);
     }
 
-    private static boolean nearly(float first, float second) {
-        return Math.abs(first - second) <= 0.0001f;
-    }
 
     private static void uniform1f(int program, String name, float value) {
         int location = requireUniform(program, name);

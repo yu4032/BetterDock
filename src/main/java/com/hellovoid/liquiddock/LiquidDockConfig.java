@@ -196,7 +196,8 @@ final class LiquidDockConfig {
         final boolean enabled;
         final boolean prismalShowNormals;
         final float blur, chromatic, thickness, ior, normalStrength, dome,
-                lensRefraction, highlightWidth, brightness, specularStrength, rimLight, caustics;
+        lensRefraction, depthEffect, legacySCurveStrength, highlightWidth, brightness,
+        specularStrength, rimLight, caustics;
         final float prismalRefractionInset, prismalDisplacementScale, prismalHeightTransitionWidth,
                 prismalSminSmoothing, prismalEdgeRefractionFalloff, prismalFresnelReflect,
                 prismalDispersionR, prismalDispersionB, prismalVibrancy, prismalPlainHighlight,
@@ -230,9 +231,12 @@ final class LiquidDockConfig {
             normalStrength = c.i(ConfigSchema.Glass.NORMAL_STRENGTH.name(),
                     ConfigSchema.Glass.NORMAL_STRENGTH.runtimeFallback()) / 100f;
             dome = c.i(ConfigSchema.Glass.DOME.name(), ConfigSchema.Glass.DOME.runtimeFallback()) / 100f;
-            lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(),
-                    ConfigSchema.Glass.LENS_REFRACTION.runtimeFallback());
-            highlightWidth = c.i(ConfigSchema.Glass.HIGHLIGHT_WIDTH.name(),
+            lensRefraction = c.f(ConfigSchema.Glass.LENS_REFRACTION.name(), 1.3f);
+    depthEffect = c.i(ConfigSchema.Glass.DEPTH_EFFECT.name(),
+            ConfigSchema.Glass.DEPTH_EFFECT.runtimeFallback()) / 100f;
+    legacySCurveStrength = c.i(ConfigSchema.Glass.LEGACY_S_CURVE.name(),
+            ConfigSchema.Glass.LEGACY_S_CURVE.runtimeFallback()) / 100f;
+    highlightWidth = c.i(ConfigSchema.Glass.HIGHLIGHT_WIDTH.name(),
                     ConfigSchema.Glass.HIGHLIGHT_WIDTH.runtimeFallback()) / 100f;
             tintR = channel(c.i(ConfigSchema.Glass.TINT_RED.name(),
                     ConfigSchema.Glass.TINT_RED.runtimeFallback()));
@@ -257,8 +261,7 @@ final class LiquidDockConfig {
                     ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE.runtimeFallback()) / 100f;
             prismalHeightTransitionWidth = c.f(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.name(),
                     ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH.runtimeFallback());
-            prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(),
-                    ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.runtimeFallback());
+            prismalSminSmoothing = c.f(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING.name(), 1.8f);
             prismalEdgeRefractionFalloff = c.i(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.name(),
                     ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF.runtimeFallback()) / 100f;
             prismalFresnelReflect = c.i(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT.name(),

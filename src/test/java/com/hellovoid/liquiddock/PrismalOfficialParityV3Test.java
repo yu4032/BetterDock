@@ -11,7 +11,7 @@ import java.util.Map;
 
 import org.junit.Test;
 
-/** Locks Prismal parity except for LiquidDock's intentional chromatic-strength override. */
+/** Locks effective Prismal v1.0.6 Quick Start parity while preserving V3 migration history. */
 public class PrismalOfficialParityV3Test {
     private static final float EPS = 0.0001f;
 
@@ -34,7 +34,7 @@ public class PrismalOfficialParityV3Test {
         assertEquals(1.30f, p.liquidDome, EPS);
         assertEquals(1.98f, p.fresnelReflect, EPS);
         assertEquals(1.30f, p.lensRefractionScale, EPS);
-        assertEquals(2f, p.chromaticAberration, EPS);
+        assertEquals(26f, p.chromaticAberration, EPS);
         assertEquals(2f, p.blurRadiusPx, EPS);
     }
 
@@ -45,7 +45,7 @@ public class PrismalOfficialParityV3Test {
         assertEquals(155, p.get("liquid_ior"));
         assertEquals(115, p.get("liquid_normal_strength"));
         assertEquals(130, p.get("liquid_dome"));
-        assertEquals(2, p.get("liquid_chromatic"));
+        assertEquals(26, p.get("liquid_chromatic"));
         assertEquals(2, p.get("liquid_blur"));
         assertEquals(20, p.get("liquid_blur_tenths"));
         assertEquals(18, p.get("liquid_thickness"));

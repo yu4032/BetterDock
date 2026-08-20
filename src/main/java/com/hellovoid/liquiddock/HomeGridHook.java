@@ -29,9 +29,8 @@ final class HomeGridHook {
     private static int landscapeIndicatorY, portraitIndicatorY;
     private static final java.util.WeakHashMap<android.view.View, float[]>
         indicatorBaseTranslations = new java.util.WeakHashMap<>();
-    private static final java.util.WeakHashMap<android.view.View,
-        android.view.ViewTreeObserver.OnPreDrawListener> indicatorPositionGuards =
-            new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<android.view.View, IndicatorPositionGuard>
+        indicatorPositionGuards = new java.util.WeakHashMap<>();
     private static final java.util.WeakHashMap<android.view.View, Boolean>
         loggedWidgetViews = new java.util.WeakHashMap<>();
     private static final java.util.WeakHashMap<android.view.View, Long>
@@ -848,19 +847,48 @@ final class HomeGridHook {
     private static void ensureIndicatorPositionGuard(final android.view.View indicator) {
         synchronized (indicatorPositionGuards) {
             if (indicatorPositionGuards.containsKey(indicator)) return;
-            android.view.ViewTreeObserver.OnPreDrawListener guard =
-                new android.view.ViewTreeObserver.OnPreDrawListener() {
-                    @Override public boolean onPreDraw() {
-                        float[] base;
-                        synchronized (indicatorBaseTranslations) {
-                            base = indicatorBaseTranslations.get(indicator);
-                        }
-                        if (base != null) applyIndicatorTranslation(indicator, base);
-                        return true;
-                    }
-                };
+            IndicatorPositionGuard guard = new IndicatorPositionGuard(indicator);
             indicatorPositionGuards.put(indicator, guard);
             indicator.getViewTreeObserver().addOnPreDrawListener(guard);
+            indicator.addOnAttachStateChangeListener(guard);
+        }
+    }
+
+    private static final class IndicatorPositionGuard implements
+            android.view.ViewTreeObserver.OnPreDrawListener,
+            android.view.View.OnAttachStateChangeListener {
+        private final java.lang.ref.WeakReference<android.view.View> indicatorRef;
+
+        IndicatorPositionGuard(android.view.View indicator) {
+            indicatorRef = new java.lang.ref.WeakReference<>(indicator);
+        }
+
+        @Override public boolean onPreDraw() {
+            android.view.View indicator = indicatorRef.get();
+            if (indicator == null) return true;
+            float[] base;
+            synchronized (indicatorBaseTranslations) {
+                base = indicatorBaseTranslations.get(indicator);
+            }
+            if (base != null) applyIndicatorTranslation(indicator, base);
+            return true;
+        }
+
+        @Override public void onViewAttachedToWindow(android.view.View v) {}
+
+        @Override public void onViewDetachedFromWindow(android.view.View v) {
+            try {
+                android.view.ViewTreeObserver observer = v.getViewTreeObserver();
+                if (observer.isAlive()) observer.removeOnPreDrawListener(this);
+            } catch (Throwable ignored) {}
+            try { v.removeOnAttachStateChangeListener(this); } catch (Throwable ignored) {}
+            synchronized (indicatorPositionGuards) {
+                if (indicatorPositionGuards.get(v) == this) indicatorPositionGuards.remove(v);
+            }
+            synchronized (indicatorBaseTranslations) {
+                indicatorBaseTranslations.remove(v);
+            }
+            indicatorRef.clear();
         }
     }
 

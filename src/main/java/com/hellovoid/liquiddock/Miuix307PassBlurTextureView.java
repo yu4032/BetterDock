@@ -78,6 +78,7 @@ final class Miuix307PassBlurTextureView extends TextureView
     private final FloatBuffer quadBuffer;
     private final HandlerThread renderThread;
     private final Handler renderHandler;
+    private final Handler mainHandler;
     private final AtomicBoolean frameAvailable = new AtomicBoolean(false);
     private final float[] textureMatrix = new float[16];
 
@@ -174,6 +175,7 @@ final class Miuix307PassBlurTextureView extends TextureView
         renderThread = new HandlerThread("LiquidDock-PassBlur-EGL");
         renderThread.start();
         renderHandler = new Handler(renderThread.getLooper());
+        mainHandler = new Handler(context.getMainLooper());
     }
 
     boolean isGpuBackdropActive() {
@@ -1128,6 +1130,16 @@ final class Miuix307PassBlurTextureView extends TextureView
         activationExhausted = true;
         gpuBackdropActive = false;
         MainHook.log(TAG + " PassBlur TextureView " + stage + " failed: " + error);
+        requestTerminalShutdown();
+    }
+
+    private void requestTerminalShutdown() {
+        if (shuttingDown) return;
+        if (android.os.Looper.myLooper() == getContext().getMainLooper()) {
+            shutdown();
+        } else {
+            mainHandler.post(this::shutdown);
+        }
     }
 
     private static int readConfigRotation(View materialHost) {

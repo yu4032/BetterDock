@@ -36,7 +36,7 @@ public final class PresetManager {
 
     public static IpadPresetResult applyIpad(Context context, SharedPreferences preferences) {
         DisplayMetrics dm = context.getResources().getDisplayMetrics();
-        float density = dm.density;
+        float density = Math.max(0.1f, dm.density);
         float shortSideDp = Math.min(dm.widthPixels, dm.heightPixels) / density;
         float displayScale = Math.max(0.90f, Math.min(1.20f, shortSideDp / 668f));
 
@@ -66,55 +66,56 @@ public final class PresetManager {
         int heightOffset = targetHeight - dockHeight;
         int widthOffset = 2 * (targetSidePadding - sidePadding);
         int cornerOffset = targetRadius - dockRadius;
-        int oneDp = Math.max(1, Math.round(density * displayScale));
+        int oneDp = Math.max(1, Math.round(displayScale));
         int bottomOffset = Math.round(10f * density * displayScale);
 
-        preferences.edit()
-                .putInt("blur_radius", 100)
-                .putInt("height_offset", heightOffset)
-                .putInt("width_offset", widthOffset)
-                .putBoolean("corners_dp", true)
-                .putInt("corner_offset", Math.round(cornerOffset / density))
-                .putInt("blur_corner_offset", -1)
-                .putBoolean("home_grid_8x4", true)
-                .putBoolean("grid_margins_dp", true)
-                .putBoolean("grid_margins_offset", true)
-                .putInt("grid_landscape_margin_left", 0)
-                .putInt("grid_landscape_margin_right", 0)
-                .putInt("grid_landscape_margin_top", 0)
-                .putInt("grid_landscape_margin_bottom", 0)
-                .putInt("grid_portrait_margin_left", 0)
-                .putInt("grid_portrait_margin_right", 0)
-                .putInt("grid_portrait_margin_top", 0)
-                .putInt("grid_portrait_margin_bottom", 0)
-                .putInt("grid_landscape_row_gap", 0)
-                .putInt("grid_portrait_row_gap", 0)
-                .putInt("indicator_landscape_y", 0)
-                .putInt("indicator_portrait_y", 0)
-                .putBoolean("dock_customization", true)
-                .putBoolean("dock_stroke", true)
-                .putInt("stroke_base_r", 255)
-                .putInt("stroke_base_g", 255)
-                .putInt("stroke_base_b", 255)
-                .putInt("stroke_base_alpha", 255)
-                .putBoolean("squircle", true)
-                .putInt("sq_stroke_w", oneDp)
-                .putInt("sq_stroke_off", 0)
-                .putInt("sq_outer_cp", 65)
-                .putBoolean("fill_diff", true)
-                .putInt("stroke_w", oneDp)
-                .putInt("std_stroke_w", oneDp)
-                .putBoolean("dock_shadow", true)
-                .putInt("dock_shadow_radius", Math.round(10f * density * displayScale))
-                .putInt("dock_shadow_size", Math.round(13f * density * displayScale))
-                .putInt("dock_shadow_alpha", 140)
-                .putInt("dock_shadow_y", Math.round(3f * density * displayScale))
-                .putBoolean("stroke_shadow", false)
-                .putInt("shadow_radius", Math.round(3f * density * displayScale))
-                .putInt("shadow_alpha", 70)
-                .putInt("dock_spacing", spacing)
-                .putInt("dock_bottom_offset", bottomOffset)
-                .commit();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putInt(ConfigSchema.Dock.BLUR_RADIUS.name(), 100);
+        editor.putBoolean(ConfigSchema.Dock.DIMENSIONS_DP.name(), true);
+        editor.putBoolean(ConfigSchema.Dock.CORNERS_DP.name(), true);
+        putDp(editor, ConfigSchema.Dock.HEIGHT_OFFSET, heightOffset / density);
+        putDp(editor, ConfigSchema.Dock.WIDTH_OFFSET, widthOffset / density);
+        putDp(editor, ConfigSchema.Dock.CORNER_OFFSET, cornerOffset / density);
+        putDp(editor, ConfigSchema.Dock.BLUR_CORNER_OFFSET, -1f);
+        editor.putBoolean(ConfigSchema.Grid.ENABLED.name(), true);
+        editor.putBoolean(ConfigSchema.Grid.MARGINS_DP.name(), true);
+        editor.putBoolean(ConfigSchema.Grid.MARGINS_OFFSET.name(), true);
+        editor.putInt("grid_landscape_margin_left", 0);
+        editor.putInt("grid_landscape_margin_right", 0);
+        editor.putInt("grid_landscape_margin_top", 0);
+        editor.putInt("grid_landscape_margin_bottom", 0);
+        editor.putInt("grid_portrait_margin_left", 0);
+        editor.putInt("grid_portrait_margin_right", 0);
+        editor.putInt("grid_portrait_margin_top", 0);
+        editor.putInt("grid_portrait_margin_bottom", 0);
+        editor.putInt("grid_landscape_row_gap", 0);
+        editor.putInt("grid_portrait_row_gap", 0);
+        editor.putInt("indicator_landscape_y", 0);
+        editor.putInt("indicator_portrait_y", 0);
+        editor.putBoolean(ConfigSchema.Dock.ENABLED.name(), true);
+        editor.putBoolean(ConfigSchema.Dock.STROKE_ENABLED.name(), true);
+        editor.putInt(ConfigSchema.Dock.STROKE_RED.name(), 255);
+        editor.putInt(ConfigSchema.Dock.STROKE_GREEN.name(), 255);
+        editor.putInt(ConfigSchema.Dock.STROKE_BLUE.name(), 255);
+        editor.putInt(ConfigSchema.Dock.STROKE_ALPHA.name(), 255);
+        editor.putBoolean(ConfigSchema.Dock.SQUIRCLE.name(), true);
+        putDp(editor, ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH, oneDp);
+        putDp(editor, ConfigSchema.Dock.SQUIRCLE_STROKE_OFFSET, 0f);
+        editor.putInt(ConfigSchema.Dock.SQUIRCLE_CONTROL_POINT.name(), 65);
+        editor.putBoolean(ConfigSchema.Dock.FILL_DIFF.name(), true);
+        putDp(editor, ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, oneDp);
+        putDp(editor, ConfigSchema.Dock.STANDARD_STROKE_WIDTH, oneDp);
+        editor.putBoolean(ConfigSchema.Dock.SHADOW_ENABLED.name(), true);
+        putDp(editor, ConfigSchema.Dock.SHADOW_RADIUS, 10f * displayScale);
+        putDp(editor, ConfigSchema.Dock.SHADOW_SIZE, 13f * displayScale);
+        editor.putInt(ConfigSchema.Dock.SHADOW_ALPHA.name(), 140);
+        putDp(editor, ConfigSchema.Dock.SHADOW_Y, 3f * displayScale);
+        editor.putBoolean(ConfigSchema.Dock.STROKE_SHADOW.name(), false);
+        putDp(editor, ConfigSchema.Dock.STROKE_SHADOW_RADIUS, 3f * displayScale);
+        editor.putInt(ConfigSchema.Dock.STROKE_SHADOW_ALPHA.name(), 70);
+        putDp(editor, ConfigSchema.Dock.SPACING, spacing / density);
+        putDp(editor, ConfigSchema.Dock.BOTTOM_OFFSET, bottomOffset / density);
+        editor.commit();
 
         return new IpadPresetResult(spacing, heightOffset, widthOffset, cornerOffset, bottomOffset);
     }
@@ -152,22 +153,23 @@ public final class PresetManager {
         values.put("dock_divider_enabled", false);
         values.put("blur_radius", 100);
 
-        // Prismal Quick Start optics with LiquidDock's intentional chromatic-strength override.
-        // Keep this preset synchronized with the zero-copy material defaults.
+        // Effective Prismal v1.0.6 Quick Start optics: PrismalFrameLayout defaults followed
+        // by PrismalLiquidGlass.applyBase(). Keep synchronized with runtime fallbacks.
         values.put("liquid_glass", true);
         values.put("liquid_dimensions_dp", true);
         values.put("liquid_blur_mode", "shader");
         values.put("liquid_ior", 155);
         values.put("liquid_normal_strength", 115);
         values.put("liquid_dome", 130);
-        values.put("liquid_chromatic", 2);
+        values.put("liquid_chromatic", 26);
         values.put("liquid_tint_alpha", 35);
         values.put("liquid_tint_r", 0);
         values.put("liquid_tint_g", 0);
         values.put("liquid_tint_b", 255);
         values.put("liquid_highlight_width", 100);
         values.put("liquid_highlight_alpha", 100);
-        values.put("liquid_depth_effect", 8);
+        values.put("liquid_depth_effect", 0);
+        values.put("liquid_legacy_s_curve", 0);
         values.put("liquid_brightness", 108);
         values.put("liquid_specular_sharp", 88);
         values.put("liquid_specular_strength", 152);
@@ -247,6 +249,15 @@ public final class PresetManager {
         putDp(values, "workstation_dock_icon_top_offset", 0f);
         putDp(values, "workstation_dock_icon_bottom_offset", 0f);
         return Collections.unmodifiableMap(values);
+    }
+
+    private static void putDp(SharedPreferences.Editor editor, ConfigKey<Integer> key,
+                              float value) {
+        float clamped = value;
+        if (key.minInt() != null) clamped = Math.max(key.minInt(), clamped);
+        if (key.maxInt() != null) clamped = Math.min(key.maxInt(), clamped);
+        editor.putInt(key.name(), Math.round(clamped));
+        editor.putInt(key.name() + "_tenths", Math.round(clamped * 10f));
     }
 
     private static void putDp(Map<String, Object> values, String key, float value) {

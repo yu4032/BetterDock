@@ -91,6 +91,13 @@ private data class IntSpec(
     val default: Int get() = config.uiDefault()
     val min: Int get() = requireNotNull(config.minInt())
     val max: Int get() = requireNotNull(config.maxInt())
+    val isDecimal: Boolean get() = config.storageMode() == ConfigKey.StorageMode.DP_TENTHS
+    fun resetValue(): Float {
+        if (!key.startsWith("liquid_")) return default.toFloat()
+        val preset = PresetManager.defaultValues()
+        val raw = if (isDecimal) preset["${key}_tenths"] else preset[key]
+        return if (raw is Number) raw.toFloat() / if (isDecimal) 10f else 1f else default.toFloat()
+    }
 }
 
 private fun optionSummary(key: String): String = when (key) {
@@ -128,31 +135,32 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
-    "liquid_blur" -> "液态玻璃对实时 OES 背景的模糊范围"
+    "liquid_blur" -> "Prismal 模糊半径；zero-copy 后端在半分辨率双通道 FBO 中使用，默认 2"
     "liquid_thickness" -> "影响 Snell 折射路径的虚拟玻璃厚度"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
     "liquid_normal_strength" -> "Prismal 表面高度场对法线的影响"
     "liquid_dome" -> "控制玻璃穹顶/meniscus 的凸起程度"
-    "liquid_lens_refraction" -> "兼容旧配置：作为 Prismal 边缘透镜距离倍率"
-    "liquid_chromatic" -> "Prismal 色散总强度"
+    "liquid_lens_refraction" -> "Prismal 边缘透镜位移倍率；迁移后的常用值约 1.3×，过高会快速达到短边位移上限"
+    "liquid_legacy_s_curve" -> "旧版整片 SDF 折射几何：0=关闭，100=复现 v1.2.0，200=双倍"
+    "liquid_chromatic" -> "Prismal RGB 色散总强度；v1.0.6 Quick Start 有效默认值为 26"
     "liquid_tint_alpha" -> "玻璃颜色乘色强度"
     "liquid_tint_r" -> "玻璃颜色 · 红"
     "liquid_tint_g" -> "玻璃颜色 · 绿"
     "liquid_tint_b" -> "玻璃颜色 · 蓝"
-    "liquid_highlight_width" -> "兼容控制 Prismal 边缘高光带宽"
+    "liquid_highlight_width" -> "同时调整 Fresnel 轮廓与边缘高光带宽"
     "liquid_highlight_alpha" -> "LiquidDock 对 Prismal 高光总强度的兼容倍率"
-    "liquid_depth_effect" -> "兼容控制 Prismal lens-depth 倍率"
+    "liquid_depth_effect" -> "控制透镜方向向中心偏转：0=Prismal 自动（normalStrength×0.9，最高 1.0）；1–100=手动覆盖"
     "liquid_brightness" -> "Prismal 整体输出亮度"
     "liquid_specular_sharp" -> "Prismal 镜面高光锐度"
     "liquid_specular_strength" -> "Prismal 双镜面高光强度"
     "liquid_rim_light" -> "Prismal 边缘光强度"
     "liquid_caustics" -> "Prismal 焦散强度"
     "liquid_edge_band" -> "兼容调整 Prismal rim band 宽度"
-    "liquid_prismal_refraction_inset" -> "Prismal 折射遮罩向内收缩的距离"
+    "liquid_prismal_refraction_inset" -> "控制玻璃可见遮罩的内缩尺度；不直接增加折射位移"
     "liquid_prismal_displacement_scale" -> "Prismal 折射与视差位移总倍率"
     "liquid_prismal_height_transition_width" -> "Prismal 高度场从边缘过渡到中心的宽度"
     "liquid_prismal_smin_smoothing" -> "Prismal 圆角 SDF 的多项式平滑尺度"
-    "liquid_prismal_edge_refraction_falloff" -> "边缘折射向内部衰减的曲线强度"
+    "liquid_prismal_edge_refraction_falloff" -> "控制边缘折射向内部的衰减；越高越集中在边缘"
     "liquid_prismal_fresnel_reflect" -> "Fresnel 背景反射与 sky haze 强度"
     "liquid_prismal_dispersion_r" -> "红色通道相对色散倍率"
     "liquid_prismal_dispersion_b" -> "蓝色通道相对色散倍率"
@@ -164,19 +172,19 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_prismal_shadow_g" -> "Prismal 内阴影 · 绿"
     "liquid_prismal_shadow_b" -> "Prismal 内阴影 · 蓝"
     "liquid_prismal_shadow_alpha" -> "Prismal 内阴影透明度"
-    "liquid_prismal_shadow_softness" -> "Prismal 内阴影扩散柔和度"
+    "liquid_prismal_shadow_softness" -> "Prismal 内阴影柔和度；界面值按 ×100 存储，1000 对应 shader 10.0"
     "liquid_prismal_transmittance" -> "Prismal 玻璃最终透射/Alpha"
     "liquid_prismal_backdrop_scale_x" -> "Prismal 背景取样水平缩放"
     "liquid_prismal_backdrop_scale_y" -> "Prismal 背景取样垂直缩放"
     "liquid_prismal_parallax_scale" -> "Prismal 表面视差倍率"
-    "liquid_capture_power_limit_fps" -> "动画和动态应用实时捕获的统一帧率上限"
-    "liquid_dynamic_app_probe_fps" -> "静态应用中检测画面变化的低频帧率"
-    "liquid_dynamic_motion_threshold" -> "越低越容易因亮度变化进入高频捕获"
-    "liquid_dynamic_bit_threshold" -> "越低越容易因采样像素变化触发高频捕获"
-    "liquid_dynamic_hold_ms" -> "检测到动态后维持高频捕获的时长"
-    "liquid_black_threshold" -> "低于此平均亮度的捕获帧会被丢弃"
-    "liquid_capture_scale" -> "SurfaceFlinger 捕获分辨率；越低越省电"
-    "liquid_capture_stop_delay" -> "Dock 隐藏后继续允许捕获的缓冲时间"
+    "liquid_capture_power_limit_fps" -> "旧版 Bitmap 捕获帧率；当前 zero-copy 后端不使用"
+    "liquid_dynamic_app_probe_fps" -> "旧版动态捕获探测帧率；当前 zero-copy 后端不使用"
+    "liquid_dynamic_motion_threshold" -> "旧版动态捕获阈值；当前 zero-copy 后端不使用"
+    "liquid_dynamic_bit_threshold" -> "旧版动态捕获像素阈值；当前 zero-copy 后端不使用"
+    "liquid_dynamic_hold_ms" -> "旧版动态捕获保持时间；当前 zero-copy 后端不使用"
+    "liquid_black_threshold" -> "旧版黑帧过滤阈值；当前 zero-copy 后端不使用"
+    "liquid_capture_scale" -> "旧版 SurfaceFlinger 读回缩放；当前 zero-copy 后端不使用"
+    "liquid_capture_stop_delay" -> "旧版屏幕捕获停止延迟；当前 zero-copy 后端不使用"
     "liquid_recents_prearm_distance" -> "从底部上滑达到此距离时，提前启动多任务实时捕获"
     "liquid_capture_bleed_top" -> "在 Dock 上方扩展 zero-copy 折射背景的采样区域"
     "liquid_capture_bleed_bottom" -> "在 Dock 下方扩展 zero-copy 折射背景的采样区域"
@@ -250,12 +258,14 @@ private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台 Dock 图标下间距"),
 )
 private val liquidSpecs = listOf(
-    IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊"),
+    IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),
     IntSpec(ConfigSchema.Glass.THICKNESS, "玻璃厚度"),
     IntSpec(ConfigSchema.Glass.IOR, "折射率 IOR", "%"),
     IntSpec(ConfigSchema.Glass.NORMAL_STRENGTH, "法线强度", "%"),
     IntSpec(ConfigSchema.Glass.DOME, "穹顶凸起", "%"),
-    IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射"),
+    IntSpec(ConfigSchema.Glass.LENS_REFRACTION, "透镜折射倍率", "×"),
+    IntSpec(ConfigSchema.Glass.LEGACY_S_CURVE, "v1.2 S形折射", "%"),
+    IntSpec(ConfigSchema.Glass.DEPTH_EFFECT, "透镜中心偏转", "%"),
     IntSpec(ConfigSchema.Glass.CHROMATIC, "色散强度", ""),
     IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, "上额外采样高度", "px"),
     IntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, "下额外采样高度", "px"),
@@ -271,10 +281,10 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.SPECULAR_STRENGTH, "高光强度", "%"),
     IntSpec(ConfigSchema.Glass.RIM_LIGHT, "边缘光强度", "%"),
     IntSpec(ConfigSchema.Glass.CAUSTICS, "焦散强度", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "Prismal · 折射内缩"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "Prismal · 折射内缩", "px"),
     IntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, "Prismal · 位移倍率", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, "Prismal · 高度过渡"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, "Prismal · SDF 平滑"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, "Prismal · SDF 平滑", "px"),
     IntSpec(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, "Prismal · 边缘折射衰减", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT, "Prismal · Fresnel 反射", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_R, "Prismal · 红色散倍率", "%"),
@@ -287,7 +297,7 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, "Prismal · 内阴影绿", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, "Prismal · 内阴影蓝", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, "Prismal · 内阴影透明度", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", ""),
     IntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, "Prismal · 透射率", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "Prismal · 背景缩放 X", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
@@ -448,7 +458,11 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 @Composable
 private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
-    SettingsList(padding, stringResource(R.string.page_liquid)) {
+    SettingsList(
+        padding,
+        stringResource(R.string.page_liquid),
+        "当前使用 PassBlur → OES → Prismal zero-copy；修改光学参数后点击右上角“重启桌面”生效。",
+    ) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
         BooleanSetting(prefs, ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
             "Prismal · 显示法线",
@@ -555,9 +569,14 @@ private fun AboutPage(padding: PaddingValues, activity: ComposeSettingsActivity,
 }
 
 @Composable
-private fun SettingsList(padding: PaddingValues, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsList(
+    padding: PaddingValues,
+    title: String,
+    summary: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
-        item { PageHeader(title) }
+        item { PageHeader(title, summary) }
         item { SettingsCard(content) }
     }
 }
@@ -593,10 +612,11 @@ private fun BooleanSetting(
 
 @Composable
 private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride: Boolean? = null) {
-    val decimalDp = spec.unit == "dp"
+    val decimalDp = spec.isDecimal
+    val resetValue = spec.resetValue()
     val initial = if (decimalDp && prefs.contains("${spec.key}_tenths"))
-        prefs.getInt("${spec.key}_tenths", spec.default * 10) / 10f
-    else prefs.getInt(spec.key, spec.default).toFloat()
+        prefs.getInt("${spec.key}_tenths", (resetValue * 10f).roundToInt()) / 10f
+    else prefs.getInt(spec.key, resetValue.roundToInt()).toFloat()
     var value by remember(spec.key) { mutableStateOf(initial) }
     val enabled = enabledOverride ?: spec.dependency?.let { prefs.getBoolean(it, false) } ?: true
     val context = LocalContext.current
@@ -639,8 +659,8 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
                 insideMargin = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             ) { Text("$displayValue${if (spec.unit.isBlank()) "" else " ${spec.unit}"}") }
             Button(
-                onClick = { save(spec.default.toFloat()) },
-                enabled = enabled && value != spec.default.toFloat(),
+                onClick = { save(resetValue) },
+        enabled = enabled && kotlin.math.abs(value - resetValue) > 0.0001f,
                 minWidth = 56.dp,
                 minHeight = 32.dp,
                 insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),

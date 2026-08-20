@@ -10,6 +10,8 @@ public final class ConfigMigration {
     private static final String PRISMAL_PARITY_V2 = "liquid_prismal_parity_v2";
     private static final String PRISMAL_OFFICIAL_PARITY_V3 =
             "liquid_prismal_official_parity_v3";
+    private static final String PRISMAL_OFFICIAL_PARITY_V4 =
+            "liquid_prismal_official_parity_v4";
     private static final String CAPTURE_BLEED_PIXELS_V4 =
             "liquid_capture_bleed_pixels_v4";
 
@@ -27,6 +29,7 @@ public final class ConfigMigration {
         migrateAxisDistances(preferences);
         migratePrismalParityV2(preferences);
         migratePrismalOfficialParityV3(preferences);
+        migratePrismalOfficialParityV4(preferences);
     }
 
     /**
@@ -83,6 +86,15 @@ public final class ConfigMigration {
         migrateIntDefault(sp, e, "liquid_prismal_fresnel_reflect", 100, 198);
 
         e.putBoolean(PRISMAL_OFFICIAL_PARITY_V3, true).commit();
+    }
+
+    /** Migrate only the two V3 values proven to differ from effective v1.0.6. */
+    private static void migratePrismalOfficialParityV4(SharedPreferences sp) {
+        if (sp.getBoolean(PRISMAL_OFFICIAL_PARITY_V4, false)) return;
+        SharedPreferences.Editor e = sp.edit();
+        migrateIntDefault(sp, e, "liquid_chromatic", 2, 26);
+        migrateIntDefault(sp, e, "liquid_depth_effect", 8, 0);
+        e.putBoolean(PRISMAL_OFFICIAL_PARITY_V4, true).commit();
     }
 
     private static void migrateLegacyLensScale(
