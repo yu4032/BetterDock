@@ -5,13 +5,28 @@ package com.hellovoid.prismal;
  *
  * <p>The upstream source is intentionally kept byte-for-byte as the provenance baseline. Prismal's
  * stock fragment adds lens/parallax, Snell and a mid-band bulge into the sampled backdrop. On the
- * extremely wide Dock glass that produces three spatial refraction bands, while some vertical
- * sampled-UV directions are expressed in the opposite Y basis. This correction changes only the
- * transmitted backdrop displacement: one monotonic SDF edge lens remains, and chromatic radial
- * direction is expressed in the same Y-down texture basis as {@code v_screenTexCoord}. Normals,
- * dome, Fresnel, highlights, caustics, tint and blur remain upstream Prismal behavior.</p>
+ * extremely wide Dock glass that produces three spatial refraction bands. Its center-radial lens
+ * bias also makes the straight-edge normal component position-dependent, and its chromatic offset
+ * is expressed directly in normalized UV so horizontal fringe width grows with framebuffer width.
+ * This correction keeps one monotonic SDF edge lens, aligns it to the local edge normal, and scales
+ * chromatic separation in short-axis pixels before converting back to UV. Normals, dome, Fresnel,
+ * highlights, caustics, tint and blur remain upstream Prismal behavior.</p>
  */
 final class PrismalSingleEdgeShader {
+    private static final String UPSTREAM_LENS_DIRECTION = """
+                vec2 cenSafe = cKy + vec2(1e-4, 1e-4);
+                vec2 lensDir = gradLens + u_lensDepthEffect * normalize(cenSafe);
+                float ldLen = length(lensDir);
+                lensDir = ldLen > 1e-5 ? lensDir / ldLen : vec2(0.0);
+            """;
+
+    private static final String EDGE_NORMAL_LENS_DIRECTION = """
+                // A straight Dock edge must have one translation-invariant refraction direction.
+                // Keep the transmitted lens on the local SDF normal instead of biasing it toward
+                // the center of an extremely wide glass rectangle.
+                vec2 lensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);
+            """;
+
     private static final String UPSTREAM_TRANSMITTED_BLOCK = """
                 vec2 lensDeltaUv = (dLens * lensDir) / u_resolution;
                 float parallaxK = 0.052 * u_displacementScale;
@@ -48,6 +63,11 @@ final class PrismalSingleEdgeShader {
     private static final String TEXTURE_CHROMA_DIRECTION =
             "vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);";
 
+    private static final String UPSTREAM_CHROMA_PUSH =
+            "vec2 chromaPush = dispDir * chromaBase * pxNorm;";
+    private static final String PIXEL_DOMAIN_CHROMA_PUSH =
+            "vec2 chromaPush = (dispDir * chromaBase * pxNorm * minDim) / u_resolution;";
+
     private PrismalSingleEdgeShader() {}
 
     static String apply(String upstreamFragment) {
@@ -56,14 +76,24 @@ final class PrismalSingleEdgeShader {
         }
         String corrected = replaceExactlyOnce(
                 upstreamFragment,
+                UPSTREAM_LENS_DIRECTION,
+                EDGE_NORMAL_LENS_DIRECTION,
+                "Prismal lens-direction block");
+        corrected = replaceExactlyOnce(
+                corrected,
                 UPSTREAM_TRANSMITTED_BLOCK,
                 SINGLE_EDGE_TRANSMITTED_BLOCK,
                 "Prismal transmitted-refraction block");
-        return replaceExactlyOnce(
+        corrected = replaceExactlyOnce(
                 corrected,
                 UPSTREAM_CHROMA_DIRECTION,
                 TEXTURE_CHROMA_DIRECTION,
                 "Prismal chromatic direction");
+        return replaceExactlyOnce(
+                corrected,
+                UPSTREAM_CHROMA_PUSH,
+                PIXEL_DOMAIN_CHROMA_PUSH,
+                "Prismal chromatic scale");
     }
 
     private static String replaceExactlyOnce(
