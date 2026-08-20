@@ -33,8 +33,36 @@ jobs:
           end = text.index("\n          PY\n", start)
           body = text[start:end]
           lines = body.splitlines()
-          # Inline workflow script is indented ten spaces beneath the YAML run block.
           script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          old = '''def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, got {count}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+          '''
+          new = '''import re
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count == 1:
+                  p.write_text(text.replace(old, new, 1))
+                  return
+              parts = old.splitlines()
+              pattern = re.escape(parts[0])
+              for line in parts[1:]:
+                  pattern += r"\\n[ \\t]*" + re.escape(line.lstrip())
+              matches = list(re.finditer(pattern, text))
+              if len(matches) != 1:
+                  raise SystemExit(f"{path}: expected one fuzzy match, got {len(matches)}: {old[:80]!r}")
+              match = matches[0]
+              p.write_text(text[:match.start()] + new + text[match.end():])
+          '''
+          if old not in script:
+              raise SystemExit('replace_once helper not found in extracted recipe')
+          script = script.replace(old, new, 1)
           Path('/tmp/apply_glass_controls.py').write_text(script)
           PY
           python3 /tmp/apply_glass_controls.py
