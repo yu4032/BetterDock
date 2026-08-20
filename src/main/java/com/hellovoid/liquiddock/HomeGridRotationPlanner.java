@@ -17,7 +17,7 @@ final class HomeGridRotationPlanner {
 
     static final class Item {
         final long id;
-        final int screenId;
+        final long screenId;
         final int x;
         final int y;
         final int spanX;
@@ -25,7 +25,7 @@ final class HomeGridRotationPlanner {
         final int targetSpanX;
         final int targetSpanY;
 
-        Item(long id, int screenId, int x, int y, int spanX, int spanY,
+        Item(long id, long screenId, int x, int y, int spanX, int spanY,
              int targetSpanX, int targetSpanY) {
             this.id = id;
             this.screenId = screenId;
@@ -39,13 +39,13 @@ final class HomeGridRotationPlanner {
     }
 
     static final class Position {
-        final int screenId;
+        final long screenId;
         final int x;
         final int y;
         final int spanX;
         final int spanY;
 
-        Position(int screenId, int x, int y, int spanX, int spanY) {
+        Position(long screenId, int x, int y, int spanX, int spanY) {
             this.screenId = screenId;
             this.x = x;
             this.y = y;
@@ -92,7 +92,7 @@ final class HomeGridRotationPlanner {
                      Map<Long, Position> rememberedTarget) {
         Map<Long, Position> result = new HashMap<>();
         Set<Long> unresolved = new HashSet<>();
-        Map<Integer, boolean[][]> occupiedByScreen = new HashMap<>();
+        Map<Long, boolean[][]> occupiedByScreen = new HashMap<>();
         if (items == null) return new Plan(result, unresolved);
 
         Map<Long, Position> remembered = rememberedTarget == null
