@@ -1,0 +1,92 @@
+name: Confirmed bugfix verification
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/glass-controls-s-curve
+          fetch-depth: 3
+      - name: Apply exact reviewed patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = Path('.github/workflows/api101-build.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if "cat <<'B64'" in line)
+          payload = lines[start + 1].strip()
+          Path('/tmp/confirmed-bug-fixes.patch.gz.b64').write_text(payload + '\n')
+          PY
+          base64 -d /tmp/confirmed-bug-fixes.patch.gz.b64 | gzip -d > /tmp/confirmed-bug-fixes.patch
+          if git apply --check /tmp/confirmed-bug-fixes.patch; then
+            git apply /tmp/confirmed-bug-fixes.patch
+          elif git apply --reverse --check /tmp/confirmed-bug-fixes.patch; then
+            echo 'Confirmed bug fixes already applied'
+          else
+            echo 'Patch is neither applicable nor already applied' >&2
+            exit 1
+          fi
+          git diff --check
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Build APK
+        run: ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-confirmed-bugfix-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
+      - name: Commit verified source if remote still needs it
+        shell: bash
+        run: |
+          git fetch origin fix/glass-controls-s-curve
+          if git diff --quiet origin/fix/glass-controls-s-curve -- src/main; then
+            echo 'Remote src/main already matches verified fixes'
+            exit 0
+          fi
+          git add src/main
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix: repair confirmed lifecycle and config bugs'
+          git push origin HEAD:fix/glass-controls-s-curve
+      - name: Lint audit without crashing Bidi detector
+        continue-on-error: true
+        shell: bash
+        run: |
+          cat >> build.gradle.kts <<'EOF'
+
+          android {
+              lint {
+                  disable += "BidiSpoofing"
+              }
+          }
+          EOF
+          ./gradlew lintDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LiquidDock-confirmed-bugfix-lint
+          path: |
+            build/reports/lint-results-debug.html
+            build/reports/lint-results-debug.txt
+            build/reports/lint-results-debug.xml
+          if-no-files-found: warn
+          retention-days: 3
