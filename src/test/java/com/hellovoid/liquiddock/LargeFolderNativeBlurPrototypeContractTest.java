@@ -47,11 +47,13 @@ public class LargeFolderNativeBlurPrototypeContractTest {
         assertTrue(source.contains("restoreStock"));
     }
 
-    @Test public void mainEnablesPrototypeOnlyInsideLiquidGlassPath() throws Exception {
-        String main = Files.readString(MAIN.resolve("MainHook.java"));
-        int glassGate = main.indexOf("if (config.glass.enabled)");
-        int install = main.indexOf("LargeFolderNativeBlurPrototype.install(classLoader)");
+    @Test public void moduleEnablesPrototypeOnlyInsideLiquidGlassPath() throws Exception {
+        String module = Files.readString(MAIN.resolve("ModuleMain.java"));
+        int masterGate = module.indexOf("if (runtimeConfig.enabled)");
+        int glassGate = module.indexOf("if (runtimeConfig.glass.enabled)");
+        int install = module.indexOf("LargeFolderNativeBlurPrototype.install(classLoader)");
         assertTrue("prototype must be installed", install >= 0);
+        assertTrue("prototype must be gated by master switch", masterGate >= 0 && install > masterGate);
         assertTrue("prototype must be gated by liquid glass", glassGate >= 0 && install > glassGate);
     }
 }
