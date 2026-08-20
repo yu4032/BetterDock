@@ -1,0 +1,52 @@
+name: Glass controls PR implementation
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/glass-controls-s-curve
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply reviewed implementation recipe
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/glass-controls-one-shot.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = text.index(marker) + len(marker)
+          end = text.index("\n          PY\n", start)
+          body = text[start:end]
+          lines = body.splitlines()
+          # Inline workflow script is indented ten spaces beneath the YAML run block.
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/apply_glass_controls.py').write_text(script)
+          PY
+          python3 /tmp/apply_glass_controls.py
+      - name: Verify tests and debug build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
+      - name: Commit implementation and remove temporary workflows
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/glass-controls-one-shot.yml .github/workflows/glass-controls-pr-kick.yml
+          git add src/main src/test
+          git commit -m "fix: wire glass controls and optional v1.2 S refraction"
+          git push origin HEAD:fix/glass-controls-s-curve
