@@ -3,4 +3,14 @@
     <string-array name="xposed_scope">
         <item>com.miui.home</item>
     </string-array>
+
+    <string-array name="home_grid_profile_entries">
+        <item>8×4 landscape / 4×8 portrait</item>
+        <item>10×6 landscape / 6×10 portrait</item>
+    </string-array>
+
+    <string-array name="home_grid_profile_values">
+        <item>8x4</item>
+        <item>10x6</item>
+    </string-array>
 </resources>
