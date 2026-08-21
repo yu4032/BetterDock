@@ -27,6 +27,8 @@ jobs:
           echo "f1e3b8d31196a99226d23ad9bded58612e67d83d1a0d854c06fd64ed6fadbd56  /tmp/shared-launcher-glass.patch" | sha256sum -c -
           git apply --check /tmp/shared-launcher-glass.patch
           git apply /tmp/shared-launcher-glass.patch
+          git apply --check ci/shared-glass-config-test.patch
+          git apply ci/shared-glass-config-test.patch
           git diff --check
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
