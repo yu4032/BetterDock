@@ -1,6 +1,6 @@
 package com.hellovoid.liquiddock;
 
-/** Pure horizontal geometry used by the 10x6 experiment to keep edge margins symmetric. */
+/** Pure horizontal geometry for keeping profile-sized edge margins symmetric. */
 final class HomeGridHorizontalCenteringPolicy {
     private HomeGridHorizontalCenteringPolicy() {}
 
