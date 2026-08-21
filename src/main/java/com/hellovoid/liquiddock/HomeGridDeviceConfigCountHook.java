@@ -5,19 +5,10 @@ import java.util.Locale;
 
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * 10x6-only owner for DeviceConfig's process-wide workspace cell counts.
- *
- * CellLayout/GridConfig can already be 6x10 while older DeviceConfig-derived drag code still sees
- * the legacy 4x8 profile. That split caps portrait drag coordinates at y=7 even though the live
- * occupancy matrix has ten rows. Rewrite only the verified legacy 4/8 intermediates to 6/10 and
- * leave unrelated counts untouched.
- */
+/** Keeps DeviceConfig workspace counts consistent with the selected 10x6 profile. */
 final class HomeGridDeviceConfigCountHook {
     private static final String DEVICE_CONFIG = "com.miui.home.launcher.DeviceConfig";
     private static boolean installed;
-    private static boolean loggedXRewrite;
-    private static boolean loggedYRewrite;
 
     private HomeGridDeviceConfigCountHook() {}
 
@@ -28,17 +19,16 @@ final class HomeGridDeviceConfigCountHook {
         }
         try {
             Class<?> deviceConfig = Class.forName(DEVICE_CONFIG, false, classLoader);
-            hookCount(deviceConfig, "getCellCountX", true, selectedProfile);
-            hookCount(deviceConfig, "getCellCountY", false, selectedProfile);
+            hookCount(deviceConfig, "getCellCountX", selectedProfile);
+            hookCount(deviceConfig, "getCellCountY", selectedProfile);
             installed = true;
-            MainHook.log("[DC][GRID10] DeviceConfig cell-count ownership installed");
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] DeviceConfig cell-count ownership unavailable: " + error);
+            MainHook.log("[DC] 10x6 DeviceConfig counts unavailable: " + error);
         }
     }
 
-    private static void hookCount(Class<?> owner, String methodName, boolean xAxis,
-                                  HomeGridProfile profile) throws NoSuchMethodException {
+    private static void hookCount(Class<?> owner, String methodName, HomeGridProfile profile)
+            throws NoSuchMethodException {
         Method method = HookUtil.findMethodExact(owner, methodName, new Class<?>[0]);
         Api101Bridge.module().hook(method)
                 .setPriority(XposedInterface.PRIORITY_HIGHEST)
@@ -48,23 +38,8 @@ final class HomeGridDeviceConfigCountHook {
                             || isExcludedCall()) {
                         return result;
                     }
-                    int current = (Integer) result;
-                    int target = HomeGridCountPolicy.profileRewrite(profile, current);
-                    if (target != current) logRewriteOnce(xAxis, methodName, current, target);
-                    return target;
+                    return HomeGridCountPolicy.profileRewrite(profile, (Integer) result);
                 });
-    }
-
-    private static void logRewriteOnce(boolean xAxis, String methodName, int current, int target) {
-        if (xAxis) {
-            if (loggedXRewrite) return;
-            loggedXRewrite = true;
-        } else {
-            if (loggedYRewrite) return;
-            loggedYRewrite = true;
-        }
-        MainHook.log("[DC][GRID10] DeviceConfig " + methodName + " "
-                + current + "->" + target);
     }
 
     private static boolean isExcludedCall() {
