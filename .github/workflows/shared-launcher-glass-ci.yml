@@ -29,13 +29,19 @@ jobs:
           git apply /tmp/shared-launcher-glass.patch
           git apply --check ci/shared-glass-config-test.patch
           git apply ci/shared-glass-config-test.patch
+          cat ci/shared-glass-inroot/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
+          echo "f1c4ad6817832cf897f55fd33d5c8708c5a36ca10de2c91d884925f14374c5e7  /tmp/shared-glass-inroot.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-inroot.patch.gz.b64 | gzip -d > /tmp/shared-glass-inroot.patch
+          echo "7d12ca1a3cd0f9911a7f619b63daa58a5eb48a6d4b6069c504f040dd565467f4  /tmp/shared-glass-inroot.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-inroot.patch
+          git apply /tmp/shared-glass-inroot.patch
           git diff --check
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-shared-launcher-glass-debug
+          name: LiquidDock-shared-launcher-glass-inroot-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
