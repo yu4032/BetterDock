@@ -1,46 +1,50 @@
 package com.hellovoid.liquiddock;
 
-/** Pure geometry for keeping a tall custom grid inside CellLayout's real vertical bounds. */
+/** Pure vertical geometry for a custom home grid. Horizontal width is intentionally absent. */
 final class HomeGridVerticalBoundsPolicy {
     private HomeGridVerticalBoundsPolicy() {}
 
-    static Geometry resolve(int height, int rows, int sourceCellSize, int requestedGap,
-                            int dockBarHeight, int topAdjustment, int bottomAdjustment) {
+    static Geometry resolve(int height, int rows, int sourceCellSize,
+                            int baseGap, int gapAdjustment, int dockBarHeight,
+                            int topAdjustment, int bottomAdjustment) {
         if (height <= 0 || rows <= 0) return new Geometry(0, 0, 0, 0, 0);
 
         int sourceCell = Math.max(1, sourceCellSize);
-        int maxDock = Math.max(0, height - rows);
-        int dock = Math.min(Math.max(0, dockBarHeight), maxDock);
+        int dock = Math.min(Math.max(0, dockBarHeight), Math.max(0, height - rows));
         int contentHeight = Math.max(rows, height - dock);
-
-        int gap = Math.max(0, requestedGap);
+        int baselineGap = Math.max(0, baseGap);
         if (rows > 1) {
-            int maxGap = Math.max(0, (contentHeight - rows) / (rows - 1));
-            gap = Math.min(gap, maxGap);
+            baselineGap = Math.min(baselineGap,
+                    Math.max(0, (contentHeight - rows) / (rows - 1)));
         } else {
-            gap = 0;
+            baselineGap = 0;
         }
 
-        int baseCell = Math.min(sourceCell,
-                Math.max(1, (contentHeight - gap * Math.max(0, rows - 1)) / rows));
-        int baseUsed = baseCell * rows + gap * Math.max(0, rows - 1);
-        int spare = Math.max(0, contentHeight - baseUsed);
+        int baselineCell = Math.min(sourceCell,
+                Math.max(1, (contentHeight
+                        - baselineGap * Math.max(0, rows - 1)) / rows));
+        int baselineUsed = baselineCell * rows
+                + baselineGap * Math.max(0, rows - 1);
+        int spare = Math.max(0, contentHeight - baselineUsed);
         int baseTop = spare / 2;
         int baseBottom = dock + (spare - baseTop);
 
         int top = Math.max(0, baseTop + topAdjustment);
         int bottom = Math.max(dock, baseBottom + bottomAdjustment);
 
-        // Keep at least one pixel for every row even when user offsets are extreme.
+        // Preserve at least one pixel per row even for extreme user offsets.
         int marginBudget = Math.max(0, height - rows);
         top = Math.min(top, Math.max(0, marginBudget - dock));
         bottom = Math.min(bottom, Math.max(dock, marginBudget - top));
 
         int innerHeight = Math.max(rows, height - top - bottom);
+        int gap = baselineGap + gapAdjustment;
         if (rows > 1) {
-            int maxGap = Math.max(0, (innerHeight - rows) / (rows - 1));
-            gap = Math.min(gap, maxGap);
+            gap = Math.min(gap, Math.max(0, (innerHeight - rows) / (rows - 1)));
+        } else {
+            gap = 0;
         }
+
         int cell = Math.min(sourceCell,
                 Math.max(1, (innerHeight - gap * Math.max(0, rows - 1)) / rows));
         return new Geometry(top, bottom, cell, gap, dock);
