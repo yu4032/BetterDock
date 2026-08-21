@@ -9,14 +9,15 @@ import org.junit.Test;
 
 /** Regression contract: horizontal grid spacing must not resize the vertical axis. */
 public class HomeGridAxisIsolationContractTest {
-    @Test public void normalWorkspaceUsesIndependentCellWidthAndHeight() throws Exception {
-        String source = Files.readString(Path.of(
-                "src/main/java/com/hellovoid/liquiddock/HomeGridHook.java"));
+    @Test public void verticalGeometryUsesWidthIndependentSourceForEveryCustomProfile() throws Exception {
+        String hook = Files.readString(Path.of(
+                "src/main/java/com/hellovoid/liquiddock/HomeGridVerticalBoundsHook.java"));
 
-        assertFalse(source.contains("int cellSize = Math.min(baseCell, Math.min("));
-        assertTrue(source.contains("int cellWidth = Math.min(baseCell"));
-        assertTrue(source.contains("int cellHeight = Math.min(baseCell"));
-        assertTrue(source.contains("\"mCellWidth\", cellWidth"));
-        assertTrue(source.contains("\"mCellHeight\", cellHeight"));
+        assertFalse(hook.contains("selectedProfile != HomeGridProfile.GRID_10X6"));
+        assertTrue(hook.contains("profile.rows(portrait)"));
+        assertTrue(hook.contains("getCellSize"));
+        assertTrue(hook.contains("sourceCell"));
+        assertTrue(hook.contains("HomeGridVerticalBoundsPolicy.resolve("));
+        assertFalse(hook.contains("sourceCellSize, currentGap"));
     }
 }
