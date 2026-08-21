@@ -181,7 +181,7 @@ public class SettingsActivity extends AppCompatActivity {
                         .start();
                 try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
                     os.writeBytes("am force-stop com.miui.home && sleep 1 && "
-                        + "am start -n com.miui.home/.launcher.Launcher\nexit\n");
+                        + "am start -a android.intent.action.MAIN -c android.intent.category.HOME\nexit\n");
                     os.flush();
                 }
                 if (!p.waitFor(8, TimeUnit.SECONDS)) {
