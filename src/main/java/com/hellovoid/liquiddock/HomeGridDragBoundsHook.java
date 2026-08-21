@@ -6,26 +6,10 @@ import java.lang.reflect.Method;
 
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * 10x6-only correction for DragController's stale screen clamp after rotation.
- *
- * Launcher DEX inspection shows DragController.onTouchEvent clamps MotionEvent X/Y against
- * Launcher.getScreenWidthForDragController()/getScreenHeightForDragController() before writing
- * DragObject.x/y.  Those callbacks normally delegate to DeviceConfig screen dimensions.  On the
- * affected portrait rotation DeviceConfig reports the stale 1880px landscape height while the live
- * Launcher/Workspace is 1880x3008, so Y is capped at 1879 before CellScreen or CellLayout sees it.
- *
- * Keep the fix at the callback boundary: return the live Launcher root/Workspace dimensions only
- * for the experimental 10x6 profile.  Do not mutate DeviceConfig, DragObject, occupancy, or DB.
- */
+/** Keeps DragController bounds aligned with the live Launcher workspace for the 10x6 profile. */
 final class HomeGridDragBoundsHook {
     private static final String LAUNCHER = "com.miui.home.launcher.Launcher";
-
     private static boolean installed;
-    private static int lastLoggedWidthFrom = Integer.MIN_VALUE;
-    private static int lastLoggedWidthTo = Integer.MIN_VALUE;
-    private static int lastLoggedHeightFrom = Integer.MIN_VALUE;
-    private static int lastLoggedHeightTo = Integer.MIN_VALUE;
 
     private HomeGridDragBoundsHook() {}
 
@@ -39,9 +23,8 @@ final class HomeGridDragBoundsHook {
             hookDimension(launcher, "getScreenWidthForDragController", false);
             hookDimension(launcher, "getScreenHeightForDragController", true);
             installed = true;
-            MainHook.log("[DC][GRID10] live DragController bounds installed");
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] live DragController bounds unavailable: " + error);
+            MainHook.log("[DC] 10x6 DragController bounds unavailable: " + error);
         }
     }
 
@@ -54,21 +37,13 @@ final class HomeGridDragBoundsHook {
                     Object result = chain.proceed();
                     if (!(result instanceof Integer) || MainHook.isWorkstationMode()) return result;
 
-                    int current = (Integer) result;
                     View root = liveRoot(chain.getThisObject());
                     if (root == null) return result;
                     int actual = heightAxis ? root.getHeight() : root.getWidth();
-                    if (actual <= 0 || actual == current) return result;
-
-                    logRewriteOnce(methodName, heightAxis, current, actual, root);
-                    return actual;
+                    return actual > 0 ? actual : result;
                 });
     }
 
-    /**
-     * Workspace is the DragController target coordinate domain and is known to fill the Launcher
-     * root on the affected tablet. Prefer it when attached/measured; fall back to Launcher root.
-     */
     private static View liveRoot(Object launcher) {
         try {
             Object workspace = HookUtil.getField(launcher, "mWorkspace");
@@ -79,28 +54,12 @@ final class HomeGridDragBoundsHook {
         } catch (Throwable ignored) {}
 
         try {
-            Object rootValue = HookUtil.invoke(launcher, "getRootView");
-            if (rootValue instanceof View) {
-                View root = (View) rootValue;
-                if (root.getWidth() > 0 && root.getHeight() > 0) return root;
+            Object root = HookUtil.invoke(launcher, "getRootView");
+            if (root instanceof View) {
+                View view = (View) root;
+                if (view.getWidth() > 0 && view.getHeight() > 0) return view;
             }
         } catch (Throwable ignored) {}
         return null;
-    }
-
-    private static void logRewriteOnce(String methodName, boolean heightAxis,
-                                       int current, int actual, View root) {
-        if (heightAxis) {
-            if (lastLoggedHeightFrom == current && lastLoggedHeightTo == actual) return;
-            lastLoggedHeightFrom = current;
-            lastLoggedHeightTo = actual;
-        } else {
-            if (lastLoggedWidthFrom == current && lastLoggedWidthTo == actual) return;
-            lastLoggedWidthFrom = current;
-            lastLoggedWidthTo = actual;
-        }
-        MainHook.log("[DC][GRID10] drag bounds " + methodName + " "
-                + current + "->" + actual + " live="
-                + root.getWidth() + "x" + root.getHeight());
     }
 }
