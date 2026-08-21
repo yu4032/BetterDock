@@ -16,7 +16,8 @@ public class HomeGridPortraitVerticalBoundsContractTest {
 
         String hook = Files.readString(Path.of(
                 "src/main/java/com/hellovoid/liquiddock/HomeGridVerticalBoundsHook.java"));
-        assertTrue(hook.contains("profile.rows(portrait)"));
+        assertTrue(hook.contains("Configuration.ORIENTATION_PORTRAIT"));
+        assertTrue(hook.contains("profile.rows(true)"));
         assertTrue(hook.contains("mCellPaddingTop"));
         assertTrue(hook.contains("mCellHeight"));
         assertTrue(hook.contains("mHeightGap"));
