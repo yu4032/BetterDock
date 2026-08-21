@@ -38,11 +38,11 @@ jobs:
           git apply /tmp/shared-glass-inroot.patch
           git diff --check
       - name: Export patched source snapshot
-        if: startsWith(github.ref, 'refs/heads/staging/shared-glass-source-export')
+        if: github.head_ref == 'staging/shared-glass-source-export' || github.ref == 'refs/heads/staging/shared-glass-source-export'
         run: |
           tar -czf /tmp/shared-glass-patched-source.tar.gz src/main src/test prismal/src/main prismal/src/test
       - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/heads/staging/shared-glass-source-export')
+        if: github.head_ref == 'staging/shared-glass-source-export' || github.ref == 'refs/heads/staging/shared-glass-source-export'
         with:
           name: shared-glass-patched-source
           path: /tmp/shared-glass-patched-source.tar.gz
