@@ -32,6 +32,7 @@ public final class ModuleMain extends XposedModule {
             boolean customGridEnabled = runtimeConfig.enabled && runtimeConfig.grid.enabled;
 
             new MainHook().install(classLoader);
+            DockBottomGeometryHook.install(classLoader);
             HomeGridProfileOverlayHook.install(classLoader,
                     customGridEnabled, selectedProfile);
             HomeGridDeviceConfigCountHook.install(classLoader,
