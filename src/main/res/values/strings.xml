@@ -18,7 +18,7 @@
     <string name="category_about">About</string>
     <string name="enable_liquiddock">Enable LiquidDock</string>
     <string name="enable_liquiddock_summary">Disables all home-grid, Dock, divider, liquid-glass, stroke, and shadow hooks when turned off</string>
-    <string name="home_grid_summary">8×4 / 4×8 grid, orientation spacing, and page indicator</string>
+    <string name="home_grid_summary">Selectable 8×4 / 4×8 or 10×6 / 6×10 grid, orientation spacing, and page indicator</string>
     <string name="home_dock_summary">Size, corners, icon spacing, position, and blur</string>
     <string name="home_divider_summary">Independent divider width, height, position, color, and opacity</string>
     <string name="home_workstation_summary">Independent length and spacing; does not inherit normal Dock parameters</string>
@@ -33,8 +33,9 @@
     <string name="category_grid">Grid</string>
     <string name="category_landscape">Landscape</string>
     <string name="category_portrait">Portrait</string>
-    <string name="enable_grid_8x4">Enable 8×4 / 4×8 grid</string>
-    <string name="enable_grid_8x4_summary">Uses the stock MIUI layout when disabled; all settings below require this switch</string>
+    <string name="enable_grid_8x4">Enable custom home grid</string>
+    <string name="enable_grid_8x4_summary">Uses the stock MIUI layout when disabled; choose the grid layout below when enabled</string>
+    <string name="grid_profile_title">Grid layout</string>
     <string name="enable_widget_adaptation">Adapt widget sizes to the custom grid</string>
     <string name="enable_widget_adaptation_summary">Resizes supported 1×1, 2×1, 2×2, and 4×2 widgets to the custom grid; disabled by default and requires a launcher restart</string>
     <string name="dock_customization">Customize Dock geometry and appearance</string>
