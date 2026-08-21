@@ -39,8 +39,6 @@ final class HomeGridProfileOverlayHook {
             hookGridCountGetter(gridConfig, "getCountY", false, selectedProfile);
 
             installRotationTransform(classLoader, selectedProfile);
-            MainHook.log("[DC] experimental home grid overlay active profile="
-                    + selectedProfile.persistedValue());
         } catch (Throwable error) {
             MainHook.log("[DC] 10x6 profile overlay unavailable: " + error);
         }
