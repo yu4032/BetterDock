@@ -208,10 +208,10 @@ public class ConfigCodecTest {
         assertEquals(Boolean.FALSE, exported.get("liquid_glass"));
         assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
         assertFalse(exported.containsKey("liquid_legacy_s_curve"));
-        assertEquals(48, exported.get("liquid_capture_bleed_top"));
-        assertEquals(16, exported.get("liquid_capture_bleed_bottom"));
-        assertEquals(0, exported.get("liquid_capture_bleed_left"));
-        assertEquals(0, exported.get("liquid_capture_bleed_right"));
+        assertEquals(0, exported.get("liquid_sampling_extra_top"));
+        assertEquals(0, exported.get("liquid_sampling_extra_bottom"));
+        assertEquals(0, exported.get("liquid_sampling_extra_left"));
+        assertEquals(0, exported.get("liquid_sampling_extra_right"));
         assertEquals(1200, exported.get("liquid_home_settle_delay"));
         assertEquals(5, exported.get("liquid_prismal_refraction_inset"));
         assertEquals(79, exported.get("liquid_prismal_fresnel_reflect"));

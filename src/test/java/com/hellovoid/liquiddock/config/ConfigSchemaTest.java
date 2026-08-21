@@ -45,14 +45,14 @@ public class ConfigSchemaTest {
 
     @Test
     public void legacyAndCurrentDefaultsRemainDistinctWhereRequired() {
-        assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback());
-        assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.uiDefault());
-        assertEquals(Integer.valueOf(48), ConfigSchema.Glass.CAPTURE_BLEED_TOP.exportDefault());
-        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback());
-        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.uiDefault());
-        assertEquals(Integer.valueOf(16), ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.exportDefault());
-        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.CAPTURE_BLEED_TOP.storageMode());
-        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.storageMode());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_TOP.runtimeFallback());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_TOP.uiDefault());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_TOP.exportDefault());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.runtimeFallback());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.uiDefault());
+        assertEquals(Integer.valueOf(0), ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.exportDefault());
+        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.SAMPLING_EXTRA_TOP.storageMode());
+        assertEquals(ConfigKey.StorageMode.DIRECT, ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.storageMode());
 
         assertEquals(Integer.valueOf(4), ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.runtimeFallback());
         assertEquals(Integer.valueOf(1), ConfigSchema.Dock.SQUIRCLE_STROKE_WIDTH.uiDefault());
@@ -127,10 +127,10 @@ public class ConfigSchemaTest {
         assertComposeIntSpec(ConfigSchema.Glass.LENS_REFRACTION, 1, 0, 60);
         assertComposeIntSpec(ConfigSchema.Glass.DEPTH_EFFECT, 0, 0, 100);
         assertComposeIntSpec(ConfigSchema.Glass.CHROMATIC, 26, 0, 40);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_TOP, 48, 0, 256);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM, 16, 0, 256);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_LEFT, 0, 0, 256);
-        assertComposeIntSpec(ConfigSchema.Glass.CAPTURE_BLEED_RIGHT, 0, 0, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_TOP, 0, -256, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM, 0, -256, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_LEFT, 0, -256, 256);
+        assertComposeIntSpec(ConfigSchema.Glass.SAMPLING_EXTRA_RIGHT, 0, -256, 256);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_ALPHA, 35, 0, 160);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_RED, 0, 0, 255);
         assertComposeIntSpec(ConfigSchema.Glass.TINT_GREEN, 0, 0, 255);

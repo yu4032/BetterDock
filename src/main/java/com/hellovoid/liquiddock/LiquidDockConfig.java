@@ -203,8 +203,8 @@ final class LiquidDockConfig {
                 prismalDispersionR, prismalDispersionB, prismalVibrancy, prismalPlainHighlight,
                 prismalLightDirX, prismalLightDirY, prismalShadowSoftness, prismalTransmittance,
                 prismalBackdropScaleX, prismalBackdropScaleY, prismalParallaxScale;
-        final int captureBleedTopPx, captureBleedBottomPx,
-                captureBleedLeftPx, captureBleedRightPx;
+        final int samplingExtraTopPx, samplingExtraBottomPx,
+                samplingExtraLeftPx, samplingExtraRightPx;
         final int tintAlpha, tintR, tintG, tintB, specularSharp,
                 prismalShadowR, prismalShadowG, prismalShadowB, prismalShadowAlpha;
 
@@ -215,14 +215,14 @@ final class LiquidDockConfig {
             // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),
                     ConfigSchema.Glass.CHROMATIC.runtimeFallback());
-            captureBleedTopPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_TOP.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_TOP.runtimeFallback()), 0, 256);
-            captureBleedBottomPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_BOTTOM.runtimeFallback()), 0, 256);
-            captureBleedLeftPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_LEFT.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_LEFT.runtimeFallback()), 0, 256);
-            captureBleedRightPx = clamp(c.i(ConfigSchema.Glass.CAPTURE_BLEED_RIGHT.name(),
-                    ConfigSchema.Glass.CAPTURE_BLEED_RIGHT.runtimeFallback()), 0, 256);
+            samplingExtraTopPx = clamp(c.i(ConfigSchema.Glass.SAMPLING_EXTRA_TOP.name(),
+                    ConfigSchema.Glass.SAMPLING_EXTRA_TOP.runtimeFallback()), -256, 256);
+            samplingExtraBottomPx = clamp(c.i(ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.name(),
+                    ConfigSchema.Glass.SAMPLING_EXTRA_BOTTOM.runtimeFallback()), -256, 256);
+            samplingExtraLeftPx = clamp(c.i(ConfigSchema.Glass.SAMPLING_EXTRA_LEFT.name(),
+                    ConfigSchema.Glass.SAMPLING_EXTRA_LEFT.runtimeFallback()), -256, 256);
+            samplingExtraRightPx = clamp(c.i(ConfigSchema.Glass.SAMPLING_EXTRA_RIGHT.name(),
+                    ConfigSchema.Glass.SAMPLING_EXTRA_RIGHT.runtimeFallback()), -256, 256);
             tintAlpha = channel(c.i(ConfigSchema.Glass.TINT_ALPHA.name(),
                     ConfigSchema.Glass.TINT_ALPHA.runtimeFallback()));
             thickness = c.f(ConfigSchema.Glass.THICKNESS.name(),

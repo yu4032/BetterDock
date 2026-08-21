@@ -98,10 +98,10 @@ public class ConfigPresetTest {
         expected.put("liquid_thickness_tenths", 180);
         expected.put("liquid_lens_refraction", 1);
         expected.put("liquid_lens_refraction_tenths", 13);
-        expected.put("liquid_capture_bleed_top", 48);
-        expected.put("liquid_capture_bleed_bottom", 16);
-        expected.put("liquid_capture_bleed_left", 0);
-        expected.put("liquid_capture_bleed_right", 0);
+        expected.put("liquid_sampling_extra_top", 0);
+        expected.put("liquid_sampling_extra_bottom", 0);
+        expected.put("liquid_sampling_extra_left", 0);
+        expected.put("liquid_sampling_extra_right", 0);
         expected.put("liquid_recents_prearm_distance", 8);
         expected.put("liquid_recents_prearm_distance_tenths", 80);
 
