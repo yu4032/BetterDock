@@ -21,7 +21,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Apply shared glass implementation
         run: |
-          base64 -d ci/shared-launcher-glass.patch.gz.b64 | gzip -d > /tmp/shared-launcher-glass.patch
+          cat ci/shared-glass-patch/part-*.txt > /tmp/shared-launcher-glass.patch.gz.b64
+          echo "bbf006ee8b1db614cc4d84e0dad1c7a95f70cefc2382e3c2bd2002e1c19a60e2  /tmp/shared-launcher-glass.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-launcher-glass.patch.gz.b64 | gzip -d > /tmp/shared-launcher-glass.patch
+          echo "f1e3b8d31196a99226d23ad9bded58612e67d83d1a0d854c06fd64ed6fadbd56  /tmp/shared-launcher-glass.patch" | sha256sum -c -
           git apply --check /tmp/shared-launcher-glass.patch
           git apply /tmp/shared-launcher-glass.patch
           git diff --check
