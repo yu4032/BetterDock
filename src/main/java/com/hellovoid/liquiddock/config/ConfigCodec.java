@@ -15,6 +15,10 @@ public final class ConfigCodec {
                     && !preferences.containsKey(key.name())) continue;
             out.put(key.name(), exportValue(key, preferences));
         }
+        if (preferences.containsKey(GridProfileConfig.PROFILE_KEY)) {
+            out.put(GridProfileConfig.PROFILE_KEY, GridProfileConfig.normalizeProfile(
+                    String.valueOf(preferences.get(GridProfileConfig.PROFILE_KEY))));
+        }
         return out;
     }
 
@@ -24,6 +28,10 @@ public final class ConfigCodec {
         for (ConfigKey<?> key : ConfigSchema.all()) {
             if (!isDirectlyImportable(key) || !jsonValues.containsKey(key.name())) continue;
             importValue(key, jsonValues.get(key.name()), out);
+        }
+        if (jsonValues.containsKey(GridProfileConfig.PROFILE_KEY)) {
+            out.put(GridProfileConfig.PROFILE_KEY, GridProfileConfig.normalizeProfile(
+                    String.valueOf(jsonValues.get(GridProfileConfig.PROFILE_KEY))));
         }
         importLegacyHorizontalMargins(jsonValues, out);
         importPreAxisLegacyMargins(jsonValues, out);

@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import androidx.annotation.NonNull;
 
+import com.hellovoid.liquiddock.config.GridProfileConfig;
 import com.hellovoid.liquiddock.config.LegacyConfigMigration;
 
 import io.github.libxposed.api.XposedModule;
@@ -23,11 +24,25 @@ public final class ModuleMain extends XposedModule {
         try {
             LegacyConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
-            LiquidDockConfig runtimeConfig = LiquidDockConfig.load();
+            ConfigReader configReader = ConfigReader.load();
+            LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
+            HomeGridProfile selectedProfile = HomeGridProfile.fromPersisted(
+                    GridProfileConfig.normalizeProfile(configReader.s(
+                            GridProfileConfig.PROFILE_KEY, GridProfileConfig.DEFAULT_PROFILE)));
+            boolean customGridEnabled = runtimeConfig.enabled && runtimeConfig.grid.enabled;
 
             new MainHook().install(classLoader);
-            WorkspaceDropRuleHook.install(classLoader,
-                    runtimeConfig.enabled && runtimeConfig.grid.enabled);
+            HomeGridProfileOverlayHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
+            HomeGridDeviceConfigCountHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
+            HomeGridHorizontalCenteringHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
+            HomeGridVerticalBoundsHook.install(classLoader,
+                    customGridEnabled, selectedProfile, runtimeConfig.grid);
+            WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
+            HomeGridDragBoundsHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
