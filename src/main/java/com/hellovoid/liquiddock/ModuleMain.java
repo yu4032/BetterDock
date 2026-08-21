@@ -41,6 +41,8 @@ public final class ModuleMain extends XposedModule {
             new MainHook().install(classLoader);
             HomeGridProfileOverlayHook.install(classLoader,
                     customGridEnabled, selectedProfile);
+            HomeGridDeviceConfigCountHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
             HomeGridHorizontalCenteringHook.install(classLoader,
                     customGridEnabled, selectedProfile);
             HomeGridVerticalBoundsHook.install(classLoader,
