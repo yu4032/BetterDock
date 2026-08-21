@@ -6,13 +6,7 @@ import java.lang.reflect.Method;
 
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * 10x6-only portrait correction that keeps all ten rows inside CellLayout's real touch bounds.
- *
- * The legacy 8x4 geometry path can derive a negative far/bottom margin when the stock cell size
- * is multiplied by ten rows. That makes mYs place visible rows below the interactive CellLayout
- * content region. Re-fit only the portrait vertical axis and continue reserving MIUI's DockBar.
- */
+/** Fits the 10x6 profile's ten portrait rows inside the live CellLayout bounds. */
 final class HomeGridVerticalBoundsHook {
     private HomeGridVerticalBoundsHook() {}
 
@@ -41,10 +35,8 @@ final class HomeGridVerticalBoundsHook {
                         fitPortraitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
                         return chain.proceed();
                     });
-
-            MainHook.log("[DC][GRID10] portrait vertical touch-bounds correction installed");
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] portrait vertical correction unavailable: " + error);
+            MainHook.log("[DC] 10x6 portrait geometry unavailable: " + error);
         }
     }
 
@@ -61,10 +53,7 @@ final class HomeGridVerticalBoundsHook {
             if (height <= 0) return;
             int countX = HookUtil.getIntField(target, "mHCells");
             int countY = HookUtil.getIntField(target, "mVCells");
-            if (!profile.matchesCounts(countX, countY)
-                    || countY != profile.rows(portrait)) {
-                return;
-            }
+            if (!profile.matchesCounts(countX, countY) || countY != profile.rows(true)) return;
 
             int currentCell = HookUtil.getIntField(target, "mCellHeight");
             int currentGap = HookUtil.getIntField(target, "mHeightGap");
@@ -77,15 +66,11 @@ final class HomeGridVerticalBoundsHook {
                 if (value instanceof Integer) dockBarHeight = Math.max(0, (Integer) value);
             } catch (Throwable ignored) {}
 
-            float scale = grid.dp
-                    ? view.getResources().getDisplayMetrics().density : 1f;
-            int topAdjustment = Math.round(grid.portraitTop * scale);
-            int bottomAdjustment = Math.round(grid.portraitBottom * scale);
-
-            HomeGridVerticalBoundsPolicy.Geometry geometry =
-                    HomeGridVerticalBoundsPolicy.resolve(
-                            height, countY, currentCell, currentGap, dockBarHeight,
-                            topAdjustment, bottomAdjustment);
+            float scale = grid.dp ? view.getResources().getDisplayMetrics().density : 1f;
+            HomeGridVerticalBoundsPolicy.Geometry geometry = HomeGridVerticalBoundsPolicy.resolve(
+                    height, countY, currentCell, currentGap, dockBarHeight,
+                    Math.round(grid.portraitTop * scale),
+                    Math.round(grid.portraitBottom * scale));
             if (geometry.cellSize <= 0) return;
 
             int oldTop = HookUtil.getIntField(target, "mCellPaddingTop");
@@ -102,18 +87,8 @@ final class HomeGridVerticalBoundsHook {
             HookUtil.setIntField(target, "mCellHeight", geometry.cellSize);
             HookUtil.setIntField(target, "mHeightGap", geometry.gap);
             rebuildYs(target, countY, geometry.top, geometry.cellSize, geometry.gap);
-
-            MainHook.log("[DC][GRID10] portrait vertical fit height=" + height
-                    + " rows=" + countY
-                    + " oldLast=" + oldLastBottom
-                    + " top=" + geometry.top
-                    + " bottom=" + geometry.bottom
-                    + " dock=" + geometry.dockBarHeight
-                    + " last=" + geometry.lastRowBottom(countY)
-                    + " cell=" + geometry.cellSize
-                    + " gap=" + geometry.gap);
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] portrait vertical correction failed: " + error);
+            MainHook.log("[DC] 10x6 portrait geometry failed: " + error);
         }
     }
 
