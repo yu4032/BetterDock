@@ -50,6 +50,8 @@ public final class ModuleMain extends XposedModule {
             HomeGridRotationBridge.install(classLoader,
                     customGridEnabled, selectedProfile);
             WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
+            HomeGridDragBoundsHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
             HomeGridDragCoordinateProbe.install(classLoader,
                     customGridEnabled, selectedProfile);
             if (customGridEnabled) {
