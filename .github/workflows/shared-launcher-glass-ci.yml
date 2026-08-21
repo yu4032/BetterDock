@@ -29,7 +29,7 @@ jobs:
           git apply /tmp/shared-launcher-glass.patch
           git apply --check ci/shared-glass-config-test.patch
           git apply ci/shared-glass-config-test.patch
-          cat ci/shared-glass-inroot/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
+          cat ci/shared-glass-inroot-v2/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
           echo "fd3178441abda2c3e2d9c57c08f9225c4600c867ad7a9c8e30fb81379e7fabb9  /tmp/shared-glass-inroot.patch.gz.b64" | sha256sum -c -
           base64 -d /tmp/shared-glass-inroot.patch.gz.b64 | gzip -d > /tmp/shared-glass-inroot.patch
           echo "8e736befc09e8f0d288f2a4a8fb36f13f91062d7c4f58f4f947fc00075fb368f  /tmp/shared-glass-inroot.patch" | sha256sum -c -
