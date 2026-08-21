@@ -4,15 +4,7 @@ import java.lang.reflect.Method;
 
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * 10x6-only correction for the legacy HomeGridHook horizontal geometry.
- *
- * HomeGridHook historically derives a non-negative left baseline but allows the derived right
- * baseline to become negative when the old source cell size no longer fits a larger column count.
- * In 10x6 that makes an ostensibly symmetric horizontal-distance adjustment translate the whole
- * grid. Keep the already-resolved left edge as the user's requested symmetric margin and solve the
- * horizontal cell/gap geometry again from width - 2 * margin.
- */
+/** Keeps the 10x6 horizontal grid centered when the legacy source cell size no longer fits. */
 final class HomeGridHorizontalCenteringHook {
     private HomeGridHorizontalCenteringHook() {}
 
@@ -41,10 +33,8 @@ final class HomeGridHorizontalCenteringHook {
                         centerHorizontalGeometry(chain.getThisObject(), selectedProfile);
                         return chain.proceed();
                     });
-
-            MainHook.log("[DC][GRID10] symmetric horizontal geometry correction installed");
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] horizontal centering correction unavailable: " + error);
+            MainHook.log("[DC] 10x6 horizontal centering unavailable: " + error);
         }
     }
 
@@ -85,12 +75,8 @@ final class HomeGridHorizontalCenteringHook {
             HookUtil.setIntField(target, "mCellWidth", geometry.cellSize);
             HookUtil.setIntField(target, "mWidthGap", geometry.gap);
             rebuildXs(target, countX, geometry.left, geometry.cellSize, geometry.gap);
-            MainHook.log("[DC][GRID10] centered horizontal geometry width=" + width
-                    + " cells=" + countX + " left=" + geometry.left
-                    + " right=" + geometry.right(width, countX)
-                    + " cell=" + geometry.cellSize + " gap=" + geometry.gap);
         } catch (Throwable error) {
-            MainHook.log("[DC][GRID10] horizontal centering correction failed: " + error);
+            MainHook.log("[DC] 10x6 horizontal centering failed: " + error);
         }
     }
 
