@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feat/shared-launcher-glass-session
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
