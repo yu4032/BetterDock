@@ -26,16 +26,9 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             ConfigReader configReader = ConfigReader.load();
             LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
-
-            // This branch is a dedicated 10x6 experiment. Existing users still control whether
-            // custom grid hooks run through the established home_grid_8x4 master switch, but an
-            // absent profile key selects 10x6 here instead of changing the production UI/schema.
-            String selectedProfileValue = configReader.has(GridProfileConfig.PROFILE_KEY)
-                    ? configReader.s(GridProfileConfig.PROFILE_KEY,
-                            GridProfileConfig.DEFAULT_PROFILE)
-                    : "10x6";
             HomeGridProfile selectedProfile = HomeGridProfile.fromPersisted(
-                    GridProfileConfig.normalizeProfile(selectedProfileValue));
+                    GridProfileConfig.normalizeProfile(configReader.s(
+                            GridProfileConfig.PROFILE_KEY, GridProfileConfig.DEFAULT_PROFILE)));
             boolean customGridEnabled = runtimeConfig.enabled && runtimeConfig.grid.enabled;
 
             new MainHook().install(classLoader);
@@ -47,16 +40,9 @@ public final class ModuleMain extends XposedModule {
                     customGridEnabled, selectedProfile);
             HomeGridVerticalBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile, runtimeConfig.grid);
-            HomeGridRotationBridge.install(classLoader,
-                    customGridEnabled, selectedProfile);
             WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
             HomeGridDragBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile);
-            HomeGridDragCoordinateProbe.install(classLoader,
-                    customGridEnabled, selectedProfile);
-            if (customGridEnabled) {
-                Api101Bridge.log("[DC] home grid profile=" + selectedProfile.persistedValue());
-            }
         } catch (Throwable error) {
             Api101Bridge.log("[DC] API101 package init failed", error);
         }
