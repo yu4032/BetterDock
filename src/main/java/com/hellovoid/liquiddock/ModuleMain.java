@@ -43,6 +43,8 @@ public final class ModuleMain extends XposedModule {
                     customGridEnabled, selectedProfile);
             HomeGridHorizontalCenteringHook.install(classLoader,
                     customGridEnabled, selectedProfile);
+            HomeGridVerticalBoundsHook.install(classLoader,
+                    customGridEnabled, selectedProfile, runtimeConfig.grid);
             HomeGridRotationBridge.install(classLoader,
                     customGridEnabled, selectedProfile);
             WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
