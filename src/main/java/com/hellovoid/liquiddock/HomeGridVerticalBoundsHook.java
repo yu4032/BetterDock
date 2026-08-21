@@ -6,13 +6,13 @@ import java.lang.reflect.Method;
 
 import io.github.libxposed.api.XposedInterface;
 
-/** Fits the 10x6 profile's ten portrait rows inside the live CellLayout bounds. */
+/** Owns custom-grid vertical geometry independently from horizontal width. */
 final class HomeGridVerticalBoundsHook {
     private HomeGridVerticalBoundsHook() {}
 
     static void install(ClassLoader classLoader, boolean customGridEnabled,
                         HomeGridProfile selectedProfile, LiquidDockConfig.Grid grid) {
-        if (!customGridEnabled || selectedProfile != HomeGridProfile.GRID_10X6) return;
+        if (!customGridEnabled || selectedProfile == null) return;
         try {
             Class<?> cellLayout = Class.forName(
                     "com.miui.home.launcher.CellLayout", false, classLoader);
@@ -23,7 +23,7 @@ final class HomeGridVerticalBoundsHook {
                     .setPriority(XposedInterface.PRIORITY_HIGHEST)
                     .intercept(chain -> {
                         Object result = chain.proceed();
-                        fitPortraitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
+                        fitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
                         return result;
                     });
 
@@ -32,70 +32,89 @@ final class HomeGridVerticalBoundsHook {
             Api101Bridge.module().hook(onLayout)
                     .setPriority(XposedInterface.PRIORITY_LOWEST)
                     .intercept(chain -> {
-                        fitPortraitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
-                        return chain.proceed();
+                        fitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
+                        Object result = chain.proceed();
+                        fitVerticalGeometry(chain.getThisObject(), selectedProfile, grid);
+                        return result;
                     });
         } catch (Throwable error) {
-            MainHook.log("[DC] 10x6 portrait geometry unavailable: " + error);
+            MainHook.log("[DC] custom-grid vertical geometry unavailable: " + error);
         }
     }
 
-    private static void fitPortraitVerticalGeometry(Object target, HomeGridProfile profile,
-                                                     LiquidDockConfig.Grid grid) {
+    private static void fitVerticalGeometry(Object target, HomeGridProfile profile,
+                                            LiquidDockConfig.Grid grid) {
         if (!(target instanceof android.view.View) || MainHook.isWorkstationMode()) return;
         try {
             android.view.View view = (android.view.View) target;
             boolean portrait = view.getResources().getConfiguration().orientation
                     == Configuration.ORIENTATION_PORTRAIT;
-            if (!portrait) return;
-
             int height = view.getHeight();
             if (height <= 0) return;
+
             int countX = HookUtil.getIntField(target, "mHCells");
             int countY = HookUtil.getIntField(target, "mVCells");
-            if (!profile.matchesCounts(countX, countY) || countY != profile.rows(true)) return;
+            if (!profile.matchesCounts(countX, countY)) return;
+            int rows = profile.rows(portrait);
+            if (countY != rows) return;
 
-            int currentCell = HookUtil.getIntField(target, "mCellHeight");
-            int currentGap = HookUtil.getIntField(target, "mHeightGap");
-            if (currentCell <= 0) return;
+            Object gridConfig = HookUtil.getField(target, "mGridConfig");
+            if (gridConfig == null) return;
+            int sourceCell = 0;
+            try {
+                Object value = HookUtil.invoke(gridConfig, "getCellSize");
+                if (value instanceof Integer) sourceCell = (Integer) value;
+            } catch (Throwable ignored) {}
+            if (sourceCell <= 0) {
+                try { sourceCell = HookUtil.getIntField(gridConfig, "cellSize"); }
+                catch (Throwable ignored) {}
+            }
+            if (sourceCell <= 0) return;
 
             int dockBarHeight = 0;
             try {
-                Object gridConfig = HookUtil.getField(target, "mGridConfig");
                 Object value = HookUtil.invoke(gridConfig, "getDockBarHeight");
                 if (value instanceof Integer) dockBarHeight = Math.max(0, (Integer) value);
             } catch (Throwable ignored) {}
 
-            float scale = grid.dp ? view.getResources().getDisplayMetrics().density : 1f;
-            HomeGridVerticalBoundsPolicy.Geometry geometry = HomeGridVerticalBoundsPolicy.resolve(
-                    height, countY, currentCell, currentGap, dockBarHeight,
-                    Math.round(grid.portraitTop * scale),
-                    Math.round(grid.portraitBottom * scale));
+            float density = view.getResources().getDisplayMetrics().density;
+            float scale = grid.dp ? density : 1f;
+            int baseGap = Math.max(1, Math.round(density));
+            float configuredGap = portrait ? grid.portraitRowGap : grid.landscapeRowGap;
+            if (!grid.offsets) configuredGap -= grid.dp ? 1f : 3f;
+            int gapAdjustment = Math.round(configuredGap * scale);
+            int topAdjustment = Math.round(
+                    (portrait ? grid.portraitTop : grid.landscapeTop) * scale);
+            int bottomAdjustment = Math.round(
+                    (portrait ? grid.portraitBottom : grid.landscapeBottom) * scale);
+
+            HomeGridVerticalBoundsPolicy.Geometry geometry =
+                    HomeGridVerticalBoundsPolicy.resolve(
+                            height, rows, sourceCell, baseGap, gapAdjustment,
+                            dockBarHeight, topAdjustment, bottomAdjustment);
             if (geometry.cellSize <= 0) return;
 
             int oldTop = HookUtil.getIntField(target, "mCellPaddingTop");
             int oldCell = HookUtil.getIntField(target, "mCellHeight");
             int oldGap = HookUtil.getIntField(target, "mHeightGap");
-            int oldLastBottom = oldTop + oldCell * countY
-                    + oldGap * Math.max(0, countY - 1);
             if (oldTop == geometry.top && oldCell == geometry.cellSize
-                    && oldGap == geometry.gap && oldLastBottom <= height) {
+                    && oldGap == geometry.gap) {
                 return;
             }
 
             HookUtil.setIntField(target, "mCellPaddingTop", geometry.top);
             HookUtil.setIntField(target, "mCellHeight", geometry.cellSize);
             HookUtil.setIntField(target, "mHeightGap", geometry.gap);
-            rebuildYs(target, countY, geometry.top, geometry.cellSize, geometry.gap);
+            rebuildYs(target, rows, geometry.top, geometry.cellSize, geometry.gap);
         } catch (Throwable error) {
-            MainHook.log("[DC] 10x6 portrait geometry failed: " + error);
+            MainHook.log("[DC] custom-grid vertical geometry failed: " + error);
         }
     }
 
-    private static void rebuildYs(Object target, int countY, int top,
+    private static void rebuildYs(Object target, int rows, int top,
                                   int cellSize, int gap) throws Exception {
-        int[] ys = new int[countY];
-        for (int y = 0; y < countY; y++) {
+        int[] ys = new int[rows];
+        for (int y = 0; y < rows; y++) {
             ys[y] = top + y * (cellSize + gap);
         }
         HookUtil.setField(target, "mYs", ys);
