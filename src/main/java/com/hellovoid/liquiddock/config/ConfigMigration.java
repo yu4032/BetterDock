@@ -2,6 +2,11 @@ package com.hellovoid.liquiddock.config;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Resources;
+import android.util.Log;
+
+import com.hellovoid.liquiddock.Api101Bridge;
+import com.hellovoid.liquiddock.ConfigReader;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,15 +18,42 @@ public final class ConfigMigration {
 
     private ConfigMigration() { }
 
+    /**
+     * Upgrade the injected Launcher's API101 Remote Preferences before any runtime snapshot is
+     * created. This is intentionally independent of the settings Activity lifecycle: a system or
+     * Launcher restart after an app update must never execute current hooks against stale units.
+     */
+    public static void migrateAtProcessStart() {
+        try {
+            SharedPreferences remote =
+                    Api101Bridge.remotePreferences(ConfigReader.REMOTE_GROUP);
+            if (remote == null) return;
+            migrateWithDensity(Resources.getSystem().getDisplayMetrics().density, remote);
+        } catch (Throwable error) {
+            // Migration failure must not prevent Launcher from loading already-valid settings or
+            // defaults. Keep this visible even when LiquidDock debug logging is disabled.
+            Log.w("LiquidDock", "Failed to migrate API101 Remote Preferences", error);
+        }
+    }
+
     public static void migrate(Context context, SharedPreferences preferences) {
+        float density = context == null
+                ? Resources.getSystem().getDisplayMetrics().density
+                : context.getResources().getDisplayMetrics().density;
+        migrateWithDensity(density, preferences);
+    }
+
+    private static void migrateWithDensity(float density, SharedPreferences preferences) {
+        if (preferences == null) return;
+        float safeDensity = Math.max(0.1f, density);
         removeRetiredGlassPreferences(preferences);
         resetUnsupportedGlassConfigGeneration(preferences);
         migrateMergedHorizontal(preferences);
         migrateLegacyGridKeys(preferences);
-        migrateGridToDp(context, preferences);
+        migrateGridToDp(safeDensity, preferences);
         migrateGridToOffsets(preferences);
-        migrateCornersToDp(context, preferences);
-        migrateDockDimensionsToDp(context, preferences);
+        migrateCornersToDp(safeDensity, preferences);
+        migrateDockDimensionsToDp(safeDensity, preferences);
         migrateAxisDistances(preferences);
     }
 
@@ -142,9 +174,9 @@ public final class ConfigMigration {
         e.putInt(key + "_tenths", tenthsDpValue(value));
     }
 
-    private static void migrateDockDimensionsToDp(Context context, SharedPreferences sp) {
+    private static void migrateDockDimensionsToDp(float density, SharedPreferences sp) {
         if (sp.getBoolean("dock_dimensions_dp", false)) return;
-        float density = Math.max(1f, context.getResources().getDisplayMetrics().density);
+        float safeDensity = Math.max(1f, density);
         String[] keys = {"height_offset", "width_offset", "dock_spacing", "dock_bottom_offset",
                 "indicator_landscape_y", "indicator_portrait_y", "sq_stroke_w", "sq_stroke_off",
                 "stroke_w", "std_stroke_w", "dock_shadow_radius", "dock_shadow_size",
@@ -152,7 +184,7 @@ public final class ConfigMigration {
         int[] defaults = {0, 0, 0, 0, 0, 0, 4, 8, 2, 4, 42, 52, 12, 8};
         SharedPreferences.Editor e = sp.edit();
         for (int i = 0; i < keys.length; i++) {
-            e.putInt(keys[i], Math.round(sp.getInt(keys[i], defaults[i]) / density));
+            e.putInt(keys[i], Math.round(sp.getInt(keys[i], defaults[i]) / safeDensity));
         }
         e.putBoolean("dock_dimensions_dp", true).commit();
     }
@@ -193,9 +225,8 @@ public final class ConfigMigration {
         }
     }
 
-    private static void migrateGridToDp(Context context, SharedPreferences sp) {
+    private static void migrateGridToDp(float density, SharedPreferences sp) {
         if (!sp.getBoolean("grid_margins_dp", false)) {
-            float density = context.getResources().getDisplayMetrics().density;
             String[] keys = {
                 "grid_landscape_margin_left", "grid_landscape_margin_right",
                 "grid_landscape_margin_top", "grid_landscape_margin_bottom",
@@ -238,9 +269,8 @@ public final class ConfigMigration {
         }
     }
 
-    private static void migrateCornersToDp(Context context, SharedPreferences sp) {
+    private static void migrateCornersToDp(float density, SharedPreferences sp) {
         if (!sp.getBoolean("corners_dp", false)) {
-            float density = context.getResources().getDisplayMetrics().density;
             SharedPreferences.Editor corners = sp.edit();
             corners.putInt("corner_offset", sp.contains("corner_offset")
                 ? Math.round(sp.getInt("corner_offset", -1) / density) : -1);
