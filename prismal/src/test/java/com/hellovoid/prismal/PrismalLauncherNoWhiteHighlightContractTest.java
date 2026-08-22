@@ -9,7 +9,7 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Locks the launcher-only diagnostic that removes all white additive highlight paths. */
+/** Locks the compact-launcher policy that removes incompatible upstream white highlight paths. */
 public class PrismalLauncherNoWhiteHighlightContractTest {
     private static final Path SUPPRESSOR = Path.of(
             "src/main/java/com/hellovoid/prismal/PrismalLauncherHighlightSuppressionShader.java");
@@ -37,7 +37,7 @@ public class PrismalLauncherNoWhiteHighlightContractTest {
         assertFalse(shader.contains("color += caust * vec3"));
         assertFalse(shader.contains("color += vec3(1.0) * pressGlow"));
 
-        // The diagnostic must not disable the actual background/refraction path.
+        // The compact policy must not disable the actual background/refraction path.
         assertTrue(shader.contains("texture2D(u_backgroundTexture"));
         assertTrue(shader.contains("vec2 baseOffset = (dLens * lensDir) / u_resolution;"));
     }
