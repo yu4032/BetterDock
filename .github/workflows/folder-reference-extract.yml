@@ -58,6 +58,7 @@ jobs:
           mkdir -p /tmp/folder-reference
           cp src/main/java/com/hellovoid/liquiddock/LauncherGlass*.java /tmp/folder-reference/
           cp src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java /tmp/folder-reference/
+          cp prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java /tmp/folder-reference/MaterializedPrismalRenderer.java
 
       - uses: actions/upload-artifact@v4
         with:
