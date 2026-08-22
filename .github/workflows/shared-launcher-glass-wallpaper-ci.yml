@@ -1,0 +1,117 @@
+name: Shared launcher glass wallpaper-only CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply validated shared glass baseline
+        run: |
+          cat ci/shared-glass-patch/part-*.txt > /tmp/shared-launcher-glass.patch.gz.b64
+          echo "bbf006ee8b1db614cc4d84e0dad1c7a95f70cefc2382e3c2bd2002e1c19a60e2  /tmp/shared-launcher-glass.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-launcher-glass.patch.gz.b64 | gzip -d > /tmp/shared-launcher-glass.patch
+          echo "f1e3b8d31196a99226d23ad9bded58612e67d83d1a0d854c06fd64ed6fadbd56  /tmp/shared-launcher-glass.patch" | sha256sum -c -
+          git apply --check /tmp/shared-launcher-glass.patch
+          git apply /tmp/shared-launcher-glass.patch
+          git apply --check ci/shared-glass-config-test.patch
+          git apply ci/shared-glass-config-test.patch
+
+          cat ci/shared-glass-inroot-v2/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
+          echo "fd3178441abda2c3e2d9c57c08f9225c4600c867ad7a9c8e30fb81379e7fabb9  /tmp/shared-glass-inroot.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-inroot.patch.gz.b64 | gzip -d > /tmp/shared-glass-inroot.patch
+          echo "8e736befc09e8f0d288f2a4a8fb36f13f91062d7c4f58f4f947fc00075fb368f  /tmp/shared-glass-inroot.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-inroot.patch
+          git apply /tmp/shared-glass-inroot.patch
+
+          cat ci/shared-glass-lifecycle-v1/part-*.txt > /tmp/shared-glass-lifecycle.patch.gz.b64
+          echo "2cc27b1c2784be21194ea7ba3517529e904dadfb6257e353d042c2b798410af3  /tmp/shared-glass-lifecycle.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-lifecycle.patch.gz.b64 | gzip -d > /tmp/shared-glass-lifecycle.patch
+          echo "68571f616dea79ef9c99940518219ded46293541a9054261e6f4dba7b9cda63f  /tmp/shared-glass-lifecycle.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-lifecycle.patch
+          git apply /tmp/shared-glass-lifecycle.patch
+
+          cat ci/shared-glass-gpu-atlas-v1/part-*.txt > /tmp/shared-glass-gpu-atlas.patch.gz.b64
+          echo "6e855caac8b07b3025044ce02a86de6fc2e08056406ef947c8335f2cf9483681  /tmp/shared-glass-gpu-atlas.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-gpu-atlas.patch.gz.b64 | gzip -d > /tmp/shared-glass-gpu-atlas.patch
+          echo "07d9fba07c88083a8b1a648ebf24436be380acfd64b7899fd640145af6489473  /tmp/shared-glass-gpu-atlas.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-gpu-atlas.patch
+          git apply /tmp/shared-glass-gpu-atlas.patch
+
+          if [ -f ci/shared-glass-contract-test.patch ]; then
+            git apply --check ci/shared-glass-contract-test.patch
+            git apply ci/shared-glass-contract-test.patch
+          fi
+          git diff --check
+
+      - name: Disable Launcher scene capture and keep PassBlur wallpaper source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/main/java/com/hellovoid/liquiddock/hook/LauncherGlassSession.java')
+          text = path.read_text()
+          original = text
+
+          class_match = re.search(r'(?m)^(\s*)(?:final\s+)?class\s+LauncherGlassSession\s*\{', text)
+          if not class_match:
+              raise SystemExit('LauncherGlassSession class declaration not found')
+          insert_at = class_match.end()
+          constant = '\n    private static final boolean LAUNCHER_SCENE_CAPTURE_ENABLED = false;\n'
+          if 'LAUNCHER_SCENE_CAPTURE_ENABLED' not in text:
+              text = text[:insert_at] + constant + text[insert_at:]
+
+          def guard_method(src: str, method_name: str):
+              pattern = re.compile(r'(?m)^(\s*)(?:(?:private|protected|public)\s+)?(?:static\s+)?void\s+' + re.escape(method_name) + r'\s*\([^)]*\)\s*\{')
+              m = pattern.search(src)
+              if not m:
+                  return src, False
+              body = m.end()
+              tail = src[body:body+260]
+              if 'LAUNCHER_SCENE_CAPTURE_ENABLED' in tail:
+                  return src, True
+              indent = m.group(1) + '    '
+              guard = '\n' + indent + 'if (!LAUNCHER_SCENE_CAPTURE_ENABLED) {\n' + indent + '    return;\n' + indent + '}\n'
+              return src[:body] + guard + src[body:], True
+
+          # The public scheduling entry point must be a no-op for wallpaper-only mode.
+          text, guarded_request = guard_method(text, 'requestLauncherCapture')
+          if not guarded_request:
+              # tolerate a renamed private entry point, but require an identifiable launcher capture scheduler
+              candidates = re.findall(r'(?m)^\s*(?:(?:private|protected|public)\s+)?(?:static\s+)?void\s+(\w*Launcher\w*Capture\w*)\s*\(', text)
+              if not candidates:
+                  raise SystemExit('No Launcher capture method found')
+              for name in dict.fromkeys(candidates):
+                  text, _ = guard_method(text, name)
+          else:
+              # Also hard-guard any direct UI capture method so no alternate call can create HardwareRenderer work.
+              for name in dict.fromkeys(re.findall(r'(?m)^\s*(?:(?:private|protected|public)\s+)?(?:static\s+)?void\s+(\w*Launcher\w*Capture\w*)\s*\(', text)):
+                  text, _ = guard_method(text, name)
+
+          if text == original:
+              raise SystemExit('Wallpaper-only transform made no source change')
+          path.write_text(text)
+          PY
+          git diff --check
+          grep -n "LAUNCHER_SCENE_CAPTURE_ENABLED" src/main/java/com/hellovoid/liquiddock/hook/LauncherGlassSession.java
+
+      - run: chmod +x ./gradlew
+      - run: ./gradlew testDebugUnitTest --stacktrace
+      - run: ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-shared-launcher-glass-wallpaper-only-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
