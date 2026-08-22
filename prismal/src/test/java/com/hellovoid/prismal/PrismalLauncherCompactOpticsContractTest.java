@@ -53,4 +53,23 @@ public class PrismalLauncherCompactOpticsContractTest {
         assertTrue("Dock must reuse the same shared chroma correction",
                 dock.contains("PrismalPixelDomainChromaShader.apply(corrected)"));
     }
+
+    @Test
+    public void runtimeCompactTransformReplacesEveryTargetExactly() {
+        String shader = PrismalLauncherCompactShader.apply(PrismalShaderSources.FRAGMENT);
+
+        assertTrue(shader.contains("vec2 compactCoord = cKy / max(halfSz, vec2(1.0));"));
+        assertTrue(shader.contains("float lensRh = max(refractionHeight, minDim);"));
+        assertTrue(shader.contains("vec2 baseOffset = (dLens * lensDir) / u_resolution;"));
+        assertTrue(shader.contains(
+                "vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);"));
+        assertTrue(shader.contains(
+                "vec2 chromaPush = (dispDir * chromaBase * pxNorm * minDim) / u_resolution;"));
+
+        assertFalse(shader.contains("u_lensDepthEffect * normalize(cenSafe)"));
+        assertFalse(shader.contains("lensDeltaUv += parallax"));
+        assertFalse(shader.contains("vec2 snellOff ="));
+        assertFalse(shader.contains("vec2 bulgeUv ="));
+        assertFalse(shader.contains("vec2 chromaPush = dispDir * chromaBase * pxNorm;"));
+    }
 }
