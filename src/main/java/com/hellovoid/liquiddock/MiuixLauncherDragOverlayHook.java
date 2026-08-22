@@ -123,7 +123,7 @@ final class MiuixLauncherDragOverlayHook {
             ViewGroup dragContainer, View child, LiquidDockConfig.Glass glassConfig) {
         if (!isDragContainer(dragContainer) || !isActualDragView(child)
                 || ACTIVE.containsKey(child)) return;
-        child.postOnAnimation(() -> beginWhenReady(child, glassConfig, 0));
+        beginWhenReady(child, glassConfig, 0);
     }
 
     private static void beginWhenReady(
