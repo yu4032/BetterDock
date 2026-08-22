@@ -43,7 +43,7 @@ public class PrismalSizeAdaptiveOpticsContractTest {
     }
 
     @Test
-    public void compactGlassUsesRadialCenterFadeInsteadOfRoundedBoxDepth() throws Exception {
+    public void compactGlassOnlyChangesFaceLightingStrength() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
@@ -52,9 +52,7 @@ public class PrismalSizeAdaptiveOpticsContractTest {
                 "float compactSpecScale = mix(1.0, 0.30, compactGlass);",
                 "float compactCausticScale = mix(1.0, 0.15, compactGlass);",
                 "float compactHighlightScale = mix(1.0, 0.40, compactGlass);",
-                "vec2 compactNorm = pPx / max(halfSz, vec2(1.0));",
-                "float compactRadius = length(compactNorm);",
-                "float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, compactRadius), compactGlass);",
+                "float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, opticalRadius), compactGlass);",
                 "float sp = u_specular * 1.05 * specSizeScale * compactSpecScale;",
                 "color += (specP + specS) * deepCenterFade * compactCenterFade * vec3(0.99, 0.993, 1.0);",
                 "plusHL *= mix(0.42, 0.06, smallGlass) * highlightSizeScale * compactHighlightScale * deepCenterFade * compactCenterFade;",
@@ -67,43 +65,41 @@ public class PrismalSizeAdaptiveOpticsContractTest {
     }
 
     @Test
-    public void deepInteriorOpticsUseContinuousRadialDirection() throws Exception {
+    public void everyGlassSizeUsesContinuousRadialInteriorSurface() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
         String[] required = {
-                "vec2 opticalRadialRaw = cKy / max(halfSz, vec2(1.0));",
-                "float opticalRadialLen = length(opticalRadialRaw);",
-                "vec2 opticalRadial = opticalRadialLen > 1e-5 ? opticalRadialRaw / opticalRadialLen : vec2(0.0);",
-                "vec2 opticalEdgeDir = normalize(gradLens + vec2(1e-5));",
-                "float opticalInteriorW = smoothstep(0.12, 0.52, tDeep);",
-                "vec2 opticalBlend = mix(opticalEdgeDir, opticalRadial, opticalInteriorW);",
-                "float opticalBlendLen = length(opticalBlend);",
-                "vec2 opticalDir = opticalBlendLen > 1e-5 ? opticalBlend / opticalBlendLen : vec2(0.0);",
-                "vec2 lensDir = opticalDir + u_lensDepthEffect * opticalRadial;",
-                "vec2 parallax = (opticalDir * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;"
+                "vec2 opticalNorm = pPx / max(halfSz, vec2(1.0));",
+                "float opticalRadius = length(opticalNorm);",
+                "float radialHeight = clamp(1.0 - dot(opticalNorm, opticalNorm), 0.0, 1.0);",
+                "vec2 radialGrad = -2.0 * opticalNorm / max(halfSz, vec2(1.0));",
+                "float radialSurfaceW = smoothstep(0.10, 0.48, tDeep);",
+                "height = mix(height, radialHeight, radialSurfaceW);",
+                "gradH = mix(gradH, radialGrad, radialSurfaceW);"
         };
         for (String marker : required) {
             requireBoth(glsl, generated, marker);
         }
 
-        forbidBoth(glsl, generated, "vec2 lensDir = gradLens + u_lensDepthEffect");
-        forbidBoth(glsl, generated, "vec2 parallax = (gradLens * height");
+        forbidBoth(glsl, generated, "float compactCore =");
+        forbidBoth(glsl, generated, "float compactRadialHeight =");
+        forbidBoth(glsl, generated, "vec2 compactRadialGrad =");
+        forbidBoth(glsl, generated, "float opticalInteriorW =");
+        forbidBoth(glsl, generated, "vec2 opticalDir =");
+        forbidBoth(glsl, generated, "vec2 lensDir = opticalDir");
     }
 
     @Test
-    public void compactDeepCoreUsesRadialHeightAndGradientButKeepsRoundedBoundaryMask() throws Exception {
+    public void roundedRectStillOwnsOnlyBoundaryAndEdgeShell() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
         String[] required = {
-                "float compactCore = compactGlass * (1.0 - smoothstep(0.58, 0.98, compactRadius));",
-                "float compactRadialHeight = clamp(1.0 - dot(compactNorm, compactNorm), 0.0, 1.0);",
-                "vec2 compactRadialGrad = -2.0 * compactNorm / max(halfSz, vec2(1.0));",
-                "height = mix(height, compactRadialHeight, compactCore);",
-                "gradH = mix(gradH, compactRadialGrad, compactCore);",
                 "float distMask = sdRoundBox(pPx, halfSz, crMask, u_sminSmoothing);",
-                "float opacity = 1.0 - smoothstep(-inset * 0.5, 0.0, distMask);"
+                "float opacity = 1.0 - smoothstep(-inset * 0.5, 0.0, distMask);",
+                "vec2 gradLens = gradSdRoundedRectRealistic(cKy, halfSz, gradRadius);",
+                "float shellRim = smoothstep(bandR, bandR * 0.06, edgeDist) * smoothstep(-2.2, 0.0, distMask);"
         };
         for (String marker : required) {
             requireBoth(glsl, generated, marker);
