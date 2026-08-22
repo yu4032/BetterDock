@@ -5,7 +5,7 @@ package com.hellovoid.prismal;
  *
  * <p>The highlight is intentionally restricted to a narrow edgeDist band. Its lighting direction
  * comes from compactCoord, the same continuous aspect-normalized field used by compact launcher
- * refraction, so it cannot inherit the rounded-rect gradLens X/Y seam or corner-selector cross.</p>
+ * refraction, so it cannot inherit the rounded-rect axis seam or corner-selector cross.</p>
  */
 final class PrismalLauncherCompactHighlightShader {
     private static final String OUTPUT =
