@@ -30,6 +30,9 @@ final class HomeGridOrientationRuntime {
         HomeGridLayoutSnapshot remembered = memory.load(profile, targetOrientation);
         if (remembered == null || remembered.size() != currentItems.size()) return null;
 
+        boolean targetPortrait = targetOrientation == HomeGridOrientation.PORTRAIT;
+        int targetColumns = profile.columns(targetPortrait);
+        int targetRows = profile.rows(targetPortrait);
         Set<Long> seen = new HashSet<>();
         for (HomeGridItemPosition item : currentItems) {
             if (item == null || !seen.add(item.itemId())) return null;
@@ -37,7 +40,11 @@ final class HomeGridOrientationRuntime {
             if (saved == null
                     || saved.screenId() != item.screenId()
                     || saved.spanX() != item.spanX()
-                    || saved.spanY() != item.spanY()) {
+                    || saved.spanY() != item.spanY()
+                    || !HomeGridDropLegalityPolicy.isLegal(
+                            profile, targetColumns, targetRows,
+                            saved.cellX(), saved.cellY(),
+                            saved.spanX(), saved.spanY())) {
                 return null;
             }
         }
