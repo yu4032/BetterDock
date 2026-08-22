@@ -1,0 +1,55 @@
+name: Folder glass reference extract
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/shared-launcher-glass-session
+          path: old
+
+      - name: Materialize old folder wallpaper-only reference
+        working-directory: old
+        run: |
+          cat ci/shared-glass-patch/part-*.txt > /tmp/shared-launcher-glass.patch.gz.b64
+          base64 -d /tmp/shared-launcher-glass.patch.gz.b64 | gzip -d > /tmp/shared-launcher-glass.patch
+          COMPOSE=src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+          git apply --exclude="$COMPOSE" /tmp/shared-launcher-glass.patch
+          python3 ci/shared_glass_compose_ui_transform.py
+          git apply ci/shared-glass-config-test.patch
+          python3 ci/shared_glass_localization_contract_transform.py
+
+          cat ci/shared-glass-inroot-v2/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
+          base64 -d /tmp/shared-glass-inroot.patch.gz.b64 | gzip -d > /tmp/shared-glass-inroot.patch
+          git apply /tmp/shared-glass-inroot.patch
+
+          cat ci/shared-glass-lifecycle-v1/part-*.txt > /tmp/shared-glass-lifecycle.patch.gz.b64
+          base64 -d /tmp/shared-glass-lifecycle.patch.gz.b64 | gzip -d > /tmp/shared-glass-lifecycle.patch
+          git apply /tmp/shared-glass-lifecycle.patch
+
+          cat ci/shared-glass-gpu-atlas-v1/part-*.txt > /tmp/shared-glass-gpu-atlas.patch.gz.b64
+          base64 -d /tmp/shared-glass-gpu-atlas.patch.gz.b64 | gzip -d > /tmp/shared-glass-gpu-atlas.patch
+          git apply /tmp/shared-glass-gpu-atlas.patch
+          git apply ci/shared-glass-gpu-atlas-contract-fix.patch
+
+          python3 ci/wallpaper_only_transform.py
+          python3 ci/folder_material_refresh_transform.py
+          python3 ci/folder_startup_recovery_transform.py
+
+          mkdir -p /tmp/folder-reference
+          cp src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java /tmp/folder-reference/
+          cp src/main/java/com/hellovoid/liquiddock/LauncherGlassGpuAtlas.java /tmp/folder-reference/
+          cp src/main/java/com/hellovoid/liquiddock/LauncherGlassSinkView.java /tmp/folder-reference/
+          cp src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java /tmp/folder-reference/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folder-glass-reference-sources
+          path: /tmp/folder-reference/*.java
+          if-no-files-found: error
+          retention-days: 1
