@@ -190,6 +190,10 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
             return true;
         }
         boolean changed = false;
+        // Recents changes only ancestor transforms and is intentionally stabilized by the session.
+        // A real folder drag is different: MIUI reparents the material through DragContainer. Mark
+        // every pre-draw there as a local change so root-space geometry is committed immediately.
+        changed |= isInDragContainer(material);
         int width = Math.max(1, material.getWidth());
         int height = Math.max(1, material.getHeight());
         ViewGroup.LayoutParams lp = getLayoutParams();
@@ -210,6 +214,12 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         int visibility = suppressedByFolderOpen ? View.GONE : material.getVisibility();
         if (getVisibility() != visibility) { setVisibility(visibility); changed = true; }
         return changed;
+    }
+
+    private static boolean isInDragContainer(View material) {
+        if (material == null) return false;
+        Object parent = material.getParent();
+        return parent != null && parent.getClass().getName().contains("DragContainer");
     }
 
     LauncherGlassGeometry.Snapshot captureGeometry(View root) {
