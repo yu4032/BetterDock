@@ -14,12 +14,17 @@ import java.util.Map;
  * <p>The caller owns EGL/current-context lifetime and supplies a normal GL_TEXTURE_2D framebuffer
  * texture in GL-native bottom-left orientation. This class standardizes that texture into the
  * orientation used by upstream Prismal, executes Prismal's original 0.5x blur passes and vertex
- * shader, then applies LiquidDock's narrow single-edge transmitted-refraction correction to the
- * vendored upstream fragment before compilation. It returns a transparent full-frame texture
- * containing only the
- * rendered glass. It has no dependency on View, SurfaceTexture, OES, Dock, Xposed, HyperOS, Context, or Resources.</p>
+ * shader, and uses the vendored upstream fragment by default. Dock callers may explicitly select
+ * LiquidDock's narrow single-edge transmitted-refraction correction. It returns a transparent
+ * full-frame texture containing only the rendered glass. It has no dependency on View,
+ * SurfaceTexture, OES, Dock, Xposed, HyperOS, Context, or Resources.</p>
  */
 public final class PrismalRenderer implements AutoCloseable {
+    public enum Mode {
+        UPSTREAM,
+        DOCK_SINGLE_EDGE
+    }
+
     private static final float BLUR_FBO_SCALE = 0.5f;
 
     private static final float[] FULL_QUAD = new float[]{
@@ -65,6 +70,7 @@ public final class PrismalRenderer implements AutoCloseable {
             }
             """;
 
+    private final Mode mode;
     private final FloatBuffer fullQuad;
     private final FloatBuffer glassQuad;
     private final FloatBuffer blurQuad;
@@ -92,6 +98,12 @@ public final class PrismalRenderer implements AutoCloseable {
     private int blurHeight;
 
     public PrismalRenderer() {
+        this(Mode.UPSTREAM);
+    }
+
+    public PrismalRenderer(Mode mode) {
+        if (mode == null) throw new IllegalArgumentException("mode == null");
+        this.mode = mode;
         fullQuad = floatBuffer(FULL_QUAD);
         glassQuad = floatBuffer(GLASS_QUAD);
         blurQuad = floatBuffer(BLUR_QUAD);
@@ -140,7 +152,9 @@ public final class PrismalRenderer implements AutoCloseable {
         sourceProgram = createProgram(SOURCE_VERTEX, SOURCE_FRAGMENT);
         blurHProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_H);
         blurVProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_V);
-        String glassFragment = PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT);
+        String glassFragment = mode == Mode.DOCK_SINGLE_EDGE
+                ? PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT)
+                : PrismalShaderSources.FRAGMENT;
         glassProgram = createProgram(PrismalShaderSources.VERTEX, glassFragment);
         glassUniformLocations.clear();
         if (sourceProgram == 0 || blurHProgram == 0 || blurVProgram == 0 || glassProgram == 0) {
