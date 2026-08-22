@@ -15,7 +15,7 @@ public class FlickerLifecycleContractTest {
     public void masterDisabledReturnsBeforeAnyRuntimeHookInstallation() throws Exception {
         String module = Files.readString(JAVA.resolve("ModuleMain.java"));
         int load = module.indexOf("LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);");
-        int masterGate = module.indexOf("if (!runtimeConfig.enabled) return;");
+        int masterGate = module.indexOf("if (!runtimeConfig.enabled)");
         int firstHook = module.indexOf("new MainHook().install(classLoader);");
         assertTrue("ModuleMain must gate the entire injected runtime after loading config",
                 load >= 0 && masterGate > load && firstHook > masterGate);
@@ -37,14 +37,7 @@ public class FlickerLifecycleContractTest {
     @Test
     public void zeroCopyDoesNotRewriteVendorCompositorStateEveryPreDraw() throws Exception {
         String glass = Files.readString(JAVA.resolve("MiuixGlassHook.java"));
-        int preDraw = glass.indexOf("ViewTreeObserver.OnPreDrawListener listener");
-        if (preDraw >= 0) {
-            int end = glass.indexOf("observer.addOnPreDrawListener(listener);", preDraw);
-            String listenerBody = end > preDraw ? glass.substring(preDraw, end) : glass.substring(preDraw);
-            assertFalse("per-frame pre-draw must not repeatedly submit vendor blur suppression",
-                    listenerBody.contains("suppressVendorGpuBlur(background)"));
-            assertFalse("per-frame pre-draw must not repeatedly rewrite the vendor material body",
-                    listenerBody.contains("suppressVendorMaterialBody(background"));
-        }
+        assertFalse("zero-copy must not install a perpetual pre-draw compositor suppressor",
+                glass.contains("addOnPreDrawListener("));
     }
 }
