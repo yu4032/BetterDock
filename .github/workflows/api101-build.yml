@@ -31,9 +31,10 @@ jobs:
       - name: Materialize remaining approved requirements
         if: github.event_name == 'push' && github.ref == 'refs/heads/feat/main-folder-glass-rebuild'
         run: |
-          if grep -q 'PrismalHighlightProfile highlightProfile' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java; then
-            echo 'Production transform already present'
-          else
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          if ! grep -q 'PrismalHighlightProfile highlightProfile' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java; then
             python - <<'PY'
           from pathlib import Path
           p = Path('ci/apply_remaining_ui.py')
@@ -46,8 +47,6 @@ jobs:
           PY
             python ci/apply_remaining_runtime.py
             python ci/apply_remaining_ui.py
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add \
               prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java \
               src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
@@ -57,6 +56,14 @@ jobs:
               src/main/res/values-zh-rCN/strings.xml
             git diff --cached --check
             git commit -m 'feat: complete Launcher glass controls and settings cleanup'
+            git push origin HEAD:feat/main-folder-glass-rebuild
+          fi
+
+          if grep -q '兼容调整 Prismal rim band 宽度' src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt; then
+            python ci/cleanup_liquid_functional_copy.py
+            git add src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
+            git diff --cached --check
+            git commit -m 'fix: keep Liquid settings descriptions functional-only'
             git push origin HEAD:feat/main-folder-glass-rebuild
           fi
       - run: ./gradlew testDebugUnitTest --stacktrace
