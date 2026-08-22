@@ -46,4 +46,5 @@ final class HomeGridLayoutSnapshot {
     HomeGridOrientation orientation() { return orientation; }
     int size() { return positions.size(); }
     HomeGridItemPosition get(long itemId) { return positions.get(itemId); }
+    Collection<HomeGridItemPosition> positions() { return positions.values(); }
 }
