@@ -331,7 +331,12 @@ public class MainHook {
         strokeR = DockStrokeRenderer.resolveConfiguredRadius(dockBg, dock, nativeRadius);
 
         View currentShadow = shadowViewRef.get();
-        if (workstationMode || !dock.shadowEnabled) {
+        if (workstationMode) {
+            dockBg.setAlpha(0f);
+            if (currentShadow != null) currentShadow.setVisibility(View.GONE);
+            return;
+        }
+        if (!dock.shadowEnabled) {
             if (currentShadow != null) currentShadow.setVisibility(View.GONE);
             return;
         }
