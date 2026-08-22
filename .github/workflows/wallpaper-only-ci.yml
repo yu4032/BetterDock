@@ -1,0 +1,80 @@
+name: Wallpaper-only launcher glass CI
+
+on:
+  push:
+    branches:
+      - feat/shared-launcher-glass-session
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply shared glass through GPU atlas baseline
+        run: |
+          cat ci/shared-glass-patch/part-*.txt > /tmp/shared-launcher-glass.patch.gz.b64
+          echo "bbf006ee8b1db614cc4d84e0dad1c7a95f70cefc2382e3c2bd2002e1c19a60e2  /tmp/shared-launcher-glass.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-launcher-glass.patch.gz.b64 | gzip -d > /tmp/shared-launcher-glass.patch
+          echo "f1e3b8d31196a99226d23ad9bded58612e67d83d1a0d854c06fd64ed6fadbd56  /tmp/shared-launcher-glass.patch" | sha256sum -c -
+          git apply --check /tmp/shared-launcher-glass.patch
+          git apply /tmp/shared-launcher-glass.patch
+          git apply --check ci/shared-glass-config-test.patch
+          git apply ci/shared-glass-config-test.patch
+
+          cat ci/shared-glass-inroot-v2/part-*.txt > /tmp/shared-glass-inroot.patch.gz.b64
+          echo "fd3178441abda2c3e2d9c57c08f9225c4600c867ad7a9c8e30fb81379e7fabb9  /tmp/shared-glass-inroot.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-inroot.patch.gz.b64 | gzip -d > /tmp/shared-glass-inroot.patch
+          echo "8e736befc09e8f0d288f2a4a8fb36f13f91062d7c4f58f4f947fc00075fb368f  /tmp/shared-glass-inroot.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-inroot.patch
+          git apply /tmp/shared-glass-inroot.patch
+
+          cat ci/shared-glass-lifecycle-v1/part-*.txt > /tmp/shared-glass-lifecycle.patch.gz.b64
+          echo "2cc27b1c2784be21194ea7ba3517529e904dadfb6257e353d042c2b798410af3  /tmp/shared-glass-lifecycle.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-lifecycle.patch.gz.b64 | gzip -d > /tmp/shared-glass-lifecycle.patch
+          echo "68571f616dea79ef9c99940518219ded46293541a9054261e6f4dba7b9cda63f  /tmp/shared-glass-lifecycle.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-lifecycle.patch
+          git apply /tmp/shared-glass-lifecycle.patch
+
+          cat ci/shared-glass-gpu-atlas-v1/part-*.txt > /tmp/shared-glass-gpu-atlas.patch.gz.b64
+          echo "6e855caac8b07b3025044ce02a86de6fc2e08056406ef947c8335f2cf9483681  /tmp/shared-glass-gpu-atlas.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-gpu-atlas.patch.gz.b64 | gzip -d > /tmp/shared-glass-gpu-atlas.patch
+          echo "07d9fba07c88083a8b1a648ebf24436be380acfd64b7899fd640145af6489473  /tmp/shared-glass-gpu-atlas.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-gpu-atlas.patch
+          git apply /tmp/shared-glass-gpu-atlas.patch
+          git apply --check ci/shared-glass-gpu-atlas-contract-fix.patch
+          git apply ci/shared-glass-gpu-atlas-contract-fix.patch
+
+      - name: Convert to wallpaper-only source
+        run: |
+          python3 ci/wallpaper_only_transform.py
+          git diff --check
+
+      - name: Verify wallpaper-only contract
+        run: |
+          SESSION=src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
+          grep -q 'Miuix307PassBlurBridge.bind' "$SESSION"
+          grep -q 'renderNormalization' "$SESSION"
+          grep -q 'source=PassBlur-wallpaper-only' "$SESSION"
+          if grep -nE 'HardwareRenderer|RenderNode|RecordingCanvas|root\.draw\(|requestLauncherGpuReplay|renderLauncherOverlay|launcherOesTexture|launcherSurfaceTexture' "$SESSION"; then
+            echo 'Launcher scene replay still present'
+            exit 1
+          fi
+          grep -A90 'private void syncSceneOnUiThread' "$SESSION" | grep -q 'requestFrame(false)'
+
+      - run: chmod +x ./gradlew
+      - run: ./gradlew testDebugUnitTest --stacktrace
+      - run: ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-wallpaper-only-debug
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
