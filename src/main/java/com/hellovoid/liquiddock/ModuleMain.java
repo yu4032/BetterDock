@@ -23,6 +23,7 @@ public final class ModuleMain extends XposedModule {
     public void onPackageReady(@NonNull PackageReadyParam param) {
         if (!LAUNCHER_PACKAGE.equals(param.getPackageName())) return;
         try {
+            FlickerTrace.startSession();
             LegacyConfigMigration.migrateAtProcessStart();
             ConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
