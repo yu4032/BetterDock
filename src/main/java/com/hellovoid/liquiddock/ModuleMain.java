@@ -48,7 +48,7 @@ public final class ModuleMain extends XposedModule {
                     customGridEnabled, selectedProfile);
             HomeGridVerticalBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile, runtimeConfig.grid);
-            WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
+            WorkspaceDropRuleHook.install(classLoader, customGridEnabled, selectedProfile);
             HomeGridDragBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile);
         } catch (Throwable error) {
