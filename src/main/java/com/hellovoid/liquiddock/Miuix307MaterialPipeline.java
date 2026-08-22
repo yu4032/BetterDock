@@ -46,6 +46,18 @@ final class Miuix307MaterialPipeline {
         return installed;
     }
 
+    /**
+     * The normal Dock shadow/alpha state belongs exclusively to Launcher's ordinary HotSeats.
+     * Laptop mode can instantiate the same material classes in its independent DockContainer;
+     * class identity therefore cannot distinguish the two visual owners.
+     */
+    static boolean isOrdinaryHotSeatsBackground(View candidate) {
+        if (candidate == null) return false;
+        Object ordinaryHotSeats = hotSeatsRef.get();
+        if (ordinaryHotSeats == null) return false;
+        return resolveBackground(ordinaryHotSeats) == candidate;
+    }
+
     static boolean install(ClassLoader classLoader, LiquidDockConfig config) {
         if (installed) return true;
         final Class<?> backgroundClass = loadOptionalClass(classLoader, BACKGROUND_CLASS);
@@ -65,12 +77,15 @@ final class Miuix307MaterialPipeline {
                     "com.miui.home.launcher.Launcher", "setupViews",
                     chain -> {
                         Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                        if (MainHook.isWorkstationMode()) return result;
                         try {
+                            // Retain the ordinary Launcher owners even when setup completes while
+                            // laptop mode is active. The Laptop overlay must never replace these refs.
                             Object launcher = chain.getThisObject();
                             launcherRef = new WeakReference<>(launcher);
                             Object hotSeats = HookUtil.getField(launcher, "mHotSeats");
                             hotSeatsRef = new WeakReference<>(hotSeats);
+                            if (MainHook.isWorkstationMode()) return result;
+
                             View background = resolveBackground(hotSeats);
                             if (background == null) {
                                 MainHook.log("[DC] MiuiX 307 supported background not found in setupViews");
@@ -121,9 +136,12 @@ final class Miuix307MaterialPipeline {
             Method attach = hotSeatsClass.getDeclaredMethod("onAttachedToWindow");
             HookUtil.hook(attach, chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                // Laptop overlays may reuse HotSeats classes. Do not let an overlay attach replace
+                // the ordinary Launcher.mHotSeats identity retained by setupViews.
                 if (MainHook.isWorkstationMode()) return result;
                 Object hotSeats = chain.getThisObject();
                 hotSeatsRef = new WeakReference<>(hotSeats);
+
                 View background = resolveBackground(hotSeats);
                 if (background == null) {
                     MainHook.log("[DC] MiuiX 307 HotSeats attach recovery: background not ready");

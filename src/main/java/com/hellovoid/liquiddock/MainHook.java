@@ -325,6 +325,10 @@ public class MainHook {
      */
     static void syncDockShadow(View dockBg, LiquidDockConfig.Dock dock) {
         if (dockBg == null || dock == null || !dock.enabled) return;
+        if (Miuix307MaterialPipeline.isInstalled()
+                && !Miuix307MaterialPipeline.isOrdinaryHotSeatsBackground(dockBg)) {
+            return;
+        }
         setOldBg(dockBg);
 
         float nativeRadius = MiuixGlassHook.readNativeOpticsRadius(dockBg);
