@@ -1,16 +1,14 @@
 package com.hellovoid.prismal;
 
 /**
- * Applies LiquidDock's narrow transmitted-refraction correction to the vendored Prismal shader.
+ * Applies LiquidDock's transmitted-refraction correction to the vendored Prismal shader.
  *
  * <p>The upstream source is intentionally kept byte-for-byte as the provenance baseline. Prismal's
- * stock fragment adds lens/parallax, Snell and a mid-band bulge into the sampled backdrop. On the
- * extremely wide Dock glass that produces three spatial refraction bands. Its center-radial lens
- * bias also makes the straight-edge normal component position-dependent, and its chromatic offset
- * is expressed directly in normalized UV so horizontal fringe width grows with framebuffer width.
- * This correction keeps one monotonic SDF edge lens, aligns it to the local edge normal, and scales
- * chromatic separation in short-axis pixels before converting back to UV. Normals, dome, Fresnel,
- * highlights, caustics, tint and blur remain upstream Prismal behavior.</p>
+ * stock fragment adds lens/parallax, Snell and a mid-band bulge into the sampled backdrop. LiquidDock
+ * keeps one transmitted-refraction field. Very wide Dock glass keeps the translation-invariant local
+ * edge normal, while ordinary folder/widget glass uses a continuous elliptical radial metric so the
+ * nearest-edge X/Y branch cannot create a square center and four diagonal seams. Chromatic separation
+ * is expressed in short-axis pixels before converting back to UV.</p>
  */
 final class PrismalSingleEdgeShader {
     private static final String UPSTREAM_LENS_DIRECTION = """
@@ -20,11 +18,45 @@ final class PrismalSingleEdgeShader {
                 lensDir = ldLen > 1e-5 ? lensDir / ldLen : vec2(0.0);
             """;
 
-    private static final String EDGE_NORMAL_LENS_DIRECTION = """
-                // A straight Dock edge must have one translation-invariant refraction direction.
-                // Keep the transmitted lens on the local SDF normal instead of biasing it toward
-                // the center of an extremely wide glass rectangle.
-                vec2 lensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);
+    private static final String SHAPE_ADAPTIVE_LENS_DIRECTION = """
+                // Ordinary folder/widget glass must not use the rounded-rect nearest-edge
+                // direction through its interior: that field switches X/Y at |x|=|y| and
+                // produces the visible four-wedge cross. Very wide Dock glass still needs
+                // a translation-invariant straight-edge normal.
+                float glassAspect = max(u_glassSize.x, u_glassSize.y) / max(min(u_glassSize.x, u_glassSize.y), 1.0);
+                float radialRefractionW = 1.0 - smoothstep(2.2, 3.2, glassAspect);
+                vec2 radialRefractionRaw = cKy / max(halfSz, vec2(1.0));
+                float radialRefractionLen = length(radialRefractionRaw);
+                vec2 radialRefractionDir = radialRefractionLen > 1e-5 ? radialRefractionRaw / radialRefractionLen : vec2(0.0);
+                float radialInwardPx = max(0.0, (1.0 - radialRefractionLen) * minDim);
+                vec2 edgeLensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);
+                vec2 lensDirBlend = mix(edgeLensDir, radialRefractionDir, radialRefractionW);
+                float lensDirLen = length(lensDirBlend);
+                vec2 lensDir = lensDirLen > 1e-5 ? lensDirBlend / lensDirLen : vec2(0.0);
+            """;
+
+    private static final String UPSTREAM_D_LENS_BLOCK = """
+                float lensRh = refractionHeight;
+                float sdIn = min(sdKy, 0.0);
+                float dLens = 0.0;
+                if ((-sdKy) < lensRh) {
+                    dLens = circleMapRealistic(1.0 - (-sdIn / lensRh)) * (-u_lensRefractionPx);
+                    dLens *= (1.0 + clamp(u_pressProgress, 0.0, 1.0) * 0.45);
+                }
+            """;
+
+    private static final String SHAPE_ADAPTIVE_D_LENS_BLOCK = """
+                float lensRh = refractionHeight;
+                float sdIn = min(sdKy, 0.0);
+                // The wide-Dock path uses exact inward SDF distance. Normal glass uses the
+                // same continuous elliptical metric as its direction, removing the square
+                // zero-refraction core left by nearest-edge rounded-rect distance.
+                float lensInwardPx = mix(-sdIn, radialInwardPx, radialRefractionW);
+                float dLens = 0.0;
+                if (lensInwardPx < lensRh) {
+                    dLens = circleMapRealistic(1.0 - (lensInwardPx / lensRh)) * (-u_lensRefractionPx);
+                    dLens *= (1.0 + clamp(u_pressProgress, 0.0, 1.0) * 0.45);
+                }
             """;
 
     private static final String UPSTREAM_TRANSMITTED_BLOCK = """
@@ -52,8 +84,7 @@ final class PrismalSingleEdgeShader {
             """;
 
     private static final String SINGLE_EDGE_TRANSMITTED_BLOCK = """
-                // LiquidDock's Dock glass uses one spatial refraction field. dLens is maximal at
-                // the silhouette and monotonically decays to zero over refractionHeight.
+                // One transmitted field only. Its direction/distance are shape-adaptive above.
                 vec2 edgeRefractionUv = (dLens * lensDir) / u_resolution;
                 vec2 baseOffset = edgeRefractionUv;
             """;
@@ -77,8 +108,13 @@ final class PrismalSingleEdgeShader {
         String corrected = replaceExactlyOnce(
                 upstreamFragment,
                 UPSTREAM_LENS_DIRECTION,
-                EDGE_NORMAL_LENS_DIRECTION,
+                SHAPE_ADAPTIVE_LENS_DIRECTION,
                 "Prismal lens-direction block");
+        corrected = replaceExactlyOnce(
+                corrected,
+                UPSTREAM_D_LENS_BLOCK,
+                SHAPE_ADAPTIVE_D_LENS_BLOCK,
+                "Prismal lens-distance block");
         corrected = replaceExactlyOnce(
                 corrected,
                 UPSTREAM_TRANSMITTED_BLOCK,
