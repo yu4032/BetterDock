@@ -40,6 +40,8 @@ public final class ModuleMain extends XposedModule {
                     customGridEnabled, selectedProfile);
             HomeGridOrientationMemoryHook.install(classLoader,
                     customGridEnabled, selectedProfile);
+            HomeGridMutationCaptureHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
             HomeGridDeviceConfigCountHook.install(classLoader,
                     customGridEnabled, selectedProfile);
             HomeGridHorizontalCenteringHook.install(classLoader,
