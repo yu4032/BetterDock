@@ -38,13 +38,17 @@ public final class ModuleMain extends XposedModule {
             DockBottomGeometryHook.install(classLoader);
             HomeGridProfileOverlayHook.install(classLoader,
                     customGridEnabled, selectedProfile);
+            HomeGridOrientationMemoryHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
+            HomeGridMutationCaptureHook.install(classLoader,
+                    customGridEnabled, selectedProfile);
             HomeGridDeviceConfigCountHook.install(classLoader,
                     customGridEnabled, selectedProfile);
             HomeGridHorizontalCenteringHook.install(classLoader,
                     customGridEnabled, selectedProfile);
             HomeGridVerticalBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile, runtimeConfig.grid);
-            WorkspaceDropRuleHook.install(classLoader, customGridEnabled);
+            WorkspaceDropRuleHook.install(classLoader, customGridEnabled, selectedProfile);
             HomeGridDragBoundsHook.install(classLoader,
                     customGridEnabled, selectedProfile);
         } catch (Throwable error) {
