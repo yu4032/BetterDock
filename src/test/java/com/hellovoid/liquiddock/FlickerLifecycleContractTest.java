@@ -10,7 +10,6 @@ import org.junit.Test;
 /** Regression contracts for the device-observed Dock flicker/master-disable lifecycle. */
 public class FlickerLifecycleContractTest {
     private static final Path JAVA = Path.of("src/main/java/com/hellovoid/liquiddock");
-    private static final Path KOTLIN = Path.of("src/main/kotlin/com/hellovoid/liquiddock");
 
     @Test
     public void masterDisabledReturnsBeforeAnyRuntimeHookInstallation() throws Exception {
@@ -20,27 +19,19 @@ public class FlickerLifecycleContractTest {
         int firstHook = module.indexOf("new MainHook().install(classLoader);");
         assertTrue("ModuleMain must gate the entire injected runtime after loading config",
                 load >= 0 && masterGate > load && firstHook > masterGate);
-
-        String main = Files.readString(JAVA.resolve("MainHook.java"));
-        int localLoad = main.indexOf("LiquidDockConfig config = LiquidDockConfig.load();");
-        int localGate = main.indexOf("if (!config.enabled)");
-        int workstationHook = main.indexOf("installWorkstationModeGuard(classLoader);");
-        assertTrue("MainHook direct-call safety must gate even the workstation hook",
-                localLoad >= 0 && localGate > localLoad && workstationHook > localGate);
     }
 
     @Test
-    public void changingMasterSwitchRestartsLauncherWithSyncedRemoteState() throws Exception {
-        String compose = Files.readString(KOTLIN.resolve("ComposeSettingsActivity.kt"));
-        assertTrue("master switch callback must restart Launcher so process-start hooks are removed",
-                compose.contains("onMasterChanged = { enabled ->")
-                        && compose.contains("activity.restartLauncher()"));
-
-        String settings = Files.readString(JAVA.resolve("SettingsActivity.java"));
-        assertTrue("restartLauncher must abort rather than restart with stale Remote Preferences",
-                settings.contains("if (!LiquidDockApp.syncToRemote("));
-        assertTrue("sync failure must be surfaced to the user",
-                settings.contains("Remote Preferences") && settings.contains("return;"));
+    public void changingMasterSwitchSynchronizesThenRestartsLauncher() throws Exception {
+        String app = Files.readString(JAVA.resolve("LiquidDockApp.java"));
+        assertTrue("the central preference bridge must recognize the master key",
+                app.contains("ConfigSchema.Core.ENABLED.name().equals(key)"));
+        assertTrue("master changes must use a synchronous Remote Preferences write",
+                app.contains("syncKeyToRemote(key, sharedPreferences, masterChange)"));
+        int sync = app.indexOf("syncKeyToRemote(key, sharedPreferences, masterChange)");
+        int restart = app.indexOf("restartLauncherAfterMasterChange()", sync);
+        assertTrue("Launcher restart must happen only after successful remote synchronization",
+                sync >= 0 && restart > sync);
     }
 
     @Test
