@@ -1,7 +1,5 @@
 package com.hellovoid.liquiddock;
 
-import android.graphics.RectF;
-
 /** Owns the single active launcher drag-glass state independently of source type. */
 final class LauncherGlassDragCoordinator {
     private LauncherGlassDragState current;
@@ -9,7 +7,7 @@ final class LauncherGlassDragCoordinator {
     synchronized boolean begin(
             Object token,
             LauncherGlassDragState.Kind kind,
-            RectF rootBounds,
+            LauncherGlassDragState.Bounds rootBounds,
             float cornerRadiusPx) {
         if (!valid(token, rootBounds)) return false;
         current = new LauncherGlassDragState(
@@ -19,7 +17,7 @@ final class LauncherGlassDragCoordinator {
 
     synchronized boolean update(
             Object token,
-            RectF rootBounds,
+            LauncherGlassDragState.Bounds rootBounds,
             float scale,
             float rotation,
             float alpha) {
@@ -46,7 +44,7 @@ final class LauncherGlassDragCoordinator {
         return true;
     }
 
-    private static boolean valid(Object token, RectF bounds) {
+    private static boolean valid(Object token, LauncherGlassDragState.Bounds bounds) {
         return token != null && bounds != null && bounds.width() > 0f && bounds.height() > 0f;
     }
 }
