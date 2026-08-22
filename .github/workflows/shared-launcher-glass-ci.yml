@@ -49,6 +49,8 @@ jobs:
           echo "07d9fba07c88083a8b1a648ebf24436be380acfd64b7899fd640145af6489473  /tmp/shared-glass-gpu-atlas.patch" | sha256sum -c -
           git apply --check /tmp/shared-glass-gpu-atlas.patch
           git apply /tmp/shared-glass-gpu-atlas.patch
+          git apply --check ci/shared-glass-gpu-atlas-contract-fix.patch
+          git apply ci/shared-glass-gpu-atlas-contract-fix.patch
           git diff --check
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
