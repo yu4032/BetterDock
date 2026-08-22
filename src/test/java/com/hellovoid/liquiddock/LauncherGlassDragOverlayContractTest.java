@@ -44,4 +44,17 @@ public class LauncherGlassDragOverlayContractTest {
         assertFalse(source.contains("requestSingleUpdate"));
         assertFalse(source.contains("pauseUpdates"));
     }
+
+    @Test
+    public void permanentlyDetachedRootReleasesOverlayTreeAndWeakMapValue() throws Exception {
+        String source = Files.readString(MAIN.resolve("LauncherGlassDragOverlay.java"));
+
+        assertTrue(source.contains("root.addOnAttachStateChangeListener(rootAttachListener)"));
+        assertTrue(source.contains("mainHandler.post"));
+        assertTrue(source.contains("BY_ROOT.remove(root)"));
+        assertTrue(source.contains("sink.dispose()"));
+        assertTrue(source.contains("removeView(carrier)"));
+        assertTrue(source.contains("removeFrameCallback(frameCallback)"));
+        assertTrue(source.contains("root.removeOnAttachStateChangeListener(rootAttachListener)"));
+    }
 }
