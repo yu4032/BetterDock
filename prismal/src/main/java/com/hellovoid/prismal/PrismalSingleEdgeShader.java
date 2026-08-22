@@ -10,7 +10,8 @@ package com.hellovoid.prismal;
  * is expressed directly in normalized UV so horizontal fringe width grows with framebuffer width.
  * This correction keeps one monotonic SDF edge lens, aligns it to the local edge normal, and scales
  * chromatic separation in short-axis pixels before converting back to UV. Normals, dome, Fresnel,
- * highlights, caustics, tint and blur remain upstream Prismal behavior.</p>
+ * highlights, caustics, tint and blur remain upstream Prismal behavior, with additive highlight
+ * components individually controlled by the Dock runtime profile.</p>
  */
 final class PrismalSingleEdgeShader {
     private static final String UPSTREAM_LENS_DIRECTION = """
@@ -74,7 +75,8 @@ final class PrismalSingleEdgeShader {
                 UPSTREAM_TRANSMITTED_BLOCK,
                 SINGLE_EDGE_TRANSMITTED_BLOCK,
                 "Prismal transmitted-refraction block");
-        return PrismalPixelDomainChromaShader.apply(corrected);
+        corrected = PrismalPixelDomainChromaShader.apply(corrected);
+        return PrismalComponentGateShader.apply(corrected);
     }
 
     private static String replaceExactlyOnce(
