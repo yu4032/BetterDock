@@ -28,10 +28,14 @@ public final class ModuleMain extends XposedModule {
             ClassLoader classLoader = param.getClassLoader();
             ConfigReader configReader = ConfigReader.load();
             LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
+            if (!runtimeConfig.enabled) {
+                Api101Bridge.log("[DC] LiquidDock master switch disabled; no runtime hooks installed");
+                return;
+            }
             HomeGridProfile selectedProfile = HomeGridProfile.fromPersisted(
                     GridProfileConfig.normalizeProfile(configReader.s(
                             GridProfileConfig.PROFILE_KEY, GridProfileConfig.DEFAULT_PROFILE)));
-            boolean customGridEnabled = runtimeConfig.enabled && runtimeConfig.grid.enabled;
+            boolean customGridEnabled = runtimeConfig.grid.enabled;
 
             new MainHook().install(classLoader);
             DockBottomGeometryHook.install(classLoader);
