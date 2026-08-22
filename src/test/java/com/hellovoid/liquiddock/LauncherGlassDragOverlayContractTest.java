@@ -22,13 +22,15 @@ public class LauncherGlassDragOverlayContractTest {
         assertTrue(source.contains("private LauncherGlassSinkView sink"));
         assertTrue(source.contains("LauncherGlassSinkView.attachToMaterial"));
         assertTrue(source.contains("findDragContainerAncestor"));
-        assertTrue(source.contains("OnPreDrawListener"));
+        assertTrue(source.contains("Choreographer.FrameCallback"));
+        assertFalse("overlay must not race LauncherGlassSession with a second pre-draw observer",
+                source.contains("OnPreDrawListener"));
         assertFalse(source.contains("Miuix307PassBlurBridge.bind"));
         assertFalse(source.contains("new Miuix307PassBlurTextureView"));
     }
 
     @Test
-    public void dragMotionTracksSourceWithoutRefreshingWallpaperProducer() throws Exception {
+    public void dragMotionLeavesMaterialSyncForLauncherSessionPredraw() throws Exception {
         Path path = MAIN.resolve("LauncherGlassDragOverlay.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path);
@@ -37,6 +39,8 @@ public class LauncherGlassDragOverlayContractTest {
         assertTrue(source.contains("carrier.setX"));
         assertTrue(source.contains("carrier.setY"));
         assertTrue(source.contains("sink.requestLifecycleRefresh()"));
+        assertFalse("drag overlay must not consume localChanged before session pre-draw",
+                source.contains("sink.syncFromMaterial()"));
         assertFalse(source.contains("requestSingleUpdate"));
         assertFalse(source.contains("pauseUpdates"));
     }
