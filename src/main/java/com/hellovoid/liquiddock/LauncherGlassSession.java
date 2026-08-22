@@ -19,6 +19,7 @@ import android.view.ViewTreeObserver;
 
 import com.hellovoid.prismal.PrismalGeometry;
 import com.hellovoid.prismal.PrismalHighlightProfile;
+import com.hellovoid.prismal.PrismalInteractionState;
 import com.hellovoid.prismal.PrismalParams;
 import com.hellovoid.prismal.PrismalRenderer;
 import com.hellovoid.prismal.PrismalSampling;
@@ -76,6 +77,7 @@ final class LauncherGlassSession {
         final int id = NEXT_NODE_ID.getAndIncrement();
         final WeakReference<LauncherGlassSinkView> sinkRef;
         volatile LauncherGlassGeometry.Snapshot geometry;
+        volatile PrismalInteractionState interaction = PrismalInteractionState.IDLE;
 
         NodeState(LauncherGlassSinkView sink) {
             sinkRef = new WeakReference<>(sink);
@@ -213,6 +215,17 @@ final class LauncherGlassSession {
         if (sink == null) return;
         synchronized (nodes) { nodes.remove(sink); }
         requestLifecycleRefresh();
+    }
+
+    void updateInteraction(LauncherGlassSinkView sink, PrismalInteractionState interaction) {
+        if (sink == null || shuttingDown) return;
+        synchronized (nodes) {
+            NodeState node = nodes.get(sink);
+            if (node == null) return;
+            node.interaction = interaction != null ? interaction : PrismalInteractionState.IDLE;
+        }
+        // Interaction redraws reuse the last consumed wallpaper texture. Never request producer refresh.
+        requestFrame(false);
     }
 
     void requestLifecycleRefresh() {
@@ -615,7 +628,8 @@ final class LauncherGlassSession {
             PrismalGeometry prismalGeometry = new PrismalGeometry(
                     layout.width, layout.height, geometry.centerX, geometry.centerY,
                     geometry.width, geometry.height, geometry.cornerRadius);
-            prismalRenderer.drawGlass(prismalGeometry, params, launcherHighlightProfile);
+            prismalRenderer.drawGlass(
+                    prismalGeometry, params, launcherHighlightProfile, node.interaction);
             drew = true;
         }
         if (!drew) return;

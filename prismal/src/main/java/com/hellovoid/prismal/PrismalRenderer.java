@@ -180,6 +180,13 @@ public final class PrismalRenderer implements AutoCloseable {
 
     /** Append one glass node with a renderer-scoped highlight selection. */
     public void drawGlass(PrismalGeometry geometry, PrismalParams params, PrismalHighlightProfile highlightProfile) {
+        drawGlass(geometry, params, highlightProfile, null);
+    }
+
+    /** Append one glass node with an optional per-node touch interaction override. */
+    public void drawGlass(PrismalGeometry geometry, PrismalParams params,
+                          PrismalHighlightProfile highlightProfile,
+                          PrismalInteractionState interactionState) {
         if (geometry == null) throw new IllegalArgumentException("geometry == null");
         if (!glassFrameBegun) {
             throw new IllegalStateException("beginGlassFrame must be called before drawGlass");
@@ -189,7 +196,8 @@ public final class PrismalRenderer implements AutoCloseable {
         }
         if (params == null) params = PrismalParams.builder().build();
         if (highlightProfile == null) highlightProfile = PrismalHighlightProfile.ALL_ENABLED;
-        renderGlassNode(geometry, params, highlightProfile, !legacySingleDraw || glassDrawCount > 0);
+        renderGlassNode(geometry, params, highlightProfile, interactionState,
+                !legacySingleDraw || glassDrawCount > 0);
         glassDrawCount++;
     }
 
@@ -275,7 +283,9 @@ public final class PrismalRenderer implements AutoCloseable {
     }
 
     private void renderGlassNode(PrismalGeometry g, PrismalParams p,
-                                 PrismalHighlightProfile highlights, boolean composite) {
+                                 PrismalHighlightProfile highlights,
+                                 PrismalInteractionState interactionState,
+                                 boolean composite) {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFramebuffer);
         GLES20.glViewport(0, 0, width, height);
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
@@ -335,9 +345,12 @@ public final class PrismalRenderer implements AutoCloseable {
         uniform1f("u_transmittance", p.transmittance);
         uniform2f("u_backdropSampleScale", p.backdropScaleX, p.backdropScaleY);
         uniform1f("u_parallaxScale", p.parallaxScale);
-        uniform1f("u_pressProgress", p.pressProgress);
+        float pressProgress = interactionState != null ? interactionState.pressProgress : p.pressProgress;
+        float glowCenterX = interactionState != null ? interactionState.glowCenterX : p.glowCenterX;
+        float glowCenterY = interactionState != null ? interactionState.glowCenterY : p.glowCenterY;
+        uniform1f("u_pressProgress", pressProgress);
         uniform1f("u_backdropPinch", p.backdropPinch);
-        uniform2f("u_glowCenter", p.glowCenterX, p.glowCenterY);
+        uniform2f("u_glowCenter", glowCenterX, glowCenterY);
         uniform1f("u_glowStrength", p.glowStrength);
         uniform1i("u_showNormals", p.showNormals ? 1 : 0);
 

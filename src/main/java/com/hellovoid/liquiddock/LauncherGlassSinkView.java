@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
@@ -7,6 +8,9 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+
+import com.hellovoid.prismal.PrismalInteractionState;
 
 import java.lang.ref.WeakReference;
 import java.util.Collections;
@@ -17,6 +21,8 @@ import java.util.WeakHashMap;
 final class LauncherGlassSinkView extends TextureView implements TextureView.SurfaceTextureListener {
     private static final Map<View, WeakReference<LauncherGlassSinkView>> BY_MATERIAL =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static final long PRESS_IN_DURATION_MS = 90L;
+    private static final long PRESS_OUT_DURATION_MS = 160L;
 
     private final WeakReference<View> materialRef;
     private volatile LauncherGlassSession session;
@@ -24,6 +30,11 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     private final float nativeCornerRadiusPx;
     private volatile boolean disposed;
     private volatile boolean suppressedByFolderOpen;
+    private boolean pressTarget;
+    private float pressProgress;
+    private float glowCenterX = 0.5f;
+    private float glowCenterY = 0.5f;
+    private ValueAnimator pressAnimator;
     private boolean parentRecoveryPosted;
     private Surface outputSurface;
     private LauncherGlassSession outputSession;
@@ -96,10 +107,76 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     }
 
     void setSuppressedByFolderOpen(boolean suppressed) {
-        if (disposed || suppressedByFolderOpen == suppressed) return;
+        if (disposed) return;
+        if (suppressed) resetPressInteraction(false);
+        if (suppressedByFolderOpen == suppressed) return;
         suppressedByFolderOpen = suppressed;
         syncFromMaterial();
         requestLifecycleRefresh();
+    }
+
+    void setPressInteraction(boolean pressed, float normalizedX, float normalizedY) {
+        if (disposed) return;
+        float nextX = clamp01(normalizedX);
+        float nextY = clamp01(normalizedY);
+        boolean centerChanged = glowCenterX != nextX || glowCenterY != nextY;
+        glowCenterX = nextX;
+        glowCenterY = nextY;
+        if (pressTarget != pressed) {
+            pressTarget = pressed;
+            animatePressTo(pressed ? 1f : 0f);
+        } else if (centerChanged) {
+            publishInteraction();
+        }
+    }
+
+    void resetPressInteraction(boolean animated) {
+        if (disposed) return;
+        pressTarget = false;
+        if (animated && pressProgress > 0f) {
+            animatePressTo(0f);
+            return;
+        }
+        if (pressAnimator != null) {
+            pressAnimator.cancel();
+            pressAnimator = null;
+        }
+        pressProgress = 0f;
+        glowCenterX = 0.5f;
+        glowCenterY = 0.5f;
+        publishInteraction();
+    }
+
+    private void animatePressTo(float target) {
+        if (pressAnimator != null) pressAnimator.cancel();
+        float start = pressProgress;
+        if (Math.abs(start - target) < 0.001f) {
+            pressProgress = target;
+            publishInteraction();
+            return;
+        }
+        ValueAnimator animator = ValueAnimator.ofFloat(start, target);
+        pressAnimator = animator;
+        animator.setDuration(target > start ? PRESS_IN_DURATION_MS : PRESS_OUT_DURATION_MS);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(valueAnimator -> {
+            if (pressAnimator != valueAnimator || disposed) return;
+            pressProgress = (Float) valueAnimator.getAnimatedValue();
+            publishInteraction();
+        });
+        animator.start();
+    }
+
+    private void publishInteraction() {
+        LauncherGlassSession live = ensureLiveSession();
+        if (disposed || live == null) return;
+        live.updateInteraction(this,
+                new PrismalInteractionState(pressProgress, glowCenterX, glowCenterY));
+    }
+
+    private static float clamp01(float value) {
+        if (!Float.isFinite(value)) return 0.5f;
+        return Math.max(0f, Math.min(1f, value));
     }
 
     boolean syncFromMaterial() {
@@ -155,6 +232,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
 
     void dispose() {
         if (disposed) return;
+        resetPressInteraction(false);
         disposed = true;
         View material = materialRef.get();
         if (material != null) {
@@ -216,6 +294,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
 
     @Override
     protected void onDetachedFromWindow() {
+        resetPressInteraction(false);
         LauncherGlassSession live = session;
         if (live != null) live.unregisterSink(this);
         super.onDetachedFromWindow();
