@@ -16,16 +16,26 @@ public class FolderPressInteractionContractTest {
     }
 
     @Test
-    public void folderPressObservesDeclaredDispatchTouchEventWithoutReplacingSystemTouchHandling()
+    public void folderPressFiltersGlobalViewDispatchAndUsesMotionEventStateDirectly()
             throws Exception {
         String hook = read("MiuixFolderGlassHook.java");
 
-        assertTrue("FolderIcon's own dispatchTouchEvent must be hooked, never View globally",
-                hook.contains("getDeclaredMethod(\"dispatchTouchEvent\", MotionEvent.class)"));
-        assertTrue("the original Launcher touch path must run before LiquidDock observes pressed state",
-                hook.indexOf("chain.proceed") >= 0
-                        && hook.indexOf("updateFolderPressAfterDispatch") > hook.indexOf("chain.proceed"));
-        assertTrue("pressed state must come from Android/Launcher after dispatch",
+        assertTrue("match HyperLight's reliable first-stage input hook at View.dispatchTouchEvent",
+                hook.contains("View.class.getDeclaredMethod(\"dispatchTouchEvent\", MotionEvent.class)"));
+        assertTrue("global View hook must immediately filter to FolderIcon instances",
+                hook.contains("folderIcon.isInstance(owner)"));
+        assertTrue("the original Launcher touch path must still run",
+                hook.contains("chain.proceed"));
+        assertTrue("touch state must come directly from MotionEvent actionMasked",
+                hook.contains("event.getActionMasked()"));
+        assertTrue("DOWN must activate press glow",
+                hook.contains("MotionEvent.ACTION_DOWN") && hook.contains("pressed = true"));
+        assertTrue("MOVE must keep the active press and update its center",
+                hook.contains("MotionEvent.ACTION_MOVE"));
+        assertTrue("UP and CANCEL must end the press",
+                hook.contains("MotionEvent.ACTION_UP") && hook.contains("MotionEvent.ACTION_CANCEL")
+                        && hook.contains("pressed = false"));
+        assertFalse("do not gate glow on FolderIcon.isPressed; HyperOS may clear it before observation",
                 hook.contains("owner.isPressed()"));
         assertFalse("do not install an OnTouchListener that could consume click/long-press/drag",
                 hook.contains("setOnTouchListener"));
