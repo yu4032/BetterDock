@@ -65,7 +65,7 @@ public class PrismalSizeAdaptiveOpticsContractTest {
     }
 
     @Test
-    public void everyGlassSizeUsesContinuousRadialInteriorSurface() throws Exception {
+    public void faceNormalAndCausticUseOnlyContinuousRadialSurface() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
@@ -74,20 +74,29 @@ public class PrismalSizeAdaptiveOpticsContractTest {
                 "float opticalRadius = length(opticalNorm);",
                 "float radialHeight = clamp(1.0 - dot(opticalNorm, opticalNorm), 0.0, 1.0);",
                 "vec2 radialGrad = -2.0 * opticalNorm / max(halfSz, vec2(1.0));",
-                "float radialSurfaceW = smoothstep(0.10, 0.48, tDeep);",
-                "height = mix(height, radialHeight, radialSurfaceW);",
-                "gradH = mix(gradH, radialGrad, radialSurfaceW);"
+                "height = radialHeight;",
+                "gradH = radialGrad;",
+                "vec3 N = normalize(vec3(-gradH.x * u_normalStrength, -gradH.y * u_normalStrength, 1.0));",
+                "float causticDot = dot(normalize(vec3(gradH * u_normalStrength, 0.45)), Lp);"
         };
         for (String marker : required) {
             requireBoth(glsl, generated, marker);
         }
 
-        forbidBoth(glsl, generated, "float compactCore =");
-        forbidBoth(glsl, generated, "float compactRadialHeight =");
-        forbidBoth(glsl, generated, "vec2 compactRadialGrad =");
-        forbidBoth(glsl, generated, "float opticalInteriorW =");
-        forbidBoth(glsl, generated, "vec2 opticalDir =");
-        forbidBoth(glsl, generated, "vec2 lensDir = opticalDir");
+        String[] forbidden = {
+                "float radialSurfaceW =",
+                "height = mix(height, radialHeight",
+                "gradH = mix(gradH, radialGrad",
+                "float compactCore =",
+                "float compactRadialHeight =",
+                "vec2 compactRadialGrad =",
+                "float opticalInteriorW =",
+                "vec2 opticalDir =",
+                "vec2 lensDir = opticalDir"
+        };
+        for (String marker : forbidden) {
+            forbidBoth(glsl, generated, marker);
+        }
     }
 
     @Test
