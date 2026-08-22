@@ -27,6 +27,8 @@ final class MiuixFolderGlassHook {
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ViewGroup, Boolean> FOLDER_RECOVERY_PENDING =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static WeakReference<ViewGroup> openedFolderOwner = new WeakReference<>(null);
+    private static WeakReference<LauncherGlassSinkView> openedFolderSink = new WeakReference<>(null);
     private static boolean installed;
 
     private MiuixFolderGlassHook() {}
@@ -51,6 +53,8 @@ final class MiuixFolderGlassHook {
                 if (folder) attachFromFolderIcon((ViewGroup) icon, glassConfig);
                 return result;
             });
+
+            installFolderOpenCloseHooks(classLoader);
 
             Class<?> utilities = Class.forName(
                     "com.miui.home.launcher.common.BlurUtilities", false, classLoader);
@@ -78,12 +82,86 @@ final class MiuixFolderGlassHook {
         }
     }
 
+    private static void installFolderOpenCloseHooks(ClassLoader classLoader) throws Exception {
+        Class<?> folderIcon = Class.forName(FOLDER_ICON, false, classLoader);
+        HookUtil.hook(HookUtil.findMethodExact(folderIcon, "onOpen", new Class<?>[0]), chain -> {
+            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+            if (chain.getThisObject() instanceof ViewGroup) {
+                setOwnerSuppressed((ViewGroup) chain.getThisObject(), true);
+            }
+            return result;
+        });
+        HookUtil.hook(HookUtil.findMethodExact(folderIcon, "onClose", new Class<?>[0]), chain -> {
+            // onClose is emitted when the close animation starts. Keep the source icon hidden
+            // until Folder.onClose's completion Runnable fires, otherwise the source plate is
+            // duplicated during the animation.
+            return chain.proceed(chain.getArgs().toArray(new Object[0]));
+        });
+
+        Class<?> folder = Class.forName("com.miui.home.launcher.Folder", false, classLoader);
+        HookUtil.hook(HookUtil.findMethodExact(folder, "onClose",
+                new Class<?>[]{Boolean.TYPE, Runnable.class}), chain -> {
+            Object[] args = chain.getArgs().toArray(new Object[0]);
+            Runnable originalCompletion = args.length > 1 && args[1] instanceof Runnable
+                    ? (Runnable) args[1] : null;
+            args[1] = (Runnable) () -> {
+                restoreOpenedFolderOwner();
+                if (originalCompletion != null) originalCompletion.run();
+            };
+            return chain.proceed(args);
+        });
+    }
+
+    private static void setOwnerSuppressed(ViewGroup owner, boolean suppressed) {
+        if (owner == null) return;
+        if (!suppressed) {
+            LauncherGlassSinkView sink = resolveOwnerSink(owner);
+            if (sink != null) sink.setSuppressedByFolderOpen(false);
+            if (openedFolderOwner.get() == owner) {
+                openedFolderOwner = new WeakReference<>(null);
+                openedFolderSink = new WeakReference<>(null);
+            }
+            return;
+        }
+
+        ViewGroup previousOwner = openedFolderOwner.get();
+        LauncherGlassSinkView previousSink = openedFolderSink.get();
+        if (previousOwner != null && previousOwner != owner && previousSink != null) {
+            previousSink.setSuppressedByFolderOpen(false);
+        }
+
+        openedFolderOwner = new WeakReference<>(owner);
+        LauncherGlassSinkView sink = resolveOwnerSink(owner);
+        openedFolderSink = new WeakReference<>(sink);
+        if (sink != null) sink.setSuppressedByFolderOpen(true);
+    }
+
+    private static void restoreOpenedFolderOwner() {
+        LauncherGlassSinkView sink = openedFolderSink.get();
+        openedFolderOwner = new WeakReference<>(null);
+        openedFolderSink = new WeakReference<>(null);
+        if (sink != null) sink.setSuppressedByFolderOpen(false);
+    }
+
+    private static LauncherGlassSinkView resolveOwnerSink(ViewGroup owner) {
+        try {
+            Object value = HookUtil.getField(owner, "mIconImageView");
+            return value instanceof View ? claimedSink((View) value) : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static void attachFromFolderIcon(ViewGroup icon, LiquidDockConfig.Glass glassConfig) {
         observeFolderIconAttach(icon, glassConfig);
         try {
             Object value = HookUtil.getField(icon, "mIconImageView");
             if (value instanceof View) {
                 LauncherGlassSinkView sink = attachMaterial((View) value, glassConfig);
+                if (sink != null && openedFolderOwner.get() == icon) {
+                    openedFolderSink = new WeakReference<>(sink);
+                    sink.setSuppressedByFolderOpen(true);
+                }
                 // Launcher restart can call setIconImageView after FolderIcon is attached but
                 // before its real ViewRoot/Surface is stable. Adding an attach listener at that
                 // point does not replay onViewAttachedToWindow, so recover on later UI frames.
@@ -95,7 +173,6 @@ final class MiuixFolderGlassHook {
             MainHook.log(TAG + " material resolve failed: " + error);
         }
     }
-
 
     private static void scheduleFolderRecovery(
             ViewGroup icon, LiquidDockConfig.Glass glassConfig, int attempt) {
@@ -124,6 +201,10 @@ final class MiuixFolderGlassHook {
                 Object value = HookUtil.getField(current, "mIconImageView");
                 if (value instanceof View) {
                     sink = attachMaterial((View) value, glassConfig);
+                    if (sink != null && openedFolderOwner.get() == current) {
+                        openedFolderSink = new WeakReference<>(sink);
+                        sink.setSuppressedByFolderOpen(true);
+                    }
                 }
             } catch (Throwable error) {
                 MainHook.log(TAG + " startup material recovery failed: " + error);
@@ -135,7 +216,6 @@ final class MiuixFolderGlassHook {
             }
         });
     }
-
 
     private static void observeFolderIconAttach(
             ViewGroup icon, LiquidDockConfig.Glass glassConfig) {
@@ -207,7 +287,6 @@ final class MiuixFolderGlassHook {
         WeakReference<LauncherGlassSinkView> reference = CLAIMED.get(material);
         return reference != null ? reference.get() : null;
     }
-
 
     private static float readMaterialRadius(View material) {
         if (material == null) return Float.NaN;
