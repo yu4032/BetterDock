@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feat/shared-launcher-glass-session
+          ref: 6b962a16a99af8fd0f2a36b0acf94be133f13328
           path: old
 
       - name: Materialize old folder wallpaper-only reference
