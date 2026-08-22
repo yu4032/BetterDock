@@ -136,9 +136,11 @@ final class Miuix307MaterialPipeline {
             Method attach = hotSeatsClass.getDeclaredMethod("onAttachedToWindow");
             HookUtil.hook(attach, chain -> {
                 Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
+                // Laptop overlays may reuse HotSeats classes. Do not let an overlay attach replace
+                // the ordinary Launcher.mHotSeats identity retained by setupViews.
+                if (MainHook.isWorkstationMode()) return result;
                 Object hotSeats = chain.getThisObject();
                 hotSeatsRef = new WeakReference<>(hotSeats);
-                if (MainHook.isWorkstationMode()) return result;
 
                 View background = resolveBackground(hotSeats);
                 if (background == null) {
