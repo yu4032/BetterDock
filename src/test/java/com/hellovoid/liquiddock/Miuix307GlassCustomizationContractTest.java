@@ -48,15 +48,20 @@ public class Miuix307GlassCustomizationContractTest {
     }
 
     @Test
-    public void currentGuiDescriptionsMatchZeroCopyPrismalSemantics() throws Exception {
+    public void currentGuiDescriptionsMatchFunctionalGlassSemantics() throws Exception {
         String ui = Files.readString(UI);
+        int start = ui.indexOf("private fun optionSummary");
+        int end = ui.indexOf("private val gridSpecs", start);
+        assertTrue(start >= 0 && end > start);
+        String summaries = ui.substring(start, end);
 
-        assertTrue(ui.contains("透镜方向向中心偏转"));
-        assertTrue(ui.contains("越高越集中在边缘"));
-        assertTrue(ui.contains("Prismal 边缘透镜位移倍率"));
-        assertTrue(ui.contains("zero-copy"));
-        assertFalse(ui.contains("SurfaceFlinger 捕获分辨率"));
-        assertFalse(ui.contains("动画和动态应用实时捕获的统一帧率上限"));
+        assertTrue(summaries.contains("控制折射方向向玻璃中心偏转的程度"));
+        assertTrue(summaries.contains("越高越集中在边缘"));
+        assertTrue(summaries.contains("控制边缘折射位移倍率"));
+        assertFalse(summaries.contains("zero-copy"));
+        assertFalse(summaries.contains("Prismal"));
+        assertFalse(summaries.contains("SurfaceFlinger 捕获分辨率"));
+        assertFalse(summaries.contains("动画和动态应用实时捕获的统一帧率上限"));
     }
 
     @Test
@@ -99,20 +104,15 @@ public class Miuix307GlassCustomizationContractTest {
             assertTrue("visible GUI field does not reach material: " + field,
                     material.contains(field));
         }
-        assertTrue(view.contains("glassConfig.samplingExtraTopPx"));
-        assertTrue(view.contains("glassConfig.samplingExtraBottomPx"));
-        assertTrue(view.contains("glassConfig.samplingExtraLeftPx"));
-        assertTrue(view.contains("glassConfig.samplingExtraRightPx"));
-        assertTrue(view.contains("portablePrismalParams")
-                && view.contains("prismalRenderer.render("));
+        assertTrue(view.contains("Miuix307PrismalAdapter.toPortable(params)"));
     }
 
     private static int occurrences(String text, String needle) {
         int count = 0;
-        int start = 0;
-        while ((start = text.indexOf(needle, start)) >= 0) {
+        int from = 0;
+        while ((from = text.indexOf(needle, from)) >= 0) {
             count++;
-            start += needle.length();
+            from += needle.length();
         }
         return count;
     }
