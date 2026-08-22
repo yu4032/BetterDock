@@ -33,7 +33,7 @@ jobs:
           git apply --check ci/shared-glass-config-test.patch
           git apply ci/shared-glass-config-test.patch
           echo '=== LauncherGlassConfigContractTest ==='
-          nl -ba src/test/java/com/hellovoid/liquiddock/LauncherGlassConfigContractTest.java
+          find src/test -name '*LauncherGlassConfigContractTest*' -print -exec nl -ba {} \;
           exit 86
 
       - name: Convert to wallpaper-only source
