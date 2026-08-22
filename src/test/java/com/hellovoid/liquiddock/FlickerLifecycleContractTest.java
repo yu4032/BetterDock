@@ -26,9 +26,9 @@ public class FlickerLifecycleContractTest {
         String app = Files.readString(JAVA.resolve("LiquidDockApp.java"));
         assertTrue("the central preference bridge must recognize the master key",
                 app.contains("ConfigSchema.Core.ENABLED.name().equals(key)"));
-        assertTrue("master changes must use a synchronous Remote Preferences write",
-                app.contains("syncKeyToRemote(key, sharedPreferences, masterChange)"));
-        int sync = app.indexOf("syncKeyToRemote(key, sharedPreferences, masterChange)");
+        assertTrue("master changes must synchronously commit the complete current config",
+                app.contains("masterChange") && app.contains("? syncToRemote(sharedPreferences)"));
+        int sync = app.indexOf("? syncToRemote(sharedPreferences)");
         int restart = app.indexOf("restartLauncherAfterMasterChange()", sync);
         assertTrue("Launcher restart must happen only after successful remote synchronization",
                 sync >= 0 && restart > sync);
