@@ -54,7 +54,11 @@ public final class LiquidDockApp extends Application
         if (reconciling) return;
         try {
             boolean masterChange = ConfigSchema.Core.ENABLED.name().equals(key);
-            boolean synced = syncKeyToRemote(key, sharedPreferences, masterChange);
+            // The master switch is a process-lifecycle boundary. Commit the complete current
+            // snapshot before restarting so a bulk import cannot restart Launcher between keys.
+            boolean synced = masterChange
+                    ? syncToRemote(sharedPreferences)
+                    : syncKeyToRemote(key, sharedPreferences, false);
             if (masterChange) {
                 if (synced) restartLauncherAfterMasterChange();
                 else Log.w("LiquidDock", "Master switch changed but Remote Preferences are unavailable; Launcher not restarted");
@@ -96,7 +100,7 @@ public final class LiquidDockApp extends Application
         return value != null ? value.getRemotePreferences(group) : null;
     }
 
-    /** Full-seed only — used on initial bind. Incremental updates use syncKeyToRemote. */
+    /** Full-seed only — used on initial bind and process-lifecycle configuration boundaries. */
     public static boolean syncToRemote(SharedPreferences local) {
         if (local == null) return false;
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
@@ -104,7 +108,7 @@ public final class LiquidDockApp extends Application
         return copyAll(local, remote);
     }
 
-    /** Incremental: sync one key. Master changes commit synchronously before Launcher restarts. */
+    /** Incremental: sync one ordinary key without blocking slider/control interaction. */
     private static boolean syncKeyToRemote(
             String key, SharedPreferences source, boolean synchronous) {
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
