@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -7,24 +8,30 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Keeps real folder dragging spatially realtime without reopening the wallpaper producer. */
+/** Keeps launcher dragging spatially realtime without making static sinks chase DragContainer. */
 public class LauncherGlassDragRealtimeContractTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
     @Test
-    public void dragContainerMarksGeometryChangedEveryPredraw() throws Exception {
+    public void sharedOverlayTracksSourceBeforeTraversalInsteadOfStaticSink() throws Exception {
+        String overlay = Files.readString(MAIN.resolve("LauncherGlassDragOverlay.java"));
         String sink = Files.readString(MAIN.resolve("LauncherGlassSinkView.java"));
 
-        assertTrue(sink.contains("isInDragContainer(material)"));
-        assertTrue(sink.contains("DragContainer"));
-        assertTrue(sink.contains("changed |= isInDragContainer(material);"));
+        assertTrue(overlay.contains("Choreographer.FrameCallback"));
+        assertTrue(overlay.contains("syncFromSource()"));
+        assertTrue(overlay.contains("source.getLocationOnScreen"));
+        assertTrue(overlay.contains("carrier.setX"));
+        assertTrue(overlay.contains("carrier.setY"));
+        assertFalse(sink.contains("changed |= isInDragContainer(material);"));
     }
 
     @Test
     public void dragDoesNotReenableContinuousWallpaperProducer() throws Exception {
+        String overlay = Files.readString(MAIN.resolve("LauncherGlassDragOverlay.java"));
         String session = Files.readString(MAIN.resolve("LauncherGlassSession.java"));
 
-        assertTrue(session.contains("node.geometryStability.select(old, observed, localChanged)"));
+        assertFalse(overlay.contains("requestSingleUpdate"));
+        assertFalse(overlay.contains("setRealtimeUpdates"));
         assertTrue(session.contains("Miuix307PassBlurBridge.pauseUpdates(binding);"));
     }
 }
