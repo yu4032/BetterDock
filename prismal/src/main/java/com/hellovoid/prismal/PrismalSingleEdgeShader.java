@@ -5,10 +5,11 @@ package com.hellovoid.prismal;
  *
  * <p>The upstream source is intentionally kept byte-for-byte as the provenance baseline. Prismal's
  * stock fragment adds lens/parallax, Snell and a mid-band bulge into the sampled backdrop. LiquidDock
- * keeps one transmitted-refraction field. Very wide Dock glass keeps the translation-invariant local
- * edge normal, while ordinary folder/widget glass uses a continuous elliptical radial metric so the
- * nearest-edge X/Y branch cannot create a square center and four diagonal seams. Chromatic separation
- * is expressed in short-axis pixels before converting back to UV.</p>
+ * keeps one transmitted-refraction field. Ordinary folder/widget glass follows a smoothed rounded-
+ * rectangle SDF and obtains its direction with a finite-difference gradient, avoiding the nearest-
+ * edge X/Y branch without turning the glass into a circular lens. Very wide Dock glass keeps the
+ * translation-invariant local edge normal. Chromatic separation is expressed in short-axis pixels
+ * before converting back to UV.</p>
  */
 final class PrismalSingleEdgeShader {
     private static final String UPSTREAM_LENS_DIRECTION = """
@@ -19,18 +20,21 @@ final class PrismalSingleEdgeShader {
             """;
 
     private static final String SHAPE_ADAPTIVE_LENS_DIRECTION = """
-                // Ordinary folder/widget glass must not use the rounded-rect nearest-edge
-                // direction through its interior: that field switches X/Y at |x|=|y| and
-                // produces the visible four-wedge cross. Very wide Dock glass still needs
-                // a translation-invariant straight-edge normal.
+                // Normal folder/widget glass follows a smooth rounded-rect SDF. Finite
+                // differences keep the direction continuous through |x|=|y| while preserving
+                // the rounded-rectangle optical contour. Very wide Dock glass keeps its local
+                // straight-edge normal.
                 float glassAspect = max(u_glassSize.x, u_glassSize.y) / max(min(u_glassSize.x, u_glassSize.y), 1.0);
-                float radialRefractionW = 1.0 - smoothstep(2.2, 3.2, glassAspect);
-                vec2 radialRefractionRaw = cKy / max(halfSz, vec2(1.0));
-                float radialRefractionLen = length(radialRefractionRaw);
-                vec2 radialRefractionDir = radialRefractionLen > 1e-5 ? radialRefractionRaw / radialRefractionLen : vec2(0.0);
-                float radialInwardPx = max(0.0, (1.0 - radialRefractionLen) * minDim);
+                float smoothRectRefractionW = 1.0 - smoothstep(2.2, 3.2, glassAspect);
+                float smoothRectK = max(u_sminSmoothing, minDim * 0.12);
+                float smoothRectSd = sdRoundBox(pPx, halfSz, crMask, smoothRectK);
+                float smoothRectDx = 0.5 * (sdRoundBox(pPx + vec2(1.0, 0.0), halfSz, crMask, smoothRectK) - sdRoundBox(pPx - vec2(1.0, 0.0), halfSz, crMask, smoothRectK));
+                float smoothRectDy = 0.5 * (sdRoundBox(pPx + vec2(0.0, 1.0), halfSz, crMask, smoothRectK) - sdRoundBox(pPx - vec2(0.0, 1.0), halfSz, crMask, smoothRectK));
+                vec2 smoothRectGrad = vec2(smoothRectDx, smoothRectDy);
+                vec2 smoothRectDir = length(smoothRectGrad) > 1e-5 ? normalize(smoothRectGrad) : vec2(0.0);
+                float smoothRectInwardPx = max(0.0, -smoothRectSd);
                 vec2 edgeLensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);
-                vec2 lensDirBlend = mix(edgeLensDir, radialRefractionDir, radialRefractionW);
+                vec2 lensDirBlend = mix(edgeLensDir, smoothRectDir, smoothRectRefractionW);
                 float lensDirLen = length(lensDirBlend);
                 vec2 lensDir = lensDirLen > 1e-5 ? lensDirBlend / lensDirLen : vec2(0.0);
             """;
@@ -48,10 +52,9 @@ final class PrismalSingleEdgeShader {
     private static final String SHAPE_ADAPTIVE_D_LENS_BLOCK = """
                 float lensRh = refractionHeight;
                 float sdIn = min(sdKy, 0.0);
-                // The wide-Dock path uses exact inward SDF distance. Normal glass uses the
-                // same continuous elliptical metric as its direction, removing the square
-                // zero-refraction core left by nearest-edge rounded-rect distance.
-                float lensInwardPx = mix(-sdIn, radialInwardPx, radialRefractionW);
+                // Normal glass uses the smooth rounded-rect inward distance computed above;
+                // wide Dock glass keeps the exact per-corner inward distance.
+                float lensInwardPx = mix(-sdIn, smoothRectInwardPx, smoothRectRefractionW);
                 float dLens = 0.0;
                 if (lensInwardPx < lensRh) {
                     dLens = circleMapRealistic(1.0 - (lensInwardPx / lensRh)) * (-u_lensRefractionPx);
