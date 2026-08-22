@@ -8,12 +8,13 @@ import java.util.WeakHashMap;
 
 import io.github.libxposed.api.XposedInterface;
 
-/** Own the ordinary Floating Dock's Y offset without changing Workspace geometry. */
+/** Own the ordinary Floating Dock's Y offset without changing Workspace reserve geometry. */
 final class DockBottomGeometryHook {
     private static final String HOT_SEATS = "com.miui.home.launcher.hotseats.HotSeats";
     private static final String DEVICE_CONFIG = "com.miui.home.launcher.DeviceConfig";
     private static final String GRID_CONTROLLER = "com.miui.home.launcher.grid.GridController";
-    private static final WeakHashMap<View, Float> VENDOR_TRANSLATION_Y = new WeakHashMap<>();
+    private static final WeakHashMap<View, View.OnLayoutChangeListener> LAYOUT_OWNERS =
+            new WeakHashMap<>();
 
     private DockBottomGeometryHook() {}
 
@@ -25,7 +26,7 @@ final class DockBottomGeometryHook {
         int bottomOffsetPx = Math.round(config.dock.bottomOffset * scale);
         if (bottomOffsetPx == 0) return;
         installStockMarginFence(classLoader);
-        installVisualTranslationOwner(classLoader, bottomOffsetPx);
+        installVisualLayoutOwner(classLoader, bottomOffsetPx);
     }
 
     /** Preserve the exact stock margin so LiquidDock never changes Workspace/Dock-window reserve. */
@@ -58,34 +59,16 @@ final class DockBottomGeometryHook {
         }
     }
 
-    /** Add the custom delta only to the vendor's visual translationY animation value. */
-    private static void installVisualTranslationOwner(ClassLoader classLoader, int bottomOffsetPx) {
+    /**
+     * Keep the custom offset in HotSeats' real layout coordinates instead of translationY.
+     * MIUI uses the layout position as the target for icon/fly-in animations, while translationY
+     * is an independent animation property. Moving the bounds after each vendor layout keeps the
+     * animation target and the final Dock position in the same coordinate space without changing
+     * the parent's stock reserve or LayoutParams.
+     */
+    private static void installVisualLayoutOwner(ClassLoader classLoader, int bottomOffsetPx) {
         try {
             Class<?> hotSeats = Class.forName(HOT_SEATS, false, classLoader);
-            Method translation = HookUtil.findMethodExact(
-                    hotSeats, "setTranslationY", new Class<?>[]{float.class});
-            Api101Bridge.module().hook(translation)
-                    .setPriority(XposedInterface.PRIORITY_HIGHEST)
-                    .intercept(chain -> {
-                        Object owner = chain.getThisObject();
-                        Object value = chain.getArg(0);
-                        if (!(owner instanceof View) || !(value instanceof Number)) {
-                            return chain.proceed();
-                        }
-                        View view = (View) owner;
-                        float vendorY = ((Number) value).floatValue();
-                        synchronized (VENDOR_TRANSLATION_Y) {
-                            VENDOR_TRANSLATION_Y.put(view, vendorY);
-                        }
-                        if (view.getParent() == null || isLaptopDockHierarchy(view)) {
-                            return chain.proceed();
-                        }
-                        Object[] args = chain.getArgs().toArray(new Object[0]);
-                        args[0] = DockBottomGeometryPolicy.visualTranslationY(
-                                vendorY, bottomOffsetPx);
-                        return chain.proceed(args);
-                    });
-
             Method attached = HookUtil.findMethodExact(
                     hotSeats, "onAttachedToWindow", new Class<?>[0]);
             Api101Bridge.module().hook(attached)
@@ -93,29 +76,33 @@ final class DockBottomGeometryHook {
                     .intercept(chain -> {
                         Object result = chain.proceed();
                         Object owner = chain.getThisObject();
-                        if (!(owner instanceof View)) return result;
+                        if (!(owner instanceof View) || !hotSeats.isInstance(owner)) return result;
                         View view = (View) owner;
                         if (isLaptopDockHierarchy(view)) return result;
-                        float vendorY;
-                        synchronized (VENDOR_TRANSLATION_Y) {
-                            Float remembered = VENDOR_TRANSLATION_Y.get(view);
-                            if (remembered == null) {
-                                remembered = view.getTranslationY();
-                                VENDOR_TRANSLATION_Y.put(view, remembered);
-                            }
-                            vendorY = remembered;
-                        }
-                        float target = DockBottomGeometryPolicy.visualTranslationY(
-                                vendorY, bottomOffsetPx);
-                        if (Math.abs(view.getTranslationY() - target) > 0.01f) {
-                            view.setTranslationY(vendorY);
-                        }
+                        ensureLayoutOwner(view, bottomOffsetPx);
+                        // onAttached normally precedes first layout. requestLayout also covers
+                        // re-attaches where the previous frame might otherwise be reused.
+                        view.requestLayout();
                         return result;
                     });
-            MainHook.log("[DC] Dock bottom visual translation owner installed offset="
+            MainHook.log("[DC] Dock bottom visual layout owner installed offset="
                     + bottomOffsetPx);
         } catch (Throwable error) {
-            MainHook.log("[DC] Dock bottom visual translation owner unavailable: " + error);
+            MainHook.log("[DC] Dock bottom visual layout owner unavailable: " + error);
+        }
+    }
+
+    private static void ensureLayoutOwner(View view, int bottomOffsetPx) {
+        synchronized (LAYOUT_OWNERS) {
+            if (LAYOUT_OWNERS.containsKey(view)) return;
+            View.OnLayoutChangeListener listener = (v, left, top, right, bottom,
+                                                     oldLeft, oldTop, oldRight, oldBottom) -> {
+                if (v.getParent() == null || isLaptopDockHierarchy(v)) return;
+                int deltaY = DockBottomGeometryPolicy.layoutDeltaY(bottomOffsetPx);
+                if (deltaY != 0) v.offsetTopAndBottom(deltaY);
+            };
+            LAYOUT_OWNERS.put(view, listener);
+            view.addOnLayoutChangeListener(listener);
         }
     }
 

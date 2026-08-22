@@ -6,9 +6,9 @@ import java.util.Locale;
 final class DockBottomGeometryPolicy {
     private DockBottomGeometryPolicy() {}
 
-    /** Positive bottom offset means visually farther from the physical bottom, hence negative Y. */
-    static float visualTranslationY(float vendorTranslationY, int bottomOffsetPx) {
-        return vendorTranslationY - bottomOffsetPx;
+    /** Positive bottom offset means farther from the physical bottom, hence a negative layout Y delta. */
+    static int layoutDeltaY(int bottomOffsetPx) {
+        return -bottomOffsetPx;
     }
 
     /** Reconstruct DeviceConfig.getHotSeatsMarginBottom() from the launcher DEX. */
