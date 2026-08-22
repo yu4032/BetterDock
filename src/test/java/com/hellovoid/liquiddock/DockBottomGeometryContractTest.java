@@ -19,33 +19,37 @@ public class DockBottomGeometryContractTest {
     }
 
     @Test
-    public void bottomOffsetNeverMutatesLayoutBoundsAndStockMarginIsFenced() throws Exception {
+    public void bottomOffsetPreservesStockReserveButMovesHotSeatsLayoutBounds() throws Exception {
         String owner = read("src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
         assertTrue(owner.contains("installStockMarginFence"));
         assertTrue(owner.contains("DockBottomGeometryPolicy.stockMargin"));
-        assertFalse(owner.contains("offsetTopAndBottom"));
-        assertFalse(owner.contains("setLayoutParams"));
+        assertTrue("bottom offset must move HotSeats bounds after vendor layout",
+                owner.contains("offsetTopAndBottom"));
+        assertFalse("bottom offset must not rewrite parent layout params / reserve",
+                owner.contains("setLayoutParams"));
     }
 
     @Test
-    public void visibleHotSeatsTranslationOwnsBottomOffset() throws Exception {
+    public void visibleHotSeatsLayoutOwnsBottomOffsetWithoutTranslationPropertyConflict() throws Exception {
         Path path = Paths.get("src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
         assertTrue(Files.exists(path));
         String source = Files.readString(path, StandardCharsets.UTF_8);
-        assertTrue(source.contains("setTranslationY"));
+        assertTrue(source.contains("installVisualLayoutOwner"));
+        assertTrue(source.contains("onLayout"));
+        assertTrue(source.contains("offsetTopAndBottom"));
         assertTrue(source.contains("isLaptopDockHierarchy"));
-        assertTrue(source.contains("chain.getArg(0)"));
-        assertTrue(source.contains("chain.proceed(args)"));
+        assertFalse("HotSeats translationY is animated by MIUI and cannot own a persistent offset",
+                source.contains("setTranslationY"));
     }
 
     @Test
-    public void translationAndStockMarginMathAreStable() throws Exception {
+    public void layoutDeltaAndStockMarginMathAreStable() throws Exception {
         try {
             Class<?> policy = Class.forName("com.hellovoid.liquiddock.DockBottomGeometryPolicy");
-            Method visual = policy.getDeclaredMethod("visualTranslationY", float.class, int.class);
-            visual.setAccessible(true);
-            assertEquals(-24f, (Float) visual.invoke(null, 0f, 24), 0.001f);
-            assertEquals(76f, (Float) visual.invoke(null, 100f, 24), 0.001f);
+            Method delta = policy.getDeclaredMethod("layoutDeltaY", int.class);
+            delta.setAccessible(true);
+            assertEquals(-24, ((Integer) delta.invoke(null, 24)).intValue());
+            assertEquals(2, ((Integer) delta.invoke(null, -2)).intValue());
             Method stock = policy.getDeclaredMethod("stockMargin", int.class, int.class);
             stock.setAccessible(true);
             assertEquals(18, ((Integer) stock.invoke(null, 40, 22)).intValue());
@@ -69,7 +73,7 @@ public class DockBottomGeometryContractTest {
     @Test
     public void finalOwnerDoesNotTrustGlobalWorkstationState() throws Exception {
         String source = read("src/main/java/com/hellovoid/liquiddock/DockBottomGeometryHook.java");
-        int finalOwner = source.indexOf("installVisualTranslationOwner");
+        int finalOwner = source.indexOf("installVisualLayoutOwner");
         int hierarchy = source.indexOf("isLaptopDockHierarchy", finalOwner);
         assertTrue(finalOwner >= 0);
         assertTrue(hierarchy > finalOwner);
