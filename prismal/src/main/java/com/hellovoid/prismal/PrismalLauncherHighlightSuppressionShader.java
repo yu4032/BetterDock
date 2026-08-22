@@ -1,10 +1,11 @@
 package com.hellovoid.prismal;
 
 /**
- * Launcher-only diagnostic suppression for additive white highlight paths.
+ * Removes upstream additive white highlight paths that are not suitable for compact launcher glass.
  *
- * <p>This intentionally leaves backdrop sampling, refraction, chromatic separation, blur,
- * tint, shadows and sampled background reflection untouched. Dock never uses this transform.</p>
+ * <p>The compact launcher uses its own continuous edge highlight after this transform. Backdrop
+ * sampling, refraction, chromatic separation, blur, tint, shadows and sampled background
+ * reflection remain untouched. Dock never uses this transform.</p>
  */
 final class PrismalLauncherHighlightSuppressionShader {
     private PrismalLauncherHighlightSuppressionShader() {}
@@ -48,7 +49,7 @@ final class PrismalLauncherHighlightSuppressionShader {
             throw new IllegalStateException(label + " upstream contract changed");
         }
         return source.substring(0, first)
-                + "/* " + label + " disabled for launcher diagnostic */"
+                + "/* " + label + " disabled for compact launcher */"
                 + source.substring(first + statement.length());
     }
 }
