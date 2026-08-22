@@ -13,9 +13,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,44 +25,6 @@ jobs:
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
-      - name: Materialize remaining approved requirements
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/main-folder-glass-rebuild'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          if ! grep -q 'PrismalHighlightProfile highlightProfile' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java; then
-            python - <<'PY'
-          from pathlib import Path
-          p = Path('ci/apply_remaining_ui.py')
-          t = p.read_text()
-          old = '"调试：用 RGB 直接显示当前表面法线"'
-          new = '"调试：用 RGB 直接显示当前 Prismal 表面法线"'
-          if t.count(old) < 1:
-              raise SystemExit('staged UI anchor not found')
-          p.write_text(t.replace(old, new, 1))
-          PY
-            python ci/apply_remaining_runtime.py
-            python ci/apply_remaining_ui.py
-            git add \
-              prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java \
-              src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java \
-              src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java \
-              src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt \
-              src/main/res/values/strings.xml \
-              src/main/res/values-zh-rCN/strings.xml
-            git diff --cached --check
-            git commit -m 'feat: complete Launcher glass controls and settings cleanup'
-            git push origin HEAD:feat/main-folder-glass-rebuild
-          fi
-
-          if grep -q '兼容调整 Prismal rim band 宽度' src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt; then
-            python ci/cleanup_liquid_functional_copy.py
-            git add src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt
-            git diff --cached --check
-            git commit -m 'fix: keep Liquid settings descriptions functional-only'
-            git push origin HEAD:feat/main-folder-glass-rebuild
-          fi
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
