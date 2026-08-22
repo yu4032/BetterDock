@@ -4,11 +4,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Deterministic whole-layout planner used only when an orientation has no complete saved layout.
@@ -32,6 +30,7 @@ final class HomeGridPlacementPlanner {
         int targetRows = profile.rows(targetPortrait);
         int sourceColumns = profile.columns(!targetPortrait);
         int sourceRows = profile.rows(!targetPortrait);
+        int[][] targetBlockOrigins = profile.blockOrigins(targetPortrait);
 
         LinkedHashMap<Long, HomeGridItemPosition> sourceById = new LinkedHashMap<>();
         for (HomeGridItemPosition source : sourcePositions) {
@@ -51,10 +50,13 @@ final class HomeGridPlacementPlanner {
 
         // Exact compatible remembered placements are immutable anchors. They win over all
         // automatic placement rules and are reserved before new/unremembered items are planned.
+        // Exact 2x2 items are the exception to arbitrary remembered coordinates: MIUI's grid
+        // transform treats them as 2x2 macroblocks, so their origins must remain block-aligned.
         for (HomeGridItemPosition source : sourceById.values()) {
             HomeGridItemPosition saved = rememberedMatchesScope
                     ? remembered.get(source.itemId()) : null;
-            if (isCompatibleRemembered(source, saved, targetColumns, targetRows)
+            if (isCompatibleRemembered(
+                    source, saved, targetColumns, targetRows, targetBlockOrigins)
                     && canPlace(occupiedByScreen, saved, targetColumns, targetRows)) {
                 reserve(occupiedByScreen, saved, targetColumns, targetRows);
                 planned.put(saved.itemId(), saved);
@@ -70,7 +72,7 @@ final class HomeGridPlacementPlanner {
         for (HomeGridItemPosition source : remaining) {
             HomeGridItemPosition placed = findNearestPlacement(
                     source, sourceColumns, sourceRows,
-                    targetColumns, targetRows, occupiedByScreen);
+                    targetColumns, targetRows, targetBlockOrigins, occupiedByScreen);
             if (placed == null) return PlanResult.failure();
             reserve(occupiedByScreen, placed, targetColumns, targetRows);
             planned.put(placed.itemId(), placed);
@@ -83,12 +85,15 @@ final class HomeGridPlacementPlanner {
 
     private static boolean isCompatibleRemembered(HomeGridItemPosition source,
                                                    HomeGridItemPosition saved,
-                                                   int targetColumns, int targetRows) {
+                                                   int targetColumns, int targetRows,
+                                                   int[][] targetBlockOrigins) {
         return saved != null
                 && saved.screenId() == source.screenId()
                 && saved.spanX() == source.spanX()
                 && saved.spanY() == source.spanY()
-                && saved.fitsWithin(targetColumns, targetRows);
+                && saved.fitsWithin(targetColumns, targetRows)
+                && (!isExactTwoByTwo(saved)
+                        || isMacroblockOrigin(saved, targetBlockOrigins));
     }
 
     private static int placementPriority(HomeGridItemPosition item) {
@@ -102,6 +107,7 @@ final class HomeGridPlacementPlanner {
             HomeGridItemPosition source,
             int sourceColumns, int sourceRows,
             int targetColumns, int targetRows,
+            int[][] targetBlockOrigins,
             Map<Long, boolean[][]> occupiedByScreen) {
         if (source.spanX() <= 0 || source.spanY() <= 0
                 || source.spanX() > targetColumns || source.spanY() > targetRows) {
@@ -114,24 +120,44 @@ final class HomeGridPlacementPlanner {
         int bestX = -1;
         int bestY = -1;
 
-        // Row-major enumeration is the deterministic tie break: only a strictly better distance
-        // may replace the first equally-good candidate.
-        for (int y = 0; y <= targetRows - source.spanY(); y++) {
-            for (int x = 0; x <= targetColumns - source.spanX(); x++) {
+        if (isExactTwoByTwo(source)) {
+            // MIUI's 2x2 transform operates on fixed 2x2 macroblocks. Restricting the candidate
+            // set here prevents a logically in-bounds item such as (1,3) from straddling blocks
+            // and later indexing outside the transform table.
+            for (int[] origin : targetBlockOrigins) {
+                int x = origin[0];
+                int y = origin[1];
                 HomeGridItemPosition candidate = new HomeGridItemPosition(
-                        source.itemId(), source.screenId(),
-                        x, y, source.spanX(), source.spanY());
+                        source.itemId(), source.screenId(), x, y, 2, 2);
                 if (!canPlace(occupiedByScreen, candidate, targetColumns, targetRows)) continue;
 
-                double targetCenterX = (x + source.spanX() / 2.0) / targetColumns;
-                double targetCenterY = (y + source.spanY() / 2.0) / targetRows;
-                double dx = targetCenterX - sourceCenterX;
-                double dy = targetCenterY - sourceCenterY;
-                double distance = dx * dx + dy * dy;
+                double distance = normalizedCenterDistance(
+                        sourceCenterX, sourceCenterY, x, y,
+                        source.spanX(), source.spanY(), targetColumns, targetRows);
                 if (distance + EPSILON < bestDistance) {
                     bestDistance = distance;
                     bestX = x;
                     bestY = y;
+                }
+            }
+        } else {
+            // Row-major enumeration is the deterministic tie break: only a strictly better
+            // distance may replace the first equally-good candidate.
+            for (int y = 0; y <= targetRows - source.spanY(); y++) {
+                for (int x = 0; x <= targetColumns - source.spanX(); x++) {
+                    HomeGridItemPosition candidate = new HomeGridItemPosition(
+                            source.itemId(), source.screenId(),
+                            x, y, source.spanX(), source.spanY());
+                    if (!canPlace(occupiedByScreen, candidate, targetColumns, targetRows)) continue;
+
+                    double distance = normalizedCenterDistance(
+                            sourceCenterX, sourceCenterY, x, y,
+                            source.spanX(), source.spanY(), targetColumns, targetRows);
+                    if (distance + EPSILON < bestDistance) {
+                        bestDistance = distance;
+                        bestX = x;
+                        bestY = y;
+                    }
                 }
             }
         }
@@ -139,6 +165,34 @@ final class HomeGridPlacementPlanner {
         return bestX < 0 ? null : new HomeGridItemPosition(
                 source.itemId(), source.screenId(),
                 bestX, bestY, source.spanX(), source.spanY());
+    }
+
+    private static double normalizedCenterDistance(double sourceCenterX,
+                                                   double sourceCenterY,
+                                                   int targetX, int targetY,
+                                                   int spanX, int spanY,
+                                                   int targetColumns, int targetRows) {
+        double targetCenterX = (targetX + spanX / 2.0) / targetColumns;
+        double targetCenterY = (targetY + spanY / 2.0) / targetRows;
+        double dx = targetCenterX - sourceCenterX;
+        double dy = targetCenterY - sourceCenterY;
+        return dx * dx + dy * dy;
+    }
+
+    private static boolean isExactTwoByTwo(HomeGridItemPosition item) {
+        return item != null && item.spanX() == 2 && item.spanY() == 2;
+    }
+
+    private static boolean isMacroblockOrigin(HomeGridItemPosition item,
+                                              int[][] blockOrigins) {
+        if (item == null || blockOrigins == null) return false;
+        for (int[] origin : blockOrigins) {
+            if (origin != null && origin.length >= 2
+                    && item.cellX() == origin[0] && item.cellY() == origin[1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean canPlace(Map<Long, boolean[][]> occupiedByScreen,
