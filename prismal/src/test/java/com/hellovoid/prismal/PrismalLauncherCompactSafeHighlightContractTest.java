@@ -17,10 +17,10 @@ public class PrismalLauncherCompactSafeHighlightContractTest {
             "src/main/java/com/hellovoid/prismal/PrismalLauncherCompactShader.java");
 
     @Test
-    public void compactPipelineAddsSafeHighlightAfterSuppressingUpstreamHighlights() throws Exception {
+    public void compactPipelineAddsSafeHighlightAfterRuntimeComponentGates() throws Exception {
         assertTrue("compact-safe highlight transform must exist", Files.exists(HIGHLIGHT));
         String compact = Files.readString(COMPACT, StandardCharsets.UTF_8);
-        assertTrue(compact.contains("PrismalLauncherHighlightSuppressionShader.apply(corrected)"));
+        assertTrue(compact.contains("PrismalComponentGateShader.apply(corrected)"));
         assertTrue(compact.contains("PrismalLauncherCompactHighlightShader.apply(corrected)"));
     }
 
@@ -31,7 +31,8 @@ public class PrismalLauncherCompactSafeHighlightContractTest {
                 "vec2 compactHiDir = length(compactCoord) > 1e-4 ? normalize(compactCoord) : vec2(0.0, -1.0);"));
         assertTrue(source.contains(
                 "float compactEdge = (1.0 - smoothstep(0.0, compactEdgeBand, edgeDist))"));
-        assertTrue(source.contains("color += compactHighlightColor * compactHighlight;"));
+        assertTrue(source.contains(
+                "color += compactHighlightColor * compactHighlight * u_componentCompactSafeHighlight;"));
 
         assertFalse("safe launcher highlight must not use the rounded-rect axis gradient",
                 source.contains("gradLens"));
@@ -41,13 +42,14 @@ public class PrismalLauncherCompactSafeHighlightContractTest {
     }
 
     @Test
-    public void transformedRuntimeShaderKeepsOldWhiteChainsSuppressedAndAddsSafeEdgeHighlight() {
+    public void transformedRuntimeShaderKeepsUpstreamChainsGatedAndAddsSafeEdgeHighlight() {
         String shader = PrismalLauncherCompactShader.apply(PrismalShaderSources.FRAGMENT);
 
-        assertFalse(shader.contains("color = mix(color, mix(color, skyHaze"));
-        assertFalse(shader.contains("color += (specP + specS)"));
-        assertFalse(shader.contains("color += plusHL * vec3"));
-        assertFalse(shader.contains("color += caust * vec3"));
-        assertTrue(shader.contains("color += compactHighlightColor * compactHighlight;"));
+        assertTrue(shader.contains("if (u_componentSkyHaze > 0.5)"));
+        assertTrue(shader.contains("if (u_componentSpecular > 0.5)"));
+        assertTrue(shader.contains("if (u_componentPlainHighlight > 0.5)"));
+        assertTrue(shader.contains("if (u_componentCaustics > 0.5)"));
+        assertTrue(shader.contains(
+                "color += compactHighlightColor * compactHighlight * u_componentCompactSafeHighlight;"));
     }
 }
