@@ -26,6 +26,17 @@ public class LauncherGlassDragRealtimeContractTest {
     }
 
     @Test
+    public void realDragViewAttemptsBeginImmediatelyAndOnlyRetriesNextFrameWhenNotReady() throws Exception {
+        String hook = Files.readString(MAIN.resolve("MiuixLauncherDragOverlayHook.java"));
+
+        assertTrue(hook.contains("beginWhenReady(child, glassConfig, 0);"));
+        assertFalse("onViewAdded must not impose an unconditional one-frame delay",
+                hook.contains("child.postOnAnimation(() -> beginWhenReady(child, glassConfig, 0));"));
+        assertTrue("not-ready DragView may retry on the next animation frame",
+                hook.contains("child.postOnAnimation(() -> beginWhenReady(child, glassConfig, attempt + 1));"));
+    }
+
+    @Test
     public void dragDoesNotReenableContinuousWallpaperProducer() throws Exception {
         String overlay = Files.readString(MAIN.resolve("LauncherGlassDragOverlay.java"));
         String session = Files.readString(MAIN.resolve("LauncherGlassSession.java"));
