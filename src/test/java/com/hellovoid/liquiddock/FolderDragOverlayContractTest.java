@@ -24,13 +24,20 @@ public class FolderDragOverlayContractTest {
         assertTrue(hook.contains("LauncherGlassDragOverlay.begin"));
         assertTrue(hook.contains("LauncherGlassDragOverlay.end"));
         assertTrue(hook.contains("LauncherGlassDragState.Kind.FOLDER"));
-        assertTrue(hook.contains("setSuppressedByDrag(true)"));
-        assertTrue(hook.contains("setSuppressedByDrag(false)"));
 
         assertTrue(sink.contains("suppressedByDrag"));
         assertTrue(sink.contains("void setSuppressedByDrag(boolean suppressed)"));
         assertTrue(sink.contains("suppressedByFolderOpen || suppressedByDrag"));
         assertFalse(sink.contains("changed |= isInDragContainer(material);"));
+    }
+
+    @Test
+    public void folderMaterialOwnsAuthoritativeStaticSinkDragSuppression() throws Exception {
+        String folderHook = Files.readString(MAIN.resolve("MiuixFolderGlassHook.java"));
+
+        assertTrue(folderHook.contains("onDragContainerBgAnimAlpha"));
+        assertTrue(folderHook.contains("new Class<?>[]{Boolean.TYPE, Boolean.TYPE}"));
+        assertTrue(folderHook.contains("setSuppressedByDrag(!normalState)"));
     }
 
     @Test
