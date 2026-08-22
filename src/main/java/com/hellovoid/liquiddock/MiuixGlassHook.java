@@ -247,25 +247,15 @@ final class MiuixGlassHook {
         }
     }
 
+    /**
+     * Suppress once on the next main-loop turn after bind. The old implementation repeated hidden
+     * compositor blur writes from an OnPreDrawListener every frame, which could race SurfaceFlinger
+     * PassBlur transactions and visibly flash the Floating Dock. Geometry/material callbacks already
+     * re-apply suppression when HyperOS changes the background, so a perpetual frame listener is
+     * unnecessary and unsafe.
+     */
     private static void installVendorGpuBlurSuppressor(View dockBg) {
         removeVendorGpuBlurSuppressor();
-        View root = dockBg.getRootView();
-        ViewTreeObserver observer = root != null ? root.getViewTreeObserver() : null;
-        if (observer == null || !observer.isAlive()) return;
-
-        WeakReference<View> watchedBackground = new WeakReference<>(dockBg);
-        ViewTreeObserver.OnPreDrawListener listener = () -> {
-            View background = watchedBackground.get();
-            if (background != null && currentBackground() == background) {
-                suppressVendorGpuBlur(background);
-                suppressVendorMaterialBody(background, readRadius(background));
-            }
-            return true;
-        };
-        observer.addOnPreDrawListener(listener);
-        vendorBlurObserver = new WeakReference<>(observer);
-        vendorBlurSuppressor = listener;
-
         WeakReference<View> postedBackground = new WeakReference<>(dockBg);
         dockBg.post(() -> {
             View background = postedBackground.get();
