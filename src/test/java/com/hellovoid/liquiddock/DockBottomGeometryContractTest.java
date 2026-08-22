@@ -35,7 +35,9 @@ public class DockBottomGeometryContractTest {
         assertTrue(Files.exists(path));
         String source = Files.readString(path, StandardCharsets.UTF_8);
         assertTrue(source.contains("installVisualLayoutOwner"));
-        assertTrue(source.contains("onLayout"));
+        assertTrue("owner must stay scoped to concrete HotSeats instances",
+                source.contains("OnLayoutChangeListener"));
+        assertTrue(source.contains("addOnLayoutChangeListener"));
         assertTrue(source.contains("offsetTopAndBottom"));
         assertTrue(source.contains("isLaptopDockHierarchy"));
         assertFalse("HotSeats translationY is animated by MIUI and cannot own a persistent offset",
