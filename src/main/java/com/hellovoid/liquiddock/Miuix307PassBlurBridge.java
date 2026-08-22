@@ -15,6 +15,7 @@ import java.util.Arrays;
 final class Miuix307PassBlurBridge {
     private static final String TAG = "[DC][PBGL]";
     private static final float DEMO_SCALE = 1.0f;
+    private static final int INITIAL_UPDATE_FRAMES = 4;
 
     static final class Binding {
         final SurfaceControl rootSurface;
@@ -23,7 +24,9 @@ final class Miuix307PassBlurBridge {
         final Method setMiBlurWinExc;
         final float scale;
         final String rootName;
+        final boolean callerManagedUpdates;
         boolean bound = true;
+        boolean updatesEnabled = true;
 
         Binding(
                 SurfaceControl rootSurface,
@@ -31,13 +34,15 @@ final class Miuix307PassBlurBridge {
                 Method setUpdateTextureFlag,
                 Method setMiBlurWinExc,
                 float scale,
-                String rootName) {
+                String rootName,
+                boolean callerManagedUpdates) {
             this.rootSurface = rootSurface;
             this.setPassBlurSurface = setPassBlurSurface;
             this.setUpdateTextureFlag = setUpdateTextureFlag;
             this.setMiBlurWinExc = setMiBlurWinExc;
             this.scale = scale;
             this.rootName = rootName;
+            this.callerManagedUpdates = callerManagedUpdates;
         }
     }
 
@@ -84,6 +89,11 @@ final class Miuix307PassBlurBridge {
                     "DockAssistantView"
             };
 
+            // LauncherGlassSession deliberately passes its stable Launcher root as materialHost and
+            // owns its own refresh cadence. Dock's zero-copy renderer passes the actual Dock material
+            // view instead, so its historical continuous producer remains completely independent.
+            boolean callerManagedUpdates = materialHost.getRootView() == materialHost;
+
             // Keep the calibration producer at full resolution. TextureView output is composited
             // into the already-excluded Floating Dock root, so no child-layer exclusion is required.
             float scale = DEMO_SCALE;
@@ -95,18 +105,25 @@ final class Miuix307PassBlurBridge {
                 transaction.apply();
             }
 
-            MainHook.log(TAG + " PassBlur producer bound scale=" + scale
-                    + " requestedScale=" + requestedScale
-                    + " root=" + rootName
-                    + " output=TextureView-in-root"
-                    + " exclusions=" + Arrays.toString(exclusions));
-            return new Binding(
+            Binding binding = new Binding(
                     rootSurface,
                     setPassBlurSurface,
                     setUpdateTextureFlag,
                     setMiBlurWinExc,
                     scale,
-                    rootName);
+                    rootName,
+                    callerManagedUpdates);
+            if (binding.callerManagedUpdates) {
+                schedulePauseUpdates(materialHost, binding, INITIAL_UPDATE_FRAMES);
+            }
+
+            MainHook.log(TAG + " PassBlur producer bound scale=" + scale
+                    + " requestedScale=" + requestedScale
+                    + " root=" + rootName
+                    + " output=TextureView-in-root"
+                    + " mode=" + (callerManagedUpdates ? "caller-managed" : "continuous")
+                    + " exclusions=" + Arrays.toString(exclusions));
+            return binding;
         } catch (Throwable error) {
             MainHook.log(TAG + " PassBlur bind unavailable: " + error);
             return null;
@@ -119,11 +136,52 @@ final class Miuix307PassBlurBridge {
         return bind(materialHost, producerSurface, requestedScale);
     }
 
+    static void requestSingleUpdate(Binding binding, View host) {
+        if (binding == null || host == null || !binding.bound || !binding.callerManagedUpdates) return;
+        setUpdatesEnabled(binding, true);
+        schedulePauseUpdates(host, binding, INITIAL_UPDATE_FRAMES);
+    }
+
+    static void pauseUpdates(Binding binding) {
+        if (binding == null || !binding.callerManagedUpdates) return;
+        setUpdatesEnabled(binding, false);
+    }
+
+    private static void schedulePauseUpdates(View host, Binding binding, int framesLeft) {
+        if (host == null || binding == null || !binding.bound || !binding.callerManagedUpdates) return;
+        if (framesLeft <= 0) {
+            pauseUpdates(binding);
+            return;
+        }
+        host.postOnAnimation(() -> schedulePauseUpdates(host, binding, framesLeft - 1));
+    }
+
+    private static void setUpdatesEnabled(Binding binding, boolean enabled) {
+        if (binding == null || !binding.bound || !binding.rootSurface.isValid()) return;
+        if (binding.updatesEnabled == enabled) return;
+        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            binding.setUpdateTextureFlag.invoke(
+                    transaction,
+                    binding.rootSurface,
+                    Boolean.valueOf(enabled),
+                    Float.valueOf(binding.scale));
+            transaction.apply();
+            binding.updatesEnabled = enabled;
+            MainHook.log(TAG + " PassBlur producer updates=" + enabled
+                    + " root=" + binding.rootName);
+        } catch (Throwable error) {
+            MainHook.log(TAG + " PassBlur update toggle failed: " + error);
+        }
+    }
+
     static void unbind(Binding binding) {
         if (binding == null || !binding.bound) return;
-        binding.bound = false;
         try {
-            if (!binding.rootSurface.isValid()) return;
+            if (!binding.rootSurface.isValid()) {
+                binding.bound = false;
+                binding.updatesEnabled = false;
+                return;
+            }
             try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
                 binding.setPassBlurSurface.invoke(transaction, binding.rootSurface, null);
                 binding.setUpdateTextureFlag.invoke(
@@ -135,8 +193,12 @@ final class Miuix307PassBlurBridge {
                         transaction, binding.rootSurface, (Object) new String[0]);
                 transaction.apply();
             }
+            binding.bound = false;
+            binding.updatesEnabled = false;
             MainHook.log(TAG + " PassBlur producer unbound root=" + binding.rootName);
         } catch (Throwable error) {
+            binding.bound = false;
+            binding.updatesEnabled = false;
             MainHook.log(TAG + " PassBlur unbind failed: " + error);
         }
     }

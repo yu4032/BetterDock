@@ -194,7 +194,8 @@ final class LiquidDockConfig {
     }
 
     static final class Glass {
-        final boolean enabled;
+        final boolean enabled, folderEnabled;
+        final float folderCornerRadiusDp;
         final boolean prismalShowNormals;
         final PrismalHighlightProfile launcherHighlightProfile;
         final float blur, chromatic, thickness, ior, normalStrength, dome,
@@ -213,6 +214,10 @@ final class LiquidDockConfig {
         Glass(ConfigReader c) {
             enabled = c.b(ConfigSchema.Glass.ENABLED.name(),
                     ConfigSchema.Glass.ENABLED.runtimeFallback());
+            folderEnabled = c.b(ConfigSchema.Glass.FOLDER_GLASS.name(),
+                    ConfigSchema.Glass.FOLDER_GLASS.runtimeFallback());
+            folderCornerRadiusDp = c.f(ConfigSchema.Glass.FOLDER_CORNER_RADIUS.name(),
+                    ConfigSchema.Glass.FOLDER_CORNER_RADIUS.runtimeFallback());
             launcherHighlightProfile = LauncherHighlightPreferences.read(c);
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
             // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).

@@ -388,6 +388,33 @@
             app:min="0" app:max="255" android:dependency="dock_divider_enabled" />
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="Launcher Liquid Glass">
+
+        <SwitchPreference
+            android:key="liquid_glass"
+            android:title="Liquid Glass"
+            android:summary="Enable LiquidDock launcher liquid glass"
+            android:defaultValue="false" />
+
+        <SwitchPreference
+            android:key="liquid_folder_glass"
+            android:title="Folder Liquid Glass"
+            android:summary="Render launcher folders with liquid glass"
+            android:defaultValue="true"
+            android:dependency="liquid_glass" />
+
+        <com.hellovoid.liquiddock.SeekBarPreference
+            android:key="liquid_folder_corner_radius"
+            android:title="Folder Corner Radius"
+            android:summary="%d dp (0 = Auto)"
+            android:defaultValue="0"
+            app:min="0"
+            app:max="96"
+            android:dependency="liquid_folder_glass" />
+
+    </PreferenceCategory>
+
+
     <PreferenceCategory android:title="Backup &amp; Restore">
 
         <Preference

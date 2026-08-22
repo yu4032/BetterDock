@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
@@ -7,6 +8,10 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.animation.DecelerateInterpolator;
+
+import com.hellovoid.prismal.PrismalInteractionState;
 
 import java.lang.ref.WeakReference;
 import java.util.Collections;
@@ -17,13 +22,24 @@ import java.util.WeakHashMap;
 final class LauncherGlassSinkView extends TextureView implements TextureView.SurfaceTextureListener {
     private static final Map<View, WeakReference<LauncherGlassSinkView>> BY_MATERIAL =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static final long PRESS_IN_DURATION_MS = 90L;
+    private static final long PRESS_OUT_DURATION_MS = 160L;
 
     private final WeakReference<View> materialRef;
+    private final LauncherGlassScrollMotionTracker workspaceScrollMotion =
+            new LauncherGlassScrollMotionTracker();
+    private WeakReference<View> workspaceRef = new WeakReference<>(null);
     private volatile LauncherGlassSession session;
     private final LiquidDockConfig.Glass glassConfig;
-    private final float nativeCornerRadiusPx;
+    private volatile float nativeCornerRadiusPx;
     private volatile boolean disposed;
     private volatile boolean suppressedByFolderOpen;
+    private volatile boolean suppressedByDrag;
+    private boolean pressTarget;
+    private float pressProgress;
+    private float glowCenterX = 0.5f;
+    private float glowCenterY = 0.5f;
+    private ValueAnimator pressAnimator;
     private boolean parentRecoveryPosted;
     private Surface outputSurface;
     private LauncherGlassSession outputSession;
@@ -96,10 +112,92 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     }
 
     void setSuppressedByFolderOpen(boolean suppressed) {
-        if (disposed || suppressedByFolderOpen == suppressed) return;
+        if (disposed) return;
+        if (suppressed) resetPressInteraction(false);
+        if (suppressedByFolderOpen == suppressed) return;
         suppressedByFolderOpen = suppressed;
         syncFromMaterial();
         requestLifecycleRefresh();
+    }
+
+    void setSuppressedByDrag(boolean suppressed) {
+        if (disposed || suppressedByDrag == suppressed) return;
+        suppressedByDrag = suppressed;
+        if (suppressed) resetPressInteraction(false);
+        syncFromMaterial();
+        requestLifecycleRefresh();
+    }
+
+    void setNativeCornerRadiusPx(float cornerRadiusPx) {
+        if (disposed || !Float.isFinite(cornerRadiusPx)) return;
+        float next = Math.max(0f, cornerRadiusPx);
+        if (Math.abs(nativeCornerRadiusPx - next) < 0.01f) return;
+        nativeCornerRadiusPx = next;
+        requestLifecycleRefresh();
+    }
+
+    void setPressInteraction(boolean pressed, float normalizedX, float normalizedY) {
+        if (disposed) return;
+        float nextX = clamp01(normalizedX);
+        float nextY = clamp01(normalizedY);
+        boolean centerChanged = glowCenterX != nextX || glowCenterY != nextY;
+        glowCenterX = nextX;
+        glowCenterY = nextY;
+        if (pressTarget != pressed) {
+            pressTarget = pressed;
+            animatePressTo(pressed ? 1f : 0f);
+        } else if (centerChanged) {
+            publishInteraction();
+        }
+    }
+
+    void resetPressInteraction(boolean animated) {
+        if (disposed) return;
+        pressTarget = false;
+        if (animated && pressProgress > 0f) {
+            animatePressTo(0f);
+            return;
+        }
+        if (pressAnimator != null) {
+            pressAnimator.cancel();
+            pressAnimator = null;
+        }
+        pressProgress = 0f;
+        glowCenterX = 0.5f;
+        glowCenterY = 0.5f;
+        publishInteraction();
+    }
+
+    private void animatePressTo(float target) {
+        if (pressAnimator != null) pressAnimator.cancel();
+        float start = pressProgress;
+        if (Math.abs(start - target) < 0.001f) {
+            pressProgress = target;
+            publishInteraction();
+            return;
+        }
+        ValueAnimator animator = ValueAnimator.ofFloat(start, target);
+        pressAnimator = animator;
+        animator.setDuration(target > start ? PRESS_IN_DURATION_MS : PRESS_OUT_DURATION_MS);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(valueAnimator -> {
+            if (pressAnimator != valueAnimator || disposed) return;
+            pressProgress = (Float) valueAnimator.getAnimatedValue();
+            publishInteraction();
+        });
+        animator.start();
+    }
+
+    private void publishInteraction() {
+        LauncherGlassSession live = ensureLiveSession();
+        if (disposed || live == null) return;
+        live.updateInteraction(this,
+                new PrismalInteractionState(pressProgress, glowCenterX, glowCenterY));
+    }
+
+    private static float clamp01(float value) {
+        if (!Float.isFinite(value)) return 0.5f;
+        return Math.max(0f, Math.min(1f, value));
     }
 
     boolean syncFromMaterial() {
@@ -109,10 +207,15 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         Object sinkParent = getParent();
         if (!(materialParent instanceof ViewGroup)) return false;
         if (materialParent != sinkParent) {
+            if (suppressedByDrag) {
+                if (getVisibility() != View.GONE) setVisibility(View.GONE);
+                return true;
+            }
             scheduleParentRecovery("parent-mismatch");
             return true;
         }
         boolean changed = false;
+        changed |= consumeWorkspaceScrollMotion();
         int width = Math.max(1, material.getWidth());
         int height = Math.max(1, material.getHeight());
         ViewGroup.LayoutParams lp = getLayoutParams();
@@ -130,31 +233,60 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (getScaleY() != material.getScaleY()) { setScaleY(material.getScaleY()); changed = true; }
         if (getRotation() != material.getRotation()) { setRotation(material.getRotation()); changed = true; }
         if (getAlpha() != material.getAlpha()) { setAlpha(material.getAlpha()); changed = true; }
-        int visibility = suppressedByFolderOpen ? View.GONE : material.getVisibility();
+        int visibility = suppressedByFolderOpen || suppressedByDrag
+                ? View.GONE : material.getVisibility();
         if (getVisibility() != visibility) { setVisibility(visibility); changed = true; }
         return changed;
+    }
+
+    boolean consumeWorkspaceScrollMotion() {
+        View material = materialRef.get();
+        View workspace = workspaceRef.get();
+        if (workspace == null || !workspace.isAttachedToWindow()) {
+            workspace = findWorkspaceAncestor(material);
+            workspaceRef = new WeakReference<>(workspace);
+        }
+        if (workspace == null) return workspaceScrollMotion.update(null, 0, 0);
+        return workspaceScrollMotion.update(
+                workspace, workspace.getScrollX(), workspace.getScrollY());
+    }
+
+    private static View findWorkspaceAncestor(View material) {
+        View cursor = material;
+        while (cursor != null) {
+            Class<?> type = cursor.getClass();
+            if ("com.miui.home.launcher.Workspace".equals(type.getName())
+                    || "Workspace".equals(type.getSimpleName())) {
+                return cursor;
+            }
+            ViewParent parent = cursor.getParent();
+            cursor = parent instanceof View ? (View) parent : null;
+        }
+        return null;
     }
 
     LauncherGlassGeometry.Snapshot captureGeometry(View root) {
         if (disposed || root == null || getVisibility() != View.VISIBLE || getAlpha() <= 0f
                 || getWidth() <= 0 || getHeight() <= 0) return null;
         Rect sinkRect = new Rect();
-        Rect rootRect = new Rect();
-        if (!getGlobalVisibleRect(sinkRect) || !root.getGlobalVisibleRect(rootRect)) return null;
-        float left = sinkRect.left - rootRect.left;
-        float top = sinkRect.top - rootRect.top;
-        float right = sinkRect.right - rootRect.left;
-        float bottom = sinkRect.bottom - rootRect.top;
+        if (!getGlobalVisibleRect(sinkRect)) return null;
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        LauncherGlassScreenSpace.Bounds bounds = LauncherGlassScreenSpace.relativeToRoot(
+                rootLocation[0], rootLocation[1],
+                sinkRect.left, sinkRect.top, sinkRect.right, sinkRect.bottom);
         float scale = Math.min(
                 sinkRect.width() / (float) Math.max(1, getWidth()),
                 sinkRect.height() / (float) Math.max(1, getHeight()));
         return LauncherGlassGeometry.resolve(
-                root.getWidth(), root.getHeight(), left, top, right, bottom,
+                root.getWidth(), root.getHeight(),
+                bounds.left, bounds.top, bounds.right, bounds.bottom,
                 nativeCornerRadiusPx * Math.max(0.01f, scale));
     }
 
     void dispose() {
         if (disposed) return;
+        resetPressInteraction(false);
         disposed = true;
         View material = materialRef.get();
         if (material != null) {
@@ -216,6 +348,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
 
     @Override
     protected void onDetachedFromWindow() {
+        resetPressInteraction(false);
         LauncherGlassSession live = session;
         if (live != null) live.unregisterSink(this);
         super.onDetachedFromWindow();
