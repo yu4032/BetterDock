@@ -23,6 +23,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     private final LiquidDockConfig.Glass glassConfig;
     private final float nativeCornerRadiusPx;
     private volatile boolean disposed;
+    private volatile boolean suppressedByFolderOpen;
     private boolean parentRecoveryPosted;
     private Surface outputSurface;
     private LauncherGlassSession outputSession;
@@ -94,6 +95,13 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (!disposed && live != null) live.requestLifecycleRefresh();
     }
 
+    void setSuppressedByFolderOpen(boolean suppressed) {
+        if (disposed || suppressedByFolderOpen == suppressed) return;
+        suppressedByFolderOpen = suppressed;
+        syncFromMaterial();
+        requestLifecycleRefresh();
+    }
+
     boolean syncFromMaterial() {
         View material = materialRef.get();
         if (disposed || material == null) return false;
@@ -122,7 +130,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (getScaleY() != material.getScaleY()) { setScaleY(material.getScaleY()); changed = true; }
         if (getRotation() != material.getRotation()) { setRotation(material.getRotation()); changed = true; }
         if (getAlpha() != material.getAlpha()) { setAlpha(material.getAlpha()); changed = true; }
-        int visibility = material.getVisibility();
+        int visibility = suppressedByFolderOpen ? View.GONE : material.getVisibility();
         if (getVisibility() != visibility) { setVisibility(visibility); changed = true; }
         return changed;
     }
@@ -158,7 +166,6 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (live != null) live.unregisterSink(this);
         if (getParent() instanceof ViewGroup) ((ViewGroup) getParent()).removeView(this);
     }
-
 
     private void scheduleParentRecovery(String reason) {
         if (disposed || parentRecoveryPosted) return;
