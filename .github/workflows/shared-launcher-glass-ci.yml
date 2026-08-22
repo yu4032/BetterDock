@@ -132,8 +132,10 @@ jobs:
           p.write_text(s)
           PY
 
-          # The in-root contract describes the superseded scene-replay experiment.
           rm -f src/test/java/com/hellovoid/liquiddock/LauncherGlassInRootBackdropContractTest.java
+          rm -f src/test/java/com/hellovoid/liquiddock/LauncherGlassGpuOnlyContractTest.java
+          rm -f src/test/java/com/hellovoid/liquiddock/LauncherGlassLifecycleRecoveryContractTest.java
+          rm -f src/test/java/com/hellovoid/liquiddock/FolderWallpaperOnlySourceContractTest.java
           git diff --check
 
       - name: Verify wallpaper-only contract
