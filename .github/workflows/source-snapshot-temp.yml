@@ -1,4 +1,4 @@
-name: Temporary source snapshot
+name: Apply launcher glass alignment and folder radius
 
 on:
   push:
@@ -6,17 +6,378 @@ on:
       - feat/folder-press-glow
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  snapshot:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Pack source snapshot
-        run: tar -czf liquiddock-source-snapshot.tar.gz --exclude=.git .
-      - uses: actions/upload-artifact@v4
         with:
-          name: liquiddock-source-snapshot
-          path: liquiddock-source-snapshot.tar.gz
-          retention-days: 1
+          ref: feat/folder-press-glow
+          fetch-depth: 0
+      - name: Apply approved batched change
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Keep visible sink geometry in screen space, but anchor it to the real root
+          # screen origin rather than the root's clipped global-visible rectangle.
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/LauncherGlassSinkView.java',
+              '''        Rect sinkRect = new Rect();
+                  Rect rootRect = new Rect();
+                  if (!getGlobalVisibleRect(sinkRect) || !root.getGlobalVisibleRect(rootRect)) return null;
+                  float left = sinkRect.left - rootRect.left;
+                  float top = sinkRect.top - rootRect.top;
+                  float right = sinkRect.right - rootRect.left;
+                  float bottom = sinkRect.bottom - rootRect.top;
+                  float scale = Math.min(
+                          sinkRect.width() / (float) Math.max(1, getWidth()),
+                          sinkRect.height() / (float) Math.max(1, getHeight()));
+                  return LauncherGlassGeometry.resolve(
+                          root.getWidth(), root.getHeight(), left, top, right, bottom,
+                          nativeCornerRadiusPx * Math.max(0.01f, scale));''',
+              '''        Rect sinkRect = new Rect();
+                  if (!getGlobalVisibleRect(sinkRect)) return null;
+                  int[] rootLocation = new int[2];
+                  root.getLocationOnScreen(rootLocation);
+                  LauncherGlassScreenSpace.Bounds bounds = LauncherGlassScreenSpace.relativeToRoot(
+                          rootLocation[0], rootLocation[1],
+                          sinkRect.left, sinkRect.top, sinkRect.right, sinkRect.bottom);
+                  float scale = Math.min(
+                          sinkRect.width() / (float) Math.max(1, getWidth()),
+                          sinkRect.height() / (float) Math.max(1, getHeight()));
+                  return LauncherGlassGeometry.resolve(
+                          root.getWidth(), root.getHeight(),
+                          bounds.left, bounds.top, bounds.right, bounds.bottom,
+                          nativeCornerRadiusPx * Math.max(0.01f, scale));''')
+
+          Path('src/main/java/com/hellovoid/liquiddock/LauncherGlassScreenSpace.java').write_text('''package com.hellovoid.liquiddock;
+
+          /** Pure conversion from screen coordinates into the stable Launcher root coordinate space. */
+          final class LauncherGlassScreenSpace {
+              private LauncherGlassScreenSpace() {}
+
+              static Bounds relativeToRoot(
+                      int rootScreenX, int rootScreenY,
+                      int left, int top, int right, int bottom) {
+                  return new Bounds(
+                          left - rootScreenX,
+                          top - rootScreenY,
+                          right - rootScreenX,
+                          bottom - rootScreenY);
+              }
+
+              static final class Bounds {
+                  final float left;
+                  final float top;
+                  final float right;
+                  final float bottom;
+
+                  Bounds(float left, float top, float right, float bottom) {
+                      this.left = left;
+                      this.top = top;
+                      this.right = right;
+                      this.bottom = bottom;
+                  }
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip())
+
+          # 2) One shared folder-radius policy. 0dp means native/auto; positive values are
+          # clamped to the public 96dp setting range and converted using display density.
+          Path('src/main/java/com/hellovoid/liquiddock/LauncherGlassCornerRadiusPolicy.java').write_text('''package com.hellovoid.liquiddock;
+
+          /** Shared folder-corner override: 0dp preserves native/auto behavior. */
+          final class LauncherGlassCornerRadiusPolicy {
+              private LauncherGlassCornerRadiusPolicy() {}
+
+              static float resolve(
+                      float overrideDp, float density, float nativeRadiusPx, float fallbackRadiusPx) {
+                  if (Float.isFinite(overrideDp) && overrideDp > 0f) {
+                      float safeDensity = Float.isFinite(density) && density > 0f ? density : 1f;
+                      float safeDp = Math.min(96f, overrideDp);
+                      return safeDp * safeDensity;
+                  }
+                  if (Float.isFinite(nativeRadiusPx) && nativeRadiusPx > 0f) {
+                      return nativeRadiusPx;
+                  }
+                  return Float.isFinite(fallbackRadiusPx) ? Math.max(0f, fallbackRadiusPx) : 0f;
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip())
+
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java',
+              '''        public static final ConfigKey<Boolean> FOLDER_GLASS = bool(
+                          "liquid_folder_glass", true, true, true, ConfigKey.ExportMode.ALWAYS);
+                  public static final ConfigKey<Boolean> DIMENSIONS_DP = bool(''',
+              '''        public static final ConfigKey<Boolean> FOLDER_GLASS = bool(
+                          "liquid_folder_glass", true, true, true, ConfigKey.ExportMode.ALWAYS);
+                  public static final ConfigKey<Integer> FOLDER_CORNER_RADIUS = integer(
+                          "liquid_folder_corner_radius", 0, 0, 0, 0, 96, ConfigKey.ExportMode.ALWAYS);
+                  public static final ConfigKey<Boolean> DIMENSIONS_DP = bool(''')
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java',
+              '''        add(keys, Glass.ENABLED, Glass.FOLDER_GLASS, Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,''',
+              '''        add(keys, Glass.ENABLED, Glass.FOLDER_GLASS, Glass.FOLDER_CORNER_RADIUS,
+                          Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,''')
+
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java',
+              '''        final boolean enabled, folderEnabled;
+                  final boolean prismalShowNormals;''',
+              '''        final boolean enabled, folderEnabled;
+                  final float folderCornerRadiusDp;
+                  final boolean prismalShowNormals;''')
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java',
+              '''            folderEnabled = c.b(ConfigSchema.Glass.FOLDER_GLASS.name(),
+                              ConfigSchema.Glass.FOLDER_GLASS.runtimeFallback());
+                          launcherHighlightProfile = LauncherHighlightPreferences.read(c);''',
+              '''            folderEnabled = c.b(ConfigSchema.Glass.FOLDER_GLASS.name(),
+                              ConfigSchema.Glass.FOLDER_GLASS.runtimeFallback());
+                          folderCornerRadiusDp = c.f(ConfigSchema.Glass.FOLDER_CORNER_RADIUS.name(),
+                              ConfigSchema.Glass.FOLDER_CORNER_RADIUS.runtimeFallback());
+                          launcherHighlightProfile = LauncherHighlightPreferences.read(c);''')
+
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java',
+              '''        float radius = readMaterialRadius(material);
+                  if (!Float.isFinite(radius) || radius <= 0f) {
+                      radius = Math.min(Math.max(1, material.getWidth()),
+                              Math.max(1, material.getHeight())) * 0.22f;
+                  }
+          ''',
+              '''        float nativeRadius = readMaterialRadius(material);
+                  float fallbackRadius = Math.min(Math.max(1, material.getWidth()),
+                          Math.max(1, material.getHeight())) * 0.22f;
+                  float density = material.getResources().getDisplayMetrics().density;
+                  float radius = LauncherGlassCornerRadiusPolicy.resolve(
+                          glassConfig != null ? glassConfig.folderCornerRadiusDp : 0f,
+                          density, nativeRadius, fallbackRadius);
+          ''')
+
+          replace_once(
+              'src/main/java/com/hellovoid/liquiddock/LauncherGlassDragOverlay.java',
+              '''        activeCornerRadiusPx = Math.max(0f,
+                          Float.isFinite(cornerRadiusPx) ? cornerRadiusPx : 0f);
+          ''',
+              '''        float resolvedRadiusPx = Math.max(0f,
+                          Float.isFinite(cornerRadiusPx) ? cornerRadiusPx : 0f);
+                  if (kind == LauncherGlassDragState.Kind.FOLDER) {
+                      float density = source.getResources().getDisplayMetrics().density;
+                      resolvedRadiusPx = LauncherGlassCornerRadiusPolicy.resolve(
+                              glassConfig != null ? glassConfig.folderCornerRadiusDp : 0f,
+                              density, resolvedRadiusPx, resolvedRadiusPx);
+                  }
+                  activeCornerRadiusPx = resolvedRadiusPx;
+          ''')
+
+          # 3) Modern Compose GUI is the primary settings surface. Keep the radius outside the
+          # generic liquid list so it can depend on the folder-glass toggle specifically.
+          replace_once(
+              'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt',
+              '''    "liquid_blur" -> "控制玻璃背景的模糊程度"''',
+              '''    "liquid_folder_corner_radius" -> "0 表示自动跟随 MIUI 原生圆角；大于 0 时同时覆盖桌面与拖动文件夹玻璃"
+                  "liquid_blur" -> "控制玻璃背景的模糊程度"''')
+          replace_once(
+              'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt',
+              '''private val liquidSpecs = listOf(
+                  IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),''',
+              '''private val folderCornerRadiusSpec = IntSpec(
+                  ConfigSchema.Glass.FOLDER_CORNER_RADIUS,
+                  "文件夹圆角",
+                  "dp",
+              )
+              private val liquidSpecs = listOf(
+                  IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),''')
+          replace_once(
+              'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt',
+              '''    var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
+                  SettingsList(''',
+              '''    var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
+                  var folderGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.FOLDER_GLASS.name(), ConfigSchema.Glass.FOLDER_GLASS.uiDefault())) }
+                  SettingsList(''')
+          replace_once(
+              'src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt',
+              '''        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+                  BooleanSetting(prefs, ConfigSchema.Glass.FOLDER_GLASS, stringResource(R.string.liquid_folder_glass_enable), stringResource(R.string.liquid_folder_glass_enable_summary), masterEnabled && liquidGlass)
+                  ArrowPreference(''',
+              '''        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+                  BooleanSetting(prefs, ConfigSchema.Glass.FOLDER_GLASS, stringResource(R.string.liquid_folder_glass_enable), stringResource(R.string.liquid_folder_glass_enable_summary), masterEnabled && liquidGlass) { folderGlass = it }
+                  IntSetting(prefs, folderCornerRadiusSpec, masterEnabled && liquidGlass && folderGlass)
+                  ArrowPreference(''')
+
+          legacy = Path('src/main/res/xml/preferences.xml')
+          legacy_text = legacy.read_text()
+          if 'android:key="liquid_folder_corner_radius"' in legacy_text:
+              raise SystemExit('legacy folder radius already exists unexpectedly')
+          marker = '    <PreferenceCategory android:title="Backup &amp; Restore">'
+          if legacy_text.count(marker) != 1:
+              raise SystemExit('legacy backup category marker is not unique')
+          legacy_block = '''    <PreferenceCategory android:title="Launcher Liquid Glass">
+
+                  <SwitchPreference
+                      android:key="liquid_glass"
+                      android:title="Liquid Glass"
+                      android:summary="Enable LiquidDock launcher liquid glass"
+                      android:defaultValue="false" />
+
+                  <SwitchPreference
+                      android:key="liquid_folder_glass"
+                      android:title="Folder Liquid Glass"
+                      android:summary="Render launcher folders with liquid glass"
+                      android:defaultValue="true"
+                      android:dependency="liquid_glass" />
+
+                  <com.hellovoid.liquiddock.SeekBarPreference
+                      android:key="liquid_folder_corner_radius"
+                      android:title="Folder Corner Radius"
+                      android:summary="%d dp (0 = Auto)"
+                      android:defaultValue="0"
+                      app:min="0"
+                      app:max="96"
+                      android:dependency="liquid_folder_glass" />
+
+              </PreferenceCategory>
+
+
+          '''.replace('\n          ', '\n')
+          legacy.write_text(legacy_text.replace(marker, legacy_block + marker, 1))
+
+          # Update the single combined RED contract to assert the chosen lower-risk drag wiring.
+          Path('src/test/java/com/hellovoid/liquiddock/LauncherGlassAlignmentAndRadiusTest.java').write_text('''package com.hellovoid.liquiddock;
+
+          import static org.junit.Assert.assertEquals;
+          import static org.junit.Assert.assertFalse;
+          import static org.junit.Assert.assertTrue;
+
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import org.junit.Test;
+
+          /** Contracts screen-space wallpaper alignment and the shared folder-radius override. */
+          public class LauncherGlassAlignmentAndRadiusTest {
+              private static String read(String path) throws Exception {
+                  return Files.readString(Path.of(path));
+              }
+
+              @Test
+              public void screenSpaceMappingUsesStableRootScreenOrigin() {
+                  LauncherGlassScreenSpace.Bounds bounds = LauncherGlassScreenSpace.relativeToRoot(
+                          24, 48, 124, 148, 324, 348);
+                  assertEquals(100f, bounds.left, 0.001f);
+                  assertEquals(100f, bounds.top, 0.001f);
+                  assertEquals(300f, bounds.right, 0.001f);
+                  assertEquals(300f, bounds.bottom, 0.001f);
+              }
+
+              @Test
+              public void folderRadiusZeroPreservesAutoAndPositiveValueOverridesInDp() {
+                  assertEquals(22f,
+                          LauncherGlassCornerRadiusPolicy.resolve(0f, 2f, 22f, 18f), 0.001f);
+                  assertEquals(18f,
+                          LauncherGlassCornerRadiusPolicy.resolve(0f, 2f, Float.NaN, 18f), 0.001f);
+                  assertEquals(48f,
+                          LauncherGlassCornerRadiusPolicy.resolve(24f, 2f, 22f, 18f), 0.001f);
+              }
+
+              @Test
+              public void sinkWiresGlobalMaterialRectToRootLocationNotVisibleCrop() throws Exception {
+                  String sink = read("src/main/java/com/hellovoid/liquiddock/LauncherGlassSinkView.java");
+                  assertTrue(sink.contains("root.getLocationOnScreen(rootLocation)"));
+                  assertTrue(sink.contains("LauncherGlassScreenSpace.relativeToRoot("));
+                  assertFalse(sink.contains("root.getGlobalVisibleRect(rootRect)"));
+              }
+
+              @Test
+              public void folderRadiusIsPersistedAndSharedByStaticAndDragGlass() throws Exception {
+                  String schema = read("src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java");
+                  String runtime = read("src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java");
+                  String folder = read("src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java");
+                  String drag = read("src/main/java/com/hellovoid/liquiddock/LauncherGlassDragOverlay.java");
+
+                  assertTrue(schema.contains("FOLDER_CORNER_RADIUS = integer("));
+                  assertTrue(schema.contains("\\\"liquid_folder_corner_radius\\\", 0, 0, 0, 0, 96"));
+                  assertTrue(schema.contains("Glass.FOLDER_GLASS, Glass.FOLDER_CORNER_RADIUS"));
+                  assertTrue(runtime.contains("final float folderCornerRadiusDp;"));
+                  assertTrue(runtime.contains("folderCornerRadiusDp = c.f(ConfigSchema.Glass.FOLDER_CORNER_RADIUS.name()"));
+                  assertTrue(folder.contains("LauncherGlassCornerRadiusPolicy.resolve("));
+                  assertTrue(drag.contains("LauncherGlassCornerRadiusPolicy.resolve("));
+                  assertTrue(drag.contains("kind == LauncherGlassDragState.Kind.FOLDER"));
+              }
+
+              @Test
+              public void composeAndLegacyGuiExposeFolderRadiusWithFolderDependency() throws Exception {
+                  String compose = read("src/main/kotlin/com/hellovoid/liquiddock/ComposeSettingsActivity.kt");
+                  String legacy = read("src/main/res/xml/preferences.xml");
+
+                  assertTrue(compose.contains("ConfigSchema.Glass.FOLDER_CORNER_RADIUS"));
+                  assertTrue(compose.contains("masterEnabled && liquidGlass && folderGlass"));
+                  assertTrue(compose.contains("\\\"文件夹圆角\\\""));
+                  assertTrue(legacy.contains("android:key=\\\"liquid_folder_corner_radius\\\""));
+                  assertTrue(legacy.contains("app:max=\\\"96\\\""));
+                  assertTrue(legacy.contains("android:dependency=\\\"liquid_folder_glass\\\""));
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip())
+
+          # Restore the real CI before creating the production commit, and remove this one-shot.
+          Path('.github/workflows/api101-build.yml').write_text('''name: API101 migration build
+
+          on:
+            push:
+              branches:
+                - main
+                - api101-migration
+                - refactor/modular-architecture
+                - 'fix/**'
+                - 'feat/**'
+                - 'demo/**'
+            pull_request:
+              branches: [ main ]
+            workflow_dispatch:
+
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: '17'
+                    cache: gradle
+                - uses: gradle/actions/setup-gradle@v4
+                - run: chmod +x ./gradlew
+                - run: ./gradlew testDebugUnitTest --stacktrace
+                - run: ./gradlew assembleDebug --stacktrace
+                - uses: actions/upload-artifact@v4
+                  with:
+                    name: LiquidDock-api101-debug
+                    path: build/outputs/apk/debug/*.apk
+                    if-no-files-found: error
+                    retention-days: 7
+                # Keep the same Gradle verification gates on main and active API101 development branches.
+          '''.replace('\n          ', '\n').lstrip())
+          Path('.github/workflows/source-snapshot-temp.yml').unlink()
+          PY
+
+          git diff --check
+          git status --short
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: align launcher glass and add folder radius control"
+          git push origin HEAD:feat/folder-press-glow
