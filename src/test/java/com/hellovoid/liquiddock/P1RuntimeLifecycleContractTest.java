@@ -66,6 +66,20 @@ public class P1RuntimeLifecycleContractTest {
     }
 
     @Test
+    public void wholeDockShadowDoesNotReparentDuringResizeAnimation() throws Exception {
+        String main = Files.readString(MAIN.resolve("MainHook.java"));
+
+        assertTrue("transient animation siblings must not force a remove/add of an already-below shadow",
+                main.contains("if (shadowIndex < backgroundIndex) return;"));
+        assertFalse("shadow/background adjacency is too strict during icon fly-in animation",
+                main.contains("shadowIndex + 1 == backgroundIndex"));
+        assertTrue("shadow z-order repair must wait until the vendor Dock animation settles",
+                main.contains("if (!animating(dockBg)) {\n            ensureShadowBelowBackground"));
+        assertTrue("a deliberate shadow reinsert must restore the weak owner cleared by detach",
+                main.contains("shadowViewRef = new WeakReference<>(shadow);"));
+    }
+
+    @Test
     public void dockBottomOffsetHasOneRuntimeOwner() throws Exception {
         String module = Files.readString(MAIN.resolve("ModuleMain.java"));
         String main = Files.readString(MAIN.resolve("MainHook.java"));
