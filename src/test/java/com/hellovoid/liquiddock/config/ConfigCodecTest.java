@@ -196,7 +196,7 @@ public class ConfigCodecTest {
     public void absentPreferencesExportCompleteHistoricalDefaults() {
         Map<String, Object> exported = ConfigCodec.exportValues(new HashMap<>());
 
-        assertEquals(128, exported.size());
+        assertEquals(129, exported.size());
         assertEquals(Boolean.TRUE, exported.get("liquiddock_enabled"));
         assertEquals(Boolean.FALSE, exported.get("home_grid_8x4"));
         assertEquals(Boolean.FALSE, exported.get("grid_widget_adaptation"));
@@ -206,6 +206,7 @@ public class ConfigCodecTest {
         assertEquals(4, exported.get("sq_stroke_w"));
         assertEquals(42, exported.get("dock_shadow_radius"));
         assertEquals(Boolean.FALSE, exported.get("liquid_glass"));
+        assertEquals(Boolean.TRUE, exported.get("liquid_folder_glass"));
         assertEquals(Boolean.TRUE, exported.get("liquid_dimensions_dp"));
         assertFalse(exported.containsKey("liquid_legacy_s_curve"));
         assertEquals(0, exported.get("liquid_sampling_extra_top"));
