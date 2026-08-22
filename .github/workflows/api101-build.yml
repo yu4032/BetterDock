@@ -33,6 +33,8 @@ jobs:
           if [ ! -f src/main/java/com/hellovoid/liquiddock/hook/LauncherGlassSession.java ]; then
             rm -f src/test/java/com/hellovoid/liquiddock/hook/FolderWallpaperOnlySourceContractTest.java
           fi
+      - name: Apply workstation transition ownership boundary
+        run: python3 ci/workstation_transition_ownership_transform.py
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
