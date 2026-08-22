@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - feat/shared-launcher-glass-session
-      - staging/shared-glass-lifecycle-v1
-      - staging/shared-glass-gpu-atlas-v1
-      - staging/native-material-probe-v1
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -22,7 +19,8 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
-      - name: Apply shared glass implementation
+
+      - name: Apply shared glass through GPU atlas baseline
         run: |
           cat ci/shared-glass-patch/part-*.txt > /tmp/shared-launcher-glass.patch.gz.b64
           echo "bbf006ee8b1db614cc4d84e0dad1c7a95f70cefc2382e3c2bd2002e1c19a60e2  /tmp/shared-launcher-glass.patch.gz.b64" | sha256sum -c -
@@ -56,51 +54,106 @@ jobs:
           git apply --check ci/shared-glass-gpu-atlas-contract-fix.patch
           git apply ci/shared-glass-gpu-atlas-contract-fix.patch
 
-          mkdir -p /tmp/pre-native-source
-          cp src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java /tmp/pre-native-source/
-          cp src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java /tmp/pre-native-source/
-          cp src/main/java/com/hellovoid/liquiddock/LauncherAdvancedGlassPipeline.java /tmp/pre-native-source/
+      - name: Convert launcher glass to wallpaper-only source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java')
+          s = p.read_text()
+          for line in [
+              'import android.graphics.Color;\n',
+              'import android.graphics.HardwareRenderer;\n',
+              'import android.graphics.PorterDuff;\n',
+              'import android.graphics.RecordingCanvas;\n',
+              'import android.graphics.RenderNode;\n',
+              '    private static final int SETTLE_REPLAY_FRAMES = 2;\n',
+              '    private final AtomicBoolean launcherFrameAvailable = new AtomicBoolean(false);\n',
+              '    private final float[] launcherTextureMatrix = new float[16];\n',
+              '    private volatile SurfaceTexture launcherSurfaceTexture;\n',
+              '    private volatile Surface launcherProducerSurface;\n',
+              '    private volatile HardwareRenderer launcherHardwareRenderer;\n',
+              '    private volatile RenderNode launcherRenderNode;\n',
+              '    private volatile boolean launcherReplayPosted;\n',
+              '    private volatile boolean launcherReplayPending;\n',
+              '    private volatile int settleReplayFrames;\n',
+              '    private volatile LauncherGlassGpuAtlas.Layout submittedLauncherLayout;\n',
+              '    private volatile LauncherGlassGpuAtlas.Layout consumedLauncherLayout;\n',
+              '    private volatile boolean hasLauncherFrame;\n',
+              '    private int launcherOverlayProgram;\n',
+              '    private int launcherOesTexture;\n',
+          ]:
+              s = s.replace(line, '')
+          s = s.replace(
+              '        // Detach/reparent changes the Launcher scene even when the remaining node geometry is\n'
+              '        // unchanged. Always capture the post-lifecycle scene instead of exposing PassBlur base.\n'
+              '        requestLifecycleRefresh();\n',
+              '        requestLifecycleRefresh();\n')
+          s = re.sub(r'    void requestLifecycleRefresh\(\) \{\n.*?\n    \}\n\n    void attachOutput',
+                     '    void requestLifecycleRefresh() {\n        if (shuttingDown) return;\n        requestFrame(false);\n    }\n\n    void attachOutput', s, flags=re.S)
+          s = s.replace(
+              '        ViewTreeObserver.OnPreDrawListener listener = () -> {\n'
+              '            syncSceneOnUiThread();\n'
+              '            requestSettleReplayOnPreDraw();\n'
+              '            return true;\n'
+              '        };\n',
+              '        ViewTreeObserver.OnPreDrawListener listener = () -> {\n'
+              '            syncSceneOnUiThread();\n'
+              '            return true;\n'
+              '        };\n')
+          s = re.sub(r'    private void requestSettleReplayOnPreDraw\(\) \{.*?\n    private void syncSceneOnUiThread\(\) \{',
+                     '    private void syncSceneOnUiThread() {', s, flags=re.S)
+          s = s.replace(
+              '        if (changed) {\n'
+              '            armSettleReplay();\n'
+              '            requestLauncherGpuReplay();\n'
+              '            requestFrame(true);\n'
+              '        }\n',
+              '        if (changed) {\n            requestFrame(false);\n        }\n')
+          s = re.sub(r'            SurfaceTexture launcherInput = launcherSurfaceTexture;\n            if \(launcherInput != null && launcherFrameAvailable.getAndSet\(false\)\) \{.*?\n            \}\n', '', s, flags=re.S)
+          s = re.sub(r'        if \(launcherOverlayProgram == 0\) \{\n            launcherOverlayProgram = createProgram\(\n                    Miuix307PassBlurShaders.QUAD_VERTEX,\n                    Miuix307PassBlurShaders.OES_ALPHA_OVER_FRAGMENT\);\n        \}\n', '', s)
+          s = re.sub(r'        if \(launcherOesTexture == 0 \|\| launcherSurfaceTexture == null\n                \|\| launcherProducerSurface == null\) \{\n            createLauncherSceneProducer\(\);\n        \}\n', '', s)
+          s = re.sub(r'    private void createLauncherSceneProducer\(\) \{.*?\n    private void bindProducerWhenReady\(int attempt\) \{',
+                     '    private void bindProducerWhenReady(int attempt) {', s, flags=re.S)
+          s = s.replace('        LauncherGlassGpuAtlas.Layout layout = hasLauncherFrame\n                ? consumedLauncherLayout : atlasLayout;\n',
+                        '        LauncherGlassGpuAtlas.Layout layout = atlasLayout;\n')
+          s = re.sub(r'        if \(hasLauncherFrame && consumedLauncherLayout != null\n                && consumedLauncherLayout.sameAs\(layout\)\) \{\n            renderLauncherOverlay\(layout.width, layout.height\);\n        \}\n', '', s)
+          s = re.sub(r'    private void renderLauncherOverlay\(int width, int height\) \{.*?\n    private void present\(',
+                     '    private void present(', s, flags=re.S)
+          s = re.sub(r'        HardwareRenderer sceneRenderer = launcherHardwareRenderer;\n        launcherHardwareRenderer = null;\n        launcherRenderNode = null;\n        if \(sceneRenderer != null\) \{\n            try \{ sceneRenderer.destroy\(\); \} catch \(Throwable ignored\) \{\}\n        \}\n', '', s)
+          s = s.replace('        if (launcherOverlayProgram != 0) GLES20.glDeleteProgram(launcherOverlayProgram);\n', '')
+          s = s.replace('        normalizeProgram = launcherOverlayProgram = compositeProgram = 0;\n', '        normalizeProgram = compositeProgram = 0;\n')
+          s = s.replace('        if (launcherOesTexture != 0) GLES20.glDeleteTextures(1, new int[]{launcherOesTexture}, 0);\n', '')
+          s = s.replace('        launcherOesTexture = 0;\n', '')
+          s = re.sub(r'        Surface launcherProducer = launcherProducerSurface;\n        launcherProducerSurface = null;\n        if \(launcherProducer != null\) launcherProducer.release\(\);\n', '', s)
+          s = re.sub(r'        SurfaceTexture launcherInput = launcherSurfaceTexture;\n        launcherSurfaceTexture = null;\n        if \(launcherInput != null\) \{\n            try \{ launcherInput.setOnFrameAvailableListener\(null\); \} catch \(Throwable ignored\) \{\}\n            launcherInput.release\(\);\n        \}\n', '', s)
+          s = s.replace('MainHook.log(TAG + " " + debugLabel() + " created");',
+                        'MainHook.log(TAG + " " + debugLabel() + " created source=PassBlur-wallpaper-only");')
+          p.write_text(s)
+          PY
 
-          cat ci/shared-glass-native-material-v1/part-*.txt > /tmp/shared-glass-native-material.patch.gz.b64
-          echo "56087c1bcc18f8ac8d621a4de5d06ee06f7819b01e1b843e7ef86a396600819a  /tmp/shared-glass-native-material.patch.gz.b64" | sha256sum -c -
-          base64 -d /tmp/shared-glass-native-material.patch.gz.b64 | gzip -d > /tmp/shared-glass-native-material.patch
-          echo "1bae93364e3b0147e02c1b3cdfea3bef8550e06d321675b496c17e3a4d8369f5  /tmp/shared-glass-native-material.patch" | sha256sum -c -
-          git apply --check /tmp/shared-glass-native-material.patch
-          git apply /tmp/shared-glass-native-material.patch
+          # The in-root contract describes the superseded scene-replay experiment.
+          rm -f src/test/java/com/hellovoid/liquiddock/LauncherGlassInRootBackdropContractTest.java
           git diff --check
 
-      - name: Upload pre-native GPU atlas source
-        uses: actions/upload-artifact@v4
-        with:
-          name: LiquidDock-pre-native-gpu-atlas-source
-          path: /tmp/pre-native-source/*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Enforce no Launcher scene recording
+      - name: Verify wallpaper-only contract
         run: |
-          if grep -RInE 'HardwareRenderer|RecordingCanvas|beginRecording|PixelCopy|ImageReader|glReadPixels|MediaProjection' src/main/java/com/hellovoid/liquiddock; then
-            echo 'Forbidden Launcher scene recording/readback API found'
+          SESSION=src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
+          grep -q 'Miuix307PassBlurBridge.bind' "$SESSION"
+          grep -q 'renderNormalization' "$SESSION"
+          grep -q 'source=PassBlur-wallpaper-only' "$SESSION"
+          if grep -nE 'HardwareRenderer|RenderNode|RecordingCanvas|root\.draw\(|requestLauncherGpuReplay|renderLauncherOverlay|launcherOesTexture|launcherSurfaceTexture' "$SESSION"; then
+            echo 'Launcher scene replay still present'
             exit 1
           fi
-
-      - name: Upload effective launcher glass source
-        uses: actions/upload-artifact@v4
-        with:
-          name: LiquidDock-effective-launcher-glass-source
-          path: |
-            src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
-            src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java
-            src/main/java/com/hellovoid/liquiddock/LauncherAdvancedGlassPipeline.java
-          if-no-files-found: error
-          retention-days: 1
+          grep -A90 'private void syncSceneOnUiThread' "$SESSION" | grep -q 'requestFrame(false)'
 
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-native-material-probe-debug
+          name: LiquidDock-wallpaper-only-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
