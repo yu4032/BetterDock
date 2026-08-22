@@ -26,14 +26,34 @@ old = (
     '    edgePunch = mix(edgePunch, 1.0, smallGlass * 0.85);\n'
 )
 new = old + (
-    '    // Keep compact glass unchanged, then progressively calm broad face lighting.\n'
-    '    // minDim is half the short side, so 60..180 maps to 120..360 px glass.\n'
+    '    // Broad glass needs calmer face lighting; compact glass needs the opposite-side\n'
+    '    // center plateau suppressed without weakening its Fresnel/rim silhouette.\n'
+    '    // minDim is half the short side: large 60..180 => 120..360 px.\n'
     '    float largeGlass = smoothstep(60.0, 180.0, minDim);\n'
     '    float specSizeScale = mix(1.0, 0.50, largeGlass);\n'
     '    float causticSizeScale = mix(1.0, 0.30, largeGlass);\n'
     '    float highlightSizeScale = mix(1.0, 0.50, largeGlass);\n'
+    '    // Compact attenuation is fully active through ~96 px short side and fades out\n'
+    '    // by ~152 px, leaving medium glass at the original face-lighting strength.\n'
+    '    float compactGlass = 1.0 - smoothstep(48.0, 76.0, minDim);\n'
+    '    float compactSpecScale = mix(1.0, 0.30, compactGlass);\n'
+    '    float compactCausticScale = mix(1.0, 0.15, compactGlass);\n'
+    '    float compactHighlightScale = mix(1.0, 0.40, compactGlass);\n'
 )
 glsl, generated = replace_both(glsl, generated, old, new, 'size response')
+
+old = (
+    '    vec2 pPx = v_shapeCoord * u_glassSize;\n'
+    '    vec2 cKy = vec2(pPx.x, -pPx.y);\n'
+)
+new = old + (
+    '    // A normalized radial fade cannot inherit the rounded-box plateau shape.\n'
+    '    // It therefore removes the compact center square without touching edge optics.\n'
+    '    vec2 compactNorm = pPx / max(halfSz, vec2(1.0));\n'
+    '    float compactRadius = length(compactNorm);\n'
+    '    float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, compactRadius), compactGlass);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'compact radial center fade')
 
 old = '    float edgeDist = -distMask;\n'
 new = old + (
@@ -41,13 +61,13 @@ new = old + (
     '    // height field as a bright rectangle. Edge Fresnel/rim lighting remains untouched.\n'
     '    float deepCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(minDim * 0.28, minDim * 0.72, edgeDist), largeGlass);\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'center fade')
+glsl, generated = replace_both(glsl, generated, old, new, 'large center fade')
 
 glsl, generated = replace_both(
     glsl,
     generated,
     '    float sp = u_specular * 1.05;\n',
-    '    float sp = u_specular * 1.05 * specSizeScale;\n',
+    '    float sp = u_specular * 1.05 * specSizeScale * compactSpecScale;\n',
     'specular scale',
 )
 
@@ -55,7 +75,7 @@ glsl, generated = replace_both(
     glsl,
     generated,
     '    color += (specP + specS) * vec3(0.99, 0.993, 1.0);\n',
-    '    color += (specP + specS) * deepCenterFade * vec3(0.99, 0.993, 1.0);\n',
+    '    color += (specP + specS) * deepCenterFade * compactCenterFade * vec3(0.99, 0.993, 1.0);\n',
     'specular center fade',
 )
 
@@ -63,7 +83,7 @@ glsl, generated = replace_both(
     glsl,
     generated,
     '    plusHL *= mix(0.42, 0.06, smallGlass);\n',
-    '    plusHL *= mix(0.42, 0.06, smallGlass) * highlightSizeScale * deepCenterFade;\n',
+    '    plusHL *= mix(0.42, 0.06, smallGlass) * highlightSizeScale * compactHighlightScale * deepCenterFade * compactCenterFade;\n',
     'plain highlight scale',
 )
 
@@ -71,7 +91,7 @@ glsl, generated = replace_both(
     glsl,
     generated,
     '        float caust = pow(max(causticDot, 0.0), 7.0) * u_causticIntensity * height;\n',
-    '        float caust = pow(max(causticDot, 0.0), 7.0) * u_causticIntensity * height * causticSizeScale * deepCenterFade;\n',
+    '        float caust = pow(max(causticDot, 0.0), 7.0) * u_causticIntensity * height * causticSizeScale * compactCausticScale * deepCenterFade * compactCenterFade;\n',
     'caustic scale',
 )
 
