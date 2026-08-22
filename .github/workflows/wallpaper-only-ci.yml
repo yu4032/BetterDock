@@ -64,6 +64,45 @@ jobs:
           python3 ci/folder_startup_recovery_transform.py
           git diff --check
 
+      - name: Diagnose materialized workstation ownership
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          targets = [
+              Path('src/main/java/com/hellovoid/liquiddock/MainHook.java'),
+              Path('src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java'),
+              Path('src/main/java/com/hellovoid/liquiddock/MiuixGlassHook.java'),
+              Path('src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java'),
+          ]
+          needles = (
+              'setOldBg', 'oldBg()', 'syncDockShadow', 'setWorkstationMode',
+              'workstationMode', 'isWorkstationMode', 'mHotSeats', 'hotSeatsRef',
+              'setAlpha(', 'setVisibility(', 'Laptop', 'laptop', 'DockContainer',
+              'backupNormalHomeLayout', 'scheduleNormalLayoutRestore',
+          )
+          for path in targets:
+              print(f'\n===== {path} =====')
+              if not path.exists():
+                  print('MISSING')
+                  continue
+              lines = path.read_text().splitlines()
+              selected = set()
+              for i, line in enumerate(lines):
+                  if any(n in line for n in needles):
+                      selected.update(range(max(0, i - 3), min(len(lines), i + 5)))
+              last = -2
+              for i in sorted(selected):
+                  if i > last + 1:
+                      print('---')
+                  print(f'{i+1:5}: {lines[i]}')
+                  last = i
+          PY
+          echo '===== materialized diff: MainHook ====='
+          git diff -- src/main/java/com/hellovoid/liquiddock/MainHook.java || true
+          echo '===== materialized diff: Miuix307MaterialPipeline ====='
+          git diff -- src/main/java/com/hellovoid/liquiddock/Miuix307MaterialPipeline.java || true
+          exit 86
+
       - name: Verify wallpaper-only contract
         run: |
           SESSION=src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
