@@ -11,7 +11,7 @@ import java.nio.file.Path;
 
 import org.junit.Test;
 
-/** Guards the renderer boundary between generic Prismal optics and Dock-only corrections. */
+/** Guards the renderer boundary between launcher-compact, upstream, and Dock-only optics. */
 public class PrismalRendererModeContractTest {
     private static String rendererSource() throws Exception {
         return Files.readString(Path.of(
@@ -26,18 +26,21 @@ public class PrismalRendererModeContractTest {
     }
 
     @Test
-    public void defaultRendererKeepsUpstreamFragment() throws Exception {
+    public void defaultRendererSelectsLauncherCompactFragment() throws Exception {
         String source = rendererSource();
 
-        assertEquals("default renderer must select upstream Prismal optics",
-                PrismalRenderer.Mode.UPSTREAM, rendererMode(new PrismalRenderer()));
+        assertEquals("default renderer must select launcher-compact optics",
+                "LAUNCHER_COMPACT", rendererMode(new PrismalRenderer()).name());
+        assertTrue("default program creation must apply the launcher-compact correction",
+                source.contains(
+                        "PrismalLauncherCompactShader.apply(PrismalShaderSources.FRAGMENT)"));
         assertFalse("default program creation must not unconditionally apply the Dock patch",
                 source.contains(
                         "String glassFragment = PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT);"));
     }
 
     @Test
-    public void explicitDockModeIsTheOnlyPathThatAppliesSingleEdgePatch() throws Exception {
+    public void explicitDockModeRetainsSingleEdgePatch() throws Exception {
         String source = rendererSource();
 
         assertEquals("explicit Dock renderer must retain the Dock-only mode",
@@ -46,7 +49,12 @@ public class PrismalRendererModeContractTest {
         assertTrue("Dock-only patch must be selected from the explicit renderer mode",
                 source.contains("Mode.DOCK_SINGLE_EDGE")
                         && source.contains("PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT)"));
-        assertTrue("upstream mode must retain the vendored fragment unchanged",
-                source.contains("PrismalShaderSources.FRAGMENT"));
+    }
+
+    @Test
+    public void explicitUpstreamModeKeepsVendoredFragmentAvailableForDiagnostics() throws Exception {
+        assertEquals("explicit upstream renderer must remain available",
+                PrismalRenderer.Mode.UPSTREAM,
+                rendererMode(new PrismalRenderer(PrismalRenderer.Mode.UPSTREAM)));
     }
 }
