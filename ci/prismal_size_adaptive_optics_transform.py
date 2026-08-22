@@ -1,0 +1,79 @@
+from pathlib import Path
+
+GLSL = Path('prismal/src/main/res/raw/prismal_fragment.glsl')
+GENERATED = Path('prismal/src/main/java/com/hellovoid/prismal/PrismalShaderSources.java')
+
+
+def java_string_body(text: str) -> str:
+    return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+
+
+def replace_both(glsl: str, generated: str, old: str, new: str, label: str):
+    if old not in glsl:
+        raise SystemExit(f'{label}: GLSL anchor not found')
+    escaped_old = java_string_body(old)
+    escaped_new = java_string_body(new)
+    if escaped_old not in generated:
+        raise SystemExit(f'{label}: generated shader anchor not found')
+    return glsl.replace(old, new, 1), generated.replace(escaped_old, escaped_new, 1)
+
+
+glsl = GLSL.read_text()
+generated = GENERATED.read_text()
+
+old = (
+    '    float smallGlass = smoothstep(128.0, 46.0, minDim * 2.0);\n'
+    '    edgePunch = mix(edgePunch, 1.0, smallGlass * 0.85);\n'
+)
+new = old + (
+    '    // Keep compact glass unchanged, then progressively calm broad face lighting.\n'
+    '    // minDim is half the short side, so 60..180 maps to 120..360 px glass.\n'
+    '    float largeGlass = smoothstep(60.0, 180.0, minDim);\n'
+    '    float specSizeScale = mix(1.0, 0.50, largeGlass);\n'
+    '    float causticSizeScale = mix(1.0, 0.30, largeGlass);\n'
+    '    float highlightSizeScale = mix(1.0, 0.50, largeGlass);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'size response')
+
+old = '    float edgeDist = -distMask;\n'
+new = old + (
+    '    // On large glass, suppress only the deep face plateau that can reveal the rounded-box\n'
+    '    // height field as a bright rectangle. Edge Fresnel/rim lighting remains untouched.\n'
+    '    float deepCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(minDim * 0.28, minDim * 0.72, edgeDist), largeGlass);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'center fade')
+
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    float sp = u_specular * 1.05;\n',
+    '    float sp = u_specular * 1.05 * specSizeScale;\n',
+    'specular scale',
+)
+
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    color += (specP + specS) * vec3(0.99, 0.993, 1.0);\n',
+    '    color += (specP + specS) * deepCenterFade * vec3(0.99, 0.993, 1.0);\n',
+    'specular center fade',
+)
+
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    plusHL *= mix(0.42, 0.06, smallGlass);\n',
+    '    plusHL *= mix(0.42, 0.06, smallGlass) * highlightSizeScale * deepCenterFade;\n',
+    'plain highlight scale',
+)
+
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '        float caust = pow(max(causticDot, 0.0), 7.0) * u_causticIntensity * height;\n',
+    '        float caust = pow(max(causticDot, 0.0), 7.0) * u_causticIntensity * height * causticSizeScale * deepCenterFade;\n',
+    'caustic scale',
+)
+
+GLSL.write_text(glsl)
+GENERATED.write_text(generated)
