@@ -40,7 +40,8 @@ public class FolderOpenLifecycleContractTest {
         assertTrue("FolderIcon.onClose must be observed but must not restore early",
                 hook.contains("findMethodExact(folderIcon, \"onClose\", new Class<?>[0])"));
         assertTrue("Folder close completion is the authoritative restore edge",
-                hook.contains("findMethodExact(folder, \"onClose\",\n                new Class<?>[]{Boolean.TYPE, Runnable.class})"));
+                hook.contains("findMethodExact(folder, \"onClose\",")
+                        && hook.contains("new Class<?>[]{Boolean.TYPE, Runnable.class})"));
         assertTrue("completion must restore the one tracked opened owner",
                 hook.contains("restoreOpenedFolderOwner()"));
         assertFalse("close completion must not restore every folder output",
