@@ -370,12 +370,14 @@ public class MainHook {
                 unclipped = next instanceof ViewGroup ? (ViewGroup) next : null;
             }
         }
-        ensureShadowBelowBackground(parent, currentShadow, dockBg);
+        if (!animating(dockBg)) {
+            ensureShadowBelowBackground(parent, currentShadow, dockBg);
+        }
         currentShadow.setVisibility(View.VISIBLE);
         syncAll(dockBg);
     }
 
-    /** Keep the reusable shadow immediately below whichever vendor material is active now. */
+    /** Keep the reusable shadow below whichever vendor material is active now. */
     private static void ensureShadowBelowBackground(
             ViewGroup parent, View shadow, View dockBg) {
         if (parent == null || shadow == null || dockBg == null || shadow.getParent() != parent) {
@@ -383,12 +385,13 @@ public class MainHook {
         }
         int shadowIndex = parent.indexOfChild(shadow);
         int backgroundIndex = parent.indexOfChild(dockBg);
-        if (shadowIndex < 0 || backgroundIndex < 0 || shadowIndex + 1 == backgroundIndex) return;
+        if (shadowIndex < 0 || backgroundIndex < 0 || shadowIndex < backgroundIndex) return;
 
         ViewGroup.LayoutParams layoutParams = shadow.getLayoutParams();
         parent.removeView(shadow);
         int targetIndex = parent.indexOfChild(dockBg);
         parent.addView(shadow, Math.max(0, targetIndex), layoutParams);
+        shadowViewRef = new WeakReference<>(shadow);
     }
 
     private static void installDockResizeAnimationBypass(ClassLoader cl, boolean smoothAnimation) {
