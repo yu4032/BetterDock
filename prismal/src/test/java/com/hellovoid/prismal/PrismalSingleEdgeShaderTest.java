@@ -11,31 +11,43 @@ import org.junit.Test;
 /** Ensures the shader actually compiled by PrismalRenderer has the LiquidDock corrections. */
 public class PrismalSingleEdgeShaderTest {
     @Test
-    public void runtimeFragmentUsesContinuousRefractionForNormalGlassAndEdgeNormalForWideDock() throws Exception {
+    public void runtimeFragmentUsesSmoothRoundedRectRefractionForNormalGlassAndEdgeNormalForWideDock() throws Exception {
         String shader = correctedRuntimeShader();
 
         assertTrue(shader.contains(
                 "float glassAspect = max(u_glassSize.x, u_glassSize.y) / max(min(u_glassSize.x, u_glassSize.y), 1.0);"));
         assertTrue(shader.contains(
-                "float radialRefractionW = 1.0 - smoothstep(2.2, 3.2, glassAspect);"));
+                "float smoothRectRefractionW = 1.0 - smoothstep(2.2, 3.2, glassAspect);"));
         assertTrue(shader.contains(
-                "vec2 radialRefractionRaw = cKy / max(halfSz, vec2(1.0));"));
+                "float smoothRectK = max(u_sminSmoothing, minDim * 0.12);"));
         assertTrue(shader.contains(
-                "float radialRefractionLen = length(radialRefractionRaw);"));
+                "float smoothRectSd = sdRoundBox(pPx, halfSz, crMask, smoothRectK);"));
         assertTrue(shader.contains(
-                "vec2 radialRefractionDir = radialRefractionLen > 1e-5 ? radialRefractionRaw / radialRefractionLen : vec2(0.0);"));
+                "float smoothRectDx = 0.5 * (sdRoundBox(pPx + vec2(1.0, 0.0), halfSz, crMask, smoothRectK) - sdRoundBox(pPx - vec2(1.0, 0.0), halfSz, crMask, smoothRectK));"));
         assertTrue(shader.contains(
-                "float radialInwardPx = max(0.0, (1.0 - radialRefractionLen) * minDim);"));
+                "float smoothRectDy = 0.5 * (sdRoundBox(pPx + vec2(0.0, 1.0), halfSz, crMask, smoothRectK) - sdRoundBox(pPx - vec2(0.0, 1.0), halfSz, crMask, smoothRectK));"));
+        assertTrue(shader.contains(
+                "vec2 smoothRectGrad = vec2(smoothRectDx, smoothRectDy);"));
+        assertTrue(shader.contains(
+                "vec2 smoothRectDir = length(smoothRectGrad) > 1e-5 ? normalize(smoothRectGrad) : vec2(0.0);"));
+        assertTrue(shader.contains(
+                "float smoothRectInwardPx = max(0.0, -smoothRectSd);"));
         assertTrue(shader.contains(
                 "vec2 edgeLensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);"));
         assertTrue(shader.contains(
-                "vec2 lensDirBlend = mix(edgeLensDir, radialRefractionDir, radialRefractionW);"));
+                "vec2 lensDirBlend = mix(edgeLensDir, smoothRectDir, smoothRectRefractionW);"));
         assertTrue(shader.contains(
-                "float lensInwardPx = mix(-sdIn, radialInwardPx, radialRefractionW);"));
+                "float lensInwardPx = mix(-sdIn, smoothRectInwardPx, smoothRectRefractionW);"));
         assertTrue(shader.contains(
                 "dLens = circleMapRealistic(1.0 - (lensInwardPx / lensRh)) * (-u_lensRefractionPx);"));
         assertTrue(shader.contains("vec2 edgeRefractionUv = (dLens * lensDir) / u_resolution;"));
         assertTrue(shader.contains("vec2 baseOffset = edgeRefractionUv;"));
+
+        assertFalse(shader.contains("radialRefractionW"));
+        assertFalse(shader.contains("radialRefractionRaw"));
+        assertFalse(shader.contains("radialRefractionLen"));
+        assertFalse(shader.contains("radialRefractionDir"));
+        assertFalse(shader.contains("radialInwardPx"));
         assertFalse(shader.contains("u_lensDepthEffect * normalize(cenSafe)"));
         assertFalse(shader.contains("lensDeltaUv += parallax"));
         assertFalse(shader.contains("vec2 snellOff ="));
