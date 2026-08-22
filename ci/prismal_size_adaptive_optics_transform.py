@@ -52,8 +52,13 @@ new = old + (
     '    vec2 compactNorm = pPx / max(halfSz, vec2(1.0));\n'
     '    float compactRadius = length(compactNorm);\n'
     '    float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, compactRadius), compactGlass);\n'
+    '    // Only the deep compact core is radialized. The outer rounded-rect shell remains\n'
+    '    // authoritative for clipping, opacity, Fresnel and rim geometry.\n'
+    '    float compactCore = compactGlass * (1.0 - smoothstep(0.58, 0.98, compactRadius));\n'
+    '    float compactRadialHeight = clamp(1.0 - dot(compactNorm, compactNorm), 0.0, 1.0);\n'
+    '    vec2 compactRadialGrad = -2.0 * compactNorm / max(halfSz, vec2(1.0));\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'compact radial center fade')
+glsl, generated = replace_both(glsl, generated, old, new, 'compact radial core')
 
 old = '    float edgeDist = -distMask;\n'
 new = old + (
@@ -62,6 +67,53 @@ new = old + (
     '    float deepCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(minDim * 0.28, minDim * 0.72, edgeDist), largeGlass);\n'
 )
 glsl, generated = replace_both(glsl, generated, old, new, 'large center fade')
+
+old = '    float tShell = 1.0 - tDeep;\n'
+new = old + (
+    '    // gradSdRoundedRectRealistic is intentionally exact at the shell, but in the deep\n'
+    '    // interior its axis branch changes at |x|=|y| and can expose an X-shaped seam.\n'
+    '    // Blend that edge direction into a continuous elliptical-radial optical field.\n'
+    '    vec2 opticalRadialRaw = cKy / max(halfSz, vec2(1.0));\n'
+    '    float opticalRadialLen = length(opticalRadialRaw);\n'
+    '    vec2 opticalRadial = opticalRadialLen > 1e-5 ? opticalRadialRaw / opticalRadialLen : vec2(0.0);\n'
+    '    vec2 opticalEdgeDir = normalize(gradLens + vec2(1e-5));\n'
+    '    float opticalInteriorW = smoothstep(0.12, 0.52, tDeep);\n'
+    '    vec2 opticalBlend = mix(opticalEdgeDir, opticalRadial, opticalInteriorW);\n'
+    '    float opticalBlendLen = length(opticalBlend);\n'
+    '    vec2 opticalDir = opticalBlendLen > 1e-5 ? opticalBlend / opticalBlendLen : vec2(0.0);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'continuous interior direction')
+
+old = '    height = clamp(height * (0.84 + 0.16 * meniscusBand + 0.08 * edgeRound), 0.0, 1.0);\n'
+new = old + (
+    '    // Compact icons have too little room for the rounded-box depth plateau. Replace only\n'
+    '    // the deep face with a smooth radial dome; the shell is still the exact box SDF.\n'
+    '    height = mix(height, compactRadialHeight, compactCore);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'compact radial height')
+
+old = '    vec2 gradH = mix(gradHSig, gCap, domeW);\n'
+new = old + (
+    '    gradH = mix(gradH, compactRadialGrad, compactCore);\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'compact radial gradient')
+
+old = (
+    '    vec2 cenSafe = cKy + vec2(1e-4, 1e-4);\n'
+    '    vec2 lensDir = gradLens + u_lensDepthEffect * normalize(cenSafe);\n'
+)
+new = (
+    '    vec2 lensDir = opticalDir + u_lensDepthEffect * opticalRadial;\n'
+)
+glsl, generated = replace_both(glsl, generated, old, new, 'radial lens direction')
+
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    vec2 parallax = (gradLens * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;\n',
+    '    vec2 parallax = (opticalDir * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;\n',
+    'radial parallax direction',
+)
 
 glsl, generated = replace_both(
     glsl,
