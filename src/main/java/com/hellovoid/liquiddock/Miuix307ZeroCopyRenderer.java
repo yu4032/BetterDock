@@ -9,12 +9,17 @@ import java.lang.ref.WeakReference;
 /** Builds the feedback-safe HyperOS 307 PassBlur -> OES -> TextureView material composition. */
 final class Miuix307ZeroCopyRenderer {
     private static final String TAG = "[DC][ZC]";
+    private static final long FIRST_FRAME_TIMEOUT_MS = 1500L;
+    private static final int MAX_STALLED_PRODUCER_RECOVERIES = 2;
 
     private static WeakReference<Miuix307PassBlurTextureView> gpuBackdropRef =
             new WeakReference<>(null);
     private static WeakReference<DockLiquidGlassHostView> hostRef =
             new WeakReference<>(null);
     private static WeakReference<View> materialHostRef = new WeakReference<>(null);
+    private static Runnable firstFrameWatchdog;
+    private static int watchdogGeneration;
+    private static int stalledProducerRecoveries;
 
     private Miuix307ZeroCopyRenderer() {}
 
@@ -38,9 +43,12 @@ final class Miuix307ZeroCopyRenderer {
         host.addView(gpuBackdrop, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        cancelFirstFrameWatchdog();
+        stalledProducerRecoveries = 0;
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
+        armFirstFrameWatchdog(gpuBackdrop, "install");
         MainHook.log(TAG + " PassBlur TextureView EGL Prismal material installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx
                 + " source=" + materialHost.getClass().getSimpleName());
@@ -53,7 +61,14 @@ final class Miuix307ZeroCopyRenderer {
 
     static boolean isActive() {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
-        return gpuBackdrop != null && gpuBackdrop.isGpuBackdropActive();
+        boolean active = gpuBackdrop != null && gpuBackdrop.isGpuBackdropActive();
+        if (active) {
+            stalledProducerRecoveries = 0;
+            cancelFirstFrameWatchdog();
+        } else if (gpuBackdrop != null && !gpuBackdrop.isActivationExhausted()) {
+            armFirstFrameWatchdog(gpuBackdrop, "inactive-check");
+        }
+        return active;
     }
 
     static boolean isActivationExhausted() {
@@ -75,16 +90,66 @@ final class Miuix307ZeroCopyRenderer {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
         if (gpuBackdrop != null && glassConfig != null) {
             gpuBackdrop.setGlassConfig(glassConfig);
+            if (!gpuBackdrop.isGpuBackdropActive() && !gpuBackdrop.isActivationExhausted()) {
+                armFirstFrameWatchdog(gpuBackdrop, "geometry-sync");
+            }
         }
     }
 
     static void rebindProducer(String reason) {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
-        if (gpuBackdrop != null) gpuBackdrop.rebindProducer(reason);
+        if (gpuBackdrop == null) return;
+        cancelFirstFrameWatchdog();
+        gpuBackdrop.rebindProducer(reason);
+        armFirstFrameWatchdog(gpuBackdrop, reason);
+    }
+
+    private static synchronized void armFirstFrameWatchdog(
+            Miuix307PassBlurTextureView gpuBackdrop, String reason) {
+        if (gpuBackdrop == null || gpuBackdrop != gpuBackdropRef.get()) return;
+        if (gpuBackdrop.isGpuBackdropActive() || gpuBackdrop.isActivationExhausted()) return;
+        if (firstFrameWatchdog != null) return;
+
+        final int generation = ++watchdogGeneration;
+        Runnable watchdog = () -> {
+            synchronized (Miuix307ZeroCopyRenderer.class) {
+                if (generation != watchdogGeneration || gpuBackdrop != gpuBackdropRef.get()) return;
+                firstFrameWatchdog = null;
+            }
+            if (gpuBackdrop.isGpuBackdropActive()) {
+                stalledProducerRecoveries = 0;
+                return;
+            }
+            if (gpuBackdrop.isActivationExhausted()
+                    || stalledProducerRecoveries >= MAX_STALLED_PRODUCER_RECOVERIES) {
+                MainHook.log(TAG + " producer-stall-exhausted reason=" + reason
+                        + " recoveries=" + stalledProducerRecoveries);
+                clear();
+                return;
+            }
+
+            stalledProducerRecoveries++;
+            MainHook.log(TAG + " producer first-frame timeout; bounded rebind "
+                    + stalledProducerRecoveries + "/" + MAX_STALLED_PRODUCER_RECOVERIES
+                    + " reason=" + reason);
+            rebindProducer("producer-stall-" + stalledProducerRecoveries);
+        };
+        firstFrameWatchdog = watchdog;
+        gpuBackdrop.postDelayed(watchdog, FIRST_FRAME_TIMEOUT_MS);
+    }
+
+    private static synchronized void cancelFirstFrameWatchdog() {
+        watchdogGeneration++;
+        Runnable watchdog = firstFrameWatchdog;
+        firstFrameWatchdog = null;
+        Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
+        if (watchdog != null && gpuBackdrop != null) gpuBackdrop.removeCallbacks(watchdog);
     }
 
     static void clear() {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
+        cancelFirstFrameWatchdog();
+        stalledProducerRecoveries = 0;
         gpuBackdropRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
