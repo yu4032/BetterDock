@@ -12,7 +12,7 @@ public class LauncherGlassWorkspaceScrollRealtimeContractTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
     @Test
-    public void sinkTracksOnlyWorkspaceAncestorScroll() throws Exception {
+    public void sinkTracksOnlyWorkspaceAncestorScrollAsImmediateLocalChange() throws Exception {
         String sink = Files.readString(MAIN.resolve("LauncherGlassSinkView.java"));
 
         assertTrue(sink.contains("LauncherGlassScrollMotionTracker workspaceScrollMotion"));
@@ -20,15 +20,15 @@ public class LauncherGlassWorkspaceScrollRealtimeContractTest {
         assertTrue(sink.contains("findWorkspaceAncestor(material)"));
         assertTrue(sink.contains("workspace.getScrollX()"));
         assertTrue(sink.contains("workspace.getScrollY()"));
+        assertTrue(sink.contains("changed |= consumeWorkspaceScrollMotion()"));
     }
 
     @Test
-    public void sessionBypassesStabilityOnlyForWorkspaceScrollWithoutProducerRefresh() throws Exception {
+    public void existingSessionPathReusesBackdropWithoutProducerRefresh() throws Exception {
         String session = Files.readString(MAIN.resolve("LauncherGlassSession.java"));
 
-        assertTrue(session.contains("boolean workspaceScrollChanged = sink.consumeWorkspaceScrollMotion()"));
-        assertTrue(session.contains("select(old, observed, localChanged, workspaceScrollChanged)"));
-        assertFalse("workspace scroll must reuse the consumed wallpaper/backdrop source",
-                session.contains("workspaceScrollChanged) requestFrame(true)"));
+        assertTrue(session.contains("node.geometryStability.select(old, observed, localChanged)"));
+        assertFalse("workspace scroll must not add a continuous producer refresh path",
+                session.contains("workspaceScroll") || session.contains("requestFrame(true)"));
     }
 }
