@@ -1,0 +1,9 @@
+Design self-review completed on 2026-08-22.
+
+Checks:
+- no TODO/TBD placeholders;
+- shared Prismal optical model for Dock, folder, and future widget surfaces;
+- Launcher-surface highlight controls remain isolated from Dock behavior;
+- widget rendering remains out of current implementation scope;
+- main Dock/workstation behavior remains a protected boundary;
+- migration remains semantic reconstruction from main, not broad cherry-pick.

@@ -1,6 +1,7 @@
 package com.hellovoid.liquiddock;
 
 import com.hellovoid.liquiddock.config.ConfigSchema;
+import com.hellovoid.prismal.PrismalHighlightProfile;
 
 /** Immutable, typed runtime configuration. All defaults and unit semantics live here so
  * hooks and renderers do not need to know JSON keys. */
@@ -195,6 +196,7 @@ final class LiquidDockConfig {
     static final class Glass {
         final boolean enabled;
         final boolean prismalShowNormals;
+        final PrismalHighlightProfile launcherHighlightProfile;
         final float blur, chromatic, thickness, ior, normalStrength, dome,
         lensRefraction, depthEffect, highlightWidth, brightness,
         specularStrength, rimLight, caustics;
@@ -211,6 +213,7 @@ final class LiquidDockConfig {
         Glass(ConfigReader c) {
             enabled = c.b(ConfigSchema.Glass.ENABLED.name(),
                     ConfigSchema.Glass.ENABLED.runtimeFallback());
+            launcherHighlightProfile = LauncherHighlightPreferences.read(c);
             blur = c.f(ConfigSchema.Glass.BLUR.name(), ConfigSchema.Glass.BLUR.runtimeFallback());
             // Upstream Prismal uses the human-facing chromatic magnitude directly (for example 8).
             chromatic = c.i(ConfigSchema.Glass.CHROMATIC.name(),

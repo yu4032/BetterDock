@@ -22,7 +22,7 @@
     <string name="home_dock_summary">尺寸、圆角、图标间距、位置与模糊</string>
     <string name="home_divider_summary">独立控制分隔线宽度、高度、位置、颜色与透明度</string>
     <string name="home_workstation_summary">独立长度与间距；不继承普通 Dock 参数</string>
-    <string name="home_liquid_summary">折射、色散、模糊后端与自适应局部捕获</string>
+    <string name="home_liquid_summary">模糊、折射、色散、颜色、光照与高光控制</string>
     <string name="home_stroke_summary">底色、方圆曲线与线宽</string>
     <string name="home_shadow_summary">整个 Dock 阴影与描边阴影</string>
     <string name="home_data_title">预设、导入与导出</string>
@@ -47,7 +47,7 @@
     <string name="workstation_customization">自定义工作台 Dock</string>
     <string name="workstation_customization_summary">工作台使用独立的 Dock 长度和 8 列水平距离</string>
     <string name="liquid_enable">启用液态玻璃</string>
-    <string name="liquid_enable_summary">按场景捕获 Dock 下方区域，使用折射 Shader 与可切换模糊后端</string>
+    <string name="liquid_enable_summary">为支持的界面启用液态玻璃效果，并使用下方配置的光学属性</string>
     <string name="liquid_blur_method">模糊方法</string>
     <string name="liquid_shader_blur">Shader 双环模糊</string>
     <string name="liquid_native_blur">系统原生 Self Blur</string>
@@ -56,4 +56,18 @@
     <string name="liquid_dynamic_capture_summary">游戏或视频中 Dock 展开时持续刷新；Dock 收起后立即停止</string>
     <string name="pref_debug_log">调试日志</string>
     <string name="pref_debug_log_summary">向 logcat 输出 [DC] 诊断日志（关于页），重启桌面生效</string>
+    <string name="liquid_header_summary">调整液态玻璃的模糊、折射、色散、颜色与光照效果；修改后重启桌面生效。</string>
+    <string name="page_launcher_highlights">文件夹与小组件高光</string>
+    <string name="launcher_highlights_entry">文件夹与小组件高光层</string>
+    <string name="launcher_highlights_entry_summary">选择文件夹液态玻璃及未来小组件液态玻璃使用的高光层</string>
+    <string name="launcher_highlights_header_summary">文件夹液态玻璃使用这些高光开关；未来小组件液态玻璃将共用同一组设置。</string>
+    <string name="highlight_sky_haze">天空雾光</string><string name="highlight_sky_haze_summary">玻璃边缘附近的柔和环境反射雾光</string>
+    <string name="highlight_specular">镜面高光</string><string name="highlight_specular_summary">主光源形成的明亮镜面反射</string>
+    <string name="highlight_lit_rim">受光侧边缘</string><string name="highlight_lit_rim_summary">朝向主光源一侧的边缘高光</string>
+    <string name="highlight_opposite_rim">背光侧边缘</string><string name="highlight_opposite_rim_summary">主光源相对一侧的辅助边缘高光</string>
+    <string name="highlight_corner_rim">圆角高光</string><string name="highlight_corner_rim_summary">集中在圆角区域的附加高光</string>
+    <string name="highlight_face_sheen">表面柔光</string><string name="highlight_face_sheen_summary">覆盖玻璃表面的宽幅柔和反光</string>
+    <string name="highlight_plain">基础高光</string><string name="highlight_plain_summary">由基础高光强度参数控制的边缘高光</string>
+    <string name="highlight_caustics">焦散</string><string name="highlight_caustics_summary">曲面玻璃聚焦形成的光纹</string>
+    <string name="highlight_press_glow">按压辉光</string><string name="highlight_press_glow_summary">交互按压效果使用的局部辉光</string>
 </resources>

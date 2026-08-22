@@ -22,7 +22,7 @@
     <string name="home_dock_summary">Size, corners, icon spacing, position, and blur</string>
     <string name="home_divider_summary">Independent divider width, height, position, color, and opacity</string>
     <string name="home_workstation_summary">Independent length and spacing; does not inherit normal Dock parameters</string>
-    <string name="home_liquid_summary">Refraction, dispersion, blur backends, and adaptive local capture</string>
+    <string name="home_liquid_summary">Blur, refraction, dispersion, color, lighting, and highlights</string>
     <string name="home_stroke_summary">Base color, squircle shape, and stroke width</string>
     <string name="home_shadow_summary">Whole-Dock and stroke shadows</string>
     <string name="home_data_title">Presets, import, and export</string>
@@ -48,7 +48,7 @@
     <string name="workstation_customization">Customize Workstation Dock</string>
     <string name="workstation_customization_summary">Uses independent Dock length and 8-column horizontal spacing</string>
     <string name="liquid_enable">Enable liquid glass</string>
-    <string name="liquid_enable_summary">Captures only the area below the Dock and applies refraction with a selectable blur backend</string>
+    <string name="liquid_enable_summary">Enables liquid glass on supported surfaces using the configured optical properties</string>
     <string name="liquid_blur_method">Blur method</string>
     <string name="liquid_shader_blur">Shader dual-ring blur</string>
     <string name="liquid_native_blur">System Self Blur</string>
@@ -57,4 +57,18 @@
     <string name="liquid_dynamic_capture_summary">Refreshes while the Dock is open over games or video, and stops immediately after it closes</string>
     <string name="pref_debug_log">Debug Logging</string>
     <string name="pref_debug_log_summary">Write [DC] diagnostics to logcat (about page), restart desktop to apply</string>
+    <string name="liquid_header_summary">Adjust blur, refraction, dispersion, color, and lighting; restart the launcher to apply changes.</string>
+    <string name="page_launcher_highlights">Folder &amp; widget highlights</string>
+    <string name="launcher_highlights_entry">Folder &amp; widget highlight layers</string>
+    <string name="launcher_highlights_entry_summary">Choose the highlight layers used by folder glass and future widget glass</string>
+    <string name="launcher_highlights_header_summary">Folder glass uses these highlight switches; future widget glass will reuse the same set.</string>
+    <string name="highlight_sky_haze">Sky haze</string><string name="highlight_sky_haze_summary">Soft reflected haze near the glass edge</string>
+    <string name="highlight_specular">Specular highlights</string><string name="highlight_specular_summary">Bright reflections from the primary light</string>
+    <string name="highlight_lit_rim">Lit rim</string><string name="highlight_lit_rim_summary">Edge light on the side facing the primary light</string>
+    <string name="highlight_opposite_rim">Opposite rim</string><string name="highlight_opposite_rim_summary">Secondary edge light opposite the primary light</string>
+    <string name="highlight_corner_rim">Corner rim</string><string name="highlight_corner_rim_summary">Extra highlight concentrated around rounded corners</string>
+    <string name="highlight_face_sheen">Face sheen</string><string name="highlight_face_sheen_summary">Broad soft sheen across the glass surface</string>
+    <string name="highlight_plain">Base highlight</string><string name="highlight_plain_summary">Basic edge highlight controlled by the highlight intensity</string>
+    <string name="highlight_caustics">Caustics</string><string name="highlight_caustics_summary">Focused light patterns from the curved glass surface</string>
+    <string name="highlight_press_glow">Press glow</string><string name="highlight_press_glow_summary">Localized glow used by interactive press effects</string>
 </resources>
