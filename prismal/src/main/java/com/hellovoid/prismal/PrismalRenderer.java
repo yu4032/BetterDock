@@ -90,6 +90,10 @@ public final class PrismalRenderer implements AutoCloseable {
     private int height;
     private int blurWidth;
     private int blurHeight;
+    private boolean backdropPrepared;
+    private boolean glassFrameBegun;
+    private int glassDrawCount;
+    private boolean legacySingleDraw;
 
     public PrismalRenderer() {
         fullQuad = floatBuffer(FULL_QUAD);
@@ -105,6 +109,8 @@ public final class PrismalRenderer implements AutoCloseable {
         if (backgroundTexture2D <= 0) throw new IllegalArgumentException("background texture <= 0");
         if (geometry == null) throw new IllegalArgumentException("geometry == null");
         if (params == null) params = PrismalParams.builder().build();
+        // Keep the existing Dock entry point and optics model. Batch rendering only splits the
+        // same source/blur/draw sequence so Launcher can reuse one prepared backdrop.
         ensurePrograms();
         ensureTargets(geometry.framebufferWidth, geometry.framebufferHeight);
 
@@ -113,9 +119,15 @@ public final class PrismalRenderer implements AutoCloseable {
         GLES20.glGetIntegerv(GLES20.GL_FRAMEBUFFER_BINDING, previousFbo, 0);
         GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, previousViewport, 0);
         try {
-            renderSourceAdapter(backgroundTexture2D);
-            renderBlur(params);
-            renderGlass(geometry, params);
+            prepareBackdrop(backgroundTexture2D, geometry.framebufferWidth,
+                    geometry.framebufferHeight, params);
+            beginGlassFrame();
+            legacySingleDraw = true;
+            try {
+                drawGlass(geometry, params);
+            } finally {
+                legacySingleDraw = false;
+            }
             int error = GLES20.glGetError();
             if (error != GLES20.GL_NO_ERROR) {
                 throw new IllegalStateException("Prismal GLES error=0x" + Integer.toHexString(error));
@@ -127,6 +139,52 @@ public final class PrismalRenderer implements AutoCloseable {
                     previousViewport[2], previousViewport[3]);
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         }
+    }
+
+    /** Prepare one normalized/blurred backdrop for one or more glass nodes. */
+    public void prepareBackdrop(int backgroundTexture2D, int framebufferWidth, int framebufferHeight,
+                                PrismalParams params) {
+        if (backgroundTexture2D <= 0) throw new IllegalArgumentException("background texture <= 0");
+        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
+            throw new IllegalArgumentException("framebuffer dimensions <= 0");
+        }
+        if (params == null) params = PrismalParams.builder().build();
+        ensurePrograms();
+        ensureTargets(framebufferWidth, framebufferHeight);
+        renderSourceAdapter(backgroundTexture2D);
+        renderBlur(params);
+        backdropPrepared = true;
+        glassFrameBegun = false;
+        glassDrawCount = 0;
+    }
+
+    /** Clear the transparent scene output once before appending glass nodes. */
+    public void beginGlassFrame() {
+        if (!backdropPrepared) {
+            throw new IllegalStateException("prepareBackdrop must be called before beginGlassFrame");
+        }
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFramebuffer);
+        GLES20.glViewport(0, 0, width, height);
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
+        GLES20.glClearColor(0f, 0f, 0f, 0f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        glassFrameBegun = true;
+        glassDrawCount = 0;
+    }
+
+    /** Append one glass node using the currently prepared backdrop. */
+    public void drawGlass(PrismalGeometry geometry, PrismalParams params) {
+        if (geometry == null) throw new IllegalArgumentException("geometry == null");
+        if (!glassFrameBegun) {
+            throw new IllegalStateException("beginGlassFrame must be called before drawGlass");
+        }
+        if (geometry.framebufferWidth != width || geometry.framebufferHeight != height) {
+            throw new IllegalArgumentException("geometry framebuffer does not match prepared backdrop");
+        }
+        if (params == null) params = PrismalParams.builder().build();
+        renderGlassNode(geometry, params, !legacySingleDraw || glassDrawCount > 0);
+        glassDrawCount++;
     }
 
     public int outputTexture() { return outputTexture; }
@@ -209,13 +267,18 @@ public final class PrismalRenderer implements AutoCloseable {
         GLES20.glDisableVertexAttribArray(position);
     }
 
-    private void renderGlass(PrismalGeometry g, PrismalParams p) {
+    private void renderGlassNode(PrismalGeometry g, PrismalParams p, boolean composite) {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFramebuffer);
         GLES20.glViewport(0, 0, width, height);
-        GLES20.glDisable(GLES20.GL_BLEND);
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
-        GLES20.glClearColor(0f, 0f, 0f, 0f);
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        if (composite) {
+            GLES20.glEnable(GLES20.GL_BLEND);
+            GLES20.glBlendFuncSeparate(
+                    GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA,
+                    GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            GLES20.glDisable(GLES20.GL_BLEND);
+        }
         GLES20.glUseProgram(glassProgram);
 
         int position = requireAttrib(glassProgram, "a_position");
@@ -280,6 +343,7 @@ public final class PrismalRenderer implements AutoCloseable {
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
         GLES20.glDisableVertexAttribArray(position);
+        GLES20.glDisable(GLES20.GL_BLEND);
     }
 
     private void bindInterleavedQuad(int program) {
@@ -416,6 +480,10 @@ public final class PrismalRenderer implements AutoCloseable {
         sourceFramebuffer = blurFramebufferH = blurFramebufferV = outputFramebuffer = 0;
         sourceTexture = blurTextureH = blurTextureV = outputTexture = 0;
         width = height = blurWidth = blurHeight = 0;
+        backdropPrepared = false;
+        glassFrameBegun = false;
+        glassDrawCount = 0;
+        legacySingleDraw = false;
     }
 
     @Override
