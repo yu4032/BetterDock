@@ -13,28 +13,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Materialize folder press implementation
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/folder-press-glow'
-        run: |
-          python3 ci/apply_folder_press_once.py
-          if ! git diff --quiet; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java \
-                    src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java \
-                    src/main/java/com/hellovoid/liquiddock/LauncherGlassSinkView.java \
-                    src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java
-            git commit -m "feat: bind per-folder liquid glass press interaction [skip ci]"
-            git push origin HEAD:feat/folder-press-glow
-          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
