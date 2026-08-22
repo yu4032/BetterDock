@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -24,5 +25,57 @@ public class P1RuntimeLifecycleContractTest {
                 migration.contains("public static void migrateAtProcessStart()"));
         assertTrue("runtime migration must operate on API101 Remote Preferences",
                 migration.contains("Api101Bridge.remotePreferences(ConfigReader.REMOTE_GROUP)"));
+    }
+
+    @Test
+    public void localConfigMigrationPrecedesRemoteReconciliation() throws Exception {
+        String app = Files.readString(MAIN.resolve("LiquidDockApp.java"));
+        assertTrue("Application startup must migrate the local store before service reconciliation",
+                app.contains("ConfigMigration.migrate(this, localPreferences)"));
+        assertTrue("local migration must finish before the Xposed service listener can bind",
+                app.indexOf("ConfigMigration.migrate(this, localPreferences)")
+                        < app.indexOf("XposedServiceHelper.registerListener(this)"));
+    }
+
+    @Test
+    public void processStartUnitMigrationIsSynchronous() throws Exception {
+        String migration = Files.readString(MAIN.resolve("config/ConfigMigration.java"));
+        assertFalse("runtime unit migration cannot leave corners pending behind async apply()",
+                migration.contains("corners.putBoolean(\"corners_dp\", true).apply()"));
+        assertTrue("corner unit migration must be committed before ConfigReader.load()",
+                migration.contains("corners.putBoolean(\"corners_dp\", true).commit()"));
+    }
+
+    @Test
+    public void zeroCopyPipelineRetainsWholeDockShadowOwner() throws Exception {
+        String main = Files.readString(MAIN.resolve("MainHook.java"));
+        String glass = Files.readString(MAIN.resolve("MiuixGlassHook.java"));
+
+        int shadowInstall = main.indexOf("installDockShadowSetupHook(classLoader)");
+        int zeroCopyInstall = main.indexOf("Miuix307MaterialPipeline.install(classLoader, config)");
+        assertTrue("whole-Dock shadow setup must be installed before the 307 early return",
+                shadowInstall >= 0 && zeroCopyInstall >= 0 && shadowInstall < zeroCopyInstall);
+        assertTrue("zero-copy geometry updates must keep the independent whole-Dock shadow synced",
+                glass.contains("MainHook.syncDockShadow(dockBg, config.dock)"));
+        assertTrue("shadow setup must resolve the active vendor material, not only mBlurBackground2",
+                main.contains("getHotSeatsBackground"));
+    }
+
+    @Test
+    public void dockBottomOffsetHasOneRuntimeOwner() throws Exception {
+        String module = Files.readString(MAIN.resolve("ModuleMain.java"));
+        String main = Files.readString(MAIN.resolve("MainHook.java"));
+        String pipeline = Files.readString(MAIN.resolve("Miuix307MaterialPipeline.java"));
+        String geometry = Files.readString(MAIN.resolve("DockBottomGeometryHook.java"));
+
+        assertFalse("legacy MainHook must not mutate the HotSeats bottom reserve",
+                main.contains("getHotSeatsMarginBottom"));
+        assertFalse("307 compatibility must not restore the retired bottom-margin owner",
+                pipeline.contains("getHotSeatsMarginBottom"));
+        assertTrue("DockBottomGeometryHook must remain the sole stock-margin fence",
+                geometry.contains("getHotSeatsMarginBottom"));
+        assertTrue("visual bottom-offset owner must install after MainHook regardless of 307 return",
+                module.indexOf("new MainHook().install(classLoader)")
+                        < module.indexOf("DockBottomGeometryHook.install(classLoader)"));
     }
 }
