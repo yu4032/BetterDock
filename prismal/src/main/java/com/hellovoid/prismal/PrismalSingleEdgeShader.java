@@ -20,13 +20,6 @@ final class PrismalSingleEdgeShader {
                 lensDir = ldLen > 1e-5 ? lensDir / ldLen : vec2(0.0);
             """;
 
-    /** Folder/widget optics may radialize only the deep interior before this Dock correction runs. */
-    private static final String SIZE_ADAPTIVE_LENS_DIRECTION = """
-                vec2 lensDir = opticalDir + u_lensDepthEffect * opticalRadial;
-                float ldLen = length(lensDir);
-                lensDir = ldLen > 1e-5 ? lensDir / ldLen : vec2(0.0);
-            """;
-
     private static final String EDGE_NORMAL_LENS_DIRECTION = """
                 // A straight Dock edge must have one translation-invariant refraction direction.
                 // Keep the transmitted lens on the local SDF normal instead of biasing it toward
@@ -58,11 +51,6 @@ final class PrismalSingleEdgeShader {
                 vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv;
             """;
 
-    private static final String SIZE_ADAPTIVE_TRANSMITTED_BLOCK =
-            UPSTREAM_TRANSMITTED_BLOCK.replace(
-                    "vec2 parallax = (gradLens * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;",
-                    "vec2 parallax = (opticalDir * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;");
-
     private static final String SINGLE_EDGE_TRANSMITTED_BLOCK = """
                 // LiquidDock's Dock glass uses one spatial refraction field. dLens is maximal at
                 // the silhouette and monotonically decays to zero over refractionHeight.
@@ -86,16 +74,14 @@ final class PrismalSingleEdgeShader {
         if (upstreamFragment == null) {
             throw new IllegalArgumentException("upstreamFragment == null");
         }
-        String corrected = replaceEitherExactlyOnce(
+        String corrected = replaceExactlyOnce(
                 upstreamFragment,
                 UPSTREAM_LENS_DIRECTION,
-                SIZE_ADAPTIVE_LENS_DIRECTION,
                 EDGE_NORMAL_LENS_DIRECTION,
                 "Prismal lens-direction block");
-        corrected = replaceEitherExactlyOnce(
+        corrected = replaceExactlyOnce(
                 corrected,
                 UPSTREAM_TRANSMITTED_BLOCK,
-                SIZE_ADAPTIVE_TRANSMITTED_BLOCK,
                 SINGLE_EDGE_TRANSMITTED_BLOCK,
                 "Prismal transmitted-refraction block");
         corrected = replaceExactlyOnce(
@@ -108,25 +94,6 @@ final class PrismalSingleEdgeShader {
                 UPSTREAM_CHROMA_PUSH,
                 PIXEL_DOMAIN_CHROMA_PUSH,
                 "Prismal chromatic scale");
-    }
-
-    private static String replaceEitherExactlyOnce(
-            String source,
-            String oldTextA,
-            String oldTextB,
-            String newText,
-            String label) {
-        int firstA = source.indexOf(oldTextA);
-        int firstB = source.indexOf(oldTextB);
-        if ((firstA >= 0) == (firstB >= 0)) {
-            throw new IllegalStateException(label + " upstream contract changed");
-        }
-        String oldText = firstA >= 0 ? oldTextA : oldTextB;
-        int first = firstA >= 0 ? firstA : firstB;
-        if (source.indexOf(oldText, first + oldText.length()) >= 0) {
-            throw new IllegalStateException(label + " upstream contract changed");
-        }
-        return source.substring(0, first) + newText + source.substring(first + oldText.length());
     }
 
     private static String replaceExactlyOnce(
