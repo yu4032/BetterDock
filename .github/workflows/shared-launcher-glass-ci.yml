@@ -62,6 +62,7 @@ jobs:
           python3 ci/wallpaper_only_transform.py
           python3 ci/folder_material_refresh_transform.py
           python3 ci/folder_startup_recovery_transform.py
+          python3 ci/workstation_transition_ownership_transform.py
           git diff --check
 
       - name: Verify wallpaper-only contract
