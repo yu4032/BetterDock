@@ -3,8 +3,8 @@ package com.hellovoid.liquiddock
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.os.Bundle
 import android.net.Uri
+import android.os.Bundle
 import android.text.InputType
 import android.widget.EditText
 import android.widget.Toast
@@ -16,14 +16,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,10 +68,24 @@ class ComposeSettingsActivity : SettingsActivity() {
 }
 
 private enum class Page(val titleRes: Int) {
-    Home(R.string.app_name), Grid(R.string.page_grid), Dock(R.string.page_dock),
-    Divider(R.string.page_divider), Workstation(R.string.page_workstation), Liquid(R.string.page_liquid),
-    Stroke(R.string.page_stroke), Shadow(R.string.page_shadow), Data(R.string.page_data),
-    About(R.string.page_about)
+    Home(R.string.app_name),
+    Grid(R.string.page_grid),
+    Dock(R.string.page_dock),
+    DockComponents(R.string.page_dock_components),
+    Divider(R.string.page_divider),
+    Workstation(R.string.page_workstation),
+    Liquid(R.string.page_liquid),
+    LauncherComponents(R.string.page_launcher_components),
+    Stroke(R.string.page_stroke),
+    Shadow(R.string.page_shadow),
+    Data(R.string.page_data),
+    About(R.string.page_about),
+}
+
+private fun parentPage(page: Page): Page = when (page) {
+    Page.LauncherComponents -> Page.Liquid
+    Page.DockComponents -> Page.Dock
+    else -> Page.Home
 }
 
 // Ordinary UI writes are mirrored to API101 Remote Preferences by LiquidDockApp's
@@ -101,6 +113,13 @@ private data class IntSpec(
         return if (raw is Number) raw.toFloat() / if (isDecimal) 10f else 1f else default.toFloat()
     }
 }
+
+private data class ComponentToggleSpec(
+    val key: String,
+    val default: Boolean,
+    val titleRes: Int,
+    val summaryRes: Int,
+)
 
 private fun optionSummary(key: String): String = when (key) {
     "grid_landscape_horizontal_distance" -> "同时调整横屏布局左右两侧的水平距离"
@@ -162,11 +181,11 @@ private fun optionSummary(key: String): String = when (key) {
     "liquid_prismal_height_transition_width" -> "Prismal 高度场从边缘过渡到中心的宽度"
     "liquid_prismal_smin_smoothing" -> "Prismal 圆角 SDF 的多项式平滑尺度"
     "liquid_prismal_edge_refraction_falloff" -> "控制边缘折射向内部的衰减；越高越集中在边缘"
-    "liquid_prismal_fresnel_reflect" -> "Fresnel 背景反射与 sky haze 强度"
+    "liquid_prismal_fresnel_reflect" -> "Fresnel 背景反射强度；天空雾光是否参与最终合成由组件开关独立控制"
     "liquid_prismal_dispersion_r" -> "红色通道相对色散倍率"
     "liquid_prismal_dispersion_b" -> "蓝色通道相对色散倍率"
     "liquid_prismal_vibrancy" -> "Prismal 折射背景的色彩鲜艳度"
-    "liquid_prismal_plain_highlight" -> "Prismal 基础边缘高光"
+    "liquid_prismal_plain_highlight" -> "基础高光强度；是否参与最终合成由组件开关独立控制"
     "liquid_prismal_light_dir_x" -> "Prismal 光源水平方向"
     "liquid_prismal_light_dir_y" -> "Prismal 光源垂直方向"
     "liquid_prismal_shadow_r" -> "Prismal 内阴影 · 红"
@@ -221,6 +240,7 @@ private val gridSpecs = listOf(
     IntSpec(ConfigSchema.Grid.LANDSCAPE_INDICATOR_Y, "横屏指示器 Y"),
     IntSpec(ConfigSchema.Grid.PORTRAIT_INDICATOR_Y, "竖屏指示器 Y"),
 )
+
 private val dockSpecs = listOf(
     IntSpec(ConfigSchema.Dock.BLUR_RADIUS, "模糊强度", ""),
     IntSpec(ConfigSchema.Dock.HEIGHT_OFFSET, "高度偏移"),
@@ -230,6 +250,7 @@ private val dockSpecs = listOf(
     IntSpec(ConfigSchema.Dock.SPACING, "Dock 图标间距"),
     IntSpec(ConfigSchema.Dock.BOTTOM_OFFSET, "Dock 底部偏移"),
 )
+
 private val dividerSpecs = listOf(
     IntSpec(ConfigSchema.Divider.WIDTH_DP, "分隔线宽度", "dp×10"),
     IntSpec(ConfigSchema.Divider.HEIGHT_SCALE, "分隔线高度比例", "%"),
@@ -246,6 +267,7 @@ private fun ensureDividerDefaults(prefs: SharedPreferences) {
     dividerSpecs.forEach { if (!prefs.contains(it.key)) e.putInt(it.key, it.default) }
     e.apply()
 }
+
 private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.DOCK_WIDTH_OFFSET, "工作台 Dock 长度偏移"),
     IntSpec(ConfigSchema.Workstation.GRID_HORIZONTAL_OFFSET, "工作台桌面水平偏移"),
@@ -258,6 +280,7 @@ private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台 Dock 图标上间距"),
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台 Dock 图标下间距"),
 )
+
 private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),
     IntSpec(ConfigSchema.Glass.THICKNESS, "玻璃厚度"),
@@ -303,6 +326,7 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
     IntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, "Prismal · 视差倍率", "%"),
 )
+
 private val strokeSpecs = listOf(
     IntSpec(ConfigSchema.Dock.STROKE_RED, "描边底色 · 红", "", "dock_stroke", IntSection.StrokeBackground),
     IntSpec(ConfigSchema.Dock.STROKE_GREEN, "描边底色 · 绿", "", "dock_stroke", IntSection.StrokeBackground),
@@ -314,6 +338,7 @@ private val strokeSpecs = listOf(
     IntSpec(ConfigSchema.Dock.FILL_DIFF_STROKE_WIDTH, "Fill-Diff 宽度", "dp", "fill_diff", IntSection.StrokeGeometry),
     IntSpec(ConfigSchema.Dock.STANDARD_STROKE_WIDTH, "标准描边宽度", "dp", null, IntSection.StrokeGeometry),
 )
+
 private val shadowSpecs = listOf(
     IntSpec(ConfigSchema.Dock.SHADOW_RADIUS, "Dock 阴影柔化", "dp", "dock_shadow"),
     IntSpec(ConfigSchema.Dock.SHADOW_SIZE, "Dock 阴影扩散大小", "dp", "dock_shadow"),
@@ -323,6 +348,31 @@ private val shadowSpecs = listOf(
     IntSpec(ConfigSchema.Dock.STROKE_SHADOW_ALPHA, "描边阴影透明度", "", "stroke_shadow"),
 )
 
+private val launcherComponentToggles = listOf(
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_SKY_HAZE, false, R.string.component_sky_haze, R.string.component_sky_haze_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_SPECULAR, false, R.string.component_specular, R.string.component_specular_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_LIT_RIM, false, R.string.component_lit_rim, R.string.component_lit_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_OPPOSITE_RIM, false, R.string.component_opposite_rim, R.string.component_opposite_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_CORNER_RIM, false, R.string.component_corner_rim, R.string.component_corner_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_FACE_SHEEN, false, R.string.component_face_sheen, R.string.component_face_sheen_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_PLAIN_HIGHLIGHT, false, R.string.component_plain_highlight, R.string.component_plain_highlight_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_CAUSTICS, false, R.string.component_caustics, R.string.component_caustics_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_PRESS_GLOW, false, R.string.component_press_glow, R.string.component_press_glow_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.LAUNCHER_COMPACT_SAFE_HIGHLIGHT, true, R.string.component_compact_safe_highlight, R.string.component_compact_safe_highlight_summary),
+)
+
+private val dockComponentToggles = listOf(
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_SKY_HAZE, true, R.string.component_sky_haze, R.string.component_sky_haze_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_SPECULAR, true, R.string.component_specular, R.string.component_specular_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_LIT_RIM, true, R.string.component_lit_rim, R.string.component_lit_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_OPPOSITE_RIM, true, R.string.component_opposite_rim, R.string.component_opposite_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_CORNER_RIM, true, R.string.component_corner_rim, R.string.component_corner_rim_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_FACE_SHEEN, true, R.string.component_face_sheen, R.string.component_face_sheen_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_PLAIN_HIGHLIGHT, true, R.string.component_plain_highlight, R.string.component_plain_highlight_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_CAUSTICS, true, R.string.component_caustics, R.string.component_caustics_summary),
+    ComponentToggleSpec(PrismalComponentPreferences.DOCK_PRESS_GLOW, true, R.string.component_press_glow, R.string.component_press_glow_summary),
+)
+
 @Composable
 private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
     val prefs = remember { PreferenceManager.getDefaultSharedPreferences(activity) }
@@ -330,13 +380,15 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
         mutableStateOf(prefs.getBoolean(ConfigSchema.Core.ENABLED.name(), ConfigSchema.Core.ENABLED.uiDefault()))
     }
     var page by rememberSaveable { mutableStateOf(Page.Home) }
-    BackHandler(enabled = page != Page.Home) { page = Page.Home }
+    BackHandler(enabled = page != Page.Home) { page = parentPage(page) }
     Scaffold(
         topBar = {
             SmallTopAppBar(
                 title = stringResource(page.titleRes),
                 navigationIcon = {
-                    if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = Page.Home })
+                    if (page != Page.Home) {
+                        TextButton(text = stringResource(R.string.action_back), onClick = { page = parentPage(page) })
+                    }
                 },
                 actions = {
                     TextButton(text = stringResource(R.string.action_restart_launcher), onClick = { activity.restartLauncher() })
@@ -360,10 +412,12 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
             when (target) {
                 Page.Home -> HomePage(padding, prefs, masterEnabled, { masterEnabled = it }) { page = it }
                 Page.Grid -> GridPage(padding, prefs, masterEnabled)
-                Page.Dock -> DockPage(padding, prefs, masterEnabled)
+                Page.Dock -> DockPage(padding, prefs, masterEnabled) { page = it }
+                Page.DockComponents -> DockComponentPage(padding, prefs, masterEnabled)
                 Page.Divider -> DividerPage(padding, prefs, masterEnabled)
                 Page.Workstation -> WorkstationPage(padding, prefs, masterEnabled)
-                Page.Liquid -> LiquidPage(padding, prefs, masterEnabled)
+                Page.Liquid -> LiquidPage(padding, prefs, masterEnabled) { page = it }
+                Page.LauncherComponents -> LauncherComponentPage(padding, prefs, masterEnabled)
                 Page.Stroke -> StrokePage(padding, prefs, masterEnabled)
                 Page.Shadow -> ShadowPage(padding, prefs, masterEnabled)
                 Page.Data -> DataPage(padding, activity)
@@ -375,13 +429,25 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
 
 @Composable
 private fun HomePage(
-    padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean,
-    onMasterChanged: (Boolean) -> Unit, open: (Page) -> Unit,
+    padding: PaddingValues,
+    prefs: SharedPreferences,
+    masterEnabled: Boolean,
+    onMasterChanged: (Boolean) -> Unit,
+    open: (Page) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = padding) {
         item { PageHeader(stringResource(R.string.app_name)) }
         item { SmallTitle(stringResource(R.string.category_master)) }
-        item { SettingsCard { BooleanSetting(prefs, ConfigSchema.Core.ENABLED, stringResource(R.string.enable_liquiddock), stringResource(R.string.enable_liquiddock_summary)) { onMasterChanged(it) } } }
+        item {
+            SettingsCard {
+                BooleanSetting(
+                    prefs,
+                    ConfigSchema.Core.ENABLED,
+                    stringResource(R.string.enable_liquiddock),
+                    stringResource(R.string.enable_liquiddock_summary),
+                ) { onMasterChanged(it) }
+            }
+        }
         item { SmallTitle(stringResource(R.string.category_customization)) }
         item {
             SettingsCard {
@@ -432,15 +498,46 @@ private fun GridPage(padding: PaddingValues, prefs: SharedPreferences, masterEna
 }
 
 @Composable
-private fun DockPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+private fun DockPage(
+    padding: PaddingValues,
+    prefs: SharedPreferences,
+    masterEnabled: Boolean,
+    open: (Page) -> Unit,
+) {
     var dockEnabled by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.ENABLED.name(), ConfigSchema.Dock.ENABLED.uiDefault())) }
     var resizeAnimation by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.RESIZE_ANIMATION.name(), ConfigSchema.Dock.RESIZE_ANIMATION.uiDefault())) }
-    var smoothResize by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.name(), ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION.uiDefault())) }
     SettingsList(padding, stringResource(R.string.page_dock)) {
         BooleanSetting(prefs, ConfigSchema.Dock.ENABLED, stringResource(R.string.dock_customization), stringResource(R.string.dock_customization_summary), masterEnabled) { dockEnabled = it }
+        ArrowPreference(
+            title = stringResource(R.string.dock_components_entry),
+            summary = stringResource(R.string.dock_components_entry_summary),
+            enabled = masterEnabled && dockEnabled,
+            onClick = { if (masterEnabled && dockEnabled) open(Page.DockComponents) },
+        )
         BooleanSetting(prefs, ConfigSchema.Dock.RESIZE_ANIMATION, stringResource(R.string.dock_resize_animation), stringResource(R.string.dock_resize_animation_summary), masterEnabled && dockEnabled) { resizeAnimation = it }
-        BooleanSetting(prefs, ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION, stringResource(R.string.dock_smooth_resize_animation), stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation) { smoothResize = it }
+        BooleanSetting(prefs, ConfigSchema.Dock.SMOOTH_RESIZE_ANIMATION, stringResource(R.string.dock_smooth_resize_animation), stringResource(R.string.dock_smooth_resize_animation_summary), masterEnabled && dockEnabled && !resizeAnimation)
         dockSpecs.forEach { IntSetting(prefs, it, masterEnabled && dockEnabled) }
+    }
+}
+
+@Composable
+private fun DockComponentPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+    val dockEnabled = prefs.getBoolean(ConfigSchema.Dock.ENABLED.name(), ConfigSchema.Dock.ENABLED.uiDefault())
+    SettingsList(
+        padding,
+        stringResource(R.string.page_dock_components),
+        stringResource(R.string.optics_components_summary),
+    ) {
+        dockComponentToggles.forEach {
+            BooleanPreferenceSetting(
+                prefs,
+                it.key,
+                it.default,
+                stringResource(it.titleRes),
+                stringResource(it.summaryRes),
+                masterEnabled && dockEnabled,
+            )
+        }
     }
 }
 
@@ -467,19 +564,54 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 }
 
 @Composable
-private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+private fun LiquidPage(
+    padding: PaddingValues,
+    prefs: SharedPreferences,
+    masterEnabled: Boolean,
+    open: (Page) -> Unit,
+) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
     SettingsList(
         padding,
         stringResource(R.string.page_liquid),
-        "当前使用 PassBlur → OES → Prismal zero-copy；修改光学参数后点击右上角“重启桌面”生效。",
+        stringResource(R.string.liquid_header_summary),
     ) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanSetting(prefs, ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
-            "Prismal · 显示法线",
-            "调试：用 RGB 直接显示当前 Prismal 表面法线",
-            masterEnabled && liquidGlass)
+        ArrowPreference(
+            title = stringResource(R.string.launcher_components_entry),
+            summary = stringResource(R.string.launcher_components_entry_summary),
+            enabled = masterEnabled && liquidGlass,
+            onClick = { if (masterEnabled && liquidGlass) open(Page.LauncherComponents) },
+        )
+        BooleanSetting(
+            prefs,
+            ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
+            stringResource(R.string.prismal_show_normals),
+            stringResource(R.string.prismal_show_normals_summary),
+            masterEnabled && liquidGlass,
+        )
         liquidSpecs.forEach { IntSetting(prefs, it, masterEnabled && liquidGlass) }
+    }
+}
+
+@Composable
+private fun LauncherComponentPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+    val liquidGlass = prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())
+    SettingsList(
+        padding,
+        stringResource(R.string.page_launcher_components),
+        stringResource(R.string.optics_components_summary),
+    ) {
+        launcherComponentToggles.forEach {
+            BooleanPreferenceSetting(
+                prefs,
+                it.key,
+                it.default,
+                stringResource(it.titleRes),
+                stringResource(it.summaryRes),
+                masterEnabled && liquidGlass,
+            )
+        }
     }
 }
 
@@ -607,14 +739,45 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 private fun BooleanSetting(
-    prefs: SharedPreferences, config: ConfigKey<Boolean>, title: String, summary: String? = null,
-    enabled: Boolean = true, default: Boolean = config.uiDefault(), onChanged: (Boolean) -> Unit = {},
+    prefs: SharedPreferences,
+    config: ConfigKey<Boolean>,
+    title: String,
+    summary: String? = null,
+    enabled: Boolean = true,
+    default: Boolean = config.uiDefault(),
+    onChanged: (Boolean) -> Unit = {},
 ) {
     val key = config.name()
     var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
     SwitchPreference(
         checked = value,
-        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
+        onCheckedChange = {
+            value = it
+            prefs.edit().putBoolean(key, it).apply()
+            onChanged(it)
+        },
+        title = title,
+        summary = summary,
+        enabled = enabled,
+    )
+}
+
+@Composable
+private fun BooleanPreferenceSetting(
+    prefs: SharedPreferences,
+    key: String,
+    default: Boolean,
+    title: String,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
+    SwitchPreference(
+        checked = value,
+        onCheckedChange = {
+            value = it
+            prefs.edit().putBoolean(key, it).apply()
+        },
         title = title,
         summary = summary,
         enabled = enabled,
@@ -625,12 +788,15 @@ private fun BooleanSetting(
 private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride: Boolean? = null) {
     val decimalDp = spec.isDecimal
     val resetValue = spec.resetValue()
-    val initial = if (decimalDp && prefs.contains("${spec.key}_tenths"))
+    val initial = if (decimalDp && prefs.contains("${spec.key}_tenths")) {
         prefs.getInt("${spec.key}_tenths", (resetValue * 10f).roundToInt()) / 10f
-    else prefs.getInt(spec.key, resetValue.roundToInt()).toFloat()
+    } else {
+        prefs.getInt(spec.key, resetValue.roundToInt()).toFloat()
+    }
     var value by remember(spec.key) { mutableStateOf(initial) }
     val enabled = enabledOverride ?: spec.dependency?.let { prefs.getBoolean(it, false) } ?: true
     val context = LocalContext.current
+
     fun save(nextValue: Float) {
         val next = if (decimalDp) (nextValue * 10f).roundToInt() / 10f else nextValue.roundToInt().toFloat()
         value = next.coerceIn(spec.min.toFloat(), spec.max.toFloat())
@@ -638,7 +804,12 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         if (decimalDp) editor.putInt("${spec.key}_tenths", (value * 10f).roundToInt())
         editor.apply()
     }
-    val displayValue = if (decimalDp) String.format(java.util.Locale.ROOT, "%.1f", value) else value.roundToInt().toString()
+
+    val displayValue = if (decimalDp) {
+        String.format(java.util.Locale.ROOT, "%.1f", value)
+    } else {
+        value.roundToInt().toString()
+    }
     SliderPreference(
         value = value,
         onValueChange = { save(it) },
@@ -647,7 +818,11 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
         valueText = "",
         enabled = enabled,
         valueRange = spec.min.toFloat()..spec.max.toFloat(),
-        steps = if (decimalDp) ((spec.max - spec.min) * 10 - 1).coerceAtLeast(0) else (spec.max - spec.min - 1).coerceAtLeast(0),
+        steps = if (decimalDp) {
+            ((spec.max - spec.min) * 10 - 1).coerceAtLeast(0)
+        } else {
+            (spec.max - spec.min - 1).coerceAtLeast(0)
+        },
         endActions = {
             Button(
                 onClick = {
@@ -668,10 +843,12 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
                 minWidth = 72.dp,
                 minHeight = 32.dp,
                 insideMargin = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) { Text("$displayValue${if (spec.unit.isBlank()) "" else " ${spec.unit}"}") }
+            ) {
+                Text("$displayValue${if (spec.unit.isBlank()) "" else " ${spec.unit}"}")
+            }
             Button(
                 onClick = { save(resetValue) },
-        enabled = enabled && kotlin.math.abs(value - resetValue) > 0.0001f,
+                enabled = enabled && kotlin.math.abs(value - resetValue) > 0.0001f,
                 minWidth = 56.dp,
                 minHeight = 32.dp,
                 insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -683,8 +860,12 @@ private fun IntSetting(prefs: SharedPreferences, spec: IntSpec, enabledOverride:
 
 @Composable
 private fun StringDropdown(
-    prefs: SharedPreferences, key: String, title: String, default: String,
-    options: List<Pair<String, String>>, enabled: Boolean = true,
+    prefs: SharedPreferences,
+    key: String,
+    title: String,
+    default: String,
+    options: List<Pair<String, String>>,
+    enabled: Boolean = true,
 ) {
     var value by remember(key) { mutableStateOf(prefs.getString(key, default) ?: default) }
     val index = options.indexOfFirst { it.second == value }.coerceAtLeast(0)
