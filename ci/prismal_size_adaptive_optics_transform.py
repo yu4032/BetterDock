@@ -26,7 +26,7 @@ old = (
     '    edgePunch = mix(edgePunch, 1.0, smallGlass * 0.85);\n'
 )
 new = old + (
-    '    // Size changes face-lighting energy only. Optical geometry is independent of size.\n'
+    '    // Size changes face-lighting energy only. Optical geometry remains rounded-rect.\n'
     '    // minDim is half the short side: large 60..180 => 120..360 px.\n'
     '    float largeGlass = smoothstep(60.0, 180.0, minDim);\n'
     '    float specSizeScale = mix(1.0, 0.50, largeGlass);\n'
@@ -40,42 +40,59 @@ new = old + (
 glsl, generated = replace_both(glsl, generated, old, new, 'size response')
 
 old = (
-    '    vec2 pPx = v_shapeCoord * u_glassSize;\n'
-    '    vec2 cKy = vec2(pPx.x, -pPx.y);\n'
+    '    float distMask = sdRoundBox(pPx, halfSz, crMask, u_sminSmoothing);\n'
+    '    float edgeDist = -distMask;\n'
 )
 new = old + (
-    '    // Rounded-rect geometry owns the silhouette only. The optical face is one smooth\n'
-    '    // elliptical paraboloid at every size, so there is no nearest-edge axis switch,\n'
-    '    // square plateau or |x|=|y| seam for normals/caustics to reveal.\n'
-    '    vec2 opticalNorm = pPx / max(halfSz, vec2(1.0));\n'
-    '    float opticalRadius = length(opticalNorm);\n'
-    '    float radialHeight = clamp(1.0 - dot(opticalNorm, opticalNorm), 0.0, 1.0);\n'
-    '    vec2 radialGrad = -2.0 * opticalNorm / max(halfSz, vec2(1.0));\n'
-    '    float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, opticalRadius), compactGlass);\n'
-)
-glsl, generated = replace_both(glsl, generated, old, new, 'radial optical surface')
-
-old = '    float edgeDist = -distMask;\n'
-new = old + (
+    '    // Face optics use the same rounded-rect family as the silhouette, but with enough\n'
+    '    // polynomial smoothing that the nearest-horizontal/vertical direction rotates\n'
+    '    // continuously across the diagonals instead of forming a visible X seam.\n'
+    '    float faceSmoothK = max(u_sminSmoothing, minDim * 0.12);\n'
+    '    float faceSd = sdRoundBox(pPx, halfSz, crMask, faceSmoothK);\n'
+    '    float faceCenterDepth = max(-sdRoundBox(vec2(0.0), halfSz, crMask, faceSmoothK), 1.0);\n'
+    '    float faceDepthT = clamp(max(0.0, -faceSd) / faceCenterDepth, 0.0, 1.0);\n'
+    '    float smoothFaceHeight = faceDepthT * faceDepthT * (3.0 - 2.0 * faceDepthT);\n'
+    '    float faceDx = 0.5 * (sdRoundBox(pPx + vec2(1.0, 0.0), halfSz, crMask, faceSmoothK) - sdRoundBox(pPx - vec2(1.0, 0.0), halfSz, crMask, faceSmoothK));\n'
+    '    float faceDy = 0.5 * (sdRoundBox(pPx + vec2(0.0, 1.0), halfSz, crMask, faceSmoothK) - sdRoundBox(pPx - vec2(0.0, 1.0), halfSz, crMask, faceSmoothK));\n'
+    '    float smoothFaceSlope = 6.0 * faceDepthT * (1.0 - faceDepthT) / faceCenterDepth;\n'
+    '    vec2 smoothFaceGrad = -vec2(faceDx, faceDy) * smoothFaceSlope;\n'
+    '    float compactCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(0.18, 0.88, faceDepthT), compactGlass);\n'
     '    // Large surfaces keep their rim energy while broad face lighting is reduced.\n'
     '    float deepCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(minDim * 0.28, minDim * 0.72, edgeDist), largeGlass);\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'large center fade')
+glsl, generated = replace_both(glsl, generated, old, new, 'smooth rounded-rect face surface')
+
+# Reuse the continuous face field as the slab input and avoid the old four-sample
+# height gradient, which used a shallower saturated transition and could expose a core.
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    float hSig = getHeightFromDist(distMask, tw);\n',
+    '    float hSig = smoothFaceHeight;\n',
+    'smooth face height input',
+)
+glsl, generated = replace_both(
+    glsl,
+    generated,
+    '    vec2 gradHSig = computeGradientHeight(pPx, halfSz, crMask, u_sminSmoothing, tw);\n',
+    '    vec2 gradHSig = smoothFaceGrad;\n',
+    'smooth face gradient input',
+)
 
 old = '    height = clamp(height * (0.84 + 0.16 * meniscusBand + 0.08 * edgeRound), 0.0, 1.0);\n'
 new = old + (
-    '    // Do not blend the face back toward rounded-box depth: that blend recreates four\n'
-    '    // nearest-edge wedges on compact glass. Boundary meniscus is applied separately below.\n'
-    '    height = radialHeight;\n'
+    '    // The broad face remains one smooth rounded-rect dome. Edge meniscus is applied\n'
+    '    // separately through N_meniscus below, so no circular or square core is introduced.\n'
+    '    height = smoothFaceHeight;\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'fully radial height')
+glsl, generated = replace_both(glsl, generated, old, new, 'smooth rounded-rect final height')
 
 old = '    vec2 gradH = mix(gradHSig, gCap, domeW);\n'
 new = old + (
-    '    // Face normal/caustic gradient must remain continuous across the two diagonals.\n'
-    '    gradH = radialGrad;\n'
+    '    // Keep specular/caustic face normals on the continuous rounded-rect gradient.\n'
+    '    gradH = smoothFaceGrad;\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'fully radial gradient')
+glsl, generated = replace_both(glsl, generated, old, new, 'smooth rounded-rect final gradient')
 
 glsl, generated = replace_both(
     glsl,
