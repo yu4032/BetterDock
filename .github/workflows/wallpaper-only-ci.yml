@@ -58,6 +58,7 @@ jobs:
         run: |
           python3 ci/wallpaper_only_transform.py
           python3 ci/folder_material_refresh_transform.py
+          python3 ci/folder_startup_recovery_transform.py
           git diff --check
 
       - name: Verify wallpaper-only contract
@@ -77,7 +78,7 @@ jobs:
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-wallpaper-only-refresh-safe-debug
+          name: LiquidDock-wallpaper-only-startup-safe-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
