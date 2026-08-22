@@ -1,0 +1,148 @@
+name: Apply clean folder runtime on PR
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - .github/workflows/apply-folder-runtime-pr.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/main-folder-glass-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Keep Prismal main optics and add batch API if still missing
+        run: |
+          if ! grep -q 'public void prepareBackdrop(' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java; then
+            python3 ci/apply_prismal_batch_once.py
+          fi
+          grep -q 'PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT)' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java
+          ! grep -q 'LAUNCHER_COMPACT' prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java
+
+      - name: Recover only the verified launcher-owned runtime sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api /repos/${GITHUB_REPOSITORY}/actions/artifacts/9474239020/zip > /tmp/folder-reference.zip
+          rm -rf /tmp/folder-reference && mkdir -p /tmp/folder-reference
+          unzip -q /tmp/folder-reference.zip -d /tmp/folder-reference
+          for file in \
+            LauncherGlassFramePolicy.java \
+            LauncherGlassGeometry.java \
+            LauncherGlassGpuAtlas.java \
+            LauncherGlassSession.java \
+            LauncherGlassSessionRegistry.java \
+            LauncherGlassSinkView.java \
+            MiuixFolderGlassHook.java; do
+            cp "/tmp/folder-reference/$file" "src/main/java/com/hellovoid/liquiddock/$file"
+          done
+
+      - name: Remove Dock ownership dependency and install as a separate Launcher owner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          hook_path = Path('src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java')
+          hook = hook_path.read_text()
+
+          hook = hook.replace(
+              'import android.graphics.drawable.Drawable;\n',
+              'import android.graphics.drawable.Drawable;\nimport android.graphics.drawable.GradientDrawable;\n')
+          hook = hook.replace(
+              'import java.lang.reflect.Method;\n',
+              'import java.lang.reflect.Field;\nimport java.lang.reflect.Method;\n')
+          hook = hook.replace(
+              '    private static final String ITEM_ICON = "com.miui.home.launcher.ItemIcon";\n',
+              '    private static final String ITEM_ICON = "com.miui.home.launcher.ItemIcon";\n'
+              '    private static final String FOLDER_ICON = "com.miui.home.launcher.FolderIcon";\n')
+          old_sig = '''    static boolean install(ClassLoader classLoader, LiquidDockConfig.Glass glassConfig) {\n        if (installed) return true;\n        try {\n'''
+          new_sig = '''    static boolean install(ClassLoader classLoader, LiquidDockConfig runtimeConfig) {\n        if (installed) return true;\n        if (runtimeConfig == null || !runtimeConfig.enabled || !runtimeConfig.glass.enabled) {\n            return false;\n        }\n        LiquidDockConfig.Glass glassConfig = runtimeConfig.glass;\n        try {\n'''
+          if hook.count(old_sig) != 1:
+              raise SystemExit('folder install signature anchor missing')
+          hook = hook.replace(old_sig, new_sig, 1)
+
+          old_folder = '''                boolean folder = icon instanceof ViewGroup\n                        && icon.getClass().getName().contains("FolderIcon");\n'''
+          new_folder = '''                boolean folder = icon instanceof ViewGroup\n                        && (FOLDER_ICON.equals(icon.getClass().getName())\n                        || icon.getClass().getName().endsWith(".FolderIcon"));\n'''
+          if hook.count(old_folder) != 1:
+              raise SystemExit('FolderIcon predicate anchor missing')
+          hook = hook.replace(old_folder, new_folder, 1)
+
+          if hook.count('MiuixGlassHook.readNativeOpticsRadius(material)') != 1:
+              raise SystemExit('old Dock radius dependency missing')
+          hook = hook.replace('MiuixGlassHook.readNativeOpticsRadius(material)',
+                              'readMaterialRadius(material)', 1)
+
+          helper_anchor = '''    private static void makeMaterialTransparent(View material) {\n'''
+          helper = '''    private static float readMaterialRadius(View material) {\n        if (material == null) return Float.NaN;\n        try {\n            Field field = findField(material.getClass(), "mCornerRadius");\n            field.setAccessible(true);\n            Object value = field.get(material);\n            if (value instanceof Number) return Math.max(0f, ((Number) value).floatValue());\n        } catch (Throwable ignored) {}\n        try {\n            Field field = findField(material.getClass(), "mBackground");\n            field.setAccessible(true);\n            Object value = field.get(material);\n            if (value instanceof GradientDrawable) {\n                return Math.max(0f, ((GradientDrawable) value).getCornerRadius());\n            }\n        } catch (Throwable ignored) {}\n        Drawable drawable = material.getBackground();\n        if (drawable instanceof GradientDrawable) {\n            return Math.max(0f, ((GradientDrawable) drawable).getCornerRadius());\n        }\n        return Float.NaN;\n    }\n\n    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {\n        Class<?> current = type;\n        while (current != null) {\n            try { return current.getDeclaredField(name); }\n            catch (NoSuchFieldException ignored) { current = current.getSuperclass(); }\n        }\n        throw new NoSuchFieldException(name);\n    }\n\n'''
+          if hook.count(helper_anchor) != 1:
+              raise SystemExit('folder helper anchor missing')
+          hook = hook.replace(helper_anchor, helper + helper_anchor, 1)
+
+          for forbidden in ('HotSeats', 'DockContainer', 'Miuix307MaterialPipeline',
+                            'MiuixGlassHook', 'Miuix307ZeroCopyRenderer'):
+              if forbidden in hook:
+                  raise SystemExit(f'Folder hook crossed protected owner boundary: {forbidden}')
+          hook_path.write_text(hook)
+
+          module_path = Path('src/main/java/com/hellovoid/liquiddock/ModuleMain.java')
+          module = module_path.read_text()
+          anchor = '            new MainHook().install(classLoader);\n'
+          replacement = anchor + '            MiuixFolderGlassHook.install(classLoader, runtimeConfig);\n'
+          if replacement not in module:
+              if module.count(anchor) != 1:
+                  raise SystemExit('ModuleMain owner anchor missing')
+              module = module.replace(anchor, replacement, 1)
+          module_path.write_text(module)
+          PY
+
+      - name: Verify clean source ownership contract
+        run: |
+          SESSION=src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
+          FOLDER=src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java
+          grep -q 'source=PassBlur-wallpaper-only' "$SESSION"
+          grep -q 'Miuix307PassBlurBridge.bind' "$SESSION"
+          grep -q 'PrismalRenderer' "$SESSION"
+          grep -q 'prepareBackdrop' "$SESSION"
+          grep -q 'beginGlassFrame' "$SESSION"
+          grep -q 'drawGlass' "$SESSION"
+          if grep -nE 'HardwareRenderer|RenderNode|RecordingCanvas|glReadPixels' "$SESSION"; then exit 1; fi
+          if grep -nE 'HotSeats|DockContainer|Miuix307MaterialPipeline|MiuixGlassHook|Miuix307ZeroCopyRenderer' "$FOLDER"; then exit 1; fi
+          grep -q 'com.miui.home.launcher.FolderIcon' "$FOLDER"
+          git diff --check
+
+      - run: chmod +x ./gradlew
+      - name: Run full unit suite
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Commit verified clean runtime
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java \
+            src/main/java/com/hellovoid/liquiddock/ModuleMain.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassFramePolicy.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassGeometry.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassGpuAtlas.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassSessionRegistry.java \
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassSinkView.java \
+            src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java
+          git commit -m "feat: rebuild folder wallpaper glass from main [skip ci]"
+          git push origin HEAD:feat/main-folder-glass-rebuild
