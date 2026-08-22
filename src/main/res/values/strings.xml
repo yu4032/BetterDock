@@ -49,6 +49,8 @@
     <string name="workstation_customization_summary">Uses independent Dock length and 8-column horizontal spacing</string>
     <string name="liquid_enable">Enable liquid glass</string>
     <string name="liquid_enable_summary">Enables liquid glass on supported surfaces using the configured optical properties</string>
+    <string name="liquid_folder_glass_enable">Enable folder glass</string>
+    <string name="liquid_folder_glass_enable_summary">Applies liquid glass to supported home-screen folders; restart launcher to apply</string>
     <string name="liquid_blur_method">Blur method</string>
     <string name="liquid_shader_blur">Shader dual-ring blur</string>
     <string name="liquid_native_blur">System Self Blur</string>

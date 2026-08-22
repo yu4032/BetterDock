@@ -203,6 +203,8 @@ public final class ConfigSchema {
     public static final class Glass {
         public static final ConfigKey<Boolean> ENABLED = bool(
                 "liquid_glass", false, false, false, ConfigKey.ExportMode.ALWAYS);
+        public static final ConfigKey<Boolean> FOLDER_GLASS = bool(
+                "liquid_folder_glass", true, true, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<Boolean> DIMENSIONS_DP = bool(
                 "liquid_dimensions_dp", true, false, true, ConfigKey.ExportMode.ALWAYS);
         public static final ConfigKey<String> BLUR_MODE = string(
@@ -430,7 +432,7 @@ public final class ConfigSchema {
                 Dock.SHADOW_RADIUS, Dock.SHADOW_SIZE, Dock.SHADOW_ALPHA, Dock.SHADOW_Y);
         add(keys, Divider.ENABLED, Divider.WIDTH_DP, Divider.HEIGHT_SCALE, Divider.Y_OFFSET_DP,
                 Divider.COLOR_RED, Divider.COLOR_GREEN, Divider.COLOR_BLUE, Divider.ALPHA);
-        add(keys, Glass.ENABLED, Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,
+        add(keys, Glass.ENABLED, Glass.FOLDER_GLASS, Glass.DIMENSIONS_DP, Glass.BLUR_MODE, Glass.BLUR, Glass.CHROMATIC,
                 Glass.TINT_ALPHA, Glass.CAPTURE_FPS, Glass.CAPTURE_STOP_DELAY,
                 Glass.SAMPLING_EXTRA_TOP, Glass.SAMPLING_EXTRA_BOTTOM,
                 Glass.SAMPLING_EXTRA_LEFT, Glass.SAMPLING_EXTRA_RIGHT, Glass.THICKNESS,

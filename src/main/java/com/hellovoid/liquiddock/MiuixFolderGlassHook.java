@@ -36,7 +36,8 @@ final class MiuixFolderGlassHook {
 
     static boolean install(ClassLoader classLoader, LiquidDockConfig runtimeConfig) {
         if (installed) return true;
-        if (runtimeConfig == null || !runtimeConfig.enabled || !runtimeConfig.glass.enabled) {
+        if (runtimeConfig == null || !runtimeConfig.enabled || !runtimeConfig.glass.enabled
+                || !runtimeConfig.glass.folderEnabled) {
             return false;
         }
         LiquidDockConfig.Glass glassConfig = runtimeConfig.glass;

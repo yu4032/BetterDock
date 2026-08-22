@@ -504,6 +504,7 @@ private fun LiquidPage(
         stringResource(R.string.liquid_header_summary),
     ) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
+        BooleanSetting(prefs, ConfigSchema.Glass.FOLDER_GLASS, stringResource(R.string.liquid_folder_glass_enable), stringResource(R.string.liquid_folder_glass_enable_summary), masterEnabled && liquidGlass)
         ArrowPreference(
             stringResource(R.string.launcher_highlights_entry),
             summary = stringResource(R.string.launcher_highlights_entry_summary),
