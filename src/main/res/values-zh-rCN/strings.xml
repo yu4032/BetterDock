@@ -52,6 +52,10 @@
     <string name="liquid_enable">启用液态玻璃</string>
     <string name="liquid_enable_summary">为受支持的 Launcher 与 Dock 表面启用 Prismal 玻璃；各表面继续使用各自独立的 GPU 背景源</string>
     <string name="liquid_header_summary">Dock 使用 PassBlur → OES → Prismal GPU 路径；Launcher 文件夹使用共享的 wallpaper-only Prismal 路径。修改光学参数或组件开关后重启桌面生效。</string>
+    <string name="liquid_folder_glass_title">Launcher 文件夹玻璃</string>
+    <string name="liquid_folder_glass_summary">使用共享的 wallpaper-only Prismal 会话替换 Launcher 文件夹高级材质层</string>
+    <string name="liquid_widget_glass_title">Launcher 小组件玻璃</string>
+    <string name="liquid_widget_glass_summary">仅替换系统已识别为高级材质的小组件层</string>
     <string name="liquid_blur_method">模糊方法</string>
     <string name="liquid_shader_blur">Shader 双环模糊</string>
     <string name="liquid_native_blur">系统原生 Self Blur</string>
