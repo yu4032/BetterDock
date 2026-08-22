@@ -8,18 +8,16 @@ anchor = '''        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringReso
             title = stringResource(R.string.launcher_components_entry),
 '''
 replacement = '''        BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanPreferenceSetting(
+        BooleanSetting(
             prefs,
-            "liquid_folder_glass",
-            false,
+            ConfigSchema.Glass.FOLDER_ENABLED,
             stringResource(R.string.liquid_folder_glass_title),
             stringResource(R.string.liquid_folder_glass_summary),
             masterEnabled && liquidGlass,
         )
-        BooleanPreferenceSetting(
+        BooleanSetting(
             prefs,
-            "liquid_widget_glass",
-            false,
+            ConfigSchema.Glass.WIDGET_ENABLED,
             stringResource(R.string.liquid_widget_glass_title),
             stringResource(R.string.liquid_widget_glass_summary),
             masterEnabled && liquidGlass,
