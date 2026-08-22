@@ -104,7 +104,12 @@ public class Miuix307GlassCustomizationContractTest {
             assertTrue("visible GUI field does not reach material: " + field,
                     material.contains(field));
         }
-        assertTrue(view.contains("Miuix307PrismalAdapter.toPortable(params)"));
+        assertTrue("material params must be converted into portable Prismal params",
+                view.contains("Miuix307PrismalAdapter.toPortable(opticalParams)"));
+        assertTrue("portable Prismal params must be carried in the immutable backdrop snapshot",
+                view.contains("final PrismalParams prismalParams;"));
+        assertTrue("the renderer must consume the snapshot's portable Prismal params",
+                view.contains("rawTexture, prismalGeometry, mapping.prismalParams"));
     }
 
     private static int occurrences(String text, String needle) {
