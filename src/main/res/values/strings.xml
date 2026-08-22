@@ -52,6 +52,10 @@
     <string name="liquid_enable">Enable liquid glass</string>
     <string name="liquid_enable_summary">Enables Prismal glass on supported Launcher and Dock surfaces; each surface keeps its own GPU background source</string>
     <string name="liquid_header_summary">Dock uses the PassBlur → OES → Prismal GPU path. Launcher folders use the shared wallpaper-only Prismal path. Optical and component changes take effect after restarting Launcher.</string>
+    <string name="liquid_folder_glass_title">Launcher folder glass</string>
+    <string name="liquid_folder_glass_summary">Replace the Launcher folder advanced-material layer with the shared wallpaper-only Prismal session</string>
+    <string name="liquid_widget_glass_title">Launcher widget glass</string>
+    <string name="liquid_widget_glass_summary">Replace only widget layers that the system identifies as advanced material</string>
     <string name="liquid_blur_method">Blur method</string>
     <string name="liquid_shader_blur">Shader dual-ring blur</string>
     <string name="liquid_native_blur">System Self Blur</string>
