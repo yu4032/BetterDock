@@ -11,9 +11,12 @@ import org.junit.Test;
 /** Keeps the folder atlas API additive: Dock retains the same single-edge renderer/model. */
 public class PrismalBatchRendererContractTest {
     private static String source() throws Exception {
-        return Files.readString(Path.of(
-                "prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java"),
-                StandardCharsets.UTF_8);
+        Path moduleRelative = Path.of(
+                "src/main/java/com/hellovoid/prismal/PrismalRenderer.java");
+        Path repoRelative = Path.of(
+                "prismal/src/main/java/com/hellovoid/prismal/PrismalRenderer.java");
+        Path path = Files.exists(moduleRelative) ? moduleRelative : repoRelative;
+        return Files.readString(path, StandardCharsets.UTF_8);
     }
 
     @Test
