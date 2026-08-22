@@ -15,8 +15,8 @@ public class PrismalSizeAdaptiveOpticsContractTest {
 
     @Test
     public void largeGlassAttenuatesCenterSpecularCausticAndHighlight() throws Exception {
-        String glsl = read("prismal/src/main/res/raw/prismal_fragment.glsl");
-        String generated = read("prismal/src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
+        String glsl = read("src/main/res/raw/prismal_fragment.glsl");
+        String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
         String[] required = {
                 "float largeGlass = smoothstep(60.0, 180.0, minDim);",
