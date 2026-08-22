@@ -131,6 +131,10 @@ final class Miuix307PassBlurBridge {
         schedulePauseUpdates(host, binding, INITIAL_UPDATE_FRAMES);
     }
 
+    static void pauseUpdates(Binding binding) {
+        setUpdatesEnabled(binding, false);
+    }
+
     private static void schedulePauseUpdates(View host, Binding binding, int framesLeft) {
         if (host == null || binding == null || !binding.bound) return;
         if (framesLeft <= 0) {
