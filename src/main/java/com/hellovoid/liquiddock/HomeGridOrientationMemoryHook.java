@@ -51,7 +51,7 @@ final class HomeGridOrientationMemoryHook {
     }
 
     private static void installSetupViewsHook(Class<?> launcher) {
-        HookUtil.hookMethod(launcher, "setupViews", chain -> {
+        HookUtil.hookMethod(launcher, "setupViews", new Class[]{}, chain -> {
             Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
             try {
                 Object owner = chain.getThisObject();
