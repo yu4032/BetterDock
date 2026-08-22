@@ -41,6 +41,7 @@ final class Miuix307ZeroCopyRenderer {
         gpuBackdropRef = new WeakReference<>(gpuBackdrop);
         hostRef = new WeakReference<>(host);
         materialHostRef = new WeakReference<>(materialHost);
+        FlickerTrace.event("RENDERER_INSTALLED_WAITING_FIRST_FRAME", materialHost, host);
         MainHook.log(TAG + " PassBlur TextureView EGL Prismal material installed; awaiting first GPU frame"
                 + " requestedBlur=" + blurRadiusPx
                 + " source=" + materialHost.getClass().getSimpleName());
@@ -80,11 +81,17 @@ final class Miuix307ZeroCopyRenderer {
 
     static void rebindProducer(String reason) {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
+        DockLiquidGlassHostView host = hostRef.get();
+        View materialHost = materialHostRef.get();
+        FlickerTrace.event("PRODUCER_REBIND:" + reason, materialHost, host);
         if (gpuBackdrop != null) gpuBackdrop.rebindProducer(reason);
     }
 
     static void clear() {
         Miuix307PassBlurTextureView gpuBackdrop = gpuBackdropRef.get();
+        DockLiquidGlassHostView host = hostRef.get();
+        View materialHost = materialHostRef.get();
+        FlickerTrace.event("RENDERER_CLEAR", materialHost, host);
         gpuBackdropRef = new WeakReference<>(null);
         hostRef = new WeakReference<>(null);
         materialHostRef = new WeakReference<>(null);
