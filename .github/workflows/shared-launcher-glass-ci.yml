@@ -71,6 +71,17 @@ jobs:
             exit 1
           fi
 
+      - name: Upload effective launcher glass source
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-effective-launcher-glass-source
+          path: |
+            src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java
+            src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java
+            src/main/java/com/hellovoid/liquiddock/LauncherAdvancedGlassPipeline.java
+          if-no-files-found: error
+          retention-days: 1
+
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
