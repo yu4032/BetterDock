@@ -96,6 +96,22 @@ public class HomeGridOrientationRuntimeTest {
     }
 
     @Test
+    public void rememberedTargetRejectsOffMacroblockTwoByTwo() {
+        MapStore store = new MapStore();
+        HomeGridOrientationMemory memory = new HomeGridOrientationMemory(store);
+        HomeGridOrientationRuntime runtime = new HomeGridOrientationRuntime(
+                HomeGridProfile.GRID_8X4, memory);
+        memory.save(snapshot(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                pos(1, 0, 1, 3, 2, 2)));
+
+        assertNull(runtime.rememberedTarget(
+                HomeGridOrientation.PORTRAIT,
+                Arrays.asList(pos(1, 0, 2, 0, 2, 2))));
+    }
+
+    @Test
     public void preflightKeepsCurrentLayoutAndRegeneratesOtherOrientation() {
         MapStore store = new MapStore();
         HomeGridOrientationMemory memory = new HomeGridOrientationMemory(store);
