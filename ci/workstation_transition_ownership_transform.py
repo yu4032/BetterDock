@@ -32,9 +32,23 @@ def patch_pipeline() -> None:
     new_setup = """                        Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));\n                        try {\n                            // Launcher.mHotSeats is the authoritative ordinary Dock owner. Retain\n                            // it even when setupViews completes while Laptop mode is active.\n                            Object launcher = chain.getThisObject();\n                            launcherRef = new WeakReference<>(launcher);\n                            Object hotSeats = HookUtil.getField(launcher, \"mHotSeats\");\n                            hotSeatsRef = new WeakReference<>(hotSeats);\n                            if (MainHook.isWorkstationMode()) return result;\n"""
     text = replace_once(text, old_setup, new_setup, "setupViews owner retention")
 
+    old_ensure = """    private static boolean ensureGlassBound(\n            View background, LiquidDockConfig config, ClassLoader classLoader) {\n        if (background == null || !isSupportedBackground(background)) return false;\n        if (MiuixGlassHook.isBoundTo(background)) {\n"""
+    new_ensure = """    private static boolean ensureGlassBound(\n            View background, LiquidDockConfig config, ClassLoader classLoader) {\n        if (background == null || !isSupportedBackground(background)) return false;\n        // Laptop/workstation overlays can reuse the same HotSeats material classes. Only the\n        // ordinary Launcher.mHotSeats material may ever hand its body to Prismal.\n        if (!isOrdinaryHotSeatsBackground(background)) return false;\n        if (MiuixGlassHook.isBoundTo(background)) {\n"""
+    text = replace_once(text, old_ensure, new_ensure, "ordinary glass owner gate")
+
     # HotSeats.onAttachedToWindow intentionally keeps its workstation early-return before
     # hotSeatsRef assignment. Laptop overlays can reuse HotSeats classes and must not replace the
     # ordinary Launcher.mHotSeats identity captured above.
+    path.write_text(text)
+
+
+def patch_glass() -> None:
+    path = ROOT / "MiuixGlassHook.java"
+    text = path.read_text()
+
+    old_blur = """        if (dockBg == null || requestedRadius <= 0) return requestedRadius;\n        if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;\n        if (compatBackgroundBlurLoggedFor.get() != dockBg) {\n"""
+    new_blur = """        if (dockBg == null || requestedRadius <= 0) return requestedRadius;\n        if (!COMPAT_BACKGROUND_CLASS.equals(dockBg.getClass().getName())) return requestedRadius;\n        // BlurBackground2 is also used by Laptop/workstation overlays. Preserve their vendor\n        // backdrop; only the ordinary Launcher.mHotSeats owner is replaced by Prismal.\n        if (!Miuix307MaterialPipeline.isOrdinaryHotSeatsBackground(dockBg)) {\n            return requestedRadius;\n        }\n        if (compatBackgroundBlurLoggedFor.get() != dockBg) {\n"""
+    text = replace_once(text, old_blur, new_blur, "ordinary compat blur owner gate")
     path.write_text(text)
 
 
@@ -75,6 +89,7 @@ def patch_main_hook() -> None:
 
 def main() -> None:
     patch_pipeline()
+    patch_glass()
     patch_home_grid()
     patch_main_hook()
     print("workstation transition ownership: applied")
