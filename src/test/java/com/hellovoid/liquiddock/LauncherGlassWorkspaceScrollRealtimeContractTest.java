@@ -24,11 +24,11 @@ public class LauncherGlassWorkspaceScrollRealtimeContractTest {
     }
 
     @Test
-    public void existingSessionPathReusesBackdropWithoutProducerRefresh() throws Exception {
+    public void existingSessionPathStaysUnchanged() throws Exception {
         String session = Files.readString(MAIN.resolve("LauncherGlassSession.java"));
 
         assertTrue(session.contains("node.geometryStability.select(old, observed, localChanged)"));
-        assertFalse("workspace scroll must not add a continuous producer refresh path",
-                session.contains("workspaceScroll") || session.contains("requestFrame(true)"));
+        assertFalse("workspace-scroll detection belongs at the sink boundary",
+                session.contains("consumeWorkspaceScrollMotion"));
     }
 }
