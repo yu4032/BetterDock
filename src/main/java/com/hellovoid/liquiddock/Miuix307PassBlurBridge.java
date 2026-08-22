@@ -24,6 +24,7 @@ final class Miuix307PassBlurBridge {
         final Method setMiBlurWinExc;
         final float scale;
         final String rootName;
+        final boolean callerManagedUpdates;
         boolean bound = true;
         boolean updatesEnabled = true;
 
@@ -33,13 +34,15 @@ final class Miuix307PassBlurBridge {
                 Method setUpdateTextureFlag,
                 Method setMiBlurWinExc,
                 float scale,
-                String rootName) {
+                String rootName,
+                boolean callerManagedUpdates) {
             this.rootSurface = rootSurface;
             this.setPassBlurSurface = setPassBlurSurface;
             this.setUpdateTextureFlag = setUpdateTextureFlag;
             this.setMiBlurWinExc = setMiBlurWinExc;
             this.scale = scale;
             this.rootName = rootName;
+            this.callerManagedUpdates = callerManagedUpdates;
         }
     }
 
@@ -86,6 +89,11 @@ final class Miuix307PassBlurBridge {
                     "DockAssistantView"
             };
 
+            // LauncherGlassSession deliberately passes its stable Launcher root as materialHost and
+            // owns its own refresh cadence. Dock's zero-copy renderer passes the actual Dock material
+            // view instead, so its historical continuous producer remains completely independent.
+            boolean callerManagedUpdates = materialHost.getRootView() == materialHost;
+
             // Keep the calibration producer at full resolution. TextureView output is composited
             // into the already-excluded Floating Dock root, so no child-layer exclusion is required.
             float scale = DEMO_SCALE;
@@ -103,14 +111,17 @@ final class Miuix307PassBlurBridge {
                     setUpdateTextureFlag,
                     setMiBlurWinExc,
                     scale,
-                    rootName);
-            schedulePauseUpdates(materialHost, binding, INITIAL_UPDATE_FRAMES);
+                    rootName,
+                    callerManagedUpdates);
+            if (binding.callerManagedUpdates) {
+                schedulePauseUpdates(materialHost, binding, INITIAL_UPDATE_FRAMES);
+            }
 
             MainHook.log(TAG + " PassBlur producer bound scale=" + scale
                     + " requestedScale=" + requestedScale
                     + " root=" + rootName
                     + " output=TextureView-in-root"
-                    + " mode=initial-burst"
+                    + " mode=" + (callerManagedUpdates ? "caller-managed" : "continuous")
                     + " exclusions=" + Arrays.toString(exclusions));
             return binding;
         } catch (Throwable error) {
@@ -126,19 +137,20 @@ final class Miuix307PassBlurBridge {
     }
 
     static void requestSingleUpdate(Binding binding, View host) {
-        if (binding == null || host == null || !binding.bound) return;
+        if (binding == null || host == null || !binding.bound || !binding.callerManagedUpdates) return;
         setUpdatesEnabled(binding, true);
         schedulePauseUpdates(host, binding, INITIAL_UPDATE_FRAMES);
     }
 
     static void pauseUpdates(Binding binding) {
+        if (binding == null || !binding.callerManagedUpdates) return;
         setUpdatesEnabled(binding, false);
     }
 
     private static void schedulePauseUpdates(View host, Binding binding, int framesLeft) {
-        if (host == null || binding == null || !binding.bound) return;
+        if (host == null || binding == null || !binding.bound || !binding.callerManagedUpdates) return;
         if (framesLeft <= 0) {
-            setUpdatesEnabled(binding, false);
+            pauseUpdates(binding);
             return;
         }
         host.postOnAnimation(() -> schedulePauseUpdates(host, binding, framesLeft - 1));
