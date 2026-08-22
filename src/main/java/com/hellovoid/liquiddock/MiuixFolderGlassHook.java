@@ -85,20 +85,41 @@ final class MiuixFolderGlassHook {
 
     private static void installFolderOpenCloseHooks(ClassLoader classLoader) throws Exception {
         Class<?> folderIcon = Class.forName(FOLDER_ICON, false, classLoader);
-        // HyperLight observes View.dispatchTouchEvent and filters inside the callback instead of
-        // relying on FolderIcon's pressed drawable state. Keep the original event path untouched.
-        Method dispatchTouchEvent = View.class.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);
+        // FolderIcon's own dispatch path is sufficient on this HyperOS build. Observe only that
+        // declaration so we do not add process-wide touch-hook overhead.
+        Method dispatchTouchEvent = folderIcon.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);
         dispatchTouchEvent.setAccessible(true);
         HookUtil.hook(dispatchTouchEvent, chain -> {
-            Object owner = chain.getThisObject();
             Object[] args = chain.getArgs().toArray(new Object[0]);
-            if (folderIcon.isInstance(owner)
-                    && owner instanceof ViewGroup
-                    && args.length > 0
-                    && args[0] instanceof MotionEvent) {
-                updateFolderPressFromMotionEvent((ViewGroup) owner, (MotionEvent) args[0]);
+            Object result = chain.proceed(args);
+            Object owner = chain.getThisObject();
+            if (owner instanceof ViewGroup && args.length > 0 && args[0] instanceof MotionEvent) {
+                updateFolderPressAfterDispatch((ViewGroup) owner, (MotionEvent) args[0]);
             }
-            return chain.proceed(args);
+            return result;
+        });
+
+        // Long-press / drag rendering can bypass ItemIcon.setIconImageView and write a folder
+        // drawable straight into mIconImageView from FolderIcon2x2.drawChild. Once that ImageView
+        // is claimed by LiquidDock its material plate must stay transparent permanently; the
+        // sibling LauncherGlassSinkView owns the actual glass rendering.
+        Method setImageDrawable = ImageView.class.getDeclaredMethod("setImageDrawable", Drawable.class);
+        setImageDrawable.setAccessible(true);
+        HookUtil.hook(setImageDrawable, chain -> {
+            Object target = chain.getThisObject();
+            Object[] drawableArgs = chain.getArgs().toArray(new Object[0]);
+            if (target instanceof View
+                    && drawableArgs.length > 0
+                    && claimedSink((View) target) != null) {
+                Drawable requested = drawableArgs[0] instanceof Drawable
+                        ? (Drawable) drawableArgs[0] : null;
+                if (!isTransparentColorDrawable(requested)) {
+                    Drawable current = ((ImageView) target).getDrawable();
+                    drawableArgs[0] = isTransparentColorDrawable(current)
+                            ? current : new ColorDrawable(Color.TRANSPARENT);
+                }
+            }
+            return chain.proceed(drawableArgs);
         });
 
         HookUtil.hook(HookUtil.findMethodExact(folderIcon, "onOpen", new Class<?>[0]), chain -> {
@@ -129,25 +150,8 @@ final class MiuixFolderGlassHook {
         });
     }
 
-    private static void updateFolderPressFromMotionEvent(ViewGroup owner, MotionEvent event) {
+    private static void updateFolderPressAfterDispatch(ViewGroup owner, MotionEvent event) {
         if (owner == null || event == null) return;
-        int action = event.getActionMasked();
-        boolean pressed;
-        switch (action) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN:
-            case MotionEvent.ACTION_MOVE:
-                pressed = true;
-                break;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
-            case MotionEvent.ACTION_CANCEL:
-                pressed = false;
-                break;
-            default:
-                return;
-        }
-
         LauncherGlassSinkView sink = resolveOwnerSink(owner);
         if (sink == null) return;
         try {
@@ -162,7 +166,7 @@ final class MiuixFolderGlassHook {
             float x = (event.getRawX() - location[0]) / width;
             // Android local Y grows downward; Prismal glow coordinates grow upward.
             float y = 1f - (event.getRawY() - location[1]) / height;
-            sink.setPressInteraction(pressed, x, y);
+            sink.setPressInteraction(owner.isPressed(), x, y);
         } catch (Throwable error) {
             MainHook.log(TAG + " press bridge failed: " + error);
         }
@@ -377,6 +381,11 @@ final class MiuixFolderGlassHook {
             catch (NoSuchFieldException ignored) { current = current.getSuperclass(); }
         }
         throw new NoSuchFieldException(name);
+    }
+
+    private static boolean isTransparentColorDrawable(Drawable drawable) {
+        return drawable instanceof ColorDrawable
+                && ((ColorDrawable) drawable).getColor() == Color.TRANSPARENT;
     }
 
     private static void makeMaterialTransparent(View material) {
