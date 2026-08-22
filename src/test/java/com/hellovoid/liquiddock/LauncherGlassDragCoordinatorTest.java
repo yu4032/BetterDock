@@ -1,7 +1,5 @@
 package com.hellovoid.liquiddock;
 
-import android.graphics.RectF;
-
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -15,7 +13,7 @@ public class LauncherGlassDragCoordinatorTest {
     public void beginAndUpdateAreKindAgnosticAndOwnedByToken() {
         LauncherGlassDragCoordinator coordinator = new LauncherGlassDragCoordinator();
         Object token = new Object();
-        RectF start = new RectF(10f, 20f, 210f, 220f);
+        LauncherGlassDragState.Bounds start = bounds(10f, 20f, 210f, 220f);
 
         assertTrue(coordinator.begin(token, LauncherGlassDragState.Kind.FOLDER,
                 start, 40f));
@@ -25,7 +23,7 @@ public class LauncherGlassDragCoordinatorTest {
         assertEquals(start, first.rootBounds);
         assertEquals(40f, first.cornerRadiusPx, 0.001f);
 
-        RectF moved = new RectF(310f, 420f, 510f, 620f);
+        LauncherGlassDragState.Bounds moved = bounds(310f, 420f, 510f, 620f);
         assertTrue(coordinator.update(token, moved, 1.08f, 3f, 0.92f));
         LauncherGlassDragState second = coordinator.current();
         assertEquals(moved, second.rootBounds);
@@ -40,9 +38,9 @@ public class LauncherGlassDragCoordinatorTest {
         Object active = new Object();
         Object stale = new Object();
         coordinator.begin(active, LauncherGlassDragState.Kind.WIDGET,
-                new RectF(0f, 0f, 400f, 200f), 28f);
+                bounds(0f, 0f, 400f, 200f), 28f);
 
-        assertFalse(coordinator.update(stale, new RectF(50f, 50f, 450f, 250f),
+        assertFalse(coordinator.update(stale, bounds(50f, 50f, 450f, 250f),
                 1f, 0f, 1f));
         assertFalse(coordinator.end(stale));
         assertSame(active, coordinator.current().token);
@@ -58,14 +56,19 @@ public class LauncherGlassDragCoordinatorTest {
         Object folder = new Object();
 
         assertTrue(coordinator.begin(icon, LauncherGlassDragState.Kind.ICON,
-                new RectF(0f, 0f, 100f, 100f), 22f));
+                bounds(0f, 0f, 100f, 100f), 22f));
         assertTrue(coordinator.begin(folder, LauncherGlassDragState.Kind.FOLDER,
-                new RectF(100f, 100f, 300f, 300f), 44f));
+                bounds(100f, 100f, 300f, 300f), 44f));
         assertSame(folder, coordinator.current().token);
 
         assertFalse(coordinator.cancel(icon));
         assertSame(folder, coordinator.current().token);
         assertTrue(coordinator.cancel(folder));
         assertNull(coordinator.current());
+    }
+
+    private static LauncherGlassDragState.Bounds bounds(
+            float left, float top, float right, float bottom) {
+        return new LauncherGlassDragState.Bounds(left, top, right, bottom);
     }
 }
