@@ -5,6 +5,7 @@ on:
     branches:
       - feat/shared-launcher-glass-session
       - staging/shared-glass-lifecycle-v1
+      - staging/shared-glass-gpu-atlas-v1
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -42,13 +43,19 @@ jobs:
           echo "68571f616dea79ef9c99940518219ded46293541a9054261e6f4dba7b9cda63f  /tmp/shared-glass-lifecycle.patch" | sha256sum -c -
           git apply --check /tmp/shared-glass-lifecycle.patch
           git apply /tmp/shared-glass-lifecycle.patch
+          cat ci/shared-glass-gpu-atlas-v1/part-*.txt > /tmp/shared-glass-gpu-atlas.patch.gz.b64
+          echo "6e855caac8b07b3025044ce02a86de6fc2e08056406ef947c8335f2cf9483681  /tmp/shared-glass-gpu-atlas.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/shared-glass-gpu-atlas.patch.gz.b64 | gzip -d > /tmp/shared-glass-gpu-atlas.patch
+          echo "07d9fba07c88083a8b1a648ebf24436be380acfd64b7899fd640145af6489473  /tmp/shared-glass-gpu-atlas.patch" | sha256sum -c -
+          git apply --check /tmp/shared-glass-gpu-atlas.patch
+          git apply /tmp/shared-glass-gpu-atlas.patch
           git diff --check
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidDock-shared-launcher-glass-lifecycle-debug
+          name: LiquidDock-shared-launcher-glass-gpu-atlas-debug
           path: build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
