@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
@@ -25,5 +26,18 @@ public class LauncherGlassDragExtensibilityContractTest {
         assertTrue(hook.contains("LauncherGlassDragState.Kind.ICON"));
         assertTrue(hook.contains("LauncherGlassDragOverlay.begin"));
         assertTrue(overlay.contains("LauncherGlassDragState.Kind kind"));
+    }
+
+    @Test
+    public void dragContainerIgnoresHelperChildrenAndInspectsOnlyRealDragViewMetadata() throws Exception {
+        String hook = Files.readString(MAIN.resolve("MiuixLauncherDragOverlayHook.java"));
+
+        assertTrue(hook.contains("com.miui.home.launcher.DragView"));
+        assertTrue(hook.contains("isActualDragView"));
+        assertTrue(hook.contains("getTag()"));
+        assertTrue(hook.contains("getDeclaredFields()"));
+        assertTrue(hook.contains("classifyMetadata"));
+        assertFalse("arbitrary DragContainer children must not become icon drags",
+                hook.contains("return new ResolvedSource(child, LauncherGlassDragState.Kind.ICON"));
     }
 }
