@@ -6,6 +6,8 @@ import android.util.Log;
 
 import androidx.preference.PreferenceManager;
 
+import com.hellovoid.liquiddock.config.ConfigMigration;
+
 import java.util.Map;
 
 import io.github.libxposed.service.XposedService;
@@ -23,6 +25,10 @@ public final class LiquidDockApp extends Application
     public void onCreate() {
         super.onCreate();
         localPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        // Upgrade the app-local authority before XposedService can synchronously bind and seed
+        // Remote Preferences. Otherwise a stale local store can overwrite the Launcher's freshly
+        // migrated API101 store during reconciliation.
+        ConfigMigration.migrate(this, localPreferences);
         localPreferences.registerOnSharedPreferenceChangeListener(this);
         XposedServiceHelper.registerListener(this);
     }

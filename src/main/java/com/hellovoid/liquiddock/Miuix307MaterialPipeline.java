@@ -134,6 +134,7 @@ final class Miuix307MaterialPipeline {
                     return result;
                 }
                 MiuixGlassHook.syncSize(background);
+                MainHook.syncDockShadow(background, config.dock);
                 MiuixGlassHook.syncGeometry(background, config);
                 MainHook.log("[DC] MiuiX 307 HotSeats attach recovery complete class="
                         + background.getClass().getSimpleName());
@@ -211,22 +212,6 @@ final class Miuix307MaterialPipeline {
         float density = android.content.res.Resources.getSystem().getDisplayMetrics().density;
         float dimensionScale = dock.dimensionsDp ? density : 1f;
         int spacing = Math.round(dock.spacing * dimensionScale);
-        int bottomOffset = Math.round(dock.bottomOffset * dimensionScale);
-
-        if (bottomOffset != 0) {
-            try {
-                Class<?> deviceConfig = Class.forName(
-                        "com.miui.home.launcher.DeviceConfig", false, classLoader);
-                HookUtil.hookMethod(deviceConfig, "getHotSeatsMarginBottom", new Class<?>[0],
-                        chain -> {
-                            Object result = chain.proceed(chain.getArgs().toArray(new Object[0]));
-                            if (MainHook.isWorkstationMode()) return result;
-                            return (Integer) result + bottomOffset;
-                        });
-            } catch (Throwable error) {
-                MainHook.log("[DC] MiuiX 307 bottom offset hook unavailable: " + error);
-            }
-        }
 
         if (spacing != 0) {
             try {
@@ -288,6 +273,7 @@ final class Miuix307MaterialPipeline {
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
+                    MainHook.syncDockShadow(background, config.dock);
                     return result;
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
@@ -300,6 +286,7 @@ final class Miuix307MaterialPipeline {
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
+                    MainHook.syncDockShadow(background, config.dock);
                     return result;
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
@@ -348,6 +335,7 @@ final class Miuix307MaterialPipeline {
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
+                    MainHook.syncDockShadow(background, config.dock);
                     return result;
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundHeight",
@@ -360,6 +348,7 @@ final class Miuix307MaterialPipeline {
                     View background = (View) chain.getThisObject();
                     ensureGlassBound(background, config, classLoader);
                     MiuixGlassHook.syncSize(background);
+                    MainHook.syncDockShadow(background, config.dock);
                     return result;
                 });
         HookUtil.hookMethod(backgroundClass, "setBackgroundRadius",
@@ -390,6 +379,7 @@ final class Miuix307MaterialPipeline {
                         View background = (View) owner;
                         ensureGlassBound(background, config, classLoader);
                         MiuixGlassHook.syncSize(background);
+                        MainHook.syncDockShadow(background, config.dock);
                         MiuixGlassHook.syncGeometry(background, config);
                     }
                     return result;
@@ -449,6 +439,7 @@ final class Miuix307MaterialPipeline {
             // callback or hierarchy recovery will retry naturally; never poll with a fixed delay.
             MainHook.log("[DC] MiuiX 307 background rebind deferred; parent not ready");
         } else {
+            MainHook.syncDockShadow(background, config.dock);
             observeBoundHierarchy(background, config, classLoader);
         }
         return installedNow;
@@ -553,6 +544,7 @@ final class Miuix307MaterialPipeline {
             MainHook.log("[DC] MiuiX 307 hierarchy rebind deferred; host not attached");
             return false;
         }
+        MainHook.syncDockShadow(currentBackground, config.dock);
         MainHook.log("[DC] MiuiX 307 hierarchy rebind complete after theme/layout change");
         return true;
     }

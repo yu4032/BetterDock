@@ -2,6 +2,7 @@ package com.hellovoid.liquiddock;
 
 import androidx.annotation.NonNull;
 
+import com.hellovoid.liquiddock.config.ConfigMigration;
 import com.hellovoid.liquiddock.config.GridProfileConfig;
 import com.hellovoid.liquiddock.config.LegacyConfigMigration;
 
@@ -23,6 +24,7 @@ public final class ModuleMain extends XposedModule {
         if (!LAUNCHER_PACKAGE.equals(param.getPackageName())) return;
         try {
             LegacyConfigMigration.migrateAtProcessStart();
+            ConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
             ConfigReader configReader = ConfigReader.load();
             LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
