@@ -44,6 +44,12 @@ public class RemainingRequirementsContractTest {
         assertFalse(ui.contains("zero-copy 后端"));
         assertFalse(ui.contains("双通道 FBO"));
         assertFalse(ui.contains("v1.0.6 Quick Start"));
+        int summariesStart = ui.indexOf("private fun optionSummary");
+        int summariesEnd = ui.indexOf("private val gridSpecs", summariesStart);
+        assertTrue(summariesStart >= 0 && summariesEnd > summariesStart);
+        String summaries = ui.substring(summariesStart, summariesEnd);
+        assertFalse("Liquid setting descriptions must describe effects, not the Prismal implementation",
+                summaries.contains("Prismal"));
         assertTrue(ui.contains("显示表面法线（调试）"));
     }
 
