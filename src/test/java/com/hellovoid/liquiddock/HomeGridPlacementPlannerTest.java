@@ -58,6 +58,56 @@ public class HomeGridPlacementPlannerTest {
     }
 
     @Test
+    public void exactTwoByTwoUsesMacroblockOrigin() {
+        HomeGridPlacementPlanner.PlanResult result = HomeGridPlacementPlanner.plan(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                Collections.singletonList(pos(200, 6, 3, 1, 2, 2)),
+                null);
+
+        assertTrue(result.success());
+        HomeGridItemPosition placed = result.snapshot().get(200);
+        assertEquals(0, placed.cellX());
+        assertEquals(2, placed.cellY());
+        assertEquals(0, placed.cellX() & 1);
+        assertEquals(0, placed.cellY() & 1);
+    }
+
+    @Test
+    public void illegalRememberedTwoByTwoIsReplannedToMacroblockOrigin() {
+        HomeGridLayoutSnapshot remembered = HomeGridLayoutSnapshot.create(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                Collections.singletonList(pos(201, 6, 1, 3, 2, 2)));
+
+        HomeGridPlacementPlanner.PlanResult result = HomeGridPlacementPlanner.plan(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                Collections.singletonList(pos(201, 6, 3, 1, 2, 2)),
+                remembered);
+
+        assertTrue(result.success());
+        HomeGridItemPosition placed = result.snapshot().get(201);
+        assertFalse(placed.cellX() == 1 && placed.cellY() == 3);
+        assertEquals(0, placed.cellX() & 1);
+        assertEquals(0, placed.cellY() & 1);
+    }
+
+    @Test
+    public void nonTwoByTwoStillUsesUnrestrictedNearestPlacement() {
+        HomeGridPlacementPlanner.PlanResult result = HomeGridPlacementPlanner.plan(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                Collections.singletonList(pos(202, 6, 3, 1, 1, 2)),
+                null);
+
+        assertTrue(result.success());
+        HomeGridItemPosition placed = result.snapshot().get(202);
+        assertEquals(1, placed.cellX());
+        assertEquals(3, placed.cellY());
+    }
+
+    @Test
     public void nearestNormalizedCenterUsesRowMajorTieBreak() {
         HomeGridPlacementPlanner.PlanResult result = HomeGridPlacementPlanner.plan(
                 HomeGridProfile.GRID_8X4,
