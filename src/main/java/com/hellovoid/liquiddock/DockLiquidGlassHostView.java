@@ -3,6 +3,7 @@ package com.hellovoid.liquiddock;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Path;
+import android.view.View;
 import android.widget.FrameLayout;
 
 /** Lightweight clip/geometry host for the zero-copy Prismal TextureView. */
@@ -56,7 +57,15 @@ final class DockLiquidGlassHostView extends FrameLayout {
         shapeDirty = false;
     }
 
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        View background = getParent() instanceof View ? (View) getParent() : null;
+        FlickerTrace.event("HOST_ATTACHED", background, this);
+    }
+
     @Override protected void onDetachedFromWindow() {
+        View background = getParent() instanceof View ? (View) getParent() : null;
+        FlickerTrace.event("HOST_DETACHING", background, this);
         try {
             MiuixGlassHook.onHostDetached(this);
         } finally {
@@ -65,6 +74,7 @@ final class DockLiquidGlassHostView extends FrameLayout {
     }
 
     @Override protected void dispatchDraw(Canvas canvas) {
+        FlickerTrace.sampleHostFrame(this);
         ensureClipPath();
         if (clipPath.isEmpty()) return;
         int save = canvas.save();
