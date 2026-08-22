@@ -76,6 +76,8 @@ final class LauncherGlassSession {
     private static final class NodeState {
         final int id = NEXT_NODE_ID.getAndIncrement();
         final WeakReference<LauncherGlassSinkView> sinkRef;
+        final LauncherGlassGeometryStability geometryStability =
+                new LauncherGlassGeometryStability();
         volatile LauncherGlassGeometry.Snapshot geometry;
         volatile PrismalInteractionState interaction = PrismalInteractionState.IDLE;
 
@@ -329,11 +331,15 @@ final class LauncherGlassSession {
         for (NodeState node : snapshot) {
             LauncherGlassSinkView sink = node.sinkRef.get();
             if (sink == null) continue;
-            changed |= sink.syncFromMaterial();
-            LauncherGlassGeometry.Snapshot next = sink.captureGeometry(root);
+            boolean localChanged = sink.syncFromMaterial();
+            changed |= localChanged;
+            LauncherGlassGeometry.Snapshot observed = sink.captureGeometry(root);
             LauncherGlassGeometry.Snapshot old = node.geometry;
-            if ((old == null) != (next == null) || (old != null && !old.sameAs(next))) {
-                node.geometry = next;
+            LauncherGlassGeometry.Snapshot selected =
+                    node.geometryStability.select(old, observed, localChanged);
+            if ((old == null) != (selected == null)
+                    || (old != null && !old.sameAs(selected))) {
+                node.geometry = selected;
                 changed = true;
             }
         }
