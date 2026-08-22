@@ -44,6 +44,32 @@ public class WorkstationMaterializedOwnershipContractTest {
     }
 
     @Test
+    public void laptopOverlayMaterialKeepsItsNativeBackdrop() throws Exception {
+        String pipeline = read("Miuix307MaterialPipeline.java");
+        String glass = read("MiuixGlassHook.java");
+        if (!pipeline.contains("static boolean isOrdinaryHotSeatsBackground(View candidate)")) return;
+
+        int ensureStart = pipeline.indexOf("private static boolean ensureGlassBound(");
+        int ensureEnd = pipeline.indexOf("/** Observe both pieces", ensureStart);
+        String ensure = pipeline.substring(ensureStart, ensureEnd);
+        int ensureOwnerGate = ensure.indexOf("if (!isOrdinaryHotSeatsBackground(background)) return false;");
+        int ensureBoundCheck = ensure.indexOf("if (MiuixGlassHook.isBoundTo(background))");
+        assertTrue("Laptop overlay material must be rejected before Prismal binding is considered",
+                ensureOwnerGate >= 0 && ensureOwnerGate < ensureBoundCheck);
+
+        int blurStart = glass.indexOf("static int suppressCompatBackgroundBlurRadius(");
+        int blurEnd = glass.indexOf("static boolean install(", blurStart);
+        String blur = glass.substring(blurStart, blurEnd);
+        int blurOwnerGate = blur.indexOf(
+                "if (!Miuix307MaterialPipeline.isOrdinaryHotSeatsBackground(dockBg))");
+        int suppressToZero = blur.indexOf("return 0;");
+        assertTrue("Laptop overlay must retain its vendor BlurBackground2 backdrop",
+                blurOwnerGate >= 0 && blurOwnerGate < suppressToZero);
+        assertTrue("Non-ordinary material must preserve the vendor-requested blur radius",
+                blur.substring(blurOwnerGate, suppressToZero).contains("return requestedRadius;"));
+    }
+
+    @Test
     public void normalLayoutBackupAndRestoreAreWorkspaceScoped() throws Exception {
         String main = read("MainHook.java");
         String home = read("HomeGridHook.java");
