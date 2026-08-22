@@ -56,6 +56,11 @@ jobs:
           git apply --check ci/shared-glass-gpu-atlas-contract-fix.patch
           git apply ci/shared-glass-gpu-atlas-contract-fix.patch
 
+          mkdir -p /tmp/pre-native-source
+          cp src/main/java/com/hellovoid/liquiddock/LauncherGlassSession.java /tmp/pre-native-source/
+          cp src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java /tmp/pre-native-source/
+          cp src/main/java/com/hellovoid/liquiddock/LauncherAdvancedGlassPipeline.java /tmp/pre-native-source/
+
           cat ci/shared-glass-native-material-v1/part-*.txt > /tmp/shared-glass-native-material.patch.gz.b64
           echo "56087c1bcc18f8ac8d621a4de5d06ee06f7819b01e1b843e7ef86a396600819a  /tmp/shared-glass-native-material.patch.gz.b64" | sha256sum -c -
           base64 -d /tmp/shared-glass-native-material.patch.gz.b64 | gzip -d > /tmp/shared-glass-native-material.patch
@@ -63,6 +68,14 @@ jobs:
           git apply --check /tmp/shared-glass-native-material.patch
           git apply /tmp/shared-glass-native-material.patch
           git diff --check
+
+      - name: Upload pre-native GPU atlas source
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiquidDock-pre-native-gpu-atlas-source
+          path: /tmp/pre-native-source/*
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Enforce no Launcher scene recording
         run: |
