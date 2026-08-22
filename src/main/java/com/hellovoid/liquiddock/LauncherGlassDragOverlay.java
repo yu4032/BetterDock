@@ -112,8 +112,15 @@ final class LauncherGlassDragOverlay {
         if (released || token == null || source == null) return false;
         LauncherGlassDragState.Bounds bounds = readRootBounds(source);
         if (bounds == null) return false;
-        activeCornerRadiusPx = Math.max(0f,
+        float resolvedRadiusPx = Math.max(0f,
                 Float.isFinite(cornerRadiusPx) ? cornerRadiusPx : 0f);
+        if (kind == LauncherGlassDragState.Kind.FOLDER) {
+            float density = source.getResources().getDisplayMetrics().density;
+            resolvedRadiusPx = LauncherGlassCornerRadiusPolicy.resolve(
+                    glassConfig != null ? glassConfig.folderCornerRadiusDp : 0f,
+                    density, resolvedRadiusPx, resolvedRadiusPx);
+        }
+        activeCornerRadiusPx = resolvedRadiusPx;
         sourceRef = new WeakReference<>(source);
         if (!coordinator.begin(token, kind, bounds, activeCornerRadiusPx)) return false;
         tracking = true;

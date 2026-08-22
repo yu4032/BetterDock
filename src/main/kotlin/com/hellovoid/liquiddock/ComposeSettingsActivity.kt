@@ -149,6 +149,7 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
+    "liquid_folder_corner_radius" -> "0 表示自动跟随 MIUI 原生圆角；大于 0 时同时覆盖桌面与拖动文件夹玻璃"
     "liquid_blur" -> "控制玻璃背景的模糊程度"
     "liquid_thickness" -> "控制虚拟玻璃厚度对折射效果的影响"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
@@ -268,6 +269,11 @@ private val workstationSpecs = listOf(
     IntSpec(ConfigSchema.Workstation.ALL_APPS_PORTRAIT_BOTTOM_SPACING, "所有应用 · 竖屏下间距"),
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_TOP_OFFSET, "工作台 Dock 图标上间距"),
     IntSpec(ConfigSchema.Workstation.DOCK_ICON_BOTTOM_OFFSET, "工作台 Dock 图标下间距"),
+)
+private val folderCornerRadiusSpec = IntSpec(
+    ConfigSchema.Glass.FOLDER_CORNER_RADIUS,
+    "文件夹圆角",
+    "dp",
 )
 private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.BLUR, "玻璃模糊", "px"),
@@ -498,13 +504,15 @@ private fun LiquidPage(
     openLauncherHighlights: () -> Unit,
 ) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
+    var folderGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.FOLDER_GLASS.name(), ConfigSchema.Glass.FOLDER_GLASS.uiDefault())) }
     SettingsList(
         padding,
         stringResource(R.string.page_liquid),
         stringResource(R.string.liquid_header_summary),
     ) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanSetting(prefs, ConfigSchema.Glass.FOLDER_GLASS, stringResource(R.string.liquid_folder_glass_enable), stringResource(R.string.liquid_folder_glass_enable_summary), masterEnabled && liquidGlass)
+        BooleanSetting(prefs, ConfigSchema.Glass.FOLDER_GLASS, stringResource(R.string.liquid_folder_glass_enable), stringResource(R.string.liquid_folder_glass_enable_summary), masterEnabled && liquidGlass) { folderGlass = it }
+        IntSetting(prefs, folderCornerRadiusSpec, masterEnabled && liquidGlass && folderGlass)
         ArrowPreference(
             stringResource(R.string.launcher_highlights_entry),
             summary = stringResource(R.string.launcher_highlights_entry_summary),

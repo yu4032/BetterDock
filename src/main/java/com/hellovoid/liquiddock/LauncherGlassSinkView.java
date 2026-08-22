@@ -269,17 +269,18 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (disposed || root == null || getVisibility() != View.VISIBLE || getAlpha() <= 0f
                 || getWidth() <= 0 || getHeight() <= 0) return null;
         Rect sinkRect = new Rect();
-        Rect rootRect = new Rect();
-        if (!getGlobalVisibleRect(sinkRect) || !root.getGlobalVisibleRect(rootRect)) return null;
-        float left = sinkRect.left - rootRect.left;
-        float top = sinkRect.top - rootRect.top;
-        float right = sinkRect.right - rootRect.left;
-        float bottom = sinkRect.bottom - rootRect.top;
+        if (!getGlobalVisibleRect(sinkRect)) return null;
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        LauncherGlassScreenSpace.Bounds bounds = LauncherGlassScreenSpace.relativeToRoot(
+                rootLocation[0], rootLocation[1],
+                sinkRect.left, sinkRect.top, sinkRect.right, sinkRect.bottom);
         float scale = Math.min(
                 sinkRect.width() / (float) Math.max(1, getWidth()),
                 sinkRect.height() / (float) Math.max(1, getHeight()));
         return LauncherGlassGeometry.resolve(
-                root.getWidth(), root.getHeight(), left, top, right, bottom,
+                root.getWidth(), root.getHeight(),
+                bounds.left, bounds.top, bounds.right, bounds.bottom,
                 nativeCornerRadiusPx * Math.max(0.01f, scale));
     }
 

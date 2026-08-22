@@ -331,11 +331,13 @@ final class MiuixFolderGlassHook {
             makeMaterialTransparent(material);
             return existing;
         }
-        float radius = readMaterialRadius(material);
-        if (!Float.isFinite(radius) || radius <= 0f) {
-            radius = Math.min(Math.max(1, material.getWidth()),
-                    Math.max(1, material.getHeight())) * 0.22f;
-        }
+        float nativeRadius = readMaterialRadius(material);
+        float fallbackRadius = Math.min(Math.max(1, material.getWidth()),
+                Math.max(1, material.getHeight())) * 0.22f;
+        float density = material.getResources().getDisplayMetrics().density;
+        float radius = LauncherGlassCornerRadiusPolicy.resolve(
+                glassConfig != null ? glassConfig.folderCornerRadiusDp : 0f,
+                density, nativeRadius, fallbackRadius);
         LauncherGlassSinkView sink = LauncherGlassSinkView.attachToMaterial(
                 material, radius, glassConfig);
         if (sink != null) {
