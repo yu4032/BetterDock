@@ -4,7 +4,6 @@ import android.view.Choreographer;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
-import android.view.ViewTreeObserver;
 
 import java.lang.ref.WeakReference;
 import java.util.WeakHashMap;
@@ -29,8 +28,6 @@ final class LauncherGlassDragOverlay {
     private WeakReference<ViewGroup> hostRef = new WeakReference<>(null);
     private float activeCornerRadiusPx;
     private boolean tracking;
-    private ViewTreeObserver observer;
-    private ViewTreeObserver.OnPreDrawListener preDrawListener;
 
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override public void doFrame(long frameTimeNanos) {
@@ -48,7 +45,6 @@ final class LauncherGlassDragOverlay {
         carrier.setFocusable(false);
         carrier.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         carrier.setVisibility(View.INVISIBLE);
-        installObserver(root);
     }
 
     static boolean begin(
@@ -119,7 +115,7 @@ final class LauncherGlassDragOverlay {
         sourceRef = new WeakReference<>(null);
         carrier.setVisibility(View.INVISIBLE);
         if (sink != null) {
-            sink.syncFromMaterial();
+            sink.setVisibility(View.GONE);
             sink.requestLifecycleRefresh();
         }
         MainHook.log(TAG + " end");
@@ -128,18 +124,6 @@ final class LauncherGlassDragOverlay {
     private boolean owns(Object token) {
         LauncherGlassDragState state = coordinator.current();
         return state != null && state.token == token;
-    }
-
-    private void installObserver(View root) {
-        ViewTreeObserver next = root.getViewTreeObserver();
-        if (!next.isAlive()) return;
-        ViewTreeObserver.OnPreDrawListener listener = () -> {
-            if (tracking) syncFromSource();
-            return true;
-        };
-        next.addOnPreDrawListener(listener);
-        observer = next;
-        preDrawListener = listener;
     }
 
     private void syncFromSource() {
@@ -209,10 +193,7 @@ final class LauncherGlassDragOverlay {
         carrier.setRotation(source.getRotation());
         carrier.setAlpha(1f);
         carrier.setVisibility(View.VISIBLE);
-
         sink.setNativeCornerRadiusPx(activeCornerRadiusPx);
-        sink.syncFromMaterial();
-        sink.requestLifecycleRefresh();
     }
 
     private LauncherGlassDragState.Bounds readRootBounds(View source) {
