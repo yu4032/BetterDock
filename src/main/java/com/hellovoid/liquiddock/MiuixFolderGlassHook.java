@@ -85,18 +85,20 @@ final class MiuixFolderGlassHook {
 
     private static void installFolderOpenCloseHooks(ClassLoader classLoader) throws Exception {
         Class<?> folderIcon = Class.forName(FOLDER_ICON, false, classLoader);
-        // The inspected HyperOS build declares this override on FolderIcon itself. Hook only that
-        // declaration so LiquidDock can never intercept View.dispatchTouchEvent process-wide.
-        Method dispatchTouchEvent = folderIcon.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);
+        // HyperLight observes View.dispatchTouchEvent and filters inside the callback instead of
+        // relying on FolderIcon's pressed drawable state. Keep the original event path untouched.
+        Method dispatchTouchEvent = View.class.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);
         dispatchTouchEvent.setAccessible(true);
         HookUtil.hook(dispatchTouchEvent, chain -> {
-            Object[] args = chain.getArgs().toArray(new Object[0]);
-            Object result = chain.proceed(args);
             Object owner = chain.getThisObject();
-            if (owner instanceof ViewGroup && args.length > 0 && args[0] instanceof MotionEvent) {
-                updateFolderPressAfterDispatch((ViewGroup) owner, (MotionEvent) args[0]);
+            Object[] args = chain.getArgs().toArray(new Object[0]);
+            if (folderIcon.isInstance(owner)
+                    && owner instanceof ViewGroup
+                    && args.length > 0
+                    && args[0] instanceof MotionEvent) {
+                updateFolderPressFromMotionEvent((ViewGroup) owner, (MotionEvent) args[0]);
             }
-            return result;
+            return chain.proceed(args);
         });
 
         HookUtil.hook(HookUtil.findMethodExact(folderIcon, "onOpen", new Class<?>[0]), chain -> {
@@ -127,8 +129,25 @@ final class MiuixFolderGlassHook {
         });
     }
 
-    private static void updateFolderPressAfterDispatch(ViewGroup owner, MotionEvent event) {
+    private static void updateFolderPressFromMotionEvent(ViewGroup owner, MotionEvent event) {
         if (owner == null || event == null) return;
+        int action = event.getActionMasked();
+        boolean pressed;
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_MOVE:
+                pressed = true;
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_CANCEL:
+                pressed = false;
+                break;
+            default:
+                return;
+        }
+
         LauncherGlassSinkView sink = resolveOwnerSink(owner);
         if (sink == null) return;
         try {
@@ -143,7 +162,7 @@ final class MiuixFolderGlassHook {
             float x = (event.getRawX() - location[0]) / width;
             // Android local Y grows downward; Prismal glow coordinates grow upward.
             float y = 1f - (event.getRawY() - location[1]) / height;
-            sink.setPressInteraction(owner.isPressed(), x, y);
+            sink.setPressInteraction(pressed, x, y);
         } catch (Throwable error) {
             MainHook.log(TAG + " press bridge failed: " + error);
         }
