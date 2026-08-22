@@ -1,5 +1,6 @@
 package com.hellovoid.liquiddock;
 
+import android.os.Handler;
 import android.view.Choreographer;
 import android.view.View;
 import android.view.ViewGroup;
@@ -23,15 +24,18 @@ final class LauncherGlassDragOverlay {
     private final LiquidDockConfig.Glass glassConfig;
     private final LauncherGlassDragCoordinator coordinator = new LauncherGlassDragCoordinator();
     private final View carrier;
+    private final Handler mainHandler;
+    private final View.OnAttachStateChangeListener rootAttachListener;
     private WeakReference<View> sourceRef = new WeakReference<>(null);
     private LauncherGlassSinkView sink;
     private WeakReference<ViewGroup> hostRef = new WeakReference<>(null);
     private float activeCornerRadiusPx;
     private boolean tracking;
+    private boolean released;
 
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override public void doFrame(long frameTimeNanos) {
-            if (!tracking) return;
+            if (!tracking || released) return;
             syncFromSource();
             Choreographer.getInstance().postFrameCallback(this);
         }
@@ -40,11 +44,24 @@ final class LauncherGlassDragOverlay {
     private LauncherGlassDragOverlay(View root, LiquidDockConfig.Glass glassConfig) {
         rootRef = new WeakReference<>(root);
         this.glassConfig = glassConfig;
+        mainHandler = new Handler(root.getContext().getMainLooper());
+        rootAttachListener = new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View v) {}
+
+            @Override public void onViewDetachedFromWindow(View v) {
+                // Match LauncherGlassSession: allow a transient root reattach during the same
+                // main-loop turn, but release the overlay tree if this root is actually gone.
+                mainHandler.post(() -> {
+                    if (!v.isAttachedToWindow()) releaseRoot(v);
+                });
+            }
+        };
         carrier = new View(root.getContext());
         carrier.setClickable(false);
         carrier.setFocusable(false);
         carrier.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         carrier.setVisibility(View.INVISIBLE);
+        root.addOnAttachStateChangeListener(rootAttachListener);
     }
 
     static boolean begin(
@@ -68,7 +85,7 @@ final class LauncherGlassDragOverlay {
         if (root == null) return null;
         synchronized (BY_ROOT) {
             LauncherGlassDragOverlay current = BY_ROOT.get(root);
-            if (current != null) return current;
+            if (current != null && !current.released) return current;
             LauncherGlassDragOverlay created = new LauncherGlassDragOverlay(root, glassConfig);
             BY_ROOT.put(root, created);
             return created;
@@ -92,7 +109,7 @@ final class LauncherGlassDragOverlay {
             LauncherGlassDragState.Kind kind,
             View source,
             float cornerRadiusPx) {
-        if (token == null || source == null) return false;
+        if (released || token == null || source == null) return false;
         LauncherGlassDragState.Bounds bounds = readRootBounds(source);
         if (bounds == null) return false;
         activeCornerRadiusPx = Math.max(0f,
@@ -109,7 +126,7 @@ final class LauncherGlassDragOverlay {
     }
 
     private void endInternal(Object token) {
-        if (!coordinator.end(token)) return;
+        if (released || !coordinator.end(token)) return;
         tracking = false;
         Choreographer.getInstance().removeFrameCallback(frameCallback);
         sourceRef = new WeakReference<>(null);
@@ -122,12 +139,13 @@ final class LauncherGlassDragOverlay {
     }
 
     private boolean owns(Object token) {
+        if (released) return false;
         LauncherGlassDragState state = coordinator.current();
         return state != null && state.token == token;
     }
 
     private void syncFromSource() {
-        if (!tracking) return;
+        if (!tracking || released) return;
         View source = sourceRef.get();
         View root = rootRef.get();
         if (source == null || root == null || !root.isAttachedToWindow()) return;
@@ -142,6 +160,7 @@ final class LauncherGlassDragOverlay {
     }
 
     private boolean ensureCarrier(View source) {
+        if (released) return false;
         if (carrier.getParent() == null) {
             View dragContainer = findDragContainerAncestor(source);
             if (dragContainer == null || !(dragContainer.getParent() instanceof ViewGroup)) {
@@ -170,7 +189,7 @@ final class LauncherGlassDragOverlay {
 
     private void applyCarrierGeometry(View source) {
         ViewGroup host = hostRef.get();
-        if (host == null || carrier.getParent() != host) return;
+        if (released || host == null || carrier.getParent() != host) return;
         int width = Math.max(1, source.getWidth());
         int height = Math.max(1, source.getHeight());
         ViewGroup.LayoutParams lp = carrier.getLayoutParams();
@@ -198,7 +217,7 @@ final class LauncherGlassDragOverlay {
 
     private LauncherGlassDragState.Bounds readRootBounds(View source) {
         View root = rootRef.get();
-        if (root == null || source == null || !source.isAttachedToWindow()
+        if (released || root == null || source == null || !source.isAttachedToWindow()
                 || source.getWidth() <= 0 || source.getHeight() <= 0) return null;
         int[] sourceScreen = new int[2];
         int[] rootScreen = new int[2];
@@ -208,6 +227,31 @@ final class LauncherGlassDragOverlay {
         float top = sourceScreen[1] - rootScreen[1];
         return new LauncherGlassDragState.Bounds(
                 left, top, left + source.getWidth(), top + source.getHeight());
+    }
+
+    private void releaseRoot(View root) {
+        if (released) return;
+        released = true;
+        tracking = false;
+        Choreographer.getInstance().removeFrameCallback(frameCallback);
+        LauncherGlassDragState state = coordinator.current();
+        if (state != null) coordinator.cancel(state.token);
+        sourceRef = new WeakReference<>(null);
+
+        synchronized (BY_ROOT) {
+            if (BY_ROOT.get(root) == this) BY_ROOT.remove(root);
+        }
+
+        if (sink != null) {
+            sink.dispose();
+            sink = null;
+        }
+        Object parent = carrier.getParent();
+        if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(carrier);
+        hostRef = new WeakReference<>(null);
+        try { root.removeOnAttachStateChangeListener(rootAttachListener); }
+        catch (Throwable ignored) {}
+        MainHook.log(TAG + " released detached root");
     }
 
     private static View findDragContainerAncestor(View source) {
