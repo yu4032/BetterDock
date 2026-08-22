@@ -32,8 +32,12 @@ final class HomeGridOrientationRuntime {
 
         Set<Long> seen = new HashSet<>();
         for (HomeGridItemPosition item : currentItems) {
-            if (item == null || !seen.add(item.itemId())
-                    || remembered.get(item.itemId()) == null) {
+            if (item == null || !seen.add(item.itemId())) return null;
+            HomeGridItemPosition saved = remembered.get(item.itemId());
+            if (saved == null
+                    || saved.screenId() != item.screenId()
+                    || saved.spanX() != item.spanX()
+                    || saved.spanY() != item.spanY()) {
                 return null;
             }
         }
