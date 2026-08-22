@@ -47,7 +47,7 @@ public class LauncherGlassAlignmentAndRadiusTest {
         String schema = read("src/main/java/com/hellovoid/liquiddock/config/ConfigSchema.java");
         String runtime = read("src/main/java/com/hellovoid/liquiddock/LiquidDockConfig.java");
         String folder = read("src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java");
-        String drag = read("src/main/java/com/hellovoid/liquiddock/MiuixLauncherDragOverlayHook.java");
+        String drag = read("src/main/java/com/hellovoid/liquiddock/LauncherGlassDragOverlay.java");
 
         assertTrue(schema.contains("FOLDER_CORNER_RADIUS = integer("));
         assertTrue(schema.contains("\"liquid_folder_corner_radius\", 0, 0, 0, 0, 96"));
@@ -56,7 +56,7 @@ public class LauncherGlassAlignmentAndRadiusTest {
         assertTrue(runtime.contains("folderCornerRadiusDp = c.f(ConfigSchema.Glass.FOLDER_CORNER_RADIUS.name()"));
         assertTrue(folder.contains("LauncherGlassCornerRadiusPolicy.resolve("));
         assertTrue(drag.contains("LauncherGlassCornerRadiusPolicy.resolve("));
-        assertTrue(drag.contains("resolveSource(child, glassConfig)"));
+        assertTrue(drag.contains("kind == LauncherGlassDragState.Kind.FOLDER"));
     }
 
     @Test
