@@ -43,11 +43,11 @@ public class FolderPressInteractionContractTest {
                 hook.contains("ImageView.class.getDeclaredMethod(\"setImageDrawable\", Drawable.class)"));
         assertTrue("the drawable fence must only affect views already claimed by LiquidDock",
                 hook.contains("claimedSink((View) target)"));
-        assertTrue("system drag/refresh writes must be replaced with a transparent drawable",
-                hook.contains("new ColorDrawable(Color.TRANSPARENT)"));
-        assertTrue("the system call must still proceed after replacing only the drawable argument",
-                hook.contains("drawableArgs[0] = new ColorDrawable(Color.TRANSPARENT)")
-                        && hook.contains("chain.proceed(drawableArgs)"));
+        assertTrue("system drag/refresh writes must preserve or rebuild a transparent drawable",
+                hook.contains("drawableArgs[0] = isTransparentColorDrawable(current)")
+                        && hook.contains("? current : new ColorDrawable(Color.TRANSPARENT)"));
+        assertTrue("the filtered system call must still proceed",
+                hook.contains("chain.proceed(drawableArgs)"));
     }
 
     @Test
