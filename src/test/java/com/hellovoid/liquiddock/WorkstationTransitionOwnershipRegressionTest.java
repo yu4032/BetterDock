@@ -6,7 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.Test;
 
-/** Regression contract for normal HotSeats vs workstation Laptop-overlay ownership. */
+/** Regression contract for keeping normal HotSeats ownership separate from the Laptop overlay. */
 public class WorkstationTransitionOwnershipRegressionTest {
     private static final Path MAIN = Path.of("src/main/java/com/hellovoid/liquiddock");
 
