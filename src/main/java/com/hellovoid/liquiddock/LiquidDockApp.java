@@ -7,6 +7,7 @@ import android.util.Log;
 import androidx.preference.PreferenceManager;
 
 import com.hellovoid.liquiddock.config.ConfigMigration;
+import com.hellovoid.liquiddock.config.ConfigSchema;
 
 import java.util.Map;
 
@@ -52,7 +53,12 @@ public final class LiquidDockApp extends Application
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (reconciling) return;
         try {
-            syncKeyToRemote(key, sharedPreferences);
+            boolean masterChange = ConfigSchema.Core.ENABLED.name().equals(key);
+            boolean synced = syncKeyToRemote(key, sharedPreferences, masterChange);
+            if (masterChange) {
+                if (synced) restartLauncherAfterMasterChange();
+                else Log.w("LiquidDock", "Master switch changed but Remote Preferences are unavailable; Launcher not restarted");
+            }
         } catch (Throwable error) {
             Log.w("LiquidDock", "Remote Preferences sync failed for " + key, error);
         }
@@ -90,21 +96,21 @@ public final class LiquidDockApp extends Application
         return value != null ? value.getRemotePreferences(group) : null;
     }
 
-    /** Full-seed only — used on initial bind.  Incremental updates use syncKeyToRemote. */
+    /** Full-seed only — used on initial bind. Incremental updates use syncKeyToRemote. */
     public static boolean syncToRemote(SharedPreferences local) {
         if (local == null) return false;
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
         if (remote == null) return false;
-        copyAll(local, remote);
-        return true;
+        return copyAll(local, remote);
     }
 
-    /** Incremental: sync a single key change to the Remote Preferences store. */
-    private static void syncKeyToRemote(String key, SharedPreferences source) {
+    /** Incremental: sync one key. Master changes commit synchronously before Launcher restarts. */
+    private static boolean syncKeyToRemote(
+            String key, SharedPreferences source, boolean synchronous) {
         SharedPreferences remote = remotePreferences(ConfigReader.REMOTE_GROUP);
-        if (remote == null) return;
+        if (remote == null) return false;
         SharedPreferences.Editor editor = remote.edit();
-        if (editor == null) return;
+        if (editor == null) return false;
         Map<String, ?> all = source.getAll();
         Object value = all.get(key);
         if (value == null) {
@@ -124,12 +130,18 @@ public final class LiquidDockApp extends Application
             java.util.Set<String> strings = (java.util.Set<String>) value;
             editor.putStringSet(key, strings);
         }
+        if (synchronous) return editor.commit();
         editor.apply();
+        return true;
     }
 
-    private static void copyAll(SharedPreferences source, SharedPreferences destination) {
+    private static void restartLauncherAfterMasterChange() {
+        LauncherRestart.restartAsync("master-switch");
+    }
+
+    private static boolean copyAll(SharedPreferences source, SharedPreferences destination) {
         SharedPreferences.Editor editor = destination.edit();
-        if (editor == null) return;
+        if (editor == null) return false;
         editor.clear();
         for (Map.Entry<String, ?> entry : source.getAll().entrySet()) {
             String key = entry.getKey();
@@ -145,6 +157,6 @@ public final class LiquidDockApp extends Application
                 editor.putStringSet(key, strings);
             }
         }
-        editor.commit();
+        return editor.commit();
     }
 }
