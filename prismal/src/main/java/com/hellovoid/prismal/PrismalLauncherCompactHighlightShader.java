@@ -1,7 +1,7 @@
 package com.hellovoid.prismal;
 
 /**
- * Adds one launcher-only edge highlight after the upstream white highlight chains were removed.
+ * Adds one launcher-only edge highlight after the upstream component gates are applied.
  *
  * <p>The highlight is intentionally restricted to a narrow edgeDist band. Its lighting direction
  * comes from compactCoord, the same continuous aspect-normalized field used by compact launcher
@@ -27,7 +27,7 @@ final class PrismalLauncherCompactHighlightShader {
                     * (0.035 + 0.10 * compactFront + 0.025 * compactBack)
                     * (0.55 + 0.45 * height);
                 vec3 compactHighlightColor = vec3(0.985, 0.993, 1.0);
-                color += compactHighlightColor * compactHighlight;
+                color += compactHighlightColor * compactHighlight * u_componentCompactSafeHighlight;
 
                 gl_FragColor = vec4(color, opacity * u_transmittance);
             """;
