@@ -139,6 +139,7 @@ final class LauncherGlassSession {
     private int rawHeight;
     private volatile int maxTextureSize;
     private PrismalRenderer prismalRenderer;
+    private boolean backdropPrepared;
     private ViewTreeObserver rootObserver;
     private ViewTreeObserver.OnPreDrawListener preDrawListener;
     private final View.OnAttachStateChangeListener rootAttachListener =
@@ -199,7 +200,7 @@ final class LauncherGlassSession {
                 ? glassConfig.launcherHighlightProfile
                 : PrismalHighlightProfile.ALL_ENABLED;
         mainHandler.post(this::syncSceneOnUiThread);
-        requestFrame(false);
+        requestBackdropRebuild();
     }
 
     void registerSink(LauncherGlassSinkView sink) {
@@ -224,7 +225,7 @@ final class LauncherGlassSession {
             if (node == null) return;
             node.interaction = interaction != null ? interaction : PrismalInteractionState.IDLE;
         }
-        // Interaction redraws reuse the last consumed wallpaper texture. Never request producer refresh.
+        // Interaction redraws reuse the last consumed wallpaper texture and prepared blur.
         requestFrame(false);
     }
 
@@ -336,9 +337,11 @@ final class LauncherGlassSession {
                 changed = true;
             }
         }
-        changed |= refreshProducerGeometryOnUi(root);
-        changed |= rebuildAtlasLayout(root);
-        if (changed) {
+        boolean producerGeometryChanged = refreshProducerGeometryOnUi(root);
+        boolean atlasChanged = rebuildAtlasLayout(root);
+        if (producerGeometryChanged || atlasChanged) {
+            requestBackdropRebuild();
+        } else if (changed) {
             requestFrame(false);
         }
     }
@@ -402,6 +405,9 @@ final class LauncherGlassSession {
             rebindProducer();
             return true;
         }
+        if (changed && current != null && current.bound) {
+            Miuix307PassBlurBridge.requestSingleUpdate(current, root);
+        }
         return changed;
     }
 
@@ -426,6 +432,11 @@ final class LauncherGlassSession {
         if (framePolicy.request(refreshProducer)) postRender(this::drainFrameWork, null);
     }
 
+    private void requestBackdropRebuild() {
+        if (shuttingDown) return;
+        if (framePolicy.requestBackdropRebuild()) postRender(this::drainFrameWork, null);
+    }
+
     private void drainFrameWork() {
         if (shuttingDown) return;
         LauncherGlassFramePolicy.Work work = framePolicy.consume();
@@ -433,15 +444,18 @@ final class LauncherGlassSession {
         try {
             ensureEglAndGl();
             if (work.refreshProducer) refreshProducer();
+            boolean sourceChanged = false;
             SurfaceTexture input = inputSurfaceTexture;
             if (input != null && frameAvailable.getAndSet(false)) {
                 makePbufferCurrent();
                 input.updateTexImage();
                 input.getTransformMatrix(textureMatrix);
                 hasConsumedFrame = true;
+                sourceChanged = true;
+                Miuix307PassBlurBridge.pauseUpdates(binding);
             }
             if (!hasConsumedFrame) return;
-            renderScene();
+            renderScene(work.rebuildBackdrop || sourceChanged || !backdropPrepared);
         } catch (Throwable error) {
             MainHook.log(TAG + " render failed: " + error);
         }
@@ -449,14 +463,9 @@ final class LauncherGlassSession {
 
     private void refreshProducer() {
         Miuix307PassBlurBridge.Binding current = binding;
-        if (current == null || !current.bound || !current.rootSurface.isValid()) return;
-        try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
-            current.setUpdateTextureFlag.invoke(
-                    transaction, current.rootSurface, Boolean.TRUE, Float.valueOf(current.scale));
-            transaction.apply();
-        } catch (Throwable error) {
-            MainHook.log(TAG + " PassBlur refresh failed: " + error);
-        }
+        View root = rootRef.get();
+        if (current == null || root == null || !current.bound || !current.rootSurface.isValid()) return;
+        Miuix307PassBlurBridge.requestSingleUpdate(current, root);
     }
 
     private void ensureEglAndGl() {
@@ -472,7 +481,10 @@ final class LauncherGlassSession {
                     Miuix307PassBlurShaders.QUAD_VERTEX,
                     Miuix307PrismalCompositeShaders.FRAGMENT);
         }
-        if (prismalRenderer == null) prismalRenderer = new PrismalRenderer();
+        if (prismalRenderer == null) {
+            prismalRenderer = new PrismalRenderer();
+            backdropPrepared = false;
+        }
         if (oesTexture == 0 || inputSurfaceTexture == null || inputProducerSurface == null) {
             createInputProducer();
         }
@@ -535,6 +547,7 @@ final class LauncherGlassSession {
         Surface producer = new Surface(input);
         inputSurfaceTexture = input;
         inputProducerSurface = producer;
+        backdropPrepared = false;
         input.setOnFrameAvailableListener(texture -> {
             if (shuttingDown || texture != inputSurfaceTexture) return;
             frameAvailable.set(true);
@@ -592,18 +605,24 @@ final class LauncherGlassSession {
         Miuix307PassBlurBridge.Binding old = binding;
         binding = null;
         Miuix307PassBlurBridge.unbind(old);
+        backdropPrepared = false;
         mainHandler.post(() -> bindProducerWhenReady(0));
     }
 
-    private void renderScene() {
+    private void renderScene(boolean rebuildBackdrop) {
         PrismalParams params = prismalParams;
         LauncherGlassGpuAtlas.Layout layout = atlasLayout;
         if (layout == null || layout.width <= 0 || layout.height <= 0
                 || params == null || outputs.isEmpty()) return;
         makePbufferCurrent();
+        boolean rawTargetChanged = rawFramebuffer == 0
+                || rawWidth != layout.width || rawHeight != layout.height;
         ensureRawTarget(layout.width, layout.height);
-        renderNormalization(layout);
-        prismalRenderer.prepareBackdrop(rawTexture, layout.width, layout.height, params);
+        if (rebuildBackdrop || rawTargetChanged || !backdropPrepared) {
+            renderNormalization(layout);
+            prismalRenderer.prepareBackdrop(rawTexture, layout.width, layout.height, params);
+            backdropPrepared = true;
+        }
         prismalRenderer.beginGlassFrame();
 
         List<NodeState> snapshot;
@@ -744,6 +763,7 @@ final class LauncherGlassSession {
         rawTexture = 0;
         rawWidth = 0;
         rawHeight = 0;
+        backdropPrepared = false;
     }
 
     void shutdown() {
@@ -783,6 +803,7 @@ final class LauncherGlassSession {
             try { prismalRenderer.close(); } catch (Throwable ignored) {}
             prismalRenderer = null;
         }
+        backdropPrepared = false;
         if (normalizeProgram != 0) GLES20.glDeleteProgram(normalizeProgram);
         if (compositeProgram != 0) GLES20.glDeleteProgram(compositeProgram);
         normalizeProgram = compositeProgram = 0;
