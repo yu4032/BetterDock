@@ -52,7 +52,7 @@ public class PrismalSizeAdaptiveOpticsContractTest {
                 "float compactSpecScale = mix(1.0, 0.30, compactGlass);",
                 "float compactCausticScale = mix(1.0, 0.15, compactGlass);",
                 "float compactHighlightScale = mix(1.0, 0.40, compactGlass);",
-                "float compactCenterFade = mix(1.0, 0.28 + 0.72 * smoothstep(0.18, 0.88, opticalRadius), compactGlass);",
+                "float compactCenterFade = mix(1.0, 1.0 - 0.72 * smoothstep(0.18, 0.88, faceDepthT), compactGlass);",
                 "float sp = u_specular * 1.05 * specSizeScale * compactSpecScale;",
                 "color += (specP + specS) * deepCenterFade * compactCenterFade * vec3(0.99, 0.993, 1.0);",
                 "plusHL *= mix(0.42, 0.06, smallGlass) * highlightSizeScale * compactHighlightScale * deepCenterFade * compactCenterFade;",
@@ -65,17 +65,22 @@ public class PrismalSizeAdaptiveOpticsContractTest {
     }
 
     @Test
-    public void faceNormalAndCausticUseOnlyContinuousRadialSurface() throws Exception {
+    public void faceNormalAndCausticUseContinuousSmoothRoundedRectSurface() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
         String[] required = {
-                "vec2 opticalNorm = pPx / max(halfSz, vec2(1.0));",
-                "float opticalRadius = length(opticalNorm);",
-                "float radialHeight = clamp(1.0 - dot(opticalNorm, opticalNorm), 0.0, 1.0);",
-                "vec2 radialGrad = -2.0 * opticalNorm / max(halfSz, vec2(1.0));",
-                "height = radialHeight;",
-                "gradH = radialGrad;",
+                "float faceSmoothK = max(u_sminSmoothing, minDim * 0.12);",
+                "float faceSd = sdRoundBox(pPx, halfSz, crMask, faceSmoothK);",
+                "float faceCenterDepth = max(-sdRoundBox(vec2(0.0), halfSz, crMask, faceSmoothK), 1.0);",
+                "float faceDepthT = clamp(max(0.0, -faceSd) / faceCenterDepth, 0.0, 1.0);",
+                "float smoothFaceHeight = faceDepthT * faceDepthT * (3.0 - 2.0 * faceDepthT);",
+                "float faceDx = 0.5 * (sdRoundBox(pPx + vec2(1.0, 0.0), halfSz, crMask, faceSmoothK) - sdRoundBox(pPx - vec2(1.0, 0.0), halfSz, crMask, faceSmoothK));",
+                "float faceDy = 0.5 * (sdRoundBox(pPx + vec2(0.0, 1.0), halfSz, crMask, faceSmoothK) - sdRoundBox(pPx - vec2(0.0, 1.0), halfSz, crMask, faceSmoothK));",
+                "float smoothFaceSlope = 6.0 * faceDepthT * (1.0 - faceDepthT) / faceCenterDepth;",
+                "vec2 smoothFaceGrad = -vec2(faceDx, faceDy) * smoothFaceSlope;",
+                "height = smoothFaceHeight;",
+                "gradH = smoothFaceGrad;",
                 "vec3 N = normalize(vec3(-gradH.x * u_normalStrength, -gradH.y * u_normalStrength, 1.0));",
                 "float causticDot = dot(normalize(vec3(gradH * u_normalStrength, 0.45)), Lp);"
         };
@@ -84,15 +89,16 @@ public class PrismalSizeAdaptiveOpticsContractTest {
         }
 
         String[] forbidden = {
+                "vec2 opticalNorm =",
+                "float opticalRadius =",
+                "float radialHeight =",
+                "vec2 radialGrad =",
+                "height = radialHeight;",
+                "gradH = radialGrad;",
                 "float radialSurfaceW =",
-                "height = mix(height, radialHeight",
-                "gradH = mix(gradH, radialGrad",
                 "float compactCore =",
                 "float compactRadialHeight =",
-                "vec2 compactRadialGrad =",
-                "float opticalInteriorW =",
-                "vec2 opticalDir =",
-                "vec2 lensDir = opticalDir"
+                "vec2 compactRadialGrad ="
         };
         for (String marker : forbidden) {
             forbidBoth(glsl, generated, marker);
@@ -100,7 +106,7 @@ public class PrismalSizeAdaptiveOpticsContractTest {
     }
 
     @Test
-    public void roundedRectStillOwnsOnlyBoundaryAndEdgeShell() throws Exception {
+    public void roundedRectStillOwnsBoundaryAndEdgeShell() throws Exception {
         String glsl = read("src/main/res/raw/prismal_fragment.glsl");
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
