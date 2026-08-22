@@ -70,7 +70,7 @@ public final class PrismalRenderer implements AutoCloseable {
             }
             """;
 
-    private final Mode mode;
+    private Mode mode = Mode.UPSTREAM;
     private final FloatBuffer fullQuad;
     private final FloatBuffer glassQuad;
     private final FloatBuffer blurQuad;
@@ -98,15 +98,15 @@ public final class PrismalRenderer implements AutoCloseable {
     private int blurHeight;
 
     public PrismalRenderer() {
-        this(Mode.UPSTREAM);
-    }
-
-    public PrismalRenderer(Mode mode) {
-        if (mode == null) throw new IllegalArgumentException("mode == null");
-        this.mode = mode;
         fullQuad = floatBuffer(FULL_QUAD);
         glassQuad = floatBuffer(GLASS_QUAD);
         blurQuad = floatBuffer(BLUR_QUAD);
+    }
+
+    public PrismalRenderer(Mode mode) {
+        this();
+        if (mode == null) throw new IllegalArgumentException("mode == null");
+        this.mode = mode;
     }
 
     /**
