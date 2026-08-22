@@ -64,6 +64,38 @@ public class HomeGridOrientationRuntimeTest {
     }
 
     @Test
+    public void rememberedTargetRejectsStaleSpanAfterResize() {
+        MapStore store = new MapStore();
+        HomeGridOrientationMemory memory = new HomeGridOrientationMemory(store);
+        HomeGridOrientationRuntime runtime = new HomeGridOrientationRuntime(
+                HomeGridProfile.GRID_8X4, memory);
+        memory.save(snapshot(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                pos(1, 0, 0, 4, 2, 2)));
+
+        assertNull(runtime.rememberedTarget(
+                HomeGridOrientation.PORTRAIT,
+                Arrays.asList(pos(1, 0, 1, 1, 4, 2))));
+    }
+
+    @Test
+    public void rememberedTargetRejectsCrossScreenPlacement() {
+        MapStore store = new MapStore();
+        HomeGridOrientationMemory memory = new HomeGridOrientationMemory(store);
+        HomeGridOrientationRuntime runtime = new HomeGridOrientationRuntime(
+                HomeGridProfile.GRID_8X4, memory);
+        memory.save(snapshot(
+                HomeGridProfile.GRID_8X4,
+                HomeGridOrientation.PORTRAIT,
+                pos(1, 4, 0, 4, 1, 1)));
+
+        assertNull(runtime.rememberedTarget(
+                HomeGridOrientation.PORTRAIT,
+                Arrays.asList(pos(1, 5, 2, 1, 1, 1))));
+    }
+
+    @Test
     public void preflightKeepsCurrentLayoutAndRegeneratesOtherOrientation() {
         MapStore store = new MapStore();
         HomeGridOrientationMemory memory = new HomeGridOrientationMemory(store);
