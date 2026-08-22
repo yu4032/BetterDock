@@ -59,6 +59,8 @@ public class P1RuntimeLifecycleContractTest {
                 glass.contains("MainHook.syncDockShadow(dockBg, config.dock)"));
         assertTrue("shadow setup must resolve the active vendor material, not only mBlurBackground2",
                 main.contains("getHotSeatsBackground"));
+        assertTrue("startup in workstation mode must still hide the ordinary HotSeats material",
+                main.contains("if (workstationMode) {\n            dockBg.setAlpha(0f);"));
     }
 
     @Test
