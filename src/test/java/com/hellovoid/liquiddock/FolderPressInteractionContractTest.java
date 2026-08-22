@@ -16,31 +16,38 @@ public class FolderPressInteractionContractTest {
     }
 
     @Test
-    public void folderPressFiltersGlobalViewDispatchAndUsesMotionEventStateDirectly()
+    public void folderPressUsesFolderIconsOwnDispatchAndPreservesSystemTouchHandling()
             throws Exception {
         String hook = read("MiuixFolderGlassHook.java");
 
-        assertTrue("match HyperLight's reliable first-stage input hook at View.dispatchTouchEvent",
-                hook.contains("View.class.getDeclaredMethod(\"dispatchTouchEvent\", MotionEvent.class)"));
-        assertTrue("global View hook must immediately filter to FolderIcon instances",
-                hook.contains("folderIcon.isInstance(owner)"));
-        assertTrue("the original Launcher touch path must still run",
-                hook.contains("chain.proceed"));
-        assertTrue("touch state must come directly from MotionEvent actionMasked",
-                hook.contains("event.getActionMasked()"));
-        assertTrue("DOWN must activate press glow",
-                hook.contains("MotionEvent.ACTION_DOWN") && hook.contains("pressed = true"));
-        assertTrue("MOVE must keep the active press and update its center",
-                hook.contains("MotionEvent.ACTION_MOVE"));
-        assertTrue("UP and CANCEL must end the press",
-                hook.contains("MotionEvent.ACTION_UP") && hook.contains("MotionEvent.ACTION_CANCEL")
-                        && hook.contains("pressed = false"));
-        assertFalse("do not gate glow on FolderIcon.isPressed; HyperOS may clear it before observation",
+        assertTrue("FolderIcon's own dispatchTouchEvent is sufficient on this HyperOS build",
+                hook.contains("folderIcon.getDeclaredMethod(\"dispatchTouchEvent\", MotionEvent.class)"));
+        assertTrue("the original Launcher touch path must run before LiquidDock observes pressed state",
+                hook.indexOf("chain.proceed") >= 0
+                        && hook.indexOf("updateFolderPressAfterDispatch") > hook.indexOf("chain.proceed"));
+        assertTrue("pressed state must come from the real FolderIcon after dispatch",
                 hook.contains("owner.isPressed()"));
+        assertFalse("do not install a global View dispatch hook when FolderIcon input already works",
+                hook.contains("View.class.getDeclaredMethod(\"dispatchTouchEvent\", MotionEvent.class)"));
         assertFalse("do not install an OnTouchListener that could consume click/long-press/drag",
                 hook.contains("setOnTouchListener"));
         assertFalse("do not resurrect MIUI's intentionally disabled FolderIcon Folme scaling",
                 hook.contains("folmeDown") || hook.contains("folmeUp"));
+    }
+
+    @Test
+    public void claimedFolderMaterialRejectsSystemDrawableRestoresDuringLongPress() throws Exception {
+        String hook = read("MiuixFolderGlassHook.java");
+
+        assertTrue("direct ImageView.setImageDrawable writes must be fenced for claimed folder materials",
+                hook.contains("ImageView.class.getDeclaredMethod(\"setImageDrawable\", Drawable.class)"));
+        assertTrue("the drawable fence must only affect views already claimed by LiquidDock",
+                hook.contains("claimedSink((View) target)"));
+        assertTrue("system drag/refresh writes must be replaced with a transparent drawable",
+                hook.contains("new ColorDrawable(Color.TRANSPARENT)"));
+        assertTrue("the system call must still proceed after replacing only the drawable argument",
+                hook.contains("drawableArgs[0] = new ColorDrawable(Color.TRANSPARENT)")
+                        && hook.contains("chain.proceed(drawableArgs)"));
     }
 
     @Test
