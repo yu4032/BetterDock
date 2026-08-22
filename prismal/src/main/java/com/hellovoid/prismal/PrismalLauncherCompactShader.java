@@ -1,19 +1,18 @@
 package com.hellovoid.prismal;
 
 /**
- * Applies LiquidDock's narrow transmitted-refraction correction to the vendored Prismal shader.
+ * Applies the compact launcher correction without changing the vendored upstream source.
  *
- * <p>The upstream source is intentionally kept byte-for-byte as the provenance baseline. Prismal's
- * stock fragment adds lens/parallax, Snell and a mid-band bulge into the sampled backdrop. On the
- * extremely wide Dock glass that produces three spatial refraction bands. Its center-radial lens
- * bias also makes the straight-edge normal component position-dependent, and its chromatic offset
- * is expressed directly in normalized UV so horizontal fringe width grows with framebuffer width.
- * This correction keeps one monotonic SDF edge lens, aligns it to the local edge normal, and scales
- * chromatic separation in short-axis pixels before converting back to UV. Normals, dome, Fresnel,
- * highlights, caustics, tint and blur remain upstream Prismal behavior, with additive highlight
- * components individually controlled by the Dock runtime profile.</p>
+ * <p>Compact rounded rectangles expose two upstream assumptions that the extremely wide Dock
+ * does not: the realistic rounded-rect gradient chooses one nearest axis in the interior,
+ * producing diagonal direction seams, and the stock lens only exists inside refractionHeight,
+ * leaving a rectangular zero-refraction core. Launcher compact glass uses one continuous
+ * center-to-edge field across the short-axis half extent while preserving upstream masking,
+ * dome, Fresnel, tint and blur. Chromatic separation is shared exactly with the validated Dock
+ * pixel-domain correction. Upstream highlight paths remain available behind independent runtime
+ * component gates, and the launcher-only continuous edge highlight has its own gate.</p>
  */
-final class PrismalSingleEdgeShader {
+final class PrismalLauncherCompactShader {
     private static final String UPSTREAM_LENS_DIRECTION = """
                 vec2 cenSafe = cKy + vec2(1e-4, 1e-4);
                 vec2 lensDir = gradLens + u_lensDepthEffect * normalize(cenSafe);
@@ -21,12 +20,18 @@ final class PrismalSingleEdgeShader {
                 lensDir = ldLen > 1e-5 ? lensDir / ldLen : vec2(0.0);
             """;
 
-    private static final String EDGE_NORMAL_LENS_DIRECTION = """
-                // A straight Dock edge must have one translation-invariant refraction direction.
-                // Keep the transmitted lens on the local SDF normal instead of biasing it toward
-                // the center of an extremely wide glass rectangle.
-                vec2 lensDir = length(gradLens) > 1e-5 ? normalize(gradLens) : vec2(0.0);
+    private static final String COMPACT_LENS_DIRECTION = """
+                // Compact launcher glass needs a continuous field through the center. Keeping the
+                // aspect-normalized vector unnormalized near the origin makes displacement taper
+                // smoothly to zero instead of introducing a center singularity or axis seam.
+                vec2 compactCoord = cKy / max(halfSz, vec2(1.0));
+                vec2 lensDir = compactCoord / max(1.0, length(compactCoord));
             """;
+
+    private static final String UPSTREAM_LENS_REACH =
+            "float lensRh = refractionHeight;";
+    private static final String COMPACT_LENS_REACH =
+            "float lensRh = max(refractionHeight, minDim);";
 
     private static final String UPSTREAM_TRANSMITTED_BLOCK = """
                 vec2 lensDeltaUv = (dLens * lensDir) / u_resolution;
@@ -52,14 +57,13 @@ final class PrismalSingleEdgeShader {
                 vec2 baseOffset = lensDeltaUv + snellOff + bulgeUv;
             """;
 
-    private static final String SINGLE_EDGE_TRANSMITTED_BLOCK = """
-                // LiquidDock's Dock glass uses one spatial refraction field. dLens is maximal at
-                // the silhouette and monotonically decays to zero over refractionHeight.
-                vec2 edgeRefractionUv = (dLens * lensDir) / u_resolution;
-                vec2 baseOffset = edgeRefractionUv;
+    private static final String COMPACT_TRANSMITTED_BLOCK = """
+                // One continuous transmitted field avoids reintroducing the rounded-rect axis seam
+                // through parallax while the lens smoothly falls to zero at the exact center.
+                vec2 baseOffset = (dLens * lensDir) / u_resolution;
             """;
 
-    private PrismalSingleEdgeShader() {}
+    private PrismalLauncherCompactShader() {}
 
     static String apply(String upstreamFragment) {
         if (upstreamFragment == null) {
@@ -68,15 +72,21 @@ final class PrismalSingleEdgeShader {
         String corrected = replaceExactlyOnce(
                 upstreamFragment,
                 UPSTREAM_LENS_DIRECTION,
-                EDGE_NORMAL_LENS_DIRECTION,
-                "Prismal lens-direction block");
+                COMPACT_LENS_DIRECTION,
+                "Prismal compact lens-direction block");
+        corrected = replaceExactlyOnce(
+                corrected,
+                UPSTREAM_LENS_REACH,
+                COMPACT_LENS_REACH,
+                "Prismal compact lens reach");
         corrected = replaceExactlyOnce(
                 corrected,
                 UPSTREAM_TRANSMITTED_BLOCK,
-                SINGLE_EDGE_TRANSMITTED_BLOCK,
-                "Prismal transmitted-refraction block");
+                COMPACT_TRANSMITTED_BLOCK,
+                "Prismal compact transmitted-refraction block");
         corrected = PrismalPixelDomainChromaShader.apply(corrected);
-        return PrismalComponentGateShader.apply(corrected);
+        corrected = PrismalComponentGateShader.apply(corrected);
+        return PrismalLauncherCompactHighlightShader.apply(corrected);
     }
 
     private static String replaceExactlyOnce(

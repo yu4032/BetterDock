@@ -33,12 +33,21 @@ public class PrismalSingleEdgeRefractionContractTest {
     }
 
     @Test
-    public void correctionUsesTheYDownTextureBasisForChromaticSampling() throws Exception {
+    public void correctionUsesSharedYDownPixelDomainChromaticSampling() throws Exception {
         String patch = Files.readString(PRISMAL.resolve(
                 "java/com/hellovoid/prismal/PrismalSingleEdgeShader.java"));
-        assertTrue(patch.contains(
-                "vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);"));
-        assertTrue(patch.contains("UPSTREAM_CHROMA_DIRECTION")
-                && patch.contains("TEXTURE_CHROMA_DIRECTION"));
+        String chroma = Files.readString(PRISMAL.resolve(
+                "java/com/hellovoid/prismal/PrismalPixelDomainChromaShader.java"));
+
+        assertTrue("Dock correction must delegate to the shared pixel-domain chroma transform",
+                patch.contains("PrismalPixelDomainChromaShader.apply(corrected)"));
+        assertTrue("shared chroma must retain the validated y-down texture basis",
+                chroma.contains(
+                        "vec2 dispDir = length(cKy) > 1e-3 ? normalize(cKy) : vec2(0.0, 1.0);"));
+        assertTrue("shared chroma must retain the validated short-axis pixel scaling",
+                chroma.contains(
+                        "vec2 chromaPush = (dispDir * chromaBase * pxNorm * minDim) / u_resolution;"));
+        assertTrue(chroma.contains("UPSTREAM_CHROMA_DIRECTION")
+                && chroma.contains("TEXTURE_CHROMA_DIRECTION"));
     }
 }

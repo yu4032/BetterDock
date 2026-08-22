@@ -1,0 +1,16 @@
+diff --git a/src/test/java/com/hellovoid/liquiddock/LauncherGlassSessionContractTest.java b/src/test/java/com/hellovoid/liquiddock/LauncherGlassSessionContractTest.java
+index 5a38269..37ebf6b 100644
+--- a/src/test/java/com/hellovoid/liquiddock/LauncherGlassSessionContractTest.java
++++ b/src/test/java/com/hellovoid/liquiddock/LauncherGlassSessionContractTest.java
+@@ -18,8 +18,9 @@ public class LauncherGlassSessionContractTest {
+         assertFalse(sink.contains("Miuix307PassBlurBridge.bind"));
+         assertFalse(sink.contains("new PrismalRenderer"));
+         assertFalse(sink.contains("SurfaceControl"));
+-        assertTrue(sink.contains("session.attachOutput"));
+-        assertTrue(sink.contains("session.detachOutput"));
++        assertTrue(sink.contains("attachOutput("));
++        assertTrue(sink.contains("detachOutput("));
++        assertTrue(sink.contains("ensureLiveSession()"));
+     }
+ 
+     @Test

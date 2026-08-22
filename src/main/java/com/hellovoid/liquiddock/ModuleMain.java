@@ -27,6 +27,7 @@ public final class ModuleMain extends XposedModule {
             ConfigMigration.migrateAtProcessStart();
             ClassLoader classLoader = param.getClassLoader();
             ConfigReader configReader = ConfigReader.load();
+            PrismalComponentPreferences.apply(configReader);
             LiquidDockConfig runtimeConfig = LiquidDockConfig.from(configReader);
             HomeGridProfile selectedProfile = HomeGridProfile.fromPersisted(
                     GridProfileConfig.normalizeProfile(configReader.s(

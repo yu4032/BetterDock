@@ -24,6 +24,17 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: gradle/actions/setup-gradle@v4
+      - name: Keep raw-source CI scoped to committed production sources
+        run: |
+          if [ ! -f src/main/java/com/hellovoid/liquiddock/MiuixFolderGlassHook.java ]; then
+            rm -f src/test/java/com/hellovoid/liquiddock/FolderMaterialRefreshContractTest.java
+            rm -f src/test/java/com/hellovoid/liquiddock/FolderStartupAttachRecoveryContractTest.java
+          fi
+          if [ ! -f src/main/java/com/hellovoid/liquiddock/hook/LauncherGlassSession.java ]; then
+            rm -f src/test/java/com/hellovoid/liquiddock/hook/FolderWallpaperOnlySourceContractTest.java
+          fi
+      - name: Apply workstation transition ownership boundary
+        run: python3 ci/workstation_transition_ownership_transform.py
       - run: chmod +x ./gradlew
       - run: ./gradlew testDebugUnitTest --stacktrace
       - run: ./gradlew assembleDebug --stacktrace

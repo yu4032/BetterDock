@@ -14,12 +14,19 @@ import java.util.Map;
  * <p>The caller owns EGL/current-context lifetime and supplies a normal GL_TEXTURE_2D framebuffer
  * texture in GL-native bottom-left orientation. This class standardizes that texture into the
  * orientation used by upstream Prismal, executes Prismal's original 0.5x blur passes and vertex
- * shader, then applies LiquidDock's narrow single-edge transmitted-refraction correction to the
- * vendored upstream fragment before compilation. It returns a transparent full-frame texture
- * containing only the
- * rendered glass. It has no dependency on View, SurfaceTexture, OES, Dock, Xposed, HyperOS, Context, or Resources.</p>
+ * shader, and uses launcher-compact optics by default. The vendored upstream fragment remains
+ * available explicitly for diagnostics, while Dock callers explicitly select LiquidDock's narrow
+ * single-edge transmitted-refraction correction. It returns a transparent full-frame texture
+ * containing only the rendered glass. It has no dependency on View, SurfaceTexture, OES, Dock,
+ * Xposed, HyperOS, Context, or Resources.</p>
  */
 public final class PrismalRenderer implements AutoCloseable {
+    public enum Mode {
+        LAUNCHER_COMPACT,
+        UPSTREAM,
+        DOCK_SINGLE_EDGE
+    }
+
     private static final float BLUR_FBO_SCALE = 0.5f;
 
     private static final float[] FULL_QUAD = new float[]{
@@ -65,6 +72,7 @@ public final class PrismalRenderer implements AutoCloseable {
             }
             """;
 
+    private Mode mode = Mode.LAUNCHER_COMPACT;
     private final FloatBuffer fullQuad;
     private final FloatBuffer glassQuad;
     private final FloatBuffer blurQuad;
@@ -95,6 +103,12 @@ public final class PrismalRenderer implements AutoCloseable {
         fullQuad = floatBuffer(FULL_QUAD);
         glassQuad = floatBuffer(GLASS_QUAD);
         blurQuad = floatBuffer(BLUR_QUAD);
+    }
+
+    public PrismalRenderer(Mode mode) {
+        this();
+        if (mode == null) throw new IllegalArgumentException("mode == null");
+        this.mode = mode;
     }
 
     /**
@@ -140,7 +154,14 @@ public final class PrismalRenderer implements AutoCloseable {
         sourceProgram = createProgram(SOURCE_VERTEX, SOURCE_FRAGMENT);
         blurHProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_H);
         blurVProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_V);
-        String glassFragment = PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT);
+        String glassFragment;
+        if (mode == Mode.DOCK_SINGLE_EDGE) {
+            glassFragment = PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT);
+        } else if (mode == Mode.LAUNCHER_COMPACT) {
+            glassFragment = PrismalLauncherCompactShader.apply(PrismalShaderSources.FRAGMENT);
+        } else {
+            glassFragment = PrismalShaderSources.FRAGMENT;
+        }
         glassProgram = createProgram(PrismalShaderSources.VERTEX, glassFragment);
         glassUniformLocations.clear();
         if (sourceProgram == 0 || blurHProgram == 0 || blurVProgram == 0 || glassProgram == 0) {
@@ -270,6 +291,18 @@ public final class PrismalRenderer implements AutoCloseable {
         uniform1f("u_glowStrength", p.glowStrength);
         uniform1i("u_showNormals", p.showNormals ? 1 : 0);
 
+        PrismalComponentControls.Profile components = PrismalComponentControls.forMode(mode);
+        uniform1f("u_componentSkyHaze", components.skyHaze ? 1f : 0f);
+        uniform1f("u_componentSpecular", components.specular ? 1f : 0f);
+        uniform1f("u_componentLitRim", components.litRim ? 1f : 0f);
+        uniform1f("u_componentOppositeRim", components.oppositeRim ? 1f : 0f);
+        uniform1f("u_componentCornerRim", components.cornerRim ? 1f : 0f);
+        uniform1f("u_componentFaceSheen", components.faceSheen ? 1f : 0f);
+        uniform1f("u_componentPlainHighlight", components.plainHighlight ? 1f : 0f);
+        uniform1f("u_componentCaustics", components.caustics ? 1f : 0f);
+        uniform1f("u_componentPressGlow", components.pressGlow ? 1f : 0f);
+        uniform1f("u_componentCompactSafeHighlight", components.compactSafeHighlight ? 1f : 0f);
+
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sourceTexture);
         GLES20.glUniform1i(glassUniformLocation("u_backgroundTexture"), 0);
@@ -361,7 +394,6 @@ public final class PrismalRenderer implements AutoCloseable {
         }
         return shader;
     }
-
 
     private int glassUniformLocation(String name) {
         Integer cached = glassUniformLocations.get(name);
