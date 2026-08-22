@@ -29,6 +29,16 @@ public class LauncherGlassGeometryStabilityTest {
     }
 
     @Test
+    public void workspaceScrollAncestorMotionCommitsImmediately() {
+        LauncherGlassGeometryStability stability = new LauncherGlassGeometryStability();
+        LauncherGlassGeometry.Snapshot current = snapshot(100f, 100f);
+        LauncherGlassGeometry.Snapshot movedByWorkspace = snapshot(72f, 100f);
+
+        assertSame(movedByWorkspace,
+                stability.select(current, movedByWorkspace, false, true));
+    }
+
+    @Test
     public void disappearanceCommitsImmediately() {
         LauncherGlassGeometryStability stability = new LauncherGlassGeometryStability();
         LauncherGlassGeometry.Snapshot current = snapshot(100f, 100f);
