@@ -61,6 +61,8 @@ public class P1RuntimeLifecycleContractTest {
                 main.contains("getHotSeatsBackground"));
         assertTrue("startup in workstation mode must still hide the ordinary HotSeats material",
                 main.contains("if (workstationMode) {\n            dockBg.setAlpha(0f);"));
+        assertTrue("theme replacement in the same parent must move the shadow under the active material",
+                main.contains("ensureShadowBelowBackground(parent, currentShadow, dockBg);"));
     }
 
     @Test
