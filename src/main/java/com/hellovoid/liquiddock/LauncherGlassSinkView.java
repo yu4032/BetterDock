@@ -27,9 +27,10 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     private final WeakReference<View> materialRef;
     private volatile LauncherGlassSession session;
     private final LiquidDockConfig.Glass glassConfig;
-    private final float nativeCornerRadiusPx;
+    private volatile float nativeCornerRadiusPx;
     private volatile boolean disposed;
     private volatile boolean suppressedByFolderOpen;
+    private volatile boolean suppressedByDrag;
     private boolean pressTarget;
     private float pressProgress;
     private float glowCenterX = 0.5f;
@@ -115,6 +116,22 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         requestLifecycleRefresh();
     }
 
+    void setSuppressedByDrag(boolean suppressed) {
+        if (disposed || suppressedByDrag == suppressed) return;
+        suppressedByDrag = suppressed;
+        if (suppressed) resetPressInteraction(false);
+        syncFromMaterial();
+        requestLifecycleRefresh();
+    }
+
+    void setNativeCornerRadiusPx(float cornerRadiusPx) {
+        if (disposed || !Float.isFinite(cornerRadiusPx)) return;
+        float next = Math.max(0f, cornerRadiusPx);
+        if (Math.abs(nativeCornerRadiusPx - next) < 0.01f) return;
+        nativeCornerRadiusPx = next;
+        requestLifecycleRefresh();
+    }
+
     void setPressInteraction(boolean pressed, float normalizedX, float normalizedY) {
         if (disposed) return;
         float nextX = clamp01(normalizedX);
@@ -186,14 +203,14 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         Object sinkParent = getParent();
         if (!(materialParent instanceof ViewGroup)) return false;
         if (materialParent != sinkParent) {
+            if (suppressedByDrag) {
+                if (getVisibility() != View.GONE) setVisibility(View.GONE);
+                return true;
+            }
             scheduleParentRecovery("parent-mismatch");
             return true;
         }
         boolean changed = false;
-        // Recents changes only ancestor transforms and is intentionally stabilized by the session.
-        // A real folder drag is different: MIUI reparents the material through DragContainer. Mark
-        // every pre-draw there as a local change so root-space geometry is committed immediately.
-        changed |= isInDragContainer(material);
         int width = Math.max(1, material.getWidth());
         int height = Math.max(1, material.getHeight());
         ViewGroup.LayoutParams lp = getLayoutParams();
@@ -211,15 +228,10 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
         if (getScaleY() != material.getScaleY()) { setScaleY(material.getScaleY()); changed = true; }
         if (getRotation() != material.getRotation()) { setRotation(material.getRotation()); changed = true; }
         if (getAlpha() != material.getAlpha()) { setAlpha(material.getAlpha()); changed = true; }
-        int visibility = suppressedByFolderOpen ? View.GONE : material.getVisibility();
+        int visibility = suppressedByFolderOpen || suppressedByDrag
+                ? View.GONE : material.getVisibility();
         if (getVisibility() != visibility) { setVisibility(visibility); changed = true; }
         return changed;
-    }
-
-    private static boolean isInDragContainer(View material) {
-        if (material == null) return false;
-        Object parent = material.getParent();
-        return parent != null && parent.getClass().getName().contains("DragContainer");
     }
 
     LauncherGlassGeometry.Snapshot captureGeometry(View root) {
