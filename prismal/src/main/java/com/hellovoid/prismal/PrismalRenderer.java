@@ -175,6 +175,11 @@ public final class PrismalRenderer implements AutoCloseable {
 
     /** Append one glass node using the currently prepared backdrop. */
     public void drawGlass(PrismalGeometry geometry, PrismalParams params) {
+        drawGlass(geometry, params, PrismalHighlightProfile.ALL_ENABLED);
+    }
+
+    /** Append one glass node with a renderer-scoped highlight selection. */
+    public void drawGlass(PrismalGeometry geometry, PrismalParams params, PrismalHighlightProfile highlightProfile) {
         if (geometry == null) throw new IllegalArgumentException("geometry == null");
         if (!glassFrameBegun) {
             throw new IllegalStateException("beginGlassFrame must be called before drawGlass");
@@ -183,7 +188,8 @@ public final class PrismalRenderer implements AutoCloseable {
             throw new IllegalArgumentException("geometry framebuffer does not match prepared backdrop");
         }
         if (params == null) params = PrismalParams.builder().build();
-        renderGlassNode(geometry, params, !legacySingleDraw || glassDrawCount > 0);
+        if (highlightProfile == null) highlightProfile = PrismalHighlightProfile.ALL_ENABLED;
+        renderGlassNode(geometry, params, highlightProfile, !legacySingleDraw || glassDrawCount > 0);
         glassDrawCount++;
     }
 
@@ -198,7 +204,8 @@ public final class PrismalRenderer implements AutoCloseable {
         sourceProgram = createProgram(SOURCE_VERTEX, SOURCE_FRAGMENT);
         blurHProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_H);
         blurVProgram = createProgram(PrismalShaderSources.BLUR_VERTEX, PrismalShaderSources.BLUR_V);
-        String glassFragment = PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT);
+        String glassFragment = PrismalComponentGateShader.apply(
+                PrismalSingleEdgeShader.apply(PrismalShaderSources.FRAGMENT));
         glassProgram = createProgram(PrismalShaderSources.VERTEX, glassFragment);
         glassUniformLocations.clear();
         if (sourceProgram == 0 || blurHProgram == 0 || blurVProgram == 0 || glassProgram == 0) {
@@ -267,7 +274,8 @@ public final class PrismalRenderer implements AutoCloseable {
         GLES20.glDisableVertexAttribArray(position);
     }
 
-    private void renderGlassNode(PrismalGeometry g, PrismalParams p, boolean composite) {
+    private void renderGlassNode(PrismalGeometry g, PrismalParams p,
+                                 PrismalHighlightProfile highlights, boolean composite) {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, outputFramebuffer);
         GLES20.glViewport(0, 0, width, height);
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
@@ -332,6 +340,16 @@ public final class PrismalRenderer implements AutoCloseable {
         uniform2f("u_glowCenter", p.glowCenterX, p.glowCenterY);
         uniform1f("u_glowStrength", p.glowStrength);
         uniform1i("u_showNormals", p.showNormals ? 1 : 0);
+
+        uniform1f("u_componentSkyHaze", highlights.skyHaze ? 1f : 0f);
+        uniform1f("u_componentSpecular", highlights.specular ? 1f : 0f);
+        uniform1f("u_componentLitRim", highlights.litRim ? 1f : 0f);
+        uniform1f("u_componentOppositeRim", highlights.oppositeRim ? 1f : 0f);
+        uniform1f("u_componentCornerRim", highlights.cornerRim ? 1f : 0f);
+        uniform1f("u_componentFaceSheen", highlights.faceSheen ? 1f : 0f);
+        uniform1f("u_componentPlainHighlight", highlights.plainHighlight ? 1f : 0f);
+        uniform1f("u_componentCaustics", highlights.caustics ? 1f : 0f);
+        uniform1f("u_componentPressGlow", highlights.pressGlow ? 1f : 0f);
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sourceTexture);

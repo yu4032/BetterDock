@@ -72,8 +72,14 @@ class ComposeSettingsActivity : SettingsActivity() {
 private enum class Page(val titleRes: Int) {
     Home(R.string.app_name), Grid(R.string.page_grid), Dock(R.string.page_dock),
     Divider(R.string.page_divider), Workstation(R.string.page_workstation), Liquid(R.string.page_liquid),
+    LauncherHighlights(R.string.page_launcher_highlights),
     Stroke(R.string.page_stroke), Shadow(R.string.page_shadow), Data(R.string.page_data),
     About(R.string.page_about)
+}
+
+private fun parentPage(page: Page): Page = when (page) {
+    Page.LauncherHighlights -> Page.Liquid
+    else -> Page.Home
 }
 
 // Ordinary UI writes are mirrored to API101 Remote Preferences by LiquidDockApp's
@@ -101,6 +107,12 @@ private data class IntSpec(
         return if (raw is Number) raw.toFloat() / if (isDecimal) 10f else 1f else default.toFloat()
     }
 }
+
+private data class HighlightToggleSpec(
+    val key: String,
+    val titleRes: Int,
+    val summaryRes: Int,
+)
 
 private fun optionSummary(key: String): String = when (key) {
     "grid_landscape_horizontal_distance" -> "同时调整横屏布局左右两侧的水平距离"
@@ -137,55 +149,55 @@ private fun optionSummary(key: String): String = when (key) {
     "workstation_all_apps_portrait_bottom_spacing" -> "直接设置工作台所有应用竖屏图标区下间距；不叠加系统默认位置"
     "workstation_dock_icon_top_offset" -> "调整工作台 Dock 图标与容器顶部之间的距离"
     "workstation_dock_icon_bottom_offset" -> "调整工作台 Dock 图标与容器底部之间的距离"
-    "liquid_blur" -> "Prismal 模糊半径；zero-copy 后端在半分辨率双通道 FBO 中使用，默认 2"
+    "liquid_blur" -> "控制玻璃背景的模糊程度"
     "liquid_thickness" -> "影响 Snell 折射路径的虚拟玻璃厚度"
     "liquid_ior" -> "折射率；越高，边缘弯曲越明显"
-    "liquid_normal_strength" -> "Prismal 表面高度场对法线的影响"
+    "liquid_normal_strength" -> "表面高度场对法线的影响"
     "liquid_dome" -> "控制玻璃穹顶/meniscus 的凸起程度"
-    "liquid_lens_refraction" -> "Prismal 边缘透镜位移倍率；迁移后的常用值约 1.3×，过高会快速达到短边位移上限"
-    "liquid_chromatic" -> "Prismal RGB 色散总强度；v1.0.6 Quick Start 有效默认值为 26"
+    "liquid_lens_refraction" -> "边缘透镜位移倍率；迁移后的常用值约 1.3×，过高会快速达到短边位移上限"
+    "liquid_chromatic" -> "控制红、绿、蓝通道分离形成的色散强度"
     "liquid_tint_alpha" -> "玻璃颜色乘色强度"
     "liquid_tint_r" -> "玻璃颜色 · 红"
     "liquid_tint_g" -> "玻璃颜色 · 绿"
     "liquid_tint_b" -> "玻璃颜色 · 蓝"
     "liquid_highlight_width" -> "同时调整 Fresnel 轮廓与边缘高光带宽"
-    "liquid_highlight_alpha" -> "LiquidDock 对 Prismal 高光总强度的兼容倍率"
-    "liquid_depth_effect" -> "控制透镜方向向中心偏转：0=Prismal 自动（normalStrength×0.9，最高 1.0）；1–100=手动覆盖"
-    "liquid_brightness" -> "Prismal 整体输出亮度"
-    "liquid_specular_sharp" -> "Prismal 镜面高光锐度"
-    "liquid_specular_strength" -> "Prismal 双镜面高光强度"
-    "liquid_rim_light" -> "Prismal 边缘光强度"
-    "liquid_caustics" -> "Prismal 焦散强度"
+    "liquid_highlight_alpha" -> "控制整体高光强度"
+    "liquid_depth_effect" -> "控制折射方向向玻璃中心偏转的程度"
+    "liquid_brightness" -> "整体输出亮度"
+    "liquid_specular_sharp" -> "镜面高光锐度"
+    "liquid_specular_strength" -> "双镜面高光强度"
+    "liquid_rim_light" -> "边缘光强度"
+    "liquid_caustics" -> "焦散强度"
     "liquid_edge_band" -> "兼容调整 Prismal rim band 宽度"
     "liquid_prismal_refraction_inset" -> "控制玻璃可见遮罩的内缩尺度；不直接增加折射位移"
-    "liquid_prismal_displacement_scale" -> "Prismal 折射与视差位移总倍率"
-    "liquid_prismal_height_transition_width" -> "Prismal 高度场从边缘过渡到中心的宽度"
-    "liquid_prismal_smin_smoothing" -> "Prismal 圆角 SDF 的多项式平滑尺度"
+    "liquid_prismal_displacement_scale" -> "折射与视差位移总倍率"
+    "liquid_prismal_height_transition_width" -> "高度场从边缘过渡到中心的宽度"
+    "liquid_prismal_smin_smoothing" -> "圆角 SDF 的多项式平滑尺度"
     "liquid_prismal_edge_refraction_falloff" -> "控制边缘折射向内部的衰减；越高越集中在边缘"
     "liquid_prismal_fresnel_reflect" -> "Fresnel 背景反射与 sky haze 强度"
     "liquid_prismal_dispersion_r" -> "红色通道相对色散倍率"
     "liquid_prismal_dispersion_b" -> "蓝色通道相对色散倍率"
-    "liquid_prismal_vibrancy" -> "Prismal 折射背景的色彩鲜艳度"
-    "liquid_prismal_plain_highlight" -> "Prismal 基础边缘高光"
-    "liquid_prismal_light_dir_x" -> "Prismal 光源水平方向"
-    "liquid_prismal_light_dir_y" -> "Prismal 光源垂直方向"
-    "liquid_prismal_shadow_r" -> "Prismal 内阴影 · 红"
-    "liquid_prismal_shadow_g" -> "Prismal 内阴影 · 绿"
-    "liquid_prismal_shadow_b" -> "Prismal 内阴影 · 蓝"
-    "liquid_prismal_shadow_alpha" -> "Prismal 内阴影透明度"
-    "liquid_prismal_shadow_softness" -> "Prismal 内阴影柔和度；界面值按 ×100 存储，1000 对应 shader 10.0"
-    "liquid_prismal_transmittance" -> "Prismal 玻璃最终透射/Alpha"
-    "liquid_prismal_backdrop_scale_x" -> "Prismal 背景取样水平缩放"
-    "liquid_prismal_backdrop_scale_y" -> "Prismal 背景取样垂直缩放"
-    "liquid_prismal_parallax_scale" -> "Prismal 表面视差倍率"
-    "liquid_capture_power_limit_fps" -> "旧版 Bitmap 捕获帧率；当前 zero-copy 后端不使用"
-    "liquid_dynamic_app_probe_fps" -> "旧版动态捕获探测帧率；当前 zero-copy 后端不使用"
-    "liquid_dynamic_motion_threshold" -> "旧版动态捕获阈值；当前 zero-copy 后端不使用"
-    "liquid_dynamic_bit_threshold" -> "旧版动态捕获像素阈值；当前 zero-copy 后端不使用"
-    "liquid_dynamic_hold_ms" -> "旧版动态捕获保持时间；当前 zero-copy 后端不使用"
-    "liquid_black_threshold" -> "旧版黑帧过滤阈值；当前 zero-copy 后端不使用"
-    "liquid_capture_scale" -> "旧版 SurfaceFlinger 读回缩放；当前 zero-copy 后端不使用"
-    "liquid_capture_stop_delay" -> "旧版屏幕捕获停止延迟；当前 zero-copy 后端不使用"
+    "liquid_prismal_vibrancy" -> "折射背景的色彩鲜艳度"
+    "liquid_prismal_plain_highlight" -> "基础边缘高光"
+    "liquid_prismal_light_dir_x" -> "光源水平方向"
+    "liquid_prismal_light_dir_y" -> "光源垂直方向"
+    "liquid_prismal_shadow_r" -> "内阴影 · 红"
+    "liquid_prismal_shadow_g" -> "内阴影 · 绿"
+    "liquid_prismal_shadow_b" -> "内阴影 · 蓝"
+    "liquid_prismal_shadow_alpha" -> "内阴影透明度"
+    "liquid_prismal_shadow_softness" -> "内阴影柔和度；界面值按 ×100 存储，1000 对应 shader 10.0"
+    "liquid_prismal_transmittance" -> "玻璃最终透射/Alpha"
+    "liquid_prismal_backdrop_scale_x" -> "背景取样水平缩放"
+    "liquid_prismal_backdrop_scale_y" -> "背景取样垂直缩放"
+    "liquid_prismal_parallax_scale" -> "表面视差倍率"
+    "liquid_capture_power_limit_fps" -> "旧版 Bitmap 捕获帧率（旧兼容路径）"
+    "liquid_dynamic_app_probe_fps" -> "旧版动态捕获探测帧率（旧兼容路径）"
+    "liquid_dynamic_motion_threshold" -> "旧版动态捕获阈值（旧兼容路径）"
+    "liquid_dynamic_bit_threshold" -> "旧版动态捕获像素阈值（旧兼容路径）"
+    "liquid_dynamic_hold_ms" -> "旧版动态捕获保持时间（旧兼容路径）"
+    "liquid_black_threshold" -> "旧版黑帧过滤阈值（旧兼容路径）"
+    "liquid_capture_scale" -> "旧版 SurfaceFlinger 读回缩放（旧兼容路径）"
+    "liquid_capture_stop_delay" -> "旧版屏幕捕获停止延迟（旧兼容路径）"
     "liquid_recents_prearm_distance" -> "从底部上滑达到此距离时，提前启动多任务实时捕获"
     "liquid_sampling_extra_top" -> "最终上安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
     "liquid_sampling_extra_bottom" -> "最终下安全区 = 自动安全区 + 此值；可正可负，0 表示纯自动"
@@ -225,7 +237,6 @@ private val dockSpecs = listOf(
     IntSpec(ConfigSchema.Dock.BLUR_RADIUS, "模糊强度", ""),
     IntSpec(ConfigSchema.Dock.HEIGHT_OFFSET, "高度偏移"),
     IntSpec(ConfigSchema.Dock.WIDTH_OFFSET, "宽度偏移"),
-    IntSpec(ConfigSchema.Dock.CORNER_OFFSET, "描边圆角偏移"),
     IntSpec(ConfigSchema.Dock.BLUR_CORNER_OFFSET, "内部模糊圆角偏移"),
     IntSpec(ConfigSchema.Dock.SPACING, "Dock 图标间距"),
     IntSpec(ConfigSchema.Dock.BOTTOM_OFFSET, "Dock 底部偏移"),
@@ -281,29 +292,41 @@ private val liquidSpecs = listOf(
     IntSpec(ConfigSchema.Glass.SPECULAR_STRENGTH, "高光强度", "%"),
     IntSpec(ConfigSchema.Glass.RIM_LIGHT, "边缘光强度", "%"),
     IntSpec(ConfigSchema.Glass.CAUSTICS, "焦散强度", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "Prismal · 折射内缩", "px"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, "Prismal · 位移倍率", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, "Prismal · 高度过渡"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, "Prismal · SDF 平滑", "px"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, "Prismal · 边缘折射衰减", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT, "Prismal · Fresnel 反射", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_R, "Prismal · 红色散倍率", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_B, "Prismal · 蓝色散倍率", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_VIBRANCY, "Prismal · 鲜艳度", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT, "Prismal · 基础高光", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X, "Prismal · 光源 X", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y, "Prismal · 光源 Y", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_RED, "Prismal · 内阴影红", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, "Prismal · 内阴影绿", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, "Prismal · 内阴影蓝", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, "Prismal · 内阴影透明度", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "Prismal · 内阴影柔和度", ""),
-    IntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, "Prismal · 透射率", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "Prismal · 背景缩放 X", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "Prismal · 背景缩放 Y", "%"),
-    IntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, "Prismal · 视差倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_REFRACTION_INSET, "折射内缩", "px"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPLACEMENT_SCALE, "位移倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_HEIGHT_TRANSITION_WIDTH, "高度过渡"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SMIN_SMOOTHING, "圆角平滑", "px"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_EDGE_REFRACTION_FALLOFF, "边缘折射衰减", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_FRESNEL_REFLECT, "菲涅尔反射", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_R, "红色散倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_DISPERSION_B, "蓝色散倍率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_VIBRANCY, "鲜艳度", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_PLAIN_HIGHLIGHT, "基础高光", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_X, "光源 X", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_LIGHT_DIR_Y, "光源 Y", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_RED, "内阴影红", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_GREEN, "内阴影绿", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_BLUE, "内阴影蓝", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_ALPHA, "内阴影透明度", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_SHADOW_SOFTNESS, "内阴影柔和度", ""),
+    IntSpec(ConfigSchema.Glass.PRISMAL_TRANSMITTANCE, "透射率", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_X, "背景缩放 X", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_BACKDROP_SCALE_Y, "背景缩放 Y", "%"),
+    IntSpec(ConfigSchema.Glass.PRISMAL_PARALLAX_SCALE, "视差倍率", "%"),
+)
+private val launcherHighlightSpecs = listOf(
+    HighlightToggleSpec(LauncherHighlightPreferences.SKY_HAZE, R.string.highlight_sky_haze, R.string.highlight_sky_haze_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.SPECULAR, R.string.highlight_specular, R.string.highlight_specular_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.LIT_RIM, R.string.highlight_lit_rim, R.string.highlight_lit_rim_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.OPPOSITE_RIM, R.string.highlight_opposite_rim, R.string.highlight_opposite_rim_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.CORNER_RIM, R.string.highlight_corner_rim, R.string.highlight_corner_rim_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.FACE_SHEEN, R.string.highlight_face_sheen, R.string.highlight_face_sheen_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.PLAIN_HIGHLIGHT, R.string.highlight_plain, R.string.highlight_plain_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.CAUSTICS, R.string.highlight_caustics, R.string.highlight_caustics_summary),
+    HighlightToggleSpec(LauncherHighlightPreferences.PRESS_GLOW, R.string.highlight_press_glow, R.string.highlight_press_glow_summary),
 )
 private val strokeSpecs = listOf(
+    IntSpec(ConfigSchema.Dock.CORNER_OFFSET, "描边圆角偏移", "dp", null, IntSection.StrokeGeometry),
     IntSpec(ConfigSchema.Dock.STROKE_RED, "描边底色 · 红", "", "dock_stroke", IntSection.StrokeBackground),
     IntSpec(ConfigSchema.Dock.STROKE_GREEN, "描边底色 · 绿", "", "dock_stroke", IntSection.StrokeBackground),
     IntSpec(ConfigSchema.Dock.STROKE_BLUE, "描边底色 · 蓝", "", "dock_stroke", IntSection.StrokeBackground),
@@ -330,13 +353,13 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
         mutableStateOf(prefs.getBoolean(ConfigSchema.Core.ENABLED.name(), ConfigSchema.Core.ENABLED.uiDefault()))
     }
     var page by rememberSaveable { mutableStateOf(Page.Home) }
-    BackHandler(enabled = page != Page.Home) { page = Page.Home }
+    BackHandler(enabled = page != Page.Home) { page = parentPage(page) }
     Scaffold(
         topBar = {
             SmallTopAppBar(
                 title = stringResource(page.titleRes),
                 navigationIcon = {
-                    if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = Page.Home })
+                    if (page != Page.Home) TextButton(text = stringResource(R.string.action_back), onClick = { page = parentPage(page) })
                 },
                 actions = {
                     TextButton(text = stringResource(R.string.action_restart_launcher), onClick = { activity.restartLauncher() })
@@ -363,7 +386,8 @@ private fun LiquidDockSettings(activity: ComposeSettingsActivity) {
                 Page.Dock -> DockPage(padding, prefs, masterEnabled)
                 Page.Divider -> DividerPage(padding, prefs, masterEnabled)
                 Page.Workstation -> WorkstationPage(padding, prefs, masterEnabled)
-                Page.Liquid -> LiquidPage(padding, prefs, masterEnabled)
+                Page.Liquid -> LiquidPage(padding, prefs, masterEnabled) { page = Page.LauncherHighlights }
+                Page.LauncherHighlights -> LauncherHighlightsPage(padding, prefs, masterEnabled)
                 Page.Stroke -> StrokePage(padding, prefs, masterEnabled)
                 Page.Shadow -> ShadowPage(padding, prefs, masterEnabled)
                 Page.Data -> DataPage(padding, activity)
@@ -467,19 +491,55 @@ private fun WorkstationPage(padding: PaddingValues, prefs: SharedPreferences, ma
 }
 
 @Composable
-private fun LiquidPage(padding: PaddingValues, prefs: SharedPreferences, masterEnabled: Boolean) {
+private fun LiquidPage(
+    padding: PaddingValues,
+    prefs: SharedPreferences,
+    masterEnabled: Boolean,
+    openLauncherHighlights: () -> Unit,
+) {
     var liquidGlass by remember { mutableStateOf(prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())) }
     SettingsList(
         padding,
         stringResource(R.string.page_liquid),
-        "当前使用 PassBlur → OES → Prismal zero-copy；修改光学参数后点击右上角“重启桌面”生效。",
+        stringResource(R.string.liquid_header_summary),
     ) {
         BooleanSetting(prefs, ConfigSchema.Glass.ENABLED, stringResource(R.string.liquid_enable), stringResource(R.string.liquid_enable_summary), masterEnabled) { liquidGlass = it }
-        BooleanSetting(prefs, ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
-            "Prismal · 显示法线",
-            "调试：用 RGB 直接显示当前 Prismal 表面法线",
-            masterEnabled && liquidGlass)
+        ArrowPreference(
+            stringResource(R.string.launcher_highlights_entry),
+            summary = stringResource(R.string.launcher_highlights_entry_summary),
+            enabled = masterEnabled && liquidGlass,
+            onClick = openLauncherHighlights,
+        )
+        BooleanSetting(
+            prefs,
+            ConfigSchema.Glass.PRISMAL_SHOW_NORMALS,
+            "显示表面法线（调试）",
+            "用颜色显示表面法线方向，便于调试折射与光照",
+            masterEnabled && liquidGlass,
+        )
         liquidSpecs.forEach { IntSetting(prefs, it, masterEnabled && liquidGlass) }
+    }
+}
+
+@Composable
+private fun LauncherHighlightsPage(
+    padding: PaddingValues,
+    prefs: SharedPreferences,
+    masterEnabled: Boolean,
+) {
+    val liquidEnabled = prefs.getBoolean(ConfigSchema.Glass.ENABLED.name(), ConfigSchema.Glass.ENABLED.uiDefault())
+    SettingsList(
+        padding,
+        stringResource(R.string.page_launcher_highlights),
+        stringResource(R.string.launcher_highlights_header_summary),
+    ) {
+        launcherHighlightSpecs.forEach { spec ->
+            RawBooleanSetting(
+                prefs, spec.key, true,
+                stringResource(spec.titleRes), stringResource(spec.summaryRes),
+                masterEnabled && liquidEnabled,
+            )
+        }
     }
 }
 
@@ -615,6 +675,25 @@ private fun BooleanSetting(
     SwitchPreference(
         checked = value,
         onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply(); onChanged(it) },
+        title = title,
+        summary = summary,
+        enabled = enabled,
+    )
+}
+
+@Composable
+private fun RawBooleanSetting(
+    prefs: SharedPreferences,
+    key: String,
+    default: Boolean,
+    title: String,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    var value by remember(key) { mutableStateOf(prefs.getBoolean(key, default)) }
+    SwitchPreference(
+        checked = value,
+        onCheckedChange = { value = it; prefs.edit().putBoolean(key, it).apply() },
         title = title,
         summary = summary,
         enabled = enabled,

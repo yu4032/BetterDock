@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 
 import com.hellovoid.prismal.PrismalGeometry;
+import com.hellovoid.prismal.PrismalHighlightProfile;
 import com.hellovoid.prismal.PrismalParams;
 import com.hellovoid.prismal.PrismalRenderer;
 import com.hellovoid.prismal.PrismalSampling;
@@ -110,6 +111,8 @@ final class LauncherGlassSession {
 
     private volatile boolean shuttingDown;
     private volatile PrismalParams prismalParams;
+    private volatile PrismalHighlightProfile launcherHighlightProfile =
+            PrismalHighlightProfile.ALL_ENABLED;
     private volatile int rootWidth;
     private volatile int rootHeight;
     private volatile int configRotation;
@@ -190,6 +193,9 @@ final class LauncherGlassSession {
                 ? Miuix307PrismalMaterial.fromConfig(glassConfig, density)
                 : Miuix307PrismalMaterial.defaults(density);
         prismalParams = Miuix307PrismalAdapter.toPortable(optical);
+        launcherHighlightProfile = glassConfig != null
+                ? glassConfig.launcherHighlightProfile
+                : PrismalHighlightProfile.ALL_ENABLED;
         mainHandler.post(this::syncSceneOnUiThread);
         requestFrame(false);
     }
@@ -609,7 +615,7 @@ final class LauncherGlassSession {
             PrismalGeometry prismalGeometry = new PrismalGeometry(
                     layout.width, layout.height, geometry.centerX, geometry.centerY,
                     geometry.width, geometry.height, geometry.cornerRadius);
-            prismalRenderer.drawGlass(prismalGeometry, params);
+            prismalRenderer.drawGlass(prismalGeometry, params, launcherHighlightProfile);
             drew = true;
         }
         if (!drew) return;
