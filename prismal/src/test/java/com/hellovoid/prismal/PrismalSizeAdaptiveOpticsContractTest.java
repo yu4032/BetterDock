@@ -72,10 +72,14 @@ public class PrismalSizeAdaptiveOpticsContractTest {
         String generated = read("src/main/java/com/hellovoid/prismal/PrismalShaderSources.java");
 
         String[] required = {
-                "vec2 opticalRadial = normalize(cKy / max(halfSz, vec2(1.0)) + vec2(1e-5));",
+                "vec2 opticalRadialRaw = cKy / max(halfSz, vec2(1.0));",
+                "float opticalRadialLen = length(opticalRadialRaw);",
+                "vec2 opticalRadial = opticalRadialLen > 1e-5 ? opticalRadialRaw / opticalRadialLen : vec2(0.0);",
                 "vec2 opticalEdgeDir = normalize(gradLens + vec2(1e-5));",
                 "float opticalInteriorW = smoothstep(0.12, 0.52, tDeep);",
-                "vec2 opticalDir = normalize(mix(opticalEdgeDir, opticalRadial, opticalInteriorW));",
+                "vec2 opticalBlend = mix(opticalEdgeDir, opticalRadial, opticalInteriorW);",
+                "float opticalBlendLen = length(opticalBlend);",
+                "vec2 opticalDir = opticalBlendLen > 1e-5 ? opticalBlend / opticalBlendLen : vec2(0.0);",
                 "vec2 lensDir = opticalDir + u_lensDepthEffect * opticalRadial;",
                 "vec2 parallax = (opticalDir * height * (7.0 + 22.0 * F)) / u_resolution * parallaxK * u_parallaxScale;"
         };
