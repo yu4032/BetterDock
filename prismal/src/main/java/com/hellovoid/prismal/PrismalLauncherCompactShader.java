@@ -9,8 +9,8 @@ package com.hellovoid.prismal;
  * leaving a rectangular zero-refraction core. Launcher compact glass uses one continuous
  * center-to-edge field across the short-axis half extent while preserving upstream masking,
  * dome, Fresnel, tint and blur. Chromatic separation is shared exactly with the validated Dock
- * pixel-domain correction. White additive highlight paths are suppressed only in this launcher
- * diagnostic so their contribution can be isolated from the remaining optics.</p>
+ * pixel-domain correction. Upstream white highlight paths are removed and replaced by one
+ * launcher-only continuous edge highlight that does not use gradLens axis selection.</p>
  */
 final class PrismalLauncherCompactShader {
     private static final String UPSTREAM_LENS_DIRECTION = """
@@ -85,7 +85,8 @@ final class PrismalLauncherCompactShader {
                 COMPACT_TRANSMITTED_BLOCK,
                 "Prismal compact transmitted-refraction block");
         corrected = PrismalPixelDomainChromaShader.apply(corrected);
-        return PrismalLauncherHighlightSuppressionShader.apply(corrected);
+        corrected = PrismalLauncherHighlightSuppressionShader.apply(corrected);
+        return PrismalLauncherCompactHighlightShader.apply(corrected);
     }
 
     private static String replaceExactlyOnce(
