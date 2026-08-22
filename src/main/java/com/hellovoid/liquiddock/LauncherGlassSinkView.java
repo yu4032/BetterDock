@@ -8,6 +8,7 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.DecelerateInterpolator;
 
 import com.hellovoid.prismal.PrismalInteractionState;
@@ -25,6 +26,9 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
     private static final long PRESS_OUT_DURATION_MS = 160L;
 
     private final WeakReference<View> materialRef;
+    private final LauncherGlassScrollMotionTracker workspaceScrollMotion =
+            new LauncherGlassScrollMotionTracker();
+    private WeakReference<View> workspaceRef = new WeakReference<>(null);
     private volatile LauncherGlassSession session;
     private final LiquidDockConfig.Glass glassConfig;
     private volatile float nativeCornerRadiusPx;
@@ -211,6 +215,7 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
             return true;
         }
         boolean changed = false;
+        changed |= consumeWorkspaceScrollMotion();
         int width = Math.max(1, material.getWidth());
         int height = Math.max(1, material.getHeight());
         ViewGroup.LayoutParams lp = getLayoutParams();
@@ -232,6 +237,32 @@ final class LauncherGlassSinkView extends TextureView implements TextureView.Sur
                 ? View.GONE : material.getVisibility();
         if (getVisibility() != visibility) { setVisibility(visibility); changed = true; }
         return changed;
+    }
+
+    boolean consumeWorkspaceScrollMotion() {
+        View material = materialRef.get();
+        View workspace = workspaceRef.get();
+        if (workspace == null || !workspace.isAttachedToWindow()) {
+            workspace = findWorkspaceAncestor(material);
+            workspaceRef = new WeakReference<>(workspace);
+        }
+        if (workspace == null) return workspaceScrollMotion.update(null, 0, 0);
+        return workspaceScrollMotion.update(
+                workspace, workspace.getScrollX(), workspace.getScrollY());
+    }
+
+    private static View findWorkspaceAncestor(View material) {
+        View cursor = material;
+        while (cursor != null) {
+            Class<?> type = cursor.getClass();
+            if ("com.miui.home.launcher.Workspace".equals(type.getName())
+                    || "Workspace".equals(type.getSimpleName())) {
+                return cursor;
+            }
+            ViewParent parent = cursor.getParent();
+            cursor = parent instanceof View ? (View) parent : null;
+        }
+        return null;
     }
 
     LauncherGlassGeometry.Snapshot captureGeometry(View root) {
