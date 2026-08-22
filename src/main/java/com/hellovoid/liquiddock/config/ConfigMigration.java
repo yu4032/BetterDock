@@ -276,7 +276,7 @@ public final class ConfigMigration {
                 ? Math.round(sp.getInt("corner_offset", -1) / density) : -1);
             corners.putInt("blur_corner_offset", sp.contains("blur_corner_offset")
                 ? Math.round(sp.getInt("blur_corner_offset", 0) / density) : 0);
-            corners.putBoolean("corners_dp", true).apply();
+            corners.putBoolean("corners_dp", true).commit();
         }
     }
 
