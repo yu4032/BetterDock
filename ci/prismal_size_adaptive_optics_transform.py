@@ -44,9 +44,9 @@ old = (
     '    vec2 cKy = vec2(pPx.x, -pPx.y);\n'
 )
 new = old + (
-    '    // The visible shell is a rounded rectangle, but the optical face must be a smooth\n'
-    '    // continuous surface. A size-independent elliptical paraboloid has no square plateau\n'
-    '    // and no |x|=|y| axis seam for caustics/normals to reveal.\n'
+    '    // Rounded-rect geometry owns the silhouette only. The optical face is one smooth\n'
+    '    // elliptical paraboloid at every size, so there is no nearest-edge axis switch,\n'
+    '    // square plateau or |x|=|y| seam for normals/caustics to reveal.\n'
     '    vec2 opticalNorm = pPx / max(halfSz, vec2(1.0));\n'
     '    float opticalRadius = length(opticalNorm);\n'
     '    float radialHeight = clamp(1.0 - dot(opticalNorm, opticalNorm), 0.0, 1.0);\n'
@@ -62,25 +62,20 @@ new = old + (
 )
 glsl, generated = replace_both(glsl, generated, old, new, 'large center fade')
 
-old = '    float tShell = 1.0 - tDeep;\n'
-new = old + (
-    '    // Preserve the exact rounded-rect meniscus close to the silhouette, then transition\n'
-    '    // every glass size to the same continuous radial optical face in the interior.\n'
-    '    float radialSurfaceW = smoothstep(0.10, 0.48, tDeep);\n'
-)
-glsl, generated = replace_both(glsl, generated, old, new, 'all-size radial blend')
-
 old = '    height = clamp(height * (0.84 + 0.16 * meniscusBand + 0.08 * edgeRound), 0.0, 1.0);\n'
 new = old + (
-    '    height = mix(height, radialHeight, radialSurfaceW);\n'
+    '    // Do not blend the face back toward rounded-box depth: that blend recreates four\n'
+    '    // nearest-edge wedges on compact glass. Boundary meniscus is applied separately below.\n'
+    '    height = radialHeight;\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'radial height')
+glsl, generated = replace_both(glsl, generated, old, new, 'fully radial height')
 
 old = '    vec2 gradH = mix(gradHSig, gCap, domeW);\n'
 new = old + (
-    '    gradH = mix(gradH, radialGrad, radialSurfaceW);\n'
+    '    // Face normal/caustic gradient must remain continuous across the two diagonals.\n'
+    '    gradH = radialGrad;\n'
 )
-glsl, generated = replace_both(glsl, generated, old, new, 'radial gradient')
+glsl, generated = replace_both(glsl, generated, old, new, 'fully radial gradient')
 
 glsl, generated = replace_both(
     glsl,
