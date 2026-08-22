@@ -291,6 +291,18 @@ public final class PrismalRenderer implements AutoCloseable {
         uniform1f("u_glowStrength", p.glowStrength);
         uniform1i("u_showNormals", p.showNormals ? 1 : 0);
 
+        PrismalComponentControls.Profile components = PrismalComponentControls.forMode(mode);
+        uniform1f("u_componentSkyHaze", components.skyHaze ? 1f : 0f);
+        uniform1f("u_componentSpecular", components.specular ? 1f : 0f);
+        uniform1f("u_componentLitRim", components.litRim ? 1f : 0f);
+        uniform1f("u_componentOppositeRim", components.oppositeRim ? 1f : 0f);
+        uniform1f("u_componentCornerRim", components.cornerRim ? 1f : 0f);
+        uniform1f("u_componentFaceSheen", components.faceSheen ? 1f : 0f);
+        uniform1f("u_componentPlainHighlight", components.plainHighlight ? 1f : 0f);
+        uniform1f("u_componentCaustics", components.caustics ? 1f : 0f);
+        uniform1f("u_componentPressGlow", components.pressGlow ? 1f : 0f);
+        uniform1f("u_componentCompactSafeHighlight", components.compactSafeHighlight ? 1f : 0f);
+
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sourceTexture);
         GLES20.glUniform1i(glassUniformLocation("u_backgroundTexture"), 0);
@@ -382,7 +394,6 @@ public final class PrismalRenderer implements AutoCloseable {
         }
         return shader;
     }
-
 
     private int glassUniformLocation(String name) {
         Integer cached = glassUniformLocations.get(name);
